@@ -223,41 +223,60 @@
         let marketPrices = {}; // Store current market prices
         let priceMetadata = {}; // Store {timestamp, source, success} for each symbol
         let pricesLoading = false;
-        let alphaVantageKey = 'ABF4HZSG0I50VGLP'; // Pre-configured API key
+        let alphaVantageKey = ''; // User will provide their own API key
         let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
-        
-        // CORS proxy to bypass browser restrictions when opening file directly
-        const CORS_PROXY = 'https://corsproxy.io/?';
         
         // Check if we're in a Claude artifact (restricted network)
         const isArtifact = window.location.hostname.includes('claude.ai') && 
                           window.location.pathname.includes('artifacts');
         
-        // Helper function to fetch with CORS proxy fallback
-        async function fetchWithProxy(url, useProxy = false) {
-            // In artifacts, always try direct first, then inform user if it fails
-            if (isArtifact && !useProxy) {
-                try {
-                    const response = await fetch(url);
+        // Helper function to fetch with multiple fallback strategies
+        async function fetchWithProxy(url) {
+            // Strategy 1: Direct fetch (works when CORS headers are present)
+            try {
+                console.log('Trying direct fetch for:', url);
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                });
+                if (response.ok) {
+                    console.log('✓ Direct fetch succeeded');
                     return response;
-                } catch (err) {
-                    console.error('Artifact network restriction:', err);
-                    throw new Error('ARTIFACT_NETWORK_RESTRICTED');
                 }
+            } catch (err) {
+                console.log('Direct fetch failed:', err.message);
             }
             
+            // Strategy 2: Try allorigins proxy
             try {
-                const fetchUrl = useProxy ? CORS_PROXY + encodeURIComponent(url) : url;
-                const response = await fetch(fetchUrl);
-                return response;
-            } catch (err) {
-                // If direct fetch fails due to CORS, try with proxy
-                if (!useProxy) {
-                    console.log('Direct fetch failed, trying with CORS proxy...');
-                    return fetchWithProxy(url, true);
+                console.log('Trying allorigins proxy...');
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                if (response.ok) {
+                    console.log('✓ Allorigins proxy succeeded');
+                    return response;
                 }
-                throw err;
+            } catch (err) {
+                console.log('Allorigins proxy failed:', err.message);
             }
+            
+            // Strategy 3: Try cors-anywhere (Heroku)
+            try {
+                console.log('Trying cors-anywhere proxy...');
+                const proxyUrl = `https://cors-anywhere.herokuapp.com/${url}`;
+                const response = await fetch(proxyUrl);
+                if (response.ok) {
+                    console.log('✓ CORS-anywhere succeeded');
+                    return response;
+                }
+            } catch (err) {
+                console.log('CORS-anywhere failed:', err.message);
+            }
+            
+            // All strategies failed
+            throw new Error('All fetch strategies failed - CORS blocked');
         }
         
         console.log('Variables initialized');
@@ -494,19 +513,25 @@
                 return;
             }
             
-            // Check for artifact network restrictions
-            if (isArtifact) {
-                const userConfirm = confirm(
-                    '⚠️ Network Restrictions in Claude Artifacts\n\n' +
-                    'Claude artifacts have limited network access and may not be able to fetch live prices.\n\n' +
-                    'SOLUTIONS:\n' +
-                    '1. Download this HTML file and open it locally (RECOMMENDED)\n' +
-                    '2. Continue anyway (may not work)\n\n' +
-                    'Click OK to try anyway, or Cancel to stop.'
+            // Prompt for Alpha Vantage API key if not set
+            if (!alphaVantageKey) {
+                const key = prompt(
+                    '🔑 Alpha Vantage API Key Required\n\n' +
+                    'Get a FREE API key (takes 30 seconds):\n' +
+                    '1. Visit: https://www.alphavantage.co/support/#api-key\n' +
+                    '2. Enter your email\n' +
+                    '3. Copy the API key\n' +
+                    '4. Paste it here\n\n' +
+                    'Your key will be saved in your browser only (not on GitHub).\n\n' +
+                    'Enter your API key:'
                 );
                 
-                if (!userConfirm) {
-                    return;
+                if (!key || !key.trim()) {
+                    alert('❌ API key is required to fetch prices from Alpha Vantage.\n\nYahoo Finance will still work for most symbols.');
+                } else {
+                    alphaVantageKey = key.trim();
+                    localStorage.setItem('alphaVantageKey', alphaVantageKey);
+                    alert('✓ API key saved! It will be used for fallback price fetching.');
                 }
             }
             
@@ -1433,6 +1458,13 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
         console.log('History snapshots:', portfolioHistory.length);
         console.log('Is Artifact:', isArtifact);
         console.log('Cloud Storage Available:', typeof window.storage !== 'undefined');
+        
+        // Load API key from localStorage if available
+        const storedKey = localStorage.getItem('alphaVantageKey');
+        if (storedKey) {
+            alphaVantageKey = storedKey;
+            console.log('✓ API key loaded from localStorage');
+        }
         
         // Show artifact warning if detected
         if (isArtifact) {
