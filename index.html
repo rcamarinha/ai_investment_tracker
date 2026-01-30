@@ -191,22 +191,23 @@
                 <h2 style="margin-bottom: 15px;">🔑 API Key Management</h2>
                 
                 <div style="background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="color: #cbd5e1; margin-bottom: 10px; font-size: 16px;">2-Tier Strategy:</h3>
+                    <h3 style="color: #cbd5e1; margin-bottom: 10px; font-size: 16px;">3-Tier Strategy:</h3>
                     <div style="color: #94a3b8; font-size: 13px; line-height: 1.8;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
                             <span>🚀 <strong>Finnhub:</strong> 60 calls/minute (unlimited daily)</span>
                             <span style="color: #4ade80;">PRIMARY</span>
                         </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span>⚡ <strong>FMP:</strong> 250 calls/day (no per-min limit)</span>
+                            <span style="color: #60a5fa;">FALLBACK #1</span>
+                        </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>🔄 <strong>Alpha Vantage:</strong> 5 calls/min, 25/day</span>
-                            <span style="color: #60a5fa;">FALLBACK</span>
+                            <span style="color: #f59e0b;">FALLBACK #2</span>
                         </div>
                     </div>
                     <div style="margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 6px; font-size: 12px; color: #94a3b8;">
-                        💡 <strong>Strategy:</strong> Finnhub tries first (fast, unlimited). Alpha Vantage catches what Finnhub misses.
-                    </div>
-                    <div style="margin-top: 10px; padding: 10px; background: #7f1d1d; border-radius: 6px; font-size: 11px; color: #fca5a5;">
-                        ⚠️ <strong>FMP Removed:</strong> Financial Modeling Prep doesn't work from browsers (server-only API).
+                        💡 <strong>Strategy:</strong> Finnhub primary (fast), FMP for what it misses (generous limit), Alpha Vantage last resort (strict limits)
                     </div>
                 </div>
                 
@@ -228,7 +229,23 @@
                 
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
-                        🔄 Alpha Vantage API Key (Fallback - International Coverage)
+                        ⚡ Financial Modeling Prep API Key (Fallback #1 - Generous Limit)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="fmpKeyInput" 
+                        placeholder="Enter your FMP API key" 
+                        style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;"
+                    />
+                    <div style="color: #94a3b8; font-size: 12px;">
+                        Get free key: <a href="https://site.financialmodelingprep.com/developer/docs/" target="_blank" style="color: #60a5fa;">https://financialmodelingprep.com</a>
+                        <br>✓ 250 calls/day • ✓ Using quote-short endpoint (better free tier support)
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                        🔄 Alpha Vantage API Key (Fallback #2 - Last Resort)
                     </label>
                     <input 
                         type="text" 
@@ -238,7 +255,7 @@
                     />
                     <div style="color: #94a3b8; font-size: 12px;">
                         Get free key: <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color: #60a5fa;">https://www.alphavantage.co/support/#api-key</a>
-                        <br>✓ 5 calls/minute, 25/day • ✓ Good international coverage • ✓ Backup option
+                        <br>✓ 5 calls/minute, 25/day • ✓ Good international coverage • ✓ Use sparingly
                     </div>
                 </div>
                 
@@ -246,7 +263,7 @@
                     <div style="color: #92400e; font-size: 13px;">
                         <strong>🔒 Security:</strong> Keys saved in your browser only (localStorage). Never uploaded to GitHub.
                         <br><br>
-                        <strong>📊 Coverage:</strong> Finnhub ~85% (fast), Alpha Vantage catches remaining ~15%. Total: ~95%+ success rate.
+                        <strong>📊 Coverage:</strong> All 3 APIs combined = ~98%+ success rate. Finnhub ~85%, FMP ~10%, Alpha Vantage ~5%.
                     </div>
                 </div>
                 
