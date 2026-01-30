@@ -230,53 +230,122 @@
         const isArtifact = window.location.hostname.includes('claude.ai') && 
                           window.location.pathname.includes('artifacts');
         
-        // Helper function to fetch with multiple fallback strategies
-        async function fetchWithProxy(url) {
-            // Strategy 1: Direct fetch (works when CORS headers are present)
+        // Helper function to fetch stock prices from multiple sources
+        async function fetchStockPrice(symbol) {
+            console.log(`Fetching price for ${symbol}...`);
+            
+            // Source 1: Finnhub (free tier, good CORS support)
             try {
-                console.log('Trying direct fetch for:', url);
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json',
+                const finnhubKey = 'ct131f9r01qr3fdbl3n0ct131f9r01qr3fdbl3ng'; // Public demo key
+                const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`;
+                const response = await fetch(url);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.c && data.c > 0) { // c = current price
+                        console.log(`✓ ${symbol}: $${data.c} (Finnhub)`);
+                        return { 
+                            price: data.c, 
+                            source: 'Finnhub',
+                            success: true 
+                        };
                     }
-                });
-                if (response.ok) {
-                    console.log('✓ Direct fetch succeeded');
-                    return response;
                 }
             } catch (err) {
-                console.log('Direct fetch failed:', err.message);
+                console.log(`Finnhub failed for ${symbol}:`, err.message);
             }
             
-            // Strategy 2: Try allorigins proxy
+            // Source 2: Alpha Vantage (if user provided key)
+            if (alphaVantageKey) {
+                try {
+                    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaVantageKey}`;
+                    const response = await fetch(url);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        const quote = data['Global Quote'];
+                        
+                        if (quote && quote['05. price']) {
+                            const price = parseFloat(quote['05. price']);
+                            console.log(`✓ ${symbol}: $${price} (Alpha Vantage)`);
+                            return { 
+                                price: price, 
+                                source: 'Alpha Vantage',
+                                success: true 
+                            };
+                        }
+                    }
+                    
+                    // Check for rate limit
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data['Note']) {
+                            console.log('Alpha Vantage rate limit hit');
+                        }
+                    }
+                } catch (err) {
+                    console.log(`Alpha Vantage failed for ${symbol}:`, err.message);
+                }
+            }
+            
+            // Source 3: Financial Modeling Prep (free tier)
             try {
-                console.log('Trying allorigins proxy...');
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
+                const fmpKey = 'OiwIv1wmRPsLKDrzqF3JbsKMI3q6nCEq'; // Public demo key
+                const url = `https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${fmpKey}`;
+                const response = await fetch(url);
+                
                 if (response.ok) {
-                    console.log('✓ Allorigins proxy succeeded');
-                    return response;
+                    const data = await response.json();
+                    if (data && data[0] && data[0].price) {
+                        const price = data[0].price;
+                        console.log(`✓ ${symbol}: $${price} (FMP)`);
+                        return { 
+                            price: price, 
+                            source: 'Financial Modeling Prep',
+                            success: true 
+                        };
+                    }
                 }
             } catch (err) {
-                console.log('Allorigins proxy failed:', err.message);
+                console.log(`FMP failed for ${symbol}:`, err.message);
             }
             
-            // Strategy 3: Try cors-anywhere (Heroku)
-            try {
-                console.log('Trying cors-anywhere proxy...');
-                const proxyUrl = `https://cors-anywhere.herokuapp.com/${url}`;
-                const response = await fetch(proxyUrl);
-                if (response.ok) {
-                    console.log('✓ CORS-anywhere succeeded');
-                    return response;
+            // All sources failed
+            return { 
+                price: null, 
+                source: 'All sources failed',
+                success: false,
+                error: 'No data available'
+            };
+        }
+        
+        // Try alternative ticker formats for international stocks
+        async function tryAlternativeFormats(originalSymbol) {
+            const alternatives = [];
+            
+            // If it has a dot, try without it
+            if (originalSymbol.includes('.')) {
+                const base = originalSymbol.split('.')[0];
+                alternatives.push(base);
+            }
+            
+            // If it doesn't have a dot, try common exchange suffixes
+            if (!originalSymbol.includes('.')) {
+                alternatives.push(`${originalSymbol}.PA`); // Paris
+                alternatives.push(`${originalSymbol}.L`);  // London
+                alternatives.push(`${originalSymbol}.DE`); // Germany
+            }
+            
+            for (const altSymbol of alternatives) {
+                console.log(`Trying alternative: ${altSymbol}`);
+                const result = await fetchStockPrice(altSymbol);
+                if (result.success) {
+                    return { ...result, alternativeSymbol: altSymbol };
                 }
-            } catch (err) {
-                console.log('CORS-anywhere failed:', err.message);
+                await new Promise(resolve => setTimeout(resolve, 300));
             }
             
-            // All strategies failed
-            throw new Error('All fetch strategies failed - CORS blocked');
+            return null;
         }
         
         console.log('Variables initialized');
@@ -513,25 +582,26 @@
                 return;
             }
             
-            // Prompt for Alpha Vantage API key if not set
+            // Optionally prompt for Alpha Vantage API key (for fallback)
             if (!alphaVantageKey) {
-                const key = prompt(
-                    '🔑 Alpha Vantage API Key Required\n\n' +
-                    'Get a FREE API key (takes 30 seconds):\n' +
-                    '1. Visit: https://www.alphavantage.co/support/#api-key\n' +
-                    '2. Enter your email\n' +
-                    '3. Copy the API key\n' +
-                    '4. Paste it here\n\n' +
-                    'Your key will be saved in your browser only (not on GitHub).\n\n' +
-                    'Enter your API key:'
+                const wantsKey = confirm(
+                    '💡 Optional: Alpha Vantage API Key\n\n' +
+                    'The app will use Finnhub and FMP (free, no key needed) for prices.\n\n' +
+                    'Want to add Alpha Vantage as additional fallback?\n\n' +
+                    'Click OK to enter key, or Cancel to skip.'
                 );
                 
-                if (!key || !key.trim()) {
-                    alert('❌ API key is required to fetch prices from Alpha Vantage.\n\nYahoo Finance will still work for most symbols.');
-                } else {
-                    alphaVantageKey = key.trim();
-                    localStorage.setItem('alphaVantageKey', alphaVantageKey);
-                    alert('✓ API key saved! It will be used for fallback price fetching.');
+                if (wantsKey) {
+                    const key = prompt(
+                        'Get a FREE Alpha Vantage API key:\n' +
+                        'https://www.alphavantage.co/support/#api-key\n\n' +
+                        'Enter your API key:'
+                    );
+                    
+                    if (key && key.trim()) {
+                        alphaVantageKey = key.trim();
+                        localStorage.setItem('alphaVantageKey', alphaVantageKey);
+                    }
                 }
             }
             
@@ -543,264 +613,79 @@
             pricesLoading = true;
             const symbols = [...new Set(portfolio.map(p => p.symbol))]; // Get unique symbols
             
-            console.log('=== FETCH PRICES DEBUG (Yahoo Finance Primary) ===');
-            console.log('Fetching market prices for:', symbols);
-            console.log('Total unique symbols:', symbols.length);
+            console.log('=== FETCH PRICES (Multi-Source, No CORS Proxy) ===');
+            console.log('Symbols:', symbols);
+            console.log('Total:', symbols.length);
             
             let successCount = 0;
             let failCount = 0;
             const errors = [];
-            const failedSymbols = []; // Track failed symbols for fallback
             
             try {
-                // Phase 1: Yahoo Finance (Primary Source - Fast & Unlimited)
-                console.log('\n=== PHASE 1: YAHOO FINANCE (PRIMARY) ===');
-                refreshBtn.textContent = '⏳ Fetching from Yahoo...';
-                
-                // Process all symbols with Yahoo Finance
+                // Fetch all symbols using the new multi-source function
                 for (let i = 0; i < symbols.length; i++) {
                     const symbol = symbols[i];
                     
+                    refreshBtn.textContent = `⏳ ${i + 1}/${symbols.length}`;
+                    
                     try {
-                        console.log(`[${i + 1}/${symbols.length}] Trying Yahoo Finance for ${symbol}...`);
-                        refreshBtn.textContent = `⏳ ${i + 1}/${symbols.length}`;
+                        // Try primary sources first
+                        let result = await fetchStockPrice(symbol);
                         
-                        // Yahoo Finance quote API
-                        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`;
-                        const yahooResponse = await fetchWithProxy(yahooUrl);
-                        
-                        if (yahooResponse.ok) {
-                            const yahooData = await yahooResponse.json();
-                            
-                            if (yahooData.chart && yahooData.chart.result && yahooData.chart.result[0]) {
-                                const result = yahooData.chart.result[0];
-                                const meta = result.meta;
-                                
-                                if (meta && meta.regularMarketPrice) {
-                                    const price = meta.regularMarketPrice;
-                                    marketPrices[symbol] = price;
-                                    priceMetadata[symbol] = {
-                                        timestamp: new Date().toISOString(),
-                                        source: 'Yahoo Finance',
-                                        success: true
-                                    };
-                                    console.log(`✓ ${symbol}: $${price} (Yahoo)`);
-                                    successCount++;
-                                } else {
-                                    console.log(`✗ ${symbol}: No price in Yahoo response`);
-                                    priceMetadata[symbol] = {
-                                        timestamp: new Date().toISOString(),
-                                        source: 'Yahoo Finance',
-                                        success: false,
-                                        error: 'No price data'
-                                    };
-                                    failedSymbols.push(symbol);
-                                    failCount++;
-                                }
-                            } else {
-                                console.log(`✗ ${symbol}: Invalid Yahoo response structure`);
-                                priceMetadata[symbol] = {
-                                    timestamp: new Date().toISOString(),
-                                    source: 'Yahoo Finance',
-                                    success: false,
-                                    error: 'Invalid response'
-                                };
-                                failedSymbols.push(symbol);
-                                failCount++;
+                        // If failed, try alternative ticker formats
+                        if (!result.success) {
+                            console.log(`Primary failed for ${symbol}, trying alternatives...`);
+                            const altResult = await tryAlternativeFormats(symbol);
+                            if (altResult && altResult.success) {
+                                result = altResult;
+                                console.log(`✓ Found ${symbol} as ${altResult.alternativeSymbol}`);
                             }
-                        } else {
-                            console.log(`✗ ${symbol}: Yahoo HTTP ${yahooResponse.status}`);
+                        }
+                        
+                        // Store result
+                        if (result.success) {
+                            marketPrices[symbol] = result.price;
                             priceMetadata[symbol] = {
                                 timestamp: new Date().toISOString(),
-                                source: 'Yahoo Finance',
-                                success: false,
-                                error: `HTTP ${yahooResponse.status}`
+                                source: result.source + (result.alternativeSymbol ? ` (as ${result.alternativeSymbol})` : ''),
+                                success: true
                             };
-                            failedSymbols.push(symbol);
+                            successCount++;
+                        } else {
+                            priceMetadata[symbol] = {
+                                timestamp: new Date().toISOString(),
+                                source: result.source,
+                                success: false,
+                                error: result.error
+                            };
+                            errors.push(`${symbol}: ${result.error}`);
                             failCount++;
                         }
                         
-                        // Update display every 10 symbols
-                        if ((i + 1) % 10 === 0 || i === symbols.length - 1) {
+                        // Update display every 5 symbols
+                        if ((i + 1) % 5 === 0 || i === symbols.length - 1) {
                             renderPortfolio();
                         }
                         
-                        // Small delay to be nice to Yahoo (500ms)
+                        // Small delay to be nice to APIs
                         await new Promise(resolve => setTimeout(resolve, 500));
                         
                     } catch (err) {
                         console.error(`✗ ${symbol}: ${err.message}`);
-                        
-                        // Special handling for artifact restrictions
-                        if (err.message === 'ARTIFACT_NETWORK_RESTRICTED') {
-                            priceMetadata[symbol] = {
-                                timestamp: new Date().toISOString(),
-                                source: 'Network Blocked',
-                                success: false,
-                                error: 'Artifact restriction'
-                            };
-                            errors.push(`${symbol}: Network blocked by artifact restrictions`);
-                        } else {
-                            priceMetadata[symbol] = {
-                                timestamp: new Date().toISOString(),
-                                source: 'Error',
-                                success: false,
-                                error: err.message
-                            };
-                            errors.push(`${symbol}: ${err.message}`);
-                        }
-                        
-                        failedSymbols.push(symbol);
+                        priceMetadata[symbol] = {
+                            timestamp: new Date().toISOString(),
+                            source: 'Error',
+                            success: false,
+                            error: err.message
+                        };
+                        errors.push(`${symbol}: ${err.message}`);
                         failCount++;
                     }
-                }
-                
-                console.log(`\nYahoo Finance complete: ${successCount} success, ${failCount} failed`);
-                renderPortfolio();
-                
-                // Phase 2: Try alternative Yahoo endpoints for failed symbols
-                if (failedSymbols.length > 0) {
-                    console.log('\n=== PHASE 2: TRYING ALTERNATIVE TICKERS ===');
-                    console.log('Attempting alternative formats for:', failedSymbols);
-                    refreshBtn.textContent = '⏳ Trying alternatives...';
-                    
-                    const remainingFailed = [...failedSymbols];
-                    
-                    for (const symbol of [...failedSymbols]) {
-                        const position = portfolio.find(p => p.symbol === symbol);
-                        
-                        // Try common alternative formats for international stocks
-                        const alternatives = [];
-                        
-                        // If it has a dot, try without it
-                        if (symbol.includes('.')) {
-                            const base = symbol.split('.')[0];
-                            alternatives.push(base); // NESN.SW -> NESN
-                        }
-                        
-                        // If it doesn't have a dot, try common exchange suffixes
-                        if (!symbol.includes('.')) {
-                            alternatives.push(`${symbol}.PA`); // Paris
-                            alternatives.push(`${symbol}.L`);  // London
-                            alternatives.push(`${symbol}.DE`); // Germany
-                        }
-                        
-                        // Try alternatives
-                        for (const altSymbol of alternatives) {
-                            try {
-                                console.log(`Trying alternative ${altSymbol} for ${symbol}...`);
-                                
-                                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${altSymbol}`;
-                                const yahooResponse = await fetchWithProxy(yahooUrl);
-                                
-                                if (yahooResponse.ok) {
-                                    const yahooData = await yahooResponse.json();
-                                    if (yahooData.chart && yahooData.chart.result && yahooData.chart.result[0]) {
-                                        const result = yahooData.chart.result[0];
-                                        const meta = result.meta;
-                                        
-                                        if (meta && meta.regularMarketPrice) {
-                                            const price = meta.regularMarketPrice;
-                                            marketPrices[symbol] = price;
-                                            priceMetadata[symbol] = {
-                                                timestamp: new Date().toISOString(),
-                                                source: `Yahoo Finance (as ${altSymbol})`,
-                                                success: true
-                                            };
-                                            console.log(`✓ ${symbol} → ${altSymbol}: $${price}`);
-                                            successCount++;
-                                            failCount--;
-                                            
-                                            const idx = remainingFailed.indexOf(symbol);
-                                            if (idx >= 0) remainingFailed.splice(idx, 1);
-                                            
-                                            errors.push(`${symbol}: ✓ Found as ${altSymbol} - $${price}`);
-                                            break; // Found it, move to next symbol
-                                        }
-                                    }
-                                }
-                                
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                                
-                            } catch (err) {
-                                console.log(`Failed to try ${altSymbol}:`, err.message);
-                            }
-                        }
-                    }
-                    
-                    renderPortfolio();
-                    
-                    // Update failed list
-                    failedSymbols.length = 0;
-                    failedSymbols.push(...remainingFailed);
-                }
-                
-                // Phase 3: Alpha Vantage Fallback (for remaining failures)
-                if (failedSymbols.length > 0 && failedSymbols.length <= 5) {
-                    console.log('\n=== PHASE 3: ALPHA VANTAGE FALLBACK ===');
-                    console.log('Trying Alpha Vantage for remaining:', failedSymbols);
-                    refreshBtn.textContent = '⏳ Trying Alpha Vantage...';
-                    
-                    for (let i = 0; i < failedSymbols.length; i++) {
-                        const symbol = failedSymbols[i];
-                        
-                        try {
-                            console.log(`Trying Alpha Vantage for ${symbol}...`);
-                            
-                            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaVantageKey}`;
-                            const response = await fetch(url);
-                            
-                            if (response.ok) {
-                                const data = await response.json();
-                                
-                                if (data['Note']) {
-                                    console.log('⚠ Alpha Vantage rate limit hit');
-                                    errors.push(`${symbol}: Alpha Vantage rate limit reached`);
-                                    break;
-                                }
-                                
-                                const quote = data['Global Quote'];
-                                if (quote && quote['05. price']) {
-                                    const price = parseFloat(quote['05. price']);
-                                    marketPrices[symbol] = price;
-                                    priceMetadata[symbol] = {
-                                        timestamp: new Date().toISOString(),
-                                        source: 'Alpha Vantage',
-                                        success: true
-                                    };
-                                    console.log(`✓ ${symbol}: $${price} (Alpha Vantage)`);
-                                    successCount++;
-                                    failCount--;
-                                    errors.push(`${symbol}: ✓ Found via Alpha Vantage - $${price}`);
-                                } else {
-                                    console.log(`✗ ${symbol}: No data from Alpha Vantage`);
-                                    errors.push(`${symbol}: No data available from any source`);
-                                }
-                            }
-                            
-                            // Respect Alpha Vantage rate limit (12 seconds between calls)
-                            if (i < failedSymbols.length - 1) {
-                                await new Promise(resolve => setTimeout(resolve, 12000));
-                            }
-                            
-                        } catch (err) {
-                            console.error(`✗ ${symbol}: ${err.message}`);
-                            errors.push(`${symbol}: Error - ${err.message}`);
-                        }
-                    }
-                    
-                    renderPortfolio();
-                } else if (failedSymbols.length > 5) {
-                    console.log(`Too many failures (${failedSymbols.length}) to try Alpha Vantage fallback`);
-                    failedSymbols.forEach(symbol => {
-                        errors.push(`${symbol}: Not found in Yahoo Finance`);
-                    });
                 }
                 
                 console.log('\n=== FETCH COMPLETE ===');
                 console.log('Success:', successCount);
                 console.log('Failed:', failCount);
-                console.log('Market prices:', marketPrices);
                 
                 renderPortfolio();
                 
@@ -816,7 +701,7 @@
                 
                 // Auto-save snapshot after price update
                 if (successCount > 0) {
-                    savePortfolioSnapshot();
+                    await savePortfolioSnapshot();
                     msg += '\n\n📊 Portfolio snapshot saved to history!';
                 }
                 
