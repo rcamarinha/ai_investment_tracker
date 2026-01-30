@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Financial Advisor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #fff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header {
+            background: linear-gradient(90deg, #2563eb 0%, #7c3aed 100%);
+            padding: 30px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        .header p { color: #bfdbfe; font-size: 14px; }
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+        .portfolio-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .total-value { text-align: right; }
+        .total-value div:first-child { color: #94a3b8; font-size: 12px; }
+        .total-value div:last-child { color: #4ade80; font-size: 24px; font-weight: bold; }
+        .positions {
+            display: block;
+            margin-bottom: 20px;
+        }
+        .position {
+            background: #334155;
+            border: 1px solid #475569;
+            border-radius: 0;
+            padding: 12px 15px;
+            margin-bottom: 1px;
+            display: grid;
+            grid-template-columns: 100px 200px 70px 100px 100px 100px 100px 120px;
+            gap: 15px;
+            align-items: center;
+            font-size: 13px;
+        }
+        .position:first-child {
+            border-radius: 10px 10px 0 0;
+        }
+        .position:last-child {
+            border-radius: 0 0 10px 10px;
+            margin-bottom: 0;
+        }
+        .position-header-row {
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 10px 10px 0 0;
+            padding: 12px 15px;
+            display: grid;
+            grid-template-columns: 100px 200px 70px 100px 100px 100px 100px 120px;
+            gap: 15px;
+            align-items: center;
+            font-size: 11px;
+            font-weight: bold;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+        .position-symbol { font-size: 15px; font-weight: bold; color: #fff; }
+        .position-details { color: #cbd5e1; }
+        .position-value { color: #60a5fa; font-weight: bold; }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn-add { background: #2563eb; color: white; }
+        .btn-analyze { 
+            background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%);
+            color: white;
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .analysis-section { margin-top: 20px; }
+        .analysis-card {
+            background: #334155;
+            border: 1px solid #475569;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .analysis-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .analysis-content { color: #cbd5e1; line-height: 1.6; }
+        .idea-item {
+            background: #475569;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .idea-title { font-weight: bold; margin-bottom: 8px; }
+        .idea-desc { color: #cbd5e1; font-size: 14px; }
+        .disclaimer {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            color: #fcd34d;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-top: 15px;
+        }
+        .loading { text-align: center; padding: 40px; color: #94a3b8; }
+        .empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
+        @media (max-width: 768px) {
+            .positions { grid-template-columns: 1fr; }
+            .portfolio-header { flex-direction: column; align-items: flex-start; }
+            .total-value { text-align: left; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📈 AI Financial Advisor</h1>
+            <p>Market analysis and personalized portfolio insights</p>
+        </div>
+        
+        <!-- Artifact Network Warning (shown only in artifacts) -->
+        <div id="artifactWarning" style="display: none; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+            <div style="display: flex; align-items: start; gap: 10px;">
+                <div style="font-size: 24px;">⚠️</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: bold; color: #92400e; margin-bottom: 5px;">Network Restrictions Detected</div>
+                    <div style="color: #78350f; font-size: 14px; margin-bottom: 10px;">
+                        Claude artifacts cannot fetch live market prices due to network security restrictions.
+                    </div>
+                    <div style="color: #78350f; font-size: 13px; background: white; padding: 10px; border-radius: 5px; line-height: 1.6;">
+                        <strong>💡 Solution: Download & Open Locally</strong><br>
+                        → Right-click anywhere on this page<br>
+                        → Select "Save As" → Save the HTML file<br>
+                        → Open the saved file in your browser<br>
+                        ✓ Full price fetching ✓ Works offline ✓ Cloud sync when back in Claude
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="portfolio-header">
+                <h2>💼 Your Portfolio</h2>
+                <div class="total-value">
+                    <div>Total Value</div>
+                    <div id="totalValue">$0</div>
+                </div>
+            </div>
+
+            <div class="positions" id="positions"></div>
+
+            <div>
+                <button class="btn btn-add" onclick="showImportDialog()">📋 Import Portfolio from Spreadsheet</button>
+                <button class="btn btn-add" onclick="fetchMarketPrices()" id="refreshBtn" style="background: #059669;">🔄 Update Prices</button>
+                <button class="btn btn-add" onclick="savePortfolioSnapshot()" style="background: #f59e0b;">💾 Save Snapshot</button>
+                <button class="btn btn-analyze" onclick="analyzeMarkets()" id="analyzeBtn">Get AI Analysis</button>
+            </div>
+        </div>
+
+        <div id="importDialog" style="display: none;">
+            <div class="card">
+                <h2 style="margin-bottom: 15px;">📋 Import Positions</h2>
+                <p style="color: #cbd5e1; margin-bottom: 15px;">
+                    Paste your positions directly from your spreadsheet - including all columns. The app will automatically extract the Ticker, Units, and Avg Unit Price.
+                </p>
+                <p style="color: #94a3b8; font-size: 13px; margin-bottom: 10px;">
+                    ✅ Just copy your entire spreadsheet rows and paste them here!<br>
+                    ✅ Works with Excel, Google Sheets, Numbers<br>
+                    ✅ Header row is automatically detected and skipped
+                </p>
+                <textarea id="importText" placeholder="Paste your spreadsheet data here (with or without headers)..." style="width: 100%; height: 200px; padding: 15px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 12px; margin-bottom: 15px;"></textarea>
+                <div>
+                    <button class="btn btn-analyze" onclick="importPositions()">Import Positions</button>
+                    <button class="btn btn-add" onclick="closeImportDialog()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="analysisSection"></div>
+        
+        <div id="historySection" style="display: none;">
+            <div class="card">
+                <h2 style="margin-bottom: 15px;">📈 Portfolio History</h2>
+                <div id="historyChart" style="margin-bottom: 20px;"></div>
+                <div id="historyLog"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('=== SCRIPT STARTING TO LOAD ===');
+        console.log('Script tag found and executing');
+        
+        let portfolio = [];
+        let marketPrices = {}; // Store current market prices
+        let priceMetadata = {}; // Store {timestamp, source, success} for each symbol
+        let pricesLoading = false;
+        let alphaVantageKey = 'ABF4HZSG0I50VGLP'; // Pre-configured API key
+        let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
+        
+        // CORS proxy to bypass browser restrictions when opening file directly
+        const CORS_PROXY = 'https://corsproxy.io/?';
+        
+        // Check if we're in a Claude artifact (restricted network)
+        const isArtifact = window.location.hostname.includes('claude.ai') && 
+                          window.location.pathname.includes('artifacts');
+        
+        // Helper function to fetch with CORS proxy fallback
+        async function fetchWithProxy(url, useProxy = false) {
+            // In artifacts, always try direct first, then inform user if it fails
+            if (isArtifact && !useProxy) {
+                try {
+                    const response = await fetch(url);
+                    return response;
+                } catch (err) {
+                    console.error('Artifact network restriction:', err);
+                    throw new Error('ARTIFACT_NETWORK_RESTRICTED');
+                }
+            }
+            
+            try {
+                const fetchUrl = useProxy ? CORS_PROXY + encodeURIComponent(url) : url;
+                const response = await fetch(fetchUrl);
+                return response;
+            } catch (err) {
+                // If direct fetch fails due to CORS, try with proxy
+                if (!useProxy) {
+                    console.log('Direct fetch failed, trying with CORS proxy...');
+                    return fetchWithProxy(url, true);
+                }
+                throw err;
+            }
+        }
+        
+        console.log('Variables initialized');
+
+        function formatCurrency(num) {
+            return '$' + num.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        }
+
+        function formatPercent(num) {
+            const sign = num >= 0 ? '+' : '';
+            return sign + num.toFixed(2) + '%';
+        }
+
+        async function savePortfolioSnapshot() {
+            if (portfolio.length === 0) {
+                alert('❌ No portfolio to save. Import your portfolio first.');
+                return;
+            }
+            
+            let totalInvested = 0;
+            let totalMarketValue = 0;
+            
+            portfolio.forEach(p => {
+                const invested = p.shares * p.avgPrice;
+                totalInvested += invested;
+                
+                const currentPrice = marketPrices[p.symbol];
+                if (currentPrice) {
+                    totalMarketValue += p.shares * currentPrice;
+                } else {
+                    totalMarketValue += invested;
+                }
+            });
+            
+            const snapshot = {
+                timestamp: new Date().toISOString(),
+                totalInvested: totalInvested,
+                totalMarketValue: totalMarketValue,
+                positionCount: portfolio.length,
+                pricesAvailable: Object.keys(marketPrices).length
+            };
+            
+            portfolioHistory.push(snapshot);
+            
+            // Save to localStorage (always as fallback)
+            localStorage.setItem('portfolioHistory', JSON.stringify(portfolioHistory));
+            
+            let cloudSaved = false;
+            
+            // Save to Claude cloud storage (if available)
+            if (typeof window.storage !== 'undefined') {
+                try {
+                    // Save individual snapshot with timestamp as key
+                    const snapshotKey = `snapshot:${Date.now()}`;
+                    await window.storage.set(snapshotKey, JSON.stringify(snapshot), false);
+                    console.log('✓ Snapshot saved to cloud:', snapshotKey);
+                    
+                    // Save current portfolio state
+                    await window.storage.set('current-portfolio', JSON.stringify({
+                        portfolio: portfolio,
+                        marketPrices: marketPrices,
+                        priceMetadata: priceMetadata,
+                        lastUpdated: new Date().toISOString()
+                    }), false);
+                    console.log('✓ Portfolio saved to cloud');
+                    
+                    cloudSaved = true;
+                } catch (err) {
+                    console.warn('Cloud storage failed, saved locally only:', err);
+                }
+            }
+            
+            console.log('Portfolio snapshot saved:', snapshot);
+            updateHistoryDisplay();
+            
+            const gainLoss = totalMarketValue - totalInvested;
+            const gainLossPct = (gainLoss / totalInvested) * 100;
+            alert(`✓ Portfolio snapshot saved!\n\nInvested: ${formatCurrency(totalInvested)}\nMarket Value: ${formatCurrency(totalMarketValue)}\nGain/Loss: ${formatCurrency(gainLoss)} (${formatPercent(gainLossPct)})\n\nTotal snapshots: ${portfolioHistory.length}\n\n${cloudSaved ? '☁️ Synced to cloud storage' : '💾 Saved to browser only'}`);
+        }
+
+        function updateHistoryDisplay() {
+            try {
+                if (portfolioHistory.length === 0) {
+                    document.getElementById('historySection').style.display = 'none';
+                    return;
+                }
+                
+                console.log('Updating history display with', portfolioHistory.length, 'snapshots');
+                
+                document.getElementById('historySection').style.display = 'block';
+                
+                // Update chart
+                updateChart();
+                
+                // Update log
+                const historyLog = document.getElementById('historyLog');
+                if (!historyLog) {
+                    console.error('History log element not found');
+                    return;
+                }
+                
+                historyLog.innerHTML = `
+                    <h3 style="margin-bottom: 10px; color: #cbd5e1;">Snapshot Log</h3>
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        ${portfolioHistory.slice().reverse().map((snapshot, idx) => {
+                            const date = new Date(snapshot.timestamp);
+                            const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
+                            const gainLossPct = (gainLoss / snapshot.totalInvested) * 100;
+                            const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
+                            
+                            return `
+                                <div style="background: #334155; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid ${color};">
+                                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
+                                        <div style="font-size: 13px; color: #94a3b8;">
+                                            ${date.toLocaleDateString()} ${date.toLocaleTimeString()}
+                                        </div>
+                                        <div style="font-size: 12px; color: #94a3b8;">
+                                            ${snapshot.positionCount} positions • ${snapshot.pricesAvailable} with prices
+                                        </div>
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
+                                        <div>
+                                            <div style="color: #94a3b8; font-size: 11px;">Invested</div>
+                                            <div style="color: #cbd5e1;">${formatCurrency(snapshot.totalInvested)}</div>
+                                        </div>
+                                        <div>
+                                            <div style="color: #94a3b8; font-size: 11px;">Market Value</div>
+                                            <div style="color: #cbd5e1;">${formatCurrency(snapshot.totalMarketValue)}</div>
+                                        </div>
+                                        <div>
+                                            <div style="color: #94a3b8; font-size: 11px;">Gain/Loss</div>
+                                            <div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss)} (${formatPercent(gainLossPct)})</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    <button class="btn btn-add" onclick="clearHistory()" style="margin-top: 15px; background: #dc2626;">🗑️ Clear History</button>
+                `;
+                
+                console.log('History display updated successfully');
+            } catch (err) {
+                console.error('Error updating history display:', err);
+                console.error('Error stack:', err.stack);
+            }
+        }
+
+        let historyChart = null;
+
+        function updateChart() {
+            if (portfolioHistory.length === 0) return;
+            
+            try {
+                const chartDiv = document.getElementById('historyChart');
+                if (!chartDiv) {
+                    console.error('Chart div not found');
+                    return;
+                }
+                
+                console.log('Creating CSS-based chart');
+                
+                // Find min and max values for scaling
+                const allValues = portfolioHistory.flatMap(s => [s.totalInvested, s.totalMarketValue]);
+                const minValue = Math.min(...allValues) * 0.95;
+                const maxValue = Math.max(...allValues) * 1.05;
+                const range = maxValue - minValue;
+                
+                // Create simple bar chart
+                let chartHTML = '<div style="background: #334155; padding: 20px; border-radius: 10px;">';
+                chartHTML += '<div style="display: flex; justify-content: space-around; gap: 8px; align-items: flex-end; height: 200px;">';
+                
+                portfolioHistory.forEach((snapshot, idx) => {
+                    const date = new Date(snapshot.timestamp);
+                    const label = `${date.getMonth()+1}/${date.getDate()}`;
+                    const marketHeight = ((snapshot.totalMarketValue - minValue) / range) * 180;
+                    const investedHeight = ((snapshot.totalInvested - minValue) / range) * 180;
+                    const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
+                    const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
+                    
+                    chartHTML += `
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 40px;">
+                            <div style="position: relative; width: 100%; height: 180px; display: flex; align-items: flex-end; justify-content: center; gap: 2px;">
+                                <div style="width: 45%; background: #60a5fa; height: ${investedHeight}px; border-radius: 3px 3px 0 0; position: relative;" title="Invested: ${formatCurrency(snapshot.totalInvested)}"></div>
+                                <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0; position: relative;" title="Market: ${formatCurrency(snapshot.totalMarketValue)}"></div>
+                            </div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px; text-align: center;">${label}</div>
+                        </div>
+                    `;
+                });
+                
+                chartHTML += '</div>';
+                
+                // Legend
+                chartHTML += `
+                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 15px; font-size: 12px;">
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <div style="width: 12px; height: 12px; background: #60a5fa; border-radius: 2px;"></div>
+                            <span style="color: #cbd5e1;">Invested</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <div style="width: 12px; height: 12px; background: #4ade80; border-radius: 2px;"></div>
+                            <span style="color: #cbd5e1;">Market Value (Profit)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <div style="width: 12px; height: 12px; background: #f87171; border-radius: 2px;"></div>
+                            <span style="color: #cbd5e1;">Market Value (Loss)</span>
+                        </div>
+                    </div>
+                `;
+                
+                chartHTML += '</div>';
+                
+                chartDiv.innerHTML = chartHTML;
+                console.log('Chart created successfully');
+            } catch (err) {
+                console.error('Error creating chart:', err);
+                console.error('Error stack:', err.stack);
+            }
+        }
+
+        function clearHistory() {
+            if (confirm('Are you sure you want to clear all portfolio history?\n\nThis cannot be undone.')) {
+                portfolioHistory = [];
+                localStorage.removeItem('portfolioHistory');
+                document.getElementById('historySection').style.display = 'none';
+                alert('✓ History cleared');
+            }
+        }
+
+        async function fetchMarketPrices() {
+            if (portfolio.length === 0) {
+                alert('❌ No positions in portfolio. Import your portfolio first.');
+                return;
+            }
+            
+            // Check for artifact network restrictions
+            if (isArtifact) {
+                const userConfirm = confirm(
+                    '⚠️ Network Restrictions in Claude Artifacts\n\n' +
+                    'Claude artifacts have limited network access and may not be able to fetch live prices.\n\n' +
+                    'SOLUTIONS:\n' +
+                    '1. Download this HTML file and open it locally (RECOMMENDED)\n' +
+                    '2. Continue anyway (may not work)\n\n' +
+                    'Click OK to try anyway, or Cancel to stop.'
+                );
+                
+                if (!userConfirm) {
+                    return;
+                }
+            }
+            
+            const refreshBtn = document.getElementById('refreshBtn');
+            const originalText = refreshBtn.textContent;
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '⏳ Fetching...';
+            
+            pricesLoading = true;
+            const symbols = [...new Set(portfolio.map(p => p.symbol))]; // Get unique symbols
+            
+            console.log('=== FETCH PRICES DEBUG (Yahoo Finance Primary) ===');
+            console.log('Fetching market prices for:', symbols);
+            console.log('Total unique symbols:', symbols.length);
+            
+            let successCount = 0;
+            let failCount = 0;
+            const errors = [];
+            const failedSymbols = []; // Track failed symbols for fallback
+            
+            try {
+                // Phase 1: Yahoo Finance (Primary Source - Fast & Unlimited)
+                console.log('\n=== PHASE 1: YAHOO FINANCE (PRIMARY) ===');
+                refreshBtn.textContent = '⏳ Fetching from Yahoo...';
+                
+                // Process all symbols with Yahoo Finance
+                for (let i = 0; i < symbols.length; i++) {
+                    const symbol = symbols[i];
+                    
+                    try {
+                        console.log(`[${i + 1}/${symbols.length}] Trying Yahoo Finance for ${symbol}...`);
+                        refreshBtn.textContent = `⏳ ${i + 1}/${symbols.length}`;
+                        
+                        // Yahoo Finance quote API
+                        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`;
+                        const yahooResponse = await fetchWithProxy(yahooUrl);
+                        
+                        if (yahooResponse.ok) {
+                            const yahooData = await yahooResponse.json();
+                            
+                            if (yahooData.chart && yahooData.chart.result && yahooData.chart.result[0]) {
+                                const result = yahooData.chart.result[0];
+                                const meta = result.meta;
+                                
+                                if (meta && meta.regularMarketPrice) {
+                                    const price = meta.regularMarketPrice;
+                                    marketPrices[symbol] = price;
+                                    priceMetadata[symbol] = {
+                                        timestamp: new Date().toISOString(),
+                                        source: 'Yahoo Finance',
+                                        success: true
+                                    };
+                                    console.log(`✓ ${symbol}: $${price} (Yahoo)`);
+                                    successCount++;
+                                } else {
+                                    console.log(`✗ ${symbol}: No price in Yahoo response`);
+                                    priceMetadata[symbol] = {
+                                        timestamp: new Date().toISOString(),
+                                        source: 'Yahoo Finance',
+                                        success: false,
+                                        error: 'No price data'
+                                    };
+                                    failedSymbols.push(symbol);
+                                    failCount++;
+                                }
+                            } else {
+                                console.log(`✗ ${symbol}: Invalid Yahoo response structure`);
+                                priceMetadata[symbol] = {
+                                    timestamp: new Date().toISOString(),
+                                    source: 'Yahoo Finance',
+                                    success: false,
+                                    error: 'Invalid response'
+                                };
+                                failedSymbols.push(symbol);
+                                failCount++;
+                            }
+                        } else {
+                            console.log(`✗ ${symbol}: Yahoo HTTP ${yahooResponse.status}`);
+                            priceMetadata[symbol] = {
+                                timestamp: new Date().toISOString(),
+                                source: 'Yahoo Finance',
+                                success: false,
+                                error: `HTTP ${yahooResponse.status}`
+                            };
+                            failedSymbols.push(symbol);
+                            failCount++;
+                        }
+                        
+                        // Update display every 10 symbols
+                        if ((i + 1) % 10 === 0 || i === symbols.length - 1) {
+                            renderPortfolio();
+                        }
+                        
+                        // Small delay to be nice to Yahoo (500ms)
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        
+                    } catch (err) {
+                        console.error(`✗ ${symbol}: ${err.message}`);
+                        
+                        // Special handling for artifact restrictions
+                        if (err.message === 'ARTIFACT_NETWORK_RESTRICTED') {
+                            priceMetadata[symbol] = {
+                                timestamp: new Date().toISOString(),
+                                source: 'Network Blocked',
+                                success: false,
+                                error: 'Artifact restriction'
+                            };
+                            errors.push(`${symbol}: Network blocked by artifact restrictions`);
+                        } else {
+                            priceMetadata[symbol] = {
+                                timestamp: new Date().toISOString(),
+                                source: 'Error',
+                                success: false,
+                                error: err.message
+                            };
+                            errors.push(`${symbol}: ${err.message}`);
+                        }
+                        
+                        failedSymbols.push(symbol);
+                        failCount++;
+                    }
+                }
+                
+                console.log(`\nYahoo Finance complete: ${successCount} success, ${failCount} failed`);
+                renderPortfolio();
+                
+                // Phase 2: Try alternative Yahoo endpoints for failed symbols
+                if (failedSymbols.length > 0) {
+                    console.log('\n=== PHASE 2: TRYING ALTERNATIVE TICKERS ===');
+                    console.log('Attempting alternative formats for:', failedSymbols);
+                    refreshBtn.textContent = '⏳ Trying alternatives...';
+                    
+                    const remainingFailed = [...failedSymbols];
+                    
+                    for (const symbol of [...failedSymbols]) {
+                        const position = portfolio.find(p => p.symbol === symbol);
+                        
+                        // Try common alternative formats for international stocks
+                        const alternatives = [];
+                        
+                        // If it has a dot, try without it
+                        if (symbol.includes('.')) {
+                            const base = symbol.split('.')[0];
+                            alternatives.push(base); // NESN.SW -> NESN
+                        }
+                        
+                        // If it doesn't have a dot, try common exchange suffixes
+                        if (!symbol.includes('.')) {
+                            alternatives.push(`${symbol}.PA`); // Paris
+                            alternatives.push(`${symbol}.L`);  // London
+                            alternatives.push(`${symbol}.DE`); // Germany
+                        }
+                        
+                        // Try alternatives
+                        for (const altSymbol of alternatives) {
+                            try {
+                                console.log(`Trying alternative ${altSymbol} for ${symbol}...`);
+                                
+                                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${altSymbol}`;
+                                const yahooResponse = await fetchWithProxy(yahooUrl);
+                                
+                                if (yahooResponse.ok) {
+                                    const yahooData = await yahooResponse.json();
+                                    if (yahooData.chart && yahooData.chart.result && yahooData.chart.result[0]) {
+                                        const result = yahooData.chart.result[0];
+                                        const meta = result.meta;
+                                        
+                                        if (meta && meta.regularMarketPrice) {
+                                            const price = meta.regularMarketPrice;
+                                            marketPrices[symbol] = price;
+                                            priceMetadata[symbol] = {
+                                                timestamp: new Date().toISOString(),
+                                                source: `Yahoo Finance (as ${altSymbol})`,
+                                                success: true
+                                            };
+                                            console.log(`✓ ${symbol} → ${altSymbol}: $${price}`);
+                                            successCount++;
+                                            failCount--;
+                                            
+                                            const idx = remainingFailed.indexOf(symbol);
+                                            if (idx >= 0) remainingFailed.splice(idx, 1);
+                                            
+                                            errors.push(`${symbol}: ✓ Found as ${altSymbol} - $${price}`);
+                                            break; // Found it, move to next symbol
+                                        }
+                                    }
+                                }
+                                
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                
+                            } catch (err) {
+                                console.log(`Failed to try ${altSymbol}:`, err.message);
+                            }
+                        }
+                    }
+                    
+                    renderPortfolio();
+                    
+                    // Update failed list
+                    failedSymbols.length = 0;
+                    failedSymbols.push(...remainingFailed);
+                }
+                
+                // Phase 3: Alpha Vantage Fallback (for remaining failures)
+                if (failedSymbols.length > 0 && failedSymbols.length <= 5) {
+                    console.log('\n=== PHASE 3: ALPHA VANTAGE FALLBACK ===');
+                    console.log('Trying Alpha Vantage for remaining:', failedSymbols);
+                    refreshBtn.textContent = '⏳ Trying Alpha Vantage...';
+                    
+                    for (let i = 0; i < failedSymbols.length; i++) {
+                        const symbol = failedSymbols[i];
+                        
+                        try {
+                            console.log(`Trying Alpha Vantage for ${symbol}...`);
+                            
+                            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaVantageKey}`;
+                            const response = await fetch(url);
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                
+                                if (data['Note']) {
+                                    console.log('⚠ Alpha Vantage rate limit hit');
+                                    errors.push(`${symbol}: Alpha Vantage rate limit reached`);
+                                    break;
+                                }
+                                
+                                const quote = data['Global Quote'];
+                                if (quote && quote['05. price']) {
+                                    const price = parseFloat(quote['05. price']);
+                                    marketPrices[symbol] = price;
+                                    priceMetadata[symbol] = {
+                                        timestamp: new Date().toISOString(),
+                                        source: 'Alpha Vantage',
+                                        success: true
+                                    };
+                                    console.log(`✓ ${symbol}: $${price} (Alpha Vantage)`);
+                                    successCount++;
+                                    failCount--;
+                                    errors.push(`${symbol}: ✓ Found via Alpha Vantage - $${price}`);
+                                } else {
+                                    console.log(`✗ ${symbol}: No data from Alpha Vantage`);
+                                    errors.push(`${symbol}: No data available from any source`);
+                                }
+                            }
+                            
+                            // Respect Alpha Vantage rate limit (12 seconds between calls)
+                            if (i < failedSymbols.length - 1) {
+                                await new Promise(resolve => setTimeout(resolve, 12000));
+                            }
+                            
+                        } catch (err) {
+                            console.error(`✗ ${symbol}: ${err.message}`);
+                            errors.push(`${symbol}: Error - ${err.message}`);
+                        }
+                    }
+                    
+                    renderPortfolio();
+                } else if (failedSymbols.length > 5) {
+                    console.log(`Too many failures (${failedSymbols.length}) to try Alpha Vantage fallback`);
+                    failedSymbols.forEach(symbol => {
+                        errors.push(`${symbol}: Not found in Yahoo Finance`);
+                    });
+                }
+                
+                console.log('\n=== FETCH COMPLETE ===');
+                console.log('Success:', successCount);
+                console.log('Failed:', failCount);
+                console.log('Market prices:', marketPrices);
+                
+                renderPortfolio();
+                
+                let msg = `✓ Price update complete!\n\n`;
+                msg += `✓ Successfully fetched: ${successCount} symbols\n`;
+                if (failCount > 0) {
+                    msg += `✗ Failed: ${failCount} symbols\n\n`;
+                    msg += `Failed symbols:\n`;
+                    errors.forEach(err => {
+                        msg += `• ${err}\n`;
+                    });
+                }
+                
+                // Auto-save snapshot after price update
+                if (successCount > 0) {
+                    savePortfolioSnapshot();
+                    msg += '\n\n📊 Portfolio snapshot saved to history!';
+                }
+                
+                alert(msg);
+                
+            } catch (err) {
+                console.error('=== FETCH PRICES ERROR ===');
+                console.error('Error:', err);
+                alert(`❌ Error fetching prices: ${err.message}\n\nCheck console (F12) for details.`);
+            } finally {
+                pricesLoading = false;
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = originalText;
+            }
+        }
+
+        function renderPortfolio() {
+            const positionsDiv = document.getElementById('positions');
+            
+            let totalInvested = 0;
+            let totalMarketValue = 0;
+            let positionsWithPrices = 0;
+            
+            portfolio.forEach(p => {
+                const invested = p.shares * p.avgPrice;
+                totalInvested += invested;
+                
+                const currentPrice = marketPrices[p.symbol];
+                if (currentPrice) {
+                    totalMarketValue += p.shares * currentPrice;
+                    positionsWithPrices++;
+                } else {
+                    totalMarketValue += invested; // Use cost basis if no market price
+                }
+            });
+            
+            console.log('=== RENDER PORTFOLIO DEBUG ===');
+            console.log('Rendering portfolio:', portfolio.length, 'positions');
+            console.log('Positions with live prices:', positionsWithPrices);
+            console.log('Market prices available:', Object.keys(marketPrices));
+            console.log('Total invested:', totalInvested);
+            console.log('Total market value:', totalMarketValue);
+            console.log('Using cost basis for', portfolio.length - positionsWithPrices, 'positions without prices');
+            
+            // Update header with invested vs market value
+            const portfolioHeader = document.querySelector('.portfolio-header');
+            const totalGainLoss = totalMarketValue - totalInvested;
+            const totalGainLossPct = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
+            const gainLossColor = totalGainLoss >= 0 ? '#4ade80' : '#f87171';
+            
+            portfolioHeader.innerHTML = `
+                <div>
+                    <h2 style="margin-bottom: 5px;">💼 Your Portfolio</h2>
+                    <div style="font-size: 13px; color: #94a3b8;">
+                        ${portfolio.length} position${portfolio.length !== 1 ? 's' : ''}
+                        ${Object.keys(marketPrices).length > 0 ? ` • ${positionsWithPrices} with live prices` : ' • Click "Update Prices" for live market data'}
+                    </div>
+                </div>
+                <div class="total-value">
+                    <div style="color: #94a3b8; font-size: 12px;">Total Invested</div>
+                    <div style="color: #cbd5e1; font-size: 16px; margin-bottom: 5px;">${formatCurrency(totalInvested)}</div>
+                    <div style="color: #94a3b8; font-size: 12px;">Market Value</div>
+                    <div style="color: ${gainLossColor}; font-size: 24px; font-weight: bold;">${formatCurrency(totalMarketValue)}</div>
+                    ${totalInvested > 0 ? `
+                        <div style="color: ${gainLossColor}; font-size: 14px; margin-top: 5px;">
+                            ${formatCurrency(totalGainLoss)} (${formatPercent(totalGainLossPct)})
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            if (portfolio.length === 0) {
+                positionsDiv.innerHTML = '<div style="text-align: center; color: #64748b; padding: 40px;">No positions yet. Import your portfolio from spreadsheet to get started.</div>';
+                return;
+            }
+            
+            // Add header row
+            let html = `
+                <div class="position-header-row">
+                    <div>Symbol</div>
+                    <div>Asset Name</div>
+                    <div>Shares</div>
+                    <div>Avg Price</div>
+                    <div>Current Price</div>
+                    <div>Invested</div>
+                    <div>Market Value</div>
+                    <div>Gain/Loss</div>
+                </div>
+            `;
+            
+            html += portfolio.map((pos, idx) => {
+                const invested = pos.shares * pos.avgPrice;
+                const currentPrice = marketPrices[pos.symbol];
+                const hasPrice = currentPrice !== undefined;
+                const marketValue = hasPrice ? pos.shares * currentPrice : invested;
+                const gainLoss = marketValue - invested;
+                const gainLossPct = (gainLoss / invested) * 100;
+                const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
+                
+                // Get price metadata
+                const metadata = priceMetadata[pos.symbol];
+                let statusFlag = '⏳';
+                let statusColor = '#f59e0b';
+                let statusText = 'Pending';
+                let timestampText = '';
+                
+                if (metadata) {
+                    if (metadata.success) {
+                        statusFlag = '✓';
+                        statusColor = '#4ade80';
+                        statusText = metadata.source;
+                        
+                        // Format timestamp
+                        const date = new Date(metadata.timestamp);
+                        const now = new Date();
+                        const diffMs = now - date;
+                        const diffMins = Math.floor(diffMs / 60000);
+                        
+                        if (diffMins < 1) {
+                            timestampText = 'Just now';
+                        } else if (diffMins < 60) {
+                            timestampText = `${diffMins}m ago`;
+                        } else {
+                            const diffHours = Math.floor(diffMins / 60);
+                            if (diffHours < 24) {
+                                timestampText = `${diffHours}h ago`;
+                            } else {
+                                timestampText = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                            }
+                        }
+                    } else {
+                        statusFlag = '✗';
+                        statusColor = '#f87171';
+                        statusText = metadata.error || 'Failed';
+                        timestampText = 'Failed to fetch';
+                    }
+                }
+                
+                return `
+                <div class="position">
+                    <div class="position-symbol">
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <span style="color: ${statusColor}; font-size: 14px;" title="${statusText}">${statusFlag}</span>
+                            <span>${pos.symbol}</span>
+                        </div>
+                        ${timestampText ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">${timestampText}</div>` : ''}
+                    </div>
+                    <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${pos.name || pos.symbol}">
+                        ${pos.name ? (pos.name.length > 30 ? pos.name.substring(0, 27) + '...' : pos.name) : pos.symbol}
+                    </div>
+                    <div class="position-details">${pos.shares}</div>
+                    <div class="position-details">${formatCurrency(pos.avgPrice)}</div>
+                    <div class="position-details" style="color: ${hasPrice ? '#60a5fa' : '#f59e0b'};">
+                        ${hasPrice ? formatCurrency(currentPrice) : '⏳ Pending'}
+                    </div>
+                    <div class="position-details">${formatCurrency(invested)}</div>
+                    <div class="position-value" style="color: ${color};">
+                        ${formatCurrency(marketValue)}
+                    </div>
+                    <div style="color: ${color}; font-weight: bold;">
+                        ${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss)}
+                        <span style="font-size: 11px; margin-left: 4px;">(${formatPercent(gainLossPct)})</span>
+                    </div>
+                </div>
+            `;
+            }).join('');
+            
+            positionsDiv.innerHTML = html;
+            
+            console.log('Portfolio rendered successfully');
+        }
+
+        console.log('=== DEFINING showImportDialog FUNCTION ===');
+
+        function showImportDialog() {
+            try {
+                console.log('=== IMPORT DIALOG OPENED ===');
+                const dialog = document.getElementById('importDialog');
+                const textarea = document.getElementById('importText');
+                
+                if (!dialog) {
+                    throw new Error('Import dialog element not found');
+                }
+                if (!textarea) {
+                    throw new Error('Import textarea element not found');
+                }
+                
+                dialog.style.display = 'block';
+                textarea.focus();
+                console.log('Import dialog displayed successfully');
+            } catch (err) {
+                console.error('=== SHOW IMPORT DIALOG ERROR ===');
+                console.error('Error:', err.message);
+                console.error('Stack:', err.stack);
+                alert('Error opening import dialog: ' + err.message + '\n\nPlease refresh the page and try again.');
+            }
+        }
+
+        function closeImportDialog() {
+            try {
+                console.log('=== IMPORT DIALOG CLOSED ===');
+                const dialog = document.getElementById('importDialog');
+                const textarea = document.getElementById('importText');
+                
+                if (dialog) {
+                    dialog.style.display = 'none';
+                }
+                if (textarea) {
+                    textarea.value = '';
+                }
+                console.log('Import dialog closed, current portfolio:', portfolio.length, 'positions');
+            } catch (err) {
+                console.error('=== CLOSE IMPORT DIALOG ERROR ===');
+                console.error('Error:', err.message);
+                console.error('Stack:', err.stack);
+            }
+        }
+
+        function importPositions() {
+            console.log('=== IMPORT POSITIONS STARTED ===');
+            
+            const text = document.getElementById('importText').value.trim();
+            if (!text) {
+                console.error('No text provided for import');
+                alert('Please paste your positions data');
+                return;
+            }
+
+            console.log('Import text length:', text.length, 'characters');
+
+            const lines = text.split('\n');
+            const newPositions = [];
+            const errors = [];
+            const debugInfo = [];
+            let isFirstLine = true;
+
+            console.log('=== IMPORT DEBUG ===');
+            console.log('Total lines:', lines.length);
+
+            try {
+                lines.forEach((line, idx) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) {
+                        console.log(`Line ${idx + 1}: Empty line (skipped)`);
+                        return;
+                    }
+
+                    // Split by tab (most common in spreadsheets)
+                    const parts = trimmed.split('\t');
+                    
+                    console.log(`Line ${idx + 1}: ${parts.length} columns detected`);
+                    console.log(`  Full line: "${trimmed.substring(0, 100)}..."`);
+                    
+                    // Skip header row if it contains "Asset" or "Ticker"
+                    if (isFirstLine && (trimmed.includes('Asset') || trimmed.includes('Ticker'))) {
+                        isFirstLine = false;
+                        console.log(`  -> Header row detected and skipped`);
+                        debugInfo.push(`Line ${idx + 1}: Header (skipped)`);
+                        return;
+                    }
+                    isFirstLine = false;
+
+                    // Handle different formats:
+                    // Format 1: Full spreadsheet with columns: Asset, Ticker, Platform, Type, Units, Total Investment, Active Investment, Avg Unit Price, Last Movement
+                    // Format 2: Simple format: Ticker, Units, Price
+                    
+                    if (parts.length >= 8) {
+                        // Full format from user's spreadsheet
+                        const assetName = parts[0] ? parts[0].trim() : '';
+                        const symbol = parts[1] ? parts[1].trim().toUpperCase() : '';
+                        const sharesRaw = parts[4] ? parts[4].trim() : '';
+                        const shares = parseFloat(sharesRaw);
+                        const priceRaw = parts[7] ? parts[7].trim() : '';
+                        const avgPrice = parseFloat(priceRaw.replace(/[$,]/g, ''));
+
+                        console.log(`  Parsed: Name="${assetName}", Symbol="${symbol}", Shares="${sharesRaw}" (${shares}), Price="${priceRaw}" (${avgPrice})`);
+
+                        if (symbol && !isNaN(shares) && !isNaN(avgPrice) && shares > 0 && avgPrice > 0) {
+                            newPositions.push({ name: assetName, symbol, shares, avgPrice });
+                            console.log(`  ✓ SUCCESS: Added ${symbol} (${assetName})`);
+                            debugInfo.push(`Line ${idx + 1}: ✓ ${symbol} - ${shares} @ $${avgPrice}`);
+                        } else {
+                            const reason = [];
+                            if (!symbol) reason.push('missing ticker');
+                            if (isNaN(shares) || shares <= 0) reason.push(`invalid shares (${sharesRaw})`);
+                            if (isNaN(avgPrice) || avgPrice <= 0) reason.push(`invalid price (${priceRaw})`);
+                            const errorMsg = `Line ${idx + 1}: ✗ Failed - ${reason.join(', ')}`;
+                            errors.push(errorMsg);
+                            debugInfo.push(errorMsg);
+                            console.log(`  ✗ FAILED: ${reason.join(', ')}`);
+                        }
+                    } else if (parts.length >= 3) {
+                        // Simple format: Ticker Shares Price
+                        const symbol = parts[0].toUpperCase();
+                        const shares = parseFloat(parts[1]);
+                        const avgPrice = parseFloat(parts[2].replace(/[$,]/g, ''));
+
+                        console.log(`  Simple format: Symbol="${symbol}", Shares=${shares}, Price=${avgPrice}`);
+
+                        if (symbol && !isNaN(shares) && !isNaN(avgPrice)) {
+                            newPositions.push({ name: symbol, symbol, shares, avgPrice });
+                            console.log(`  ✓ SUCCESS: Added ${symbol}`);
+                            debugInfo.push(`Line ${idx + 1}: ✓ ${symbol}`);
+                        } else {
+                            const errorMsg = `Line ${idx + 1}: ✗ Invalid simple format`;
+                            errors.push(errorMsg);
+                            debugInfo.push(errorMsg);
+                            console.log(`  ✗ FAILED: Invalid data`);
+                        }
+                    } else {
+                        const errorMsg = `Line ${idx + 1}: ✗ Only ${parts.length} columns (need at least 8 for full format or 3 for simple)`;
+                        errors.push(errorMsg);
+                        debugInfo.push(errorMsg);
+                        console.log(`  ✗ FAILED: Not enough columns`);
+                    }
+                });
+
+                console.log('=== IMPORT SUMMARY ===');
+                console.log(`Successful: ${newPositions.length}`);
+                console.log(`Failed: ${errors.length}`);
+
+                // Show detailed report
+                let reportMsg = `📊 Import Report:\n\n`;
+                reportMsg += `✓ Successfully parsed: ${newPositions.length} positions\n`;
+                reportMsg += `✗ Failed/Skipped: ${errors.length} lines\n\n`;
+                
+                if (errors.length > 0) {
+                    reportMsg += `--- Errors ---\n`;
+                    reportMsg += errors.slice(0, 10).join('\n');
+                    if (errors.length > 10) {
+                        reportMsg += `\n... and ${errors.length - 10} more errors`;
+                    }
+                    reportMsg += '\n\n';
+                }
+
+                if (newPositions.length === 0) {
+                    reportMsg += '\n❌ No positions could be imported.\n\n';
+                    reportMsg += 'Tip: Make sure your data is tab-separated (copied directly from a spreadsheet).\n';
+                    reportMsg += 'Check the browser console (F12) for detailed debugging info.';
+                    alert(reportMsg);
+                    return;
+                }
+
+                reportMsg += `\nFirst 5 positions that will be imported:\n`;
+                newPositions.slice(0, 5).forEach(p => {
+                    reportMsg += `  • ${p.symbol}: ${p.shares} shares @ $${p.avgPrice}\n`;
+                });
+                
+                if (newPositions.length > 5) {
+                    reportMsg += `  ... and ${newPositions.length - 5} more\n`;
+                }
+
+                alert(reportMsg);
+
+                if (newPositions.length > 0) {
+                    // Always overwrite - no confirmation needed
+                    portfolio = [...newPositions]; // Create new array to force reactivity
+                    console.log('Portfolio OVERWRITTEN with:', portfolio);
+                    console.log('First 3 positions:', portfolio.slice(0, 3));
+                    
+                    // Close dialog first
+                    closeImportDialog();
+                    
+                    // Force multiple renders to ensure UI updates
+                    renderPortfolio();
+                    setTimeout(() => renderPortfolio(), 50);
+                    setTimeout(() => renderPortfolio(), 200);
+                    
+                    // Auto-fetch market prices after import
+                    setTimeout(() => {
+                        console.log('Auto-fetching market prices...');
+                        fetchMarketPrices();
+                    }, 500);
+                    
+                    setTimeout(() => {
+                        alert(`✓ Successfully imported ${newPositions.length} position(s)!\n\nFetching current market prices...`);
+                    }, 300);
+                }
+            } catch (err) {
+                console.error('=== IMPORT ERROR ===');
+                console.error('Error type:', err.name);
+                console.error('Error message:', err.message);
+                console.error('Full error:', err);
+                console.error('Stack trace:', err.stack);
+                alert(`❌ Import failed: ${err.message}\n\nCheck the browser console (F12) for details.`);
+            }
+        }
+
+        async function analyzeMarkets() {
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const analysisSection = document.getElementById('analysisSection');
+            
+            console.log('=== ANALYZE MARKETS DEBUG ===');
+            console.log('Portfolio:', portfolio);
+            console.log('Portfolio length:', portfolio.length);
+            
+            if (portfolio.length === 0) {
+                alert('❌ No positions in portfolio. Import your portfolio first.');
+                return;
+            }
+            
+            // Check if we're in Claude.ai (only place where AI API works)
+            const isClaudeAI = window.location.hostname.includes('claude.ai') || 
+                              window.location.hostname.includes('anthropic.com') ||
+                              (typeof window.storage !== 'undefined'); // Cloud storage = claude.ai
+            
+            if (!isClaudeAI) {
+                analysisSection.innerHTML = `
+                    <div class="card" style="background: #334155; padding: 20px;">
+                        <h3 style="color: #cbd5e1; margin-bottom: 10px;">🤖 AI Analysis</h3>
+                        <p style="color: #94a3b8; margin-bottom: 15px;">
+                            AI-powered portfolio analysis is only available when this app runs in claude.ai.
+                        </p>
+                        <p style="color: #cbd5e1; font-weight: bold; margin-bottom: 10px;">
+                            To use AI Analysis:
+                        </p>
+                        <ol style="color: #94a3b8; margin-left: 20px; line-height: 1.8;">
+                            <li>Go to <a href="https://claude.ai" style="color: #60a5fa;">claude.ai</a></li>
+                            <li>Upload this HTML file or ask Claude to create this portfolio app</li>
+                            <li>Your portfolio will sync automatically via cloud storage</li>
+                            <li>Click "Get AI Analysis" to get personalized insights</li>
+                        </ol>
+                        <p style="color: #f59e0b; margin-top: 15px; font-size: 13px;">
+                            💡 Tip: All other features (price fetching, history, snapshots) work in standalone mode!
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+            
+            analyzeBtn.disabled = true;
+            analyzeBtn.textContent = 'Analyzing...';
+            
+            analysisSection.innerHTML = '<div class="card loading">🔄 Analyzing your portfolio...</div>';
+            
+            try {
+                console.log('Sending API request...');
+                
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: 'claude-sonnet-4-20250514',
+                        max_tokens: 1000,
+                        messages: [{
+                            role: 'user',
+                            content: `You are a financial advisor AI. Analyze current market conditions and provide insights for a portfolio containing: ${portfolio.map(p => `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}`).join(', ')}.
+
+Please provide your analysis in JSON format with these fields:
+- marketOverview: brief overview of current market sentiment (2-3 sentences)
+- portfolioImpact: how current conditions affect this specific portfolio (2-3 sentences)  
+- ideas: array of 3 actionable ideas, each with "title" and "description"
+
+Respond ONLY with valid JSON, no markdown, no preamble.`
+                        }]
+                    })
+                });
+
+                console.log('API Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`API returned status ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('API Response data:', data);
+                
+                const text = data.content.find(c => c.type === 'text')?.text || '';
+                console.log('Extracted text:', text);
+                
+                const cleanText = text.replace(/```json|```/g, '').trim();
+                console.log('Cleaned text:', cleanText);
+                
+                const analysis = JSON.parse(cleanText);
+                console.log('Parsed analysis:', analysis);
+                
+                analysisSection.innerHTML = `
+                    <div class="card analysis-section">
+                        <div class="analysis-card">
+                            <div class="analysis-title">📊 Market Overview</div>
+                            <div class="analysis-content">${analysis.marketOverview}</div>
+                        </div>
+                        
+                        <div class="analysis-card">
+                            <div class="analysis-title">💰 Portfolio Impact</div>
+                            <div class="analysis-content">${analysis.portfolioImpact}</div>
+                        </div>
+                        
+                        <div class="analysis-card">
+                            <div class="analysis-title">💡 Actionable Ideas</div>
+                            ${analysis.ideas.map((idea, idx) => `
+                                <div class="idea-item">
+                                    <div class="idea-title">${idx + 1}. ${idea.title}</div>
+                                    <div class="idea-desc">${idea.description}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        
+                        <div class="disclaimer">
+                            <strong>Disclaimer:</strong> This analysis is for informational purposes only and should not be considered financial advice. Always consult with a qualified financial advisor before making investment decisions.
+                        </div>
+                    </div>
+                `;
+                
+                console.log('✓ Analysis rendered successfully');
+            } catch (err) {
+                console.error('=== ANALYZE MARKETS ERROR ===');
+                console.error('Error type:', err.name);
+                console.error('Error message:', err.message);
+                console.error('Full error:', err);
+                console.error('Stack trace:', err.stack);
+                
+                analysisSection.innerHTML = `
+                    <div class="card">
+                        <div class="analysis-content" style="color: #f87171;">
+                            ❌ Unable to generate analysis: ${err.message}
+                            <br><br>
+                            Check the browser console (F12) for detailed error information.
+                        </div>
+                    </div>
+                `;
+                
+                alert(`❌ Error generating analysis:\n\n${err.message}\n\nCheck console (F12) for details.`);
+            }
+            
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = 'Get AI Analysis';
+        }
+
+        renderPortfolio();
+        
+        // Global error handler with detailed logging
+        window.onerror = function(message, source, lineno, colno, error) {
+            console.error('=== GLOBAL ERROR CAUGHT ===');
+            console.error('Message:', message);
+            console.error('Source:', source);
+            console.error('Line:', lineno, 'Column:', colno);
+            console.error('Error object:', error);
+            
+            // Show alert for all errors so user knows what's happening
+            if (message && message !== 'Script error.') {
+                alert('JavaScript Error:\n\n' + message + '\n\nLine: ' + lineno + '\n\nCheck console (F12) for details.');
+            } else {
+                // Generic script error - likely from external resource
+                console.warn('Generic "Script error." caught - this usually means a CORS issue or blocked resource');
+                alert('A script error occurred. This is usually harmless.\n\nIf features are not working:\n1. Open Console (F12)\n2. Look for detailed error messages\n3. Try refreshing the page');
+            }
+            
+            return true; // Prevent default error handling
+        };
+        
+        // Promise rejection handler
+        window.onunhandledrejection = function(event) {
+            console.error('=== UNHANDLED PROMISE REJECTION ===');
+            console.error('Reason:', event.reason);
+            console.error('Promise:', event.promise);
+            alert('Async Error:\n\n' + (event.reason || 'Unknown error') + '\n\nCheck console (F12) for details.');
+        };
+        
+        // Load portfolio history from localStorage
+        const storedHistory = localStorage.getItem('portfolioHistory');
+        if (storedHistory) {
+            try {
+                portfolioHistory = JSON.parse(storedHistory);
+                console.log('Loaded portfolio history from localStorage:', portfolioHistory.length, 'snapshots');
+                updateHistoryDisplay();
+            } catch (err) {
+                console.error('Error loading history:', err);
+            }
+        }
+        
+        // Load from Claude cloud storage (if available)
+        (async () => {
+            if (typeof window.storage !== 'undefined') {
+                try {
+                    console.log('☁️ Cloud storage available, loading portfolio...');
+                    
+                    // Load current portfolio
+                    const portfolioData = await window.storage.get('current-portfolio', false);
+                    if (portfolioData && portfolioData.value) {
+                        const data = JSON.parse(portfolioData.value);
+                        if (data.portfolio && data.portfolio.length > 0) {
+                            portfolio = data.portfolio;
+                            marketPrices = data.marketPrices || {};
+                            priceMetadata = data.priceMetadata || {};
+                            console.log('✓ Loaded portfolio from cloud:', portfolio.length, 'positions');
+                            console.log('Last updated:', data.lastUpdated);
+                            renderPortfolio();
+                        }
+                    }
+                    
+                    // Load all snapshots
+                    const snapshotKeys = await window.storage.list('snapshot:', false);
+                    if (snapshotKeys && snapshotKeys.keys && snapshotKeys.keys.length > 0) {
+                        console.log('✓ Found', snapshotKeys.keys.length, 'snapshots in cloud');
+                        
+                        // Load each snapshot
+                        const cloudSnapshots = [];
+                        for (const key of snapshotKeys.keys) {
+                            try {
+                                const result = await window.storage.get(key, false);
+                                if (result && result.value) {
+                                    const snapshot = JSON.parse(result.value);
+                                    cloudSnapshots.push(snapshot);
+                                }
+                            } catch (err) {
+                                console.warn('Failed to load snapshot:', key, err);
+                            }
+                        }
+                        
+                        // Merge with localStorage history (avoid duplicates by timestamp)
+                        const existingTimestamps = new Set(portfolioHistory.map(s => s.timestamp));
+                        cloudSnapshots.forEach(snapshot => {
+                            if (!existingTimestamps.has(snapshot.timestamp)) {
+                                portfolioHistory.push(snapshot);
+                            }
+                        });
+                        
+                        // Sort by timestamp
+                        portfolioHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                        
+                        console.log('✓ Total history:', portfolioHistory.length, 'snapshots');
+                        updateHistoryDisplay();
+                    }
+                    
+                    alert(`☁️ Cloud storage loaded!\n\n${portfolio.length} positions\n${portfolioHistory.length} historical snapshots\n\nYour portfolio syncs across all devices where you use Claude.`);
+                } catch (err) {
+                    console.warn('Cloud storage not available or failed to load:', err);
+                    console.log('Using localStorage only');
+                }
+            } else {
+                console.log('Cloud storage not available (open in claude.ai for sync)');
+            }
+        })();
+        
+        console.log('=== APP INITIALIZED ===');
+        console.log('API Key set:', !!alphaVantageKey);
+        console.log('Portfolio positions:', portfolio.length);
+        console.log('History snapshots:', portfolioHistory.length);
+        console.log('Is Artifact:', isArtifact);
+        console.log('Cloud Storage Available:', typeof window.storage !== 'undefined');
+        
+        // Show artifact warning if detected
+        if (isArtifact) {
+            const warningDiv = document.getElementById('artifactWarning');
+            if (warningDiv) {
+                warningDiv.style.display = 'block';
+            }
+        }
+        
+        // Auto-fetch prices if portfolio exists and API key is set
+        if (portfolio.length > 0 && alphaVantageKey) {
+            console.log('Auto-fetching prices on page load...');
+            setTimeout(() => {
+                fetchMarketPrices();
+            }, 1000); // Wait 1 second after page load
+        }
+    </script>
+</body>
+</html>
