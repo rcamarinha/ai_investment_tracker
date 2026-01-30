@@ -357,6 +357,7 @@
             if (fmpKey) {
                 try {
                     const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${symbol}&apikey=${fmpKey}`;
+                    console.log(`Trying FMP for ${symbol}...`);
                     const response = await fetch(url);
                     
                     if (response.ok) {
@@ -376,25 +377,35 @@
                                     tier: 2,
                                     success: true 
                                 };
+                            } else {
+                                console.log(`FMP returned data but no valid price for ${symbol}`);
                             }
+                        } else {
+                            console.log(`FMP returned empty/invalid data for ${symbol}`);
                         }
                     } else if (response.status === 403) {
+                        console.log(`FMP 403 for ${symbol}`);
                         if (!window.fmpKeyWarningShown) {
                             window.fmpKeyWarningShown = true;
                             console.warn('⚠️ FMP 403 - Check API key');
                         }
                     } else if (response.status === 429) {
                         console.log(`⚠️ FMP rate limit hit for ${symbol}`);
+                    } else {
+                        console.log(`FMP HTTP ${response.status} for ${symbol}`);
                     }
                 } catch (err) {
                     console.log(`FMP failed for ${symbol}:`, err.message);
                 }
+                // Falls through to Alpha Vantage if FMP didn't return a valid price
+                console.log(`FMP didn't find price for ${symbol}, trying Alpha Vantage...`);
             }
             
             // TIER 3: Alpha Vantage (FALLBACK #2 - use as last resort due to strict limits)
             if (alphaVantageKey) {
                 try {
                     const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaVantageKey}`;
+                    console.log(`Trying Alpha Vantage for ${symbol}...`);
                     const response = await fetch(url);
                     
                     if (response.ok) {
@@ -410,6 +421,8 @@
                                 tier: 3,
                                 success: true 
                             };
+                        } else {
+                            console.log(`Alpha Vantage returned no price for ${symbol}`);
                         }
                         
                         // Check for rate limit
@@ -423,6 +436,8 @@
                                 error: 'Rate limit (5/min) - wait 12s'
                             };
                         }
+                    } else {
+                        console.log(`Alpha Vantage HTTP ${response.status} for ${symbol}`);
                     }
                 } catch (err) {
                     console.log(`Alpha Vantage failed for ${symbol}:`, err.message);
