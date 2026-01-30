@@ -178,10 +178,100 @@
             <div class="positions" id="positions"></div>
 
             <div>
+                <button class="btn btn-add" onclick="showApiKeyDialog()" style="background: #7c3aed;">🔑 API Keys</button>
                 <button class="btn btn-add" onclick="showImportDialog()">📋 Import Portfolio from Spreadsheet</button>
                 <button class="btn btn-add" onclick="fetchMarketPrices()" id="refreshBtn" style="background: #059669;">🔄 Update Prices</button>
                 <button class="btn btn-add" onclick="savePortfolioSnapshot()" style="background: #f59e0b;">💾 Save Snapshot</button>
                 <button class="btn btn-analyze" onclick="analyzeMarkets()" id="analyzeBtn">Get AI Analysis</button>
+            </div>
+        </div>
+        
+        <div id="apiKeyDialog" style="display: none;">
+            <div class="card">
+                <h2 style="margin-bottom: 15px;">🔑 API Key Management</h2>
+                
+                <div style="background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="color: #cbd5e1; margin-bottom: 10px; font-size: 16px;">Rate Limits & Strategy:</h3>
+                    <div style="color: #94a3b8; font-size: 13px; line-height: 1.8;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span>🚀 <strong>Finnhub:</strong> 60 calls/minute</span>
+                            <span style="color: #4ade80;">PRIMARY</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span>⚡ <strong>FMP:</strong> 250 calls/day (no per-min limit)</span>
+                            <span style="color: #60a5fa;">FALLBACK #1</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>🐢 <strong>Alpha Vantage:</strong> 5 calls/min, 25/day</span>
+                            <span style="color: #f59e0b;">FALLBACK #2</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 6px; font-size: 12px; color: #94a3b8;">
+                        💡 <strong>Optimal:</strong> Finnhub primary (fast), FMP for failures (generous daily limit), Alpha Vantage last resort (strict limits)
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                        🚀 Finnhub API Key (Primary - Fastest)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="finnhubKeyInput" 
+                        placeholder="Enter your Finnhub API key" 
+                        style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;"
+                    />
+                    <div style="color: #94a3b8; font-size: 12px;">
+                        Get free key: <a href="https://finnhub.io/register" target="_blank" style="color: #60a5fa;">https://finnhub.io/register</a>
+                        <br>✓ 60 calls/minute • ✓ Best for US stocks • ✓ Fast response
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                        ⚡ Financial Modeling Prep API Key (Fallback #1)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="fmpKeyInput" 
+                        placeholder="Enter your FMP API key" 
+                        style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;"
+                    />
+                    <div style="color: #94a3b8; font-size: 12px;">
+                        Get free key: <a href="https://site.financialmodelingprep.com/developer/docs/" target="_blank" style="color: #60a5fa;">https://financialmodelingprep.com</a>
+                        <br>✓ 250 calls/day • ✓ Good coverage • ✓ No per-minute limit
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                        🐢 Alpha Vantage API Key (Fallback #2 - Last Resort)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="alphaVantageKeyInput" 
+                        placeholder="Enter your Alpha Vantage API key" 
+                        style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;"
+                    />
+                    <div style="color: #94a3b8; font-size: 12px;">
+                        Get free key: <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color: #60a5fa;">https://www.alphavantage.co/support/#api-key</a>
+                        <br>✓ 5 calls/minute, 25/day • ✓ International stocks • ✓ Use sparingly
+                    </div>
+                </div>
+                
+                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                    <div style="color: #92400e; font-size: 13px;">
+                        <strong>💡 Strategy:</strong> Finnhub is used first (faster). Alpha Vantage is backup for symbols Finnhub doesn't have.
+                        <br><br>
+                        <strong>🔒 Security:</strong> Keys saved in your browser only (localStorage). Never uploaded to GitHub.
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-analyze" onclick="saveApiKeys()">💾 Save Keys</button>
+                    <button class="btn btn-add" onclick="closeApiKeyDialog()">Cancel</button>
+                    <button class="btn btn-add" onclick="clearApiKeys()" style="background: #dc2626; margin-left: auto;">🗑️ Clear All Keys</button>
+                </div>
             </div>
         </div>
 
@@ -223,39 +313,70 @@
         let marketPrices = {}; // Store current market prices
         let priceMetadata = {}; // Store {timestamp, source, success} for each symbol
         let pricesLoading = false;
-        let alphaVantageKey = ''; // User will provide their own API key
+        let alphaVantageKey = ''; // 25 calls/day, 5 calls/min
+        let finnhubKey = ''; // 60 calls/min
+        let fmpKey = ''; // 250 calls/day
         let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
         
         // Check if we're in a Claude artifact (restricted network)
         const isArtifact = window.location.hostname.includes('claude.ai') && 
                           window.location.pathname.includes('artifacts');
         
-        // Helper function to fetch stock prices from multiple sources
+        // Helper function to fetch stock prices with optimal 3-tier strategy
+        // Tier 1: Finnhub (60/min - fastest, no daily limit)
+        // Tier 2: FMP (250/day - generous daily limit, no per-min limit)
+        // Tier 3: Alpha Vantage (5/min, 25/day - use sparingly)
         async function fetchStockPrice(symbol) {
             console.log(`Fetching price for ${symbol}...`);
             
-            // Source 1: Finnhub (free tier, good CORS support)
-            try {
-                const finnhubKey = 'ct131f9r01qr3fdbl3n0ct131f9r01qr3fdbl3ng'; // Public demo key
-                const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`;
-                const response = await fetch(url);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.c && data.c > 0) { // c = current price
-                        console.log(`✓ ${symbol}: $${data.c} (Finnhub)`);
-                        return { 
-                            price: data.c, 
-                            source: 'Finnhub',
-                            success: true 
-                        };
+            // TIER 1: Finnhub (PRIMARY - fastest with no daily limit)
+            if (finnhubKey) {
+                try {
+                    const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`;
+                    const response = await fetch(url);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.c && data.c > 0) { // c = current price
+                            console.log(`✓ ${symbol}: $${data.c} (Finnhub)`);
+                            return { 
+                                price: data.c, 
+                                source: 'Finnhub',
+                                tier: 1,
+                                success: true 
+                            };
+                        }
                     }
+                } catch (err) {
+                    console.log(`Finnhub failed for ${symbol}:`, err.message);
                 }
-            } catch (err) {
-                console.log(`Finnhub failed for ${symbol}:`, err.message);
             }
             
-            // Source 2: Alpha Vantage (if user provided key)
+            // TIER 2: Financial Modeling Prep (FALLBACK #1 - generous daily limit)
+            if (fmpKey) {
+                try {
+                    const url = `https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${fmpKey}`;
+                    const response = await fetch(url);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data[0] && data[0].price && data[0].price > 0) {
+                            const price = data[0].price;
+                            console.log(`✓ ${symbol}: $${price} (FMP)`);
+                            return { 
+                                price: price, 
+                                source: 'Financial Modeling Prep',
+                                tier: 2,
+                                success: true 
+                            };
+                        }
+                    }
+                } catch (err) {
+                    console.log(`FMP failed for ${symbol}:`, err.message);
+                }
+            }
+            
+            // TIER 3: Alpha Vantage (FALLBACK #2 - use as last resort due to strict limits)
             if (alphaVantageKey) {
                 try {
                     const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaVantageKey}`;
@@ -271,16 +392,21 @@
                             return { 
                                 price: price, 
                                 source: 'Alpha Vantage',
+                                tier: 3,
                                 success: true 
                             };
                         }
-                    }
-                    
-                    // Check for rate limit
-                    if (response.ok) {
-                        const data = await response.json();
+                        
+                        // Check for rate limit
                         if (data['Note']) {
-                            console.log('Alpha Vantage rate limit hit');
+                            console.log('⚠️ Alpha Vantage rate limit hit');
+                            return {
+                                price: null,
+                                source: 'Alpha Vantage',
+                                tier: 3,
+                                success: false,
+                                error: 'Rate limit (5/min) - wait 12s'
+                            };
                         }
                     }
                 } catch (err) {
@@ -288,34 +414,14 @@
                 }
             }
             
-            // Source 3: Financial Modeling Prep (free tier)
-            try {
-                const fmpKey = 'OiwIv1wmRPsLKDrzqF3JbsKMI3q6nCEq'; // Public demo key
-                const url = `https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${fmpKey}`;
-                const response = await fetch(url);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && data[0] && data[0].price) {
-                        const price = data[0].price;
-                        console.log(`✓ ${symbol}: $${price} (FMP)`);
-                        return { 
-                            price: price, 
-                            source: 'Financial Modeling Prep',
-                            success: true 
-                        };
-                    }
-                }
-            } catch (err) {
-                console.log(`FMP failed for ${symbol}:`, err.message);
-            }
-            
-            // All sources failed
+            // All tiers failed
+            const availableAPIs = [finnhubKey && 'Finnhub', fmpKey && 'FMP', alphaVantageKey && 'AlphaV'].filter(Boolean);
             return { 
                 price: null, 
-                source: 'All sources failed',
+                source: availableAPIs.length > 0 ? 'All APIs failed' : 'No API keys',
+                tier: 0,
                 success: false,
-                error: 'No data available'
+                error: availableAPIs.length > 0 ? 'Symbol not found in any API' : 'Configure API keys'
             };
         }
         
@@ -349,6 +455,96 @@
         }
         
         console.log('Variables initialized');
+
+        
+        function showApiKeyDialog() {
+            document.getElementById('finnhubKeyInput').value = finnhubKey || '';
+            document.getElementById('fmpKeyInput').value = fmpKey || '';
+            document.getElementById('alphaVantageKeyInput').value = alphaVantageKey || '';
+            document.getElementById('apiKeyDialog').style.display = 'block';
+        }
+        
+        function closeApiKeyDialog() {
+            document.getElementById('apiKeyDialog').style.display = 'none';
+        }
+        
+        function saveApiKeys() {
+            const fhKey = document.getElementById('finnhubKeyInput').value.trim();
+            const fmpKey = document.getElementById('fmpKeyInput').value.trim();
+            const avKey = document.getElementById('alphaVantageKeyInput').value.trim();
+            
+            if (!fhKey && !fmpKey && !avKey) {
+                alert('⚠️ Please enter at least one API key to fetch live prices.');
+                return;
+            }
+            
+            // Save to variables
+            finnhubKey = fhKey;
+            fmpKey = fmpKey;
+            alphaVantageKey = avKey;
+            
+            // Save to localStorage
+            if (fhKey) {
+                localStorage.setItem('finnhubKey', fhKey);
+            } else {
+                localStorage.removeItem('finnhubKey');
+            }
+            
+            if (fmpKey) {
+                localStorage.setItem('fmpKey', fmpKey);
+            } else {
+                localStorage.removeItem('fmpKey');
+            }
+            
+            if (avKey) {
+                localStorage.setItem('alphaVantageKey', avKey);
+            } else {
+                localStorage.removeItem('alphaVantageKey');
+            }
+            
+            let msg = '✓ API keys saved successfully!\n\n';
+            msg += 'Fetch Strategy:\n';
+            
+            if (fhKey) {
+                msg += '1️⃣ Finnhub (Primary - 60/min)\n';
+            }
+            if (fmpKey) {
+                msg += '2️⃣ FMP (Fallback - 250/day)\n';
+            }
+            if (avKey) {
+                msg += '3️⃣ Alpha Vantage (Last resort - 5/min)\n';
+            }
+            
+            const totalSymbols = portfolio.length || 41;
+            msg += '\n⚡ Speed:\n';
+            
+            if (fhKey) {
+                msg += `~1 second per symbol = ~${Math.ceil(totalSymbols / 60)} min total\n`;
+            } else if (fmpKey) {
+                msg += `~1 second per symbol = ~${Math.ceil(totalSymbols / 60)} min total\n`;
+            } else if (avKey) {
+                msg += `~12 seconds per symbol = ~${Math.ceil(totalSymbols * 12 / 60)} min total\n`;
+                msg += '\n💡 Add Finnhub or FMP for 12x faster!';
+            }
+            
+            alert(msg);
+            closeApiKeyDialog();
+        }
+        
+        function clearApiKeys() {
+            if (confirm('⚠️ Clear all API keys?\n\nYou will need to re-enter them to fetch prices.')) {
+                finnhubKey = '';
+                fmpKey = '';
+                alphaVantageKey = '';
+                localStorage.removeItem('finnhubKey');
+                localStorage.removeItem('fmpKey');
+                localStorage.removeItem('alphaVantageKey');
+                document.getElementById('finnhubKeyInput').value = '';
+                document.getElementById('fmpKeyInput').value = '';
+                document.getElementById('alphaVantageKeyInput').value = '';
+                alert('✓ All API keys cleared.');
+            }
+        }
 
         function formatCurrency(num) {
             return '$' + num.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -582,27 +778,14 @@
                 return;
             }
             
-            // Optionally prompt for Alpha Vantage API key (for fallback)
-            if (!alphaVantageKey) {
-                const wantsKey = confirm(
-                    '💡 Optional: Alpha Vantage API Key\n\n' +
-                    'The app will use Finnhub and FMP (free, no key needed) for prices.\n\n' +
-                    'Want to add Alpha Vantage as additional fallback?\n\n' +
-                    'Click OK to enter key, or Cancel to skip.'
+            // Check if user has any API keys configured
+            if (!alphaVantageKey && !finnhubKey && !fmpKey) {
+                alert(
+                    '🔑 API Keys Required\n\n' +
+                    'Click the "🔑 API Keys" button to configure your API keys.\n\n' +
+                    'You need at least one free API key to fetch live prices.'
                 );
-                
-                if (wantsKey) {
-                    const key = prompt(
-                        'Get a FREE Alpha Vantage API key:\n' +
-                        'https://www.alphavantage.co/support/#api-key\n\n' +
-                        'Enter your API key:'
-                    );
-                    
-                    if (key && key.trim()) {
-                        alphaVantageKey = key.trim();
-                        localStorage.setItem('alphaVantageKey', alphaVantageKey);
-                    }
-                }
+                return;
             }
             
             const refreshBtn = document.getElementById('refreshBtn');
@@ -613,9 +796,52 @@
             pricesLoading = true;
             const symbols = [...new Set(portfolio.map(p => p.symbol))]; // Get unique symbols
             
-            console.log('=== FETCH PRICES (Multi-Source, No CORS Proxy) ===');
+            // Determine rate limiting based on available APIs
+            let delayBetweenCalls = 500; // Default 500ms
+            let apiInfo = '';
+            
+            if (finnhubKey && alphaVantageKey) {
+                delayBetweenCalls = 1000; // 1 second (60/min for Finnhub primary)
+                apiInfo = 'Using Finnhub (primary) + Alpha Vantage (fallback)';
+            } else if (finnhubKey) {
+                delayBetweenCalls = 1000; // 1 second (60/min limit)
+                apiInfo = 'Using Finnhub only (60 calls/min)';
+            } else if (alphaVantageKey) {
+                delayBetweenCalls = 12000; // 12 seconds (5/min limit)
+                apiInfo = 'Using Alpha Vantage only (5 calls/min - slower)';
+            }
+            
+            console.log('=== FETCH PRICES ===');
+            console.log('API Configuration:', apiInfo);
             console.log('Symbols:', symbols);
             console.log('Total:', symbols.length);
+            console.log('Delay between calls:', delayBetweenCalls + 'ms');
+            
+            // Estimate time
+            const estimatedSeconds = Math.ceil((symbols.length * delayBetweenCalls) / 1000);
+            const estimatedMinutes = Math.floor(estimatedSeconds / 60);
+            const remainingSeconds = estimatedSeconds % 60;
+            const timeEstimate = estimatedMinutes > 0 
+                ? `~${estimatedMinutes}m ${remainingSeconds}s` 
+                : `~${estimatedSeconds}s`;
+            
+            console.log('Estimated time:', timeEstimate);
+            
+            if (estimatedMinutes > 2) {
+                const proceed = confirm(
+                    `⏱️ Estimated fetch time: ${timeEstimate}\n\n` +
+                    `Fetching ${symbols.length} symbols with current API configuration.\n\n` +
+                    `Tip: Add Finnhub API for faster updates (60 calls/min)\n\n` +
+                    `Continue?`
+                );
+                
+                if (!proceed) {
+                    refreshBtn.disabled = false;
+                    refreshBtn.textContent = originalText;
+                    pricesLoading = false;
+                    return;
+                }
+            }
             
             let successCount = 0;
             let failCount = 0;
@@ -667,8 +893,11 @@
                             renderPortfolio();
                         }
                         
-                        // Small delay to be nice to APIs
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        // Small delay to respect rate limits
+                        // Finnhub: 60 calls/min = 1 call/second
+                        // Alpha Vantage: 5 calls/min = 1 call/12 seconds
+                        const delay = finnhubKey ? 1000 : 12000; // Use Finnhub timing if available
+                        await new Promise(resolve => setTimeout(resolve, delay));
                         
                     } catch (err) {
                         console.error(`✗ ${symbol}: ${err.message}`);
@@ -1344,11 +1573,23 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
         console.log('Is Artifact:', isArtifact);
         console.log('Cloud Storage Available:', typeof window.storage !== 'undefined');
         
-        // Load API key from localStorage if available
-        const storedKey = localStorage.getItem('alphaVantageKey');
-        if (storedKey) {
-            alphaVantageKey = storedKey;
-            console.log('✓ API key loaded from localStorage');
+        // Load API keys from localStorage if available
+        const storedAVKey = localStorage.getItem('alphaVantageKey');
+        if (storedAVKey) {
+            alphaVantageKey = storedAVKey;
+            console.log('✓ Alpha Vantage key loaded from localStorage');
+        }
+        
+        const storedFHKey = localStorage.getItem('finnhubKey');
+        if (storedFHKey) {
+            finnhubKey = storedFHKey;
+            console.log('✓ Finnhub key loaded from localStorage');
+        }
+        
+        const storedFMPKey = localStorage.getItem('fmpKey');
+        if (storedFMPKey) {
+            fmpKey = storedFMPKey;
+            console.log('✓ FMP key loaded from localStorage');
         }
         
         // Show artifact warning if detected
