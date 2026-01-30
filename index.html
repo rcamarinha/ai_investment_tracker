@@ -426,7 +426,100 @@
         }
         
         // Try alternative ticker formats for international stocks
-        async function tryAlternativeFormats(originalSymbol) {
+        async function tryAlternativeFormats(originalSymbol, assetName) {
+            const alternatives = [];
+            
+            console.log(`\n=== TRYING ALTERNATIVES FOR ${originalSymbol} (${assetName}) ===`);
+            
+            // Strategy 1: Try common exchange suffixes
+            if (originalSymbol.includes('.')) {
+                // Has exchange suffix, try base symbol
+                const base = originalSymbol.split('.')[0];
+                alternatives.push(base);
+                console.log(`Alternative: ${base} (removed exchange suffix)`);
+            } else {
+                // No suffix, try adding common ones
+                alternatives.push(`${originalSymbol}.PA`); // Euronext Paris
+                alternatives.push(`${originalSymbol}.L`);  // London Stock Exchange
+                alternatives.push(`${originalSymbol}.DE`); // Frankfurt (XETRA)
+                alternatives.push(`${originalSymbol}.MC`); // Madrid
+                alternatives.push(`${originalSymbol}.SW`); // Switzerland (SIX)
+                alternatives.push(`${originalSymbol}.AS`); // Amsterdam (Euronext)
+                alternatives.push(`${originalSymbol}.MI`); // Milan
+                alternatives.push(`${originalSymbol}.BR`); // Brussels
+                alternatives.push(`${originalSymbol}.HE`); // Helsinki
+                alternatives.push(`${originalSymbol}.ST`); // Stockholm
+                alternatives.push(`${originalSymbol}.OL`); // Oslo
+                alternatives.push(`${originalSymbol}.CO`); // Copenhagen
+                console.log(`Alternatives: ${alternatives.join(', ')}`);
+            }
+            
+            // Strategy 2: Smart ticker lookup based on asset name
+            if (assetName && assetName !== originalSymbol) {
+                // Common patterns for European stocks
+                const nameLower = assetName.toLowerCase();
+                
+                // Extract company name (before "SA", "NV", "AG", etc.)
+                let baseName = assetName.split(/\s+(SA|NV|AG|SE|PLC|INC|CORP|LTD|SPA|ASA|OYJ)/i)[0].trim();
+                
+                // Common ticker mappings (expanded)
+                const smartMappings = {
+                    'cellnex': ['CLNX', 'CLNX.MC'],
+                    'covestro': ['1COV.DE', 'COV.DE'],
+                    'prosus': ['PRX.AS', 'PROSUS'],
+                    'adyen': ['ADYEN.AS', 'ADYEY'],
+                    'just eat': ['JET.L', 'TKWY.AS'],
+                    'moncler': ['MONC.MI', 'MONRF'],
+                    'sartorius': ['SRT.DE', 'SRT3.DE'],
+                    'nestle': ['NESN.SW', 'NSRGY'],
+                    'roche': ['ROG.SW', 'RHHBY'],
+                    'novartis': ['NOVN.SW', 'NVS'],
+                    'asml': ['ASML.AS', 'ASML'],
+                    'lvmh': ['MC.PA', 'LVMUY'],
+                    'hermes': ['RMS.PA', 'HESAY'],
+                    'schneider': ['SU.PA', 'SBGSF'],
+                    'totalenergies': ['TTE.PA', 'TTE'],
+                    'airbus': ['AIR.PA', 'EADSY']
+                };
+                
+                // Check if asset name matches any known mapping
+                for (const [key, tickers] of Object.entries(smartMappings)) {
+                    if (nameLower.includes(key)) {
+                        alternatives.push(...tickers);
+                        console.log(`Smart mapping found for "${key}": ${tickers.join(', ')}`);
+                        break;
+                    }
+                }
+                
+                // Try first word of company name as ticker
+                const firstWord = baseName.split(' ')[0];
+                if (firstWord.length >= 3 && firstWord.length <= 6) {
+                    alternatives.push(firstWord.toUpperCase());
+                    console.log(`Trying company name as ticker: ${firstWord.toUpperCase()}`);
+                }
+            }
+            
+            // Remove duplicates
+            const uniqueAlternatives = [...new Set(alternatives)];
+            console.log(`Total unique alternatives to try: ${uniqueAlternatives.length}`);
+            
+            // Try each alternative
+            for (const altSymbol of uniqueAlternatives) {
+                console.log(`Trying: ${altSymbol}...`);
+                const result = await fetchStockPrice(altSymbol);
+                if (result.success) {
+                    console.log(`✓ SUCCESS with ${altSymbol}!`);
+                    return { ...result, alternativeSymbol: altSymbol, originalSymbol };
+                }
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            
+            console.log(`✗ All alternatives failed for ${originalSymbol}`);
+            return null;
+        }
+        
+        // Try alternative ticker formats for international stocks (legacy function)
+        async function tryAlternativeFormatsLegacy(originalSymbol) {
             const alternatives = [];
             
             // If it has a dot, try without it
@@ -861,7 +954,9 @@
                         // If failed, try alternative ticker formats
                         if (!result.success) {
                             console.log(`Primary failed for ${symbol}, trying alternatives...`);
-                            const altResult = await tryAlternativeFormats(symbol);
+                            const position = portfolio.find(p => p.symbol === symbol);
+                            const assetName = position ? position.name : symbol;
+                            const altResult = await tryAlternativeFormats(symbol, assetName);
                             if (altResult && altResult.success) {
                                 result = altResult;
                                 console.log(`✓ Found ${symbol} as ${altResult.alternativeSymbol}`);
@@ -1011,7 +1106,7 @@
             let html = `
                 <div class="position-header-row">
                     <div>Symbol</div>
-                    <div>Asset Name</div>
+                    <div>Asset Name / Platform</div>
                     <div>Shares</div>
                     <div>Avg Price</div>
                     <div>Current Price</div>
@@ -1078,8 +1173,9 @@
                         </div>
                         ${timestampText ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">${timestampText}</div>` : ''}
                     </div>
-                    <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${pos.name || pos.symbol}">
+                    <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${pos.name || pos.symbol}${pos.platform ? '\nPlatform: ' + pos.platform : ''}">
                         ${pos.name ? (pos.name.length > 30 ? pos.name.substring(0, 27) + '...' : pos.name) : pos.symbol}
+                        ${pos.platform && pos.platform !== 'Unknown' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">📍 ${pos.platform}</div>` : ''}
                     </div>
                     <div class="position-details">${pos.shares}</div>
                     <div class="position-details">${formatCurrency(pos.avgPrice)}</div>
@@ -1201,17 +1297,18 @@
                         // Full format from user's spreadsheet
                         const assetName = parts[0] ? parts[0].trim() : '';
                         const symbol = parts[1] ? parts[1].trim().toUpperCase() : '';
+                        const platform = parts[2] ? parts[2].trim() : 'Unknown';
                         const sharesRaw = parts[4] ? parts[4].trim() : '';
                         const shares = parseFloat(sharesRaw);
                         const priceRaw = parts[7] ? parts[7].trim() : '';
                         const avgPrice = parseFloat(priceRaw.replace(/[$,]/g, ''));
 
-                        console.log(`  Parsed: Name="${assetName}", Symbol="${symbol}", Shares="${sharesRaw}" (${shares}), Price="${priceRaw}" (${avgPrice})`);
+                        console.log(`  Parsed: Name="${assetName}", Symbol="${symbol}", Platform="${platform}", Shares="${sharesRaw}" (${shares}), Price="${priceRaw}" (${avgPrice})`);
 
                         if (symbol && !isNaN(shares) && !isNaN(avgPrice) && shares > 0 && avgPrice > 0) {
-                            newPositions.push({ name: assetName, symbol, shares, avgPrice });
-                            console.log(`  ✓ SUCCESS: Added ${symbol} (${assetName})`);
-                            debugInfo.push(`Line ${idx + 1}: ✓ ${symbol} - ${shares} @ $${avgPrice}`);
+                            newPositions.push({ name: assetName, symbol, platform, shares, avgPrice });
+                            console.log(`  ✓ SUCCESS: Added ${symbol} (${assetName}) on ${platform}`);
+                            debugInfo.push(`Line ${idx + 1}: ✓ ${symbol} - ${shares} @ $${avgPrice} (${platform})`);
                         } else {
                             const reason = [];
                             if (!symbol) reason.push('missing ticker');
@@ -1231,7 +1328,7 @@
                         console.log(`  Simple format: Symbol="${symbol}", Shares=${shares}, Price=${avgPrice}`);
 
                         if (symbol && !isNaN(shares) && !isNaN(avgPrice)) {
-                            newPositions.push({ name: symbol, symbol, shares, avgPrice });
+                            newPositions.push({ name: symbol, symbol, platform: 'Unknown', shares, avgPrice });
                             console.log(`  ✓ SUCCESS: Added ${symbol}`);
                             debugInfo.push(`Line ${idx + 1}: ✓ ${symbol}`);
                         } else {
