@@ -355,24 +355,73 @@
             // TIER 2: Financial Modeling Prep (FALLBACK #1 - generous daily limit)
             if (fmpKey) {
                 try {
-                    // Note: Using URL parameter instead of header to avoid CORS preflight
-                    const url = `https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${fmpKey}`;
+                    // Using the stable/quote endpoint with symbol parameter
+                    const url = `https://financialmodelingprep.com/stable/quote?symbol=${symbol}&apikey=${fmpKey}`;
                     const response = await fetch(url);
                     
                     if (response.ok) {
                         const data = await response.json();
-                        if (data && data[0] && data[0].price && data[0].price > 0) {
-                            const price = data[0].price;
-                            console.log(`✓ ${symbol}: $${price} (FMP)`);
-                            return { 
-                                price: price, 
-                                source: 'Financial Modeling Prep',
+                        
+                        // Check for error in response
+                        if (data.error) {
+                            console.log(`FMP API error for ${symbol}:`, data.error);
+                            return {
+                                price: null,
+                                source: 'FMP',
                                 tier: 2,
-                                success: true 
+                                success: false,
+                                error: data.error
                             };
                         }
+                        
+                        // Response is an array with quote data
+                        if (data && Array.isArray(data) && data.length > 0) {
+                            const quote = data[0];
+                            if (quote.price && quote.price > 0) {
+                                const price = quote.price;
+                                console.log(`✓ ${symbol}: $${price} (FMP)`);
+                                return { 
+                                    price: price, 
+                                    source: 'Financial Modeling Prep',
+                                    tier: 2,
+                                    success: true 
+                                };
+                            }
+                        }
+                        
+                        console.log(`FMP: No price data for ${symbol}`);
                     } else if (response.status === 403) {
-                        console.log(`FMP 403 for ${symbol} - check API key`);
+                        console.log(`⚠️ FMP 403 Forbidden for ${symbol}`);
+                        
+                        if (!window.fmpKeyWarningShown) {
+                            window.fmpKeyWarningShown = true;
+                            console.warn('⚠️ FMP 403 - Check API key');
+                        }
+                        return {
+                            price: null,
+                            source: 'FMP',
+                            tier: 2,
+                            success: false,
+                            error: 'Access forbidden (403)'
+                        };
+                    } else if (response.status === 404) {
+                        console.log(`FMP 404 for ${symbol} - symbol not found`);
+                        return {
+                            price: null,
+                            source: 'FMP',
+                            tier: 2,
+                            success: false,
+                            error: 'Symbol not found (404)'
+                        };
+                    } else if (response.status === 429) {
+                        console.log(`⚠️ FMP rate limit hit for ${symbol}`);
+                        return {
+                            price: null,
+                            source: 'FMP',
+                            tier: 2,
+                            success: false,
+                            error: 'Rate limit exceeded'
+                        };
                     } else {
                         console.log(`FMP HTTP ${response.status} for ${symbol}`);
                     }
