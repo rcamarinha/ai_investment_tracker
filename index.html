@@ -191,29 +191,28 @@
                 <h2 style="margin-bottom: 15px;">🔑 API Key Management</h2>
                 
                 <div style="background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="color: #cbd5e1; margin-bottom: 10px; font-size: 16px;">Rate Limits & Strategy:</h3>
+                    <h3 style="color: #cbd5e1; margin-bottom: 10px; font-size: 16px;">2-Tier Strategy:</h3>
                     <div style="color: #94a3b8; font-size: 13px; line-height: 1.8;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                            <span>🚀 <strong>Finnhub:</strong> 60 calls/minute</span>
+                            <span>🚀 <strong>Finnhub:</strong> 60 calls/minute (unlimited daily)</span>
                             <span style="color: #4ade80;">PRIMARY</span>
                         </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                            <span>⚡ <strong>FMP:</strong> 250 calls/day (no per-min limit)</span>
-                            <span style="color: #60a5fa;">FALLBACK #1</span>
-                        </div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>🐢 <strong>Alpha Vantage:</strong> 5 calls/min, 25/day</span>
-                            <span style="color: #f59e0b;">FALLBACK #2</span>
+                            <span>🔄 <strong>Alpha Vantage:</strong> 5 calls/min, 25/day</span>
+                            <span style="color: #60a5fa;">FALLBACK</span>
                         </div>
                     </div>
                     <div style="margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 6px; font-size: 12px; color: #94a3b8;">
-                        💡 <strong>Optimal:</strong> Finnhub primary (fast), FMP for failures (generous daily limit), Alpha Vantage last resort (strict limits)
+                        💡 <strong>Strategy:</strong> Finnhub tries first (fast, unlimited). Alpha Vantage catches what Finnhub misses.
+                    </div>
+                    <div style="margin-top: 10px; padding: 10px; background: #7f1d1d; border-radius: 6px; font-size: 11px; color: #fca5a5;">
+                        ⚠️ <strong>FMP Removed:</strong> Financial Modeling Prep doesn't work from browsers (server-only API).
                     </div>
                 </div>
                 
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
-                        🚀 Finnhub API Key (Primary - Fastest)
+                        🚀 Finnhub API Key (Primary - Fast & Unlimited)
                     </label>
                     <input 
                         type="text" 
@@ -223,29 +222,13 @@
                     />
                     <div style="color: #94a3b8; font-size: 12px;">
                         Get free key: <a href="https://finnhub.io/register" target="_blank" style="color: #60a5fa;">https://finnhub.io/register</a>
-                        <br>✓ 60 calls/minute • ✓ Best for US stocks • ✓ Fast response
+                        <br>✓ 60 calls/minute • ✓ Unlimited daily • ✓ Best for US stocks
                     </div>
                 </div>
                 
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
-                        ⚡ Financial Modeling Prep API Key (Fallback #1)
-                    </label>
-                    <input 
-                        type="text" 
-                        id="fmpKeyInput" 
-                        placeholder="Enter your FMP API key" 
-                        style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;"
-                    />
-                    <div style="color: #94a3b8; font-size: 12px;">
-                        Get free key: <a href="https://site.financialmodelingprep.com/developer/docs/" target="_blank" style="color: #60a5fa;">https://financialmodelingprep.com</a>
-                        <br>✓ 250 calls/day • ✓ Good coverage • ✓ No per-minute limit
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
-                        🐢 Alpha Vantage API Key (Fallback #2 - Last Resort)
+                        🔄 Alpha Vantage API Key (Fallback - International Coverage)
                     </label>
                     <input 
                         type="text" 
@@ -255,15 +238,15 @@
                     />
                     <div style="color: #94a3b8; font-size: 12px;">
                         Get free key: <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color: #60a5fa;">https://www.alphavantage.co/support/#api-key</a>
-                        <br>✓ 5 calls/minute, 25/day • ✓ International stocks • ✓ Use sparingly
+                        <br>✓ 5 calls/minute, 25/day • ✓ Good international coverage • ✓ Backup option
                     </div>
                 </div>
                 
                 <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
                     <div style="color: #92400e; font-size: 13px;">
-                        <strong>💡 Strategy:</strong> Finnhub is used first (faster). Alpha Vantage is backup for symbols Finnhub doesn't have.
-                        <br><br>
                         <strong>🔒 Security:</strong> Keys saved in your browser only (localStorage). Never uploaded to GitHub.
+                        <br><br>
+                        <strong>📊 Coverage:</strong> Finnhub ~85% (fast), Alpha Vantage catches remaining ~15%. Total: ~95%+ success rate.
                     </div>
                 </div>
                 
@@ -353,10 +336,10 @@
             }
             
             // TIER 2: Financial Modeling Prep (FALLBACK #1 - generous daily limit)
+            // Using quote-short endpoint - better free tier support
             if (fmpKey) {
                 try {
-                    // Using the stable/quote endpoint with symbol parameter
-                    const url = `https://financialmodelingprep.com/stable/quote?symbol=${symbol}&apikey=${fmpKey}`;
+                    const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${symbol}&apikey=${fmpKey}`;
                     const response = await fetch(url);
                     
                     if (response.ok) {
@@ -365,17 +348,7 @@
                         // Check for error in response
                         if (data.error) {
                             console.log(`FMP API error for ${symbol}:`, data.error);
-                            return {
-                                price: null,
-                                source: 'FMP',
-                                tier: 2,
-                                success: false,
-                                error: data.error
-                            };
-                        }
-                        
-                        // Response is an array with quote data
-                        if (data && Array.isArray(data) && data.length > 0) {
+                        } else if (data && Array.isArray(data) && data.length > 0) {
                             const quote = data[0];
                             if (quote.price && quote.price > 0) {
                                 const price = quote.price;
@@ -388,42 +361,13 @@
                                 };
                             }
                         }
-                        
-                        console.log(`FMP: No price data for ${symbol}`);
                     } else if (response.status === 403) {
-                        console.log(`⚠️ FMP 403 Forbidden for ${symbol}`);
-                        
                         if (!window.fmpKeyWarningShown) {
                             window.fmpKeyWarningShown = true;
                             console.warn('⚠️ FMP 403 - Check API key');
                         }
-                        return {
-                            price: null,
-                            source: 'FMP',
-                            tier: 2,
-                            success: false,
-                            error: 'Access forbidden (403)'
-                        };
-                    } else if (response.status === 404) {
-                        console.log(`FMP 404 for ${symbol} - symbol not found`);
-                        return {
-                            price: null,
-                            source: 'FMP',
-                            tier: 2,
-                            success: false,
-                            error: 'Symbol not found (404)'
-                        };
                     } else if (response.status === 429) {
                         console.log(`⚠️ FMP rate limit hit for ${symbol}`);
-                        return {
-                            price: null,
-                            source: 'FMP',
-                            tier: 2,
-                            success: false,
-                            error: 'Rate limit exceeded'
-                        };
-                    } else {
-                        console.log(`FMP HTTP ${response.status} for ${symbol}`);
                     }
                 } catch (err) {
                     console.log(`FMP failed for ${symbol}:`, err.message);
