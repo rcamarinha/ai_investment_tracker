@@ -470,17 +470,17 @@
         
         function saveApiKeys() {
             const fhKey = document.getElementById('finnhubKeyInput').value.trim();
-            const fmpKey = document.getElementById('fmpKeyInput').value.trim();
+            const fmpKeyInput = document.getElementById('fmpKeyInput').value.trim();
             const avKey = document.getElementById('alphaVantageKeyInput').value.trim();
             
-            if (!fhKey && !fmpKey && !avKey) {
+            if (!fhKey && !fmpKeyInput && !avKey) {
                 alert('⚠️ Please enter at least one API key to fetch live prices.');
                 return;
             }
             
             // Save to variables
             finnhubKey = fhKey;
-            fmpKey = fmpKey;
+            fmpKey = fmpKeyInput;
             alphaVantageKey = avKey;
             
             // Save to localStorage
@@ -490,8 +490,8 @@
                 localStorage.removeItem('finnhubKey');
             }
             
-            if (fmpKey) {
-                localStorage.setItem('fmpKey', fmpKey);
+            if (fmpKeyInput) {
+                localStorage.setItem('fmpKey', fmpKeyInput);
             } else {
                 localStorage.removeItem('fmpKey');
             }
@@ -508,7 +508,7 @@
             if (fhKey) {
                 msg += '1️⃣ Finnhub (Primary - 60/min)\n';
             }
-            if (fmpKey) {
+            if (fmpKeyInput) {
                 msg += '2️⃣ FMP (Fallback - 250/day)\n';
             }
             if (avKey) {
@@ -520,7 +520,7 @@
             
             if (fhKey) {
                 msg += `~1 second per symbol = ~${Math.ceil(totalSymbols / 60)} min total\n`;
-            } else if (fmpKey) {
+            } else if (fmpKeyInput) {
                 msg += `~1 second per symbol = ~${Math.ceil(totalSymbols / 60)} min total\n`;
             } else if (avKey) {
                 msg += `~12 seconds per symbol = ~${Math.ceil(totalSymbols * 12 / 60)} min total\n`;
