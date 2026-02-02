@@ -133,7 +133,11 @@
         .loading { text-align: center; padding: 40px; color: #94a3b8; }
         .empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
         @media (max-width: 768px) {
-            .positions { grid-template-columns: 1fr; }
+            .position, .position-header-row {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                font-size: 12px;
+            }
             .portfolio-header { flex-direction: column; align-items: flex-start; }
             .total-value { text-align: left; }
         }
@@ -567,35 +571,6 @@
             return null;
         }
         
-        // Try alternative ticker formats for international stocks (legacy function)
-        async function tryAlternativeFormatsLegacy(originalSymbol) {
-            const alternatives = [];
-            
-            // If it has a dot, try without it
-            if (originalSymbol.includes('.')) {
-                const base = originalSymbol.split('.')[0];
-                alternatives.push(base);
-            }
-            
-            // If it doesn't have a dot, try common exchange suffixes
-            if (!originalSymbol.includes('.')) {
-                alternatives.push(`${originalSymbol}.PA`); // Paris
-                alternatives.push(`${originalSymbol}.L`);  // London
-                alternatives.push(`${originalSymbol}.DE`); // Germany
-            }
-            
-            for (const altSymbol of alternatives) {
-                console.log(`Trying alternative: ${altSymbol}`);
-                const result = await fetchStockPrice(altSymbol);
-                if (result.success) {
-                    return { ...result, alternativeSymbol: altSymbol };
-                }
-                await new Promise(resolve => setTimeout(resolve, 300));
-            }
-            
-            return null;
-        }
-        
         console.log('Variables initialized');
 
         
@@ -700,6 +675,12 @@
             }
         }
 
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         function formatCurrency(num) {
             return '$' + num.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
         }
@@ -772,7 +753,7 @@
             updateHistoryDisplay();
             
             const gainLoss = totalMarketValue - totalInvested;
-            const gainLossPct = (gainLoss / totalInvested) * 100;
+            const gainLossPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : 0;
             alert(`✓ Portfolio snapshot saved!\n\nInvested: ${formatCurrency(totalInvested)}\nMarket Value: ${formatCurrency(totalMarketValue)}\nGain/Loss: ${formatCurrency(gainLoss)} (${formatPercent(gainLossPct)})\n\nTotal snapshots: ${portfolioHistory.length}\n\n${cloudSaved ? '☁️ Synced to cloud storage' : '💾 Saved to browser only'}`);
         }
 
@@ -803,7 +784,7 @@
                         ${portfolioHistory.slice().reverse().map((snapshot, idx) => {
                             const date = new Date(snapshot.timestamp);
                             const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
-                            const gainLossPct = (gainLoss / snapshot.totalInvested) * 100;
+                            const gainLossPct = snapshot.totalInvested > 0 ? (gainLoss / snapshot.totalInvested) * 100 : 0;
                             const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
                             
                             return `
@@ -843,8 +824,6 @@
                 console.error('Error stack:', err.stack);
             }
         }
-
-        let historyChart = null;
 
         function updateChart() {
             if (portfolioHistory.length === 0) return;
@@ -951,15 +930,18 @@
             const symbols = [...new Set(portfolio.map(p => p.symbol))]; // Get unique symbols
             
             // Determine rate limiting based on available APIs
-            let delayBetweenCalls = 500; // Default 500ms
+            let delayBetweenCalls = 1000; // Default 1s
             let apiInfo = '';
-            
-            if (finnhubKey && alphaVantageKey) {
+
+            if (finnhubKey) {
                 delayBetweenCalls = 1000; // 1 second (60/min for Finnhub primary)
-                apiInfo = 'Using Finnhub (primary) + Alpha Vantage (fallback)';
-            } else if (finnhubKey) {
-                delayBetweenCalls = 1000; // 1 second (60/min limit)
-                apiInfo = 'Using Finnhub only (60 calls/min)';
+                apiInfo = 'Using Finnhub (primary)';
+                if (fmpKey) apiInfo += ' + FMP (fallback #1)';
+                if (alphaVantageKey) apiInfo += ' + Alpha Vantage (fallback #2)';
+            } else if (fmpKey) {
+                delayBetweenCalls = 500; // FMP has no per-minute limit, 250/day
+                apiInfo = 'Using FMP (primary - 250/day)';
+                if (alphaVantageKey) apiInfo += ' + Alpha Vantage (fallback)';
             } else if (alphaVantageKey) {
                 delayBetweenCalls = 12000; // 12 seconds (5/min limit)
                 apiInfo = 'Using Alpha Vantage only (5 calls/min - slower)';
@@ -1050,10 +1032,7 @@
                         }
                         
                         // Small delay to respect rate limits
-                        // Finnhub: 60 calls/min = 1 call/second
-                        // Alpha Vantage: 5 calls/min = 1 call/12 seconds
-                        const delay = finnhubKey ? 1000 : 12000; // Use Finnhub timing if available
-                        await new Promise(resolve => setTimeout(resolve, delay));
+                        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
                         
                     } catch (err) {
                         console.error(`✗ ${symbol}: ${err.message}`);
@@ -1183,7 +1162,7 @@
                 const hasPrice = currentPrice !== undefined;
                 const marketValue = hasPrice ? pos.shares * currentPrice : invested;
                 const gainLoss = marketValue - invested;
-                const gainLossPct = (gainLoss / invested) * 100;
+                const gainLossPct = invested > 0 ? (gainLoss / invested) * 100 : 0;
                 const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
                 
                 // Get price metadata
@@ -1229,14 +1208,14 @@
                 <div class="position">
                     <div class="position-symbol">
                         <div style="display: flex; align-items: center; gap: 5px;">
-                            <span style="color: ${statusColor}; font-size: 14px;" title="${statusText}">${statusFlag}</span>
-                            <span>${pos.symbol}</span>
+                            <span style="color: ${statusColor}; font-size: 14px;" title="${escapeHTML(statusText)}">${statusFlag}</span>
+                            <span>${escapeHTML(pos.symbol)}</span>
                         </div>
-                        ${timestampText ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">${timestampText}</div>` : ''}
+                        ${timestampText ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">${escapeHTML(timestampText)}</div>` : ''}
                     </div>
-                    <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${pos.name || pos.symbol}${pos.platform ? '\nPlatform: ' + pos.platform : ''}">
-                        ${pos.name ? (pos.name.length > 30 ? pos.name.substring(0, 27) + '...' : pos.name) : pos.symbol}
-                        ${pos.platform && pos.platform !== 'Unknown' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">📍 ${pos.platform}</div>` : ''}
+                    <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}">
+                        ${pos.name ? escapeHTML(pos.name.length > 30 ? pos.name.substring(0, 27) + '...' : pos.name) : escapeHTML(pos.symbol)}
+                        ${pos.platform && pos.platform !== 'Unknown' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">📍 ${escapeHTML(pos.platform)}</div>` : ''}
                     </div>
                     <div class="position-details">${pos.shares}</div>
                     <div class="position-details">${formatCurrency(pos.avgPrice)}</div>
@@ -1577,20 +1556,20 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                     <div class="card analysis-section">
                         <div class="analysis-card">
                             <div class="analysis-title">📊 Market Overview</div>
-                            <div class="analysis-content">${analysis.marketOverview}</div>
+                            <div class="analysis-content">${escapeHTML(analysis.marketOverview)}</div>
                         </div>
 
                         <div class="analysis-card">
                             <div class="analysis-title">💰 Portfolio Impact</div>
-                            <div class="analysis-content">${analysis.portfolioImpact}</div>
+                            <div class="analysis-content">${escapeHTML(analysis.portfolioImpact)}</div>
                         </div>
 
                         <div class="analysis-card">
                             <div class="analysis-title">💡 Actionable Ideas</div>
                             ${analysis.ideas.map((idea, idx) => `
                                 <div class="idea-item">
-                                    <div class="idea-title">${idx + 1}. ${idea.title}</div>
-                                    <div class="idea-desc">${idea.description}</div>
+                                    <div class="idea-title">${idx + 1}. ${escapeHTML(idea.title)}</div>
+                                    <div class="idea-desc">${escapeHTML(idea.description)}</div>
                                 </div>
                             `).join('')}
                         </div>
@@ -1612,7 +1591,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                 analysisSection.innerHTML = `
                     <div class="card">
                         <div class="analysis-content" style="color: #f87171;">
-                            ❌ Unable to generate analysis: ${err.message}
+                            ❌ Unable to generate analysis: ${escapeHTML(err.message)}
                             <br><br>
                             Check the browser console (F12) for detailed error information.
                         </div>
@@ -1732,26 +1711,19 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             }
         })();
         
-        console.log('=== APP INITIALIZED ===');
-        console.log('API Key set:', !!alphaVantageKey);
-        console.log('Portfolio positions:', portfolio.length);
-        console.log('History snapshots:', portfolioHistory.length);
-        console.log('Is Artifact:', isArtifact);
-        console.log('Cloud Storage Available:', typeof window.storage !== 'undefined');
-        
         // Load API keys from localStorage if available
         const storedAVKey = localStorage.getItem('alphaVantageKey');
         if (storedAVKey) {
             alphaVantageKey = storedAVKey;
             console.log('✓ Alpha Vantage key loaded from localStorage');
         }
-        
+
         const storedFHKey = localStorage.getItem('finnhubKey');
         if (storedFHKey) {
             finnhubKey = storedFHKey;
             console.log('✓ Finnhub key loaded from localStorage');
         }
-        
+
         const storedFMPKey = localStorage.getItem('fmpKey');
         if (storedFMPKey) {
             fmpKey = storedFMPKey;
@@ -1764,6 +1736,13 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             console.log('✓ Anthropic key loaded from localStorage');
         }
 
+        console.log('=== APP INITIALIZED ===');
+        console.log('API Keys:', { finnhub: !!finnhubKey, fmp: !!fmpKey, alphaVantage: !!alphaVantageKey, anthropic: !!anthropicKey });
+        console.log('Portfolio positions:', portfolio.length);
+        console.log('History snapshots:', portfolioHistory.length);
+        console.log('Is Artifact:', isArtifact);
+        console.log('Cloud Storage Available:', typeof window.storage !== 'undefined');
+
         // Show artifact warning if detected
         if (isArtifact) {
             const warningDiv = document.getElementById('artifactWarning');
@@ -1772,8 +1751,8 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             }
         }
         
-        // Auto-fetch prices if portfolio exists and API key is set
-        if (portfolio.length > 0 && alphaVantageKey) {
+        // Auto-fetch prices if portfolio exists and any API key is set
+        if (portfolio.length > 0 && (finnhubKey || fmpKey || alphaVantageKey)) {
             console.log('Auto-fetching prices on page load...');
             setTimeout(() => {
                 fetchMarketPrices();
