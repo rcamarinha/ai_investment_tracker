@@ -259,6 +259,24 @@
                     </div>
                 </div>
                 
+                <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                        🤖 Anthropic API Key (AI Analysis)
+                    </label>
+                    <input
+                        type="password"
+                        id="anthropicKeyInput"
+                        placeholder="Enter your Anthropic API key (sk-ant-...)"
+                        style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;"
+                    />
+                    <div style="color: #94a3b8; font-size: 12px;">
+                        Get API key: <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">https://console.anthropic.com/settings/keys</a>
+                        <br>Required for "Get AI Analysis" when running outside Claude.ai
+                    </div>
+                </div>
+
                 <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
                     <div style="color: #92400e; font-size: 13px;">
                         <strong>🔒 Security:</strong> Keys saved in your browser only (localStorage). Never uploaded to GitHub.
@@ -316,6 +334,7 @@
         let alphaVantageKey = ''; // 25 calls/day, 5 calls/min
         let finnhubKey = ''; // 60 calls/min
         let fmpKey = ''; // 250 calls/day
+        let anthropicKey = ''; // For AI analysis outside Claude.ai
         let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
         
         // Check if we're in a Claude artifact (restricted network)
@@ -584,6 +603,7 @@
             document.getElementById('finnhubKeyInput').value = finnhubKey || '';
             document.getElementById('fmpKeyInput').value = fmpKey || '';
             document.getElementById('alphaVantageKeyInput').value = alphaVantageKey || '';
+            document.getElementById('anthropicKeyInput').value = anthropicKey || '';
             document.getElementById('apiKeyDialog').style.display = 'block';
         }
         
@@ -595,34 +615,42 @@
             const fhKey = document.getElementById('finnhubKeyInput').value.trim();
             const fmpKeyInput = document.getElementById('fmpKeyInput').value.trim();
             const avKey = document.getElementById('alphaVantageKeyInput').value.trim();
-            
-            if (!fhKey && !fmpKeyInput && !avKey) {
-                alert('⚠️ Please enter at least one API key to fetch live prices.');
+            const antKey = document.getElementById('anthropicKeyInput').value.trim();
+
+            if (!fhKey && !fmpKeyInput && !avKey && !antKey) {
+                alert('⚠️ Please enter at least one API key.');
                 return;
             }
-            
+
             // Save to variables
             finnhubKey = fhKey;
             fmpKey = fmpKeyInput;
             alphaVantageKey = avKey;
-            
+            anthropicKey = antKey;
+
             // Save to localStorage
             if (fhKey) {
                 localStorage.setItem('finnhubKey', fhKey);
             } else {
                 localStorage.removeItem('finnhubKey');
             }
-            
+
             if (fmpKeyInput) {
                 localStorage.setItem('fmpKey', fmpKeyInput);
             } else {
                 localStorage.removeItem('fmpKey');
             }
-            
+
             if (avKey) {
                 localStorage.setItem('alphaVantageKey', avKey);
             } else {
                 localStorage.removeItem('alphaVantageKey');
+            }
+
+            if (antKey) {
+                localStorage.setItem('anthropicKey', antKey);
+            } else {
+                localStorage.removeItem('anthropicKey');
             }
             
             let msg = '✓ API keys saved successfully!\n\n';
@@ -659,12 +687,15 @@
                 finnhubKey = '';
                 fmpKey = '';
                 alphaVantageKey = '';
+                anthropicKey = '';
                 localStorage.removeItem('finnhubKey');
                 localStorage.removeItem('fmpKey');
                 localStorage.removeItem('alphaVantageKey');
+                localStorage.removeItem('anthropicKey');
                 document.getElementById('finnhubKeyInput').value = '';
                 document.getElementById('fmpKeyInput').value = '';
                 document.getElementById('alphaVantageKeyInput').value = '';
+                document.getElementById('anthropicKeyInput').value = '';
                 alert('✓ All API keys cleared.');
             }
         }
@@ -1449,56 +1480,60 @@
         async function analyzeMarkets() {
             const analyzeBtn = document.getElementById('analyzeBtn');
             const analysisSection = document.getElementById('analysisSection');
-            
+
             console.log('=== ANALYZE MARKETS DEBUG ===');
             console.log('Portfolio:', portfolio);
             console.log('Portfolio length:', portfolio.length);
-            
+
             if (portfolio.length === 0) {
                 alert('❌ No positions in portfolio. Import your portfolio first.');
                 return;
             }
-            
-            // Check if we're in Claude.ai (only place where AI API works)
-            const isClaudeAI = window.location.hostname.includes('claude.ai') || 
+
+            // Determine if we're inside Claude.ai or running externally
+            const isClaudeAI = window.location.hostname.includes('claude.ai') ||
                               window.location.hostname.includes('anthropic.com') ||
-                              (typeof window.storage !== 'undefined'); // Cloud storage = claude.ai
-            
-            if (!isClaudeAI) {
+                              (typeof window.storage !== 'undefined');
+
+            // Outside Claude.ai, an Anthropic API key is required
+            if (!isClaudeAI && !anthropicKey) {
                 analysisSection.innerHTML = `
                     <div class="card" style="background: #334155; padding: 20px;">
                         <h3 style="color: #cbd5e1; margin-bottom: 10px;">🤖 AI Analysis</h3>
                         <p style="color: #94a3b8; margin-bottom: 15px;">
-                            AI-powered portfolio analysis is only available when this app runs in claude.ai.
-                        </p>
-                        <p style="color: #cbd5e1; font-weight: bold; margin-bottom: 10px;">
-                            To use AI Analysis:
+                            To use AI analysis outside of Claude.ai, you need an Anthropic API key.
                         </p>
                         <ol style="color: #94a3b8; margin-left: 20px; line-height: 1.8;">
-                            <li>Go to <a href="https://claude.ai" style="color: #60a5fa;">claude.ai</a></li>
-                            <li>Upload this HTML file or ask Claude to create this portfolio app</li>
-                            <li>Your portfolio will sync automatically via cloud storage</li>
-                            <li>Click "Get AI Analysis" to get personalized insights</li>
+                            <li>Get an API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com</a></li>
+                            <li>Click the <strong style="color: #cbd5e1;">🔑 API Keys</strong> button above</li>
+                            <li>Enter your Anthropic key and save</li>
+                            <li>Click "Get AI Analysis" again</li>
                         </ol>
-                        <p style="color: #f59e0b; margin-top: 15px; font-size: 13px;">
-                            💡 Tip: All other features (price fetching, history, snapshots) work in standalone mode!
-                        </p>
                     </div>
                 `;
                 return;
             }
-            
+
             analyzeBtn.disabled = true;
             analyzeBtn.textContent = 'Analyzing...';
-            
+
             analysisSection.innerHTML = '<div class="card loading">🔄 Analyzing your portfolio...</div>';
-            
+
             try {
                 console.log('Sending API request...');
-                
+
+                // Build headers: inside Claude.ai the runtime handles auth;
+                // outside we send the user's API key with direct browser access.
+                const headers = { 'Content-Type': 'application/json' };
+                if (!isClaudeAI && anthropicKey) {
+                    headers['x-api-key'] = anthropicKey;
+                    headers['anthropic-version'] = '2023-06-01';
+                    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+                }
+
                 const response = await fetch('https://api.anthropic.com/v1/messages', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify({
                         model: 'claude-sonnet-4-20250514',
                         max_tokens: 1000,
@@ -1508,7 +1543,7 @@
 
 Please provide your analysis in JSON format with these fields:
 - marketOverview: brief overview of current market sentiment (2-3 sentences)
-- portfolioImpact: how current conditions affect this specific portfolio (2-3 sentences)  
+- portfolioImpact: how current conditions affect this specific portfolio (2-3 sentences)
 - ideas: array of 3 actionable ideas, each with "title" and "description"
 
 Respond ONLY with valid JSON, no markdown, no preamble.`
@@ -1517,35 +1552,39 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                 });
 
                 console.log('API Response status:', response.status);
-                
+
                 if (!response.ok) {
-                    throw new Error(`API returned status ${response.status}`);
+                    const errBody = await response.text().catch(() => '');
+                    if (response.status === 401) {
+                        throw new Error('Invalid API key. Check your Anthropic key in API Keys settings.');
+                    }
+                    throw new Error(`API returned status ${response.status}: ${errBody}`);
                 }
 
                 const data = await response.json();
                 console.log('API Response data:', data);
-                
+
                 const text = data.content.find(c => c.type === 'text')?.text || '';
                 console.log('Extracted text:', text);
-                
+
                 const cleanText = text.replace(/```json|```/g, '').trim();
                 console.log('Cleaned text:', cleanText);
-                
+
                 const analysis = JSON.parse(cleanText);
                 console.log('Parsed analysis:', analysis);
-                
+
                 analysisSection.innerHTML = `
                     <div class="card analysis-section">
                         <div class="analysis-card">
                             <div class="analysis-title">📊 Market Overview</div>
                             <div class="analysis-content">${analysis.marketOverview}</div>
                         </div>
-                        
+
                         <div class="analysis-card">
                             <div class="analysis-title">💰 Portfolio Impact</div>
                             <div class="analysis-content">${analysis.portfolioImpact}</div>
                         </div>
-                        
+
                         <div class="analysis-card">
                             <div class="analysis-title">💡 Actionable Ideas</div>
                             ${analysis.ideas.map((idea, idx) => `
@@ -1555,13 +1594,13 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                                 </div>
                             `).join('')}
                         </div>
-                        
+
                         <div class="disclaimer">
                             <strong>Disclaimer:</strong> This analysis is for informational purposes only and should not be considered financial advice. Always consult with a qualified financial advisor before making investment decisions.
                         </div>
                     </div>
                 `;
-                
+
                 console.log('✓ Analysis rendered successfully');
             } catch (err) {
                 console.error('=== ANALYZE MARKETS ERROR ===');
@@ -1569,7 +1608,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                 console.error('Error message:', err.message);
                 console.error('Full error:', err);
                 console.error('Stack trace:', err.stack);
-                
+
                 analysisSection.innerHTML = `
                     <div class="card">
                         <div class="analysis-content" style="color: #f87171;">
@@ -1579,10 +1618,10 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                         </div>
                     </div>
                 `;
-                
+
                 alert(`❌ Error generating analysis:\n\n${err.message}\n\nCheck console (F12) for details.`);
             }
-            
+
             analyzeBtn.disabled = false;
             analyzeBtn.textContent = 'Get AI Analysis';
         }
@@ -1718,7 +1757,13 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             fmpKey = storedFMPKey;
             console.log('✓ FMP key loaded from localStorage');
         }
-        
+
+        const storedAntKey = localStorage.getItem('anthropicKey');
+        if (storedAntKey) {
+            anthropicKey = storedAntKey;
+            console.log('✓ Anthropic key loaded from localStorage');
+        }
+
         // Show artifact warning if detected
         if (isArtifact) {
             const warningDiv = document.getElementById('artifactWarning');
