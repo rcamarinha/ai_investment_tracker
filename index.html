@@ -1970,7 +1970,18 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                         }
                     });
 
-                    if (fnError) throw fnError;
+                    if (fnError) {
+                        // Extract detailed error from Edge Function response
+                        let errorMsg = fnError.message;
+                        try {
+                            if (fnError.context) {
+                                const errorBody = await fnError.context.json();
+                                errorMsg = errorBody.error || errorBody.details || errorMsg;
+                                console.error('Edge Function error details:', errorBody);
+                            }
+                        } catch (e) {}
+                        throw new Error(errorMsg);
+                    }
                     data = fnData;
                 }
 
