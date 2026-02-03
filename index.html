@@ -407,10 +407,10 @@
         let marketPrices = {}; // Store current market prices
         let priceMetadata = {}; // Store {timestamp, source, success} for each symbol
         let pricesLoading = false;
-        let alphaVantageKey = ''; // 25 calls/day, 5 calls/min
-        let finnhubKey = ''; // 60 calls/min
-        let fmpKey = ''; // 250 calls/day
-        let anthropicKey = ''; // For AI analysis outside Claude.ai
+        let alphaVantageKey = 'ABF4HZSG0I50VGLP'; // 25 calls/day, 5 calls/min
+        let finnhubKey = 'd5u9b19r01qtjet2flngd5u9b19r01qtjet2flo0'; // 60 calls/min
+        let fmpKey = 'driWloMwwLkFzzcl4Gvgv1CXhXa7jy2l'; // 250 calls/day
+        let anthropicKey = ''; // For AI analysis outside Claude.ai — users enter their own key
         let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
         let supabaseUrl = 'https://dybetrrhshqezokcxiid.supabase.co';
         let supabaseAnonKey = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
@@ -2091,30 +2091,20 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             }
         })();
         
-        // Load API keys from localStorage if available
+        // Load API key overrides from localStorage (defaults are hardcoded)
         const storedAVKey = localStorage.getItem('alphaVantageKey');
-        if (storedAVKey) {
-            alphaVantageKey = storedAVKey;
-            console.log('✓ Alpha Vantage key loaded from localStorage');
-        }
+        if (storedAVKey) { alphaVantageKey = storedAVKey; }
 
         const storedFHKey = localStorage.getItem('finnhubKey');
-        if (storedFHKey) {
-            finnhubKey = storedFHKey;
-            console.log('✓ Finnhub key loaded from localStorage');
-        }
+        if (storedFHKey) { finnhubKey = storedFHKey; }
 
         const storedFMPKey = localStorage.getItem('fmpKey');
-        if (storedFMPKey) {
-            fmpKey = storedFMPKey;
-            console.log('✓ FMP key loaded from localStorage');
-        }
+        if (storedFMPKey) { fmpKey = storedFMPKey; }
 
         const storedAntKey = localStorage.getItem('anthropicKey');
-        if (storedAntKey) {
-            anthropicKey = storedAntKey;
-            console.log('✓ Anthropic key loaded from localStorage');
-        }
+        if (storedAntKey) { anthropicKey = storedAntKey; }
+
+        console.log('✓ API keys ready (hardcoded defaults + localStorage overrides)');
 
         // Load Supabase config overrides from localStorage (if user changed them)
         const storedSBUrl = localStorage.getItem('supabaseUrl');
