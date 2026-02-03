@@ -407,13 +407,13 @@
         let marketPrices = {}; // Store current market prices
         let priceMetadata = {}; // Store {timestamp, source, success} for each symbol
         let pricesLoading = false;
-        let alphaVantageKey = ''; // 25 calls/day, 5 calls/min
-        let finnhubKey = ''; // 60 calls/min
-        let fmpKey = ''; // 250 calls/day
-        let anthropicKey = ''; // For AI analysis outside Claude.ai
+        let alphaVantageKey = 'ABF4HZSG0I50VGLP'; // 25 calls/day, 5 calls/min
+        let finnhubKey = 'd5u9b19r01qtjet2flngd5u9b19r01qtjet2flo0'; // 60 calls/min
+        let fmpKey = 'driWloMwwLkFzzcl4Gvgv1CXhXa7jy2l'; // 250 calls/day
+        let anthropicKey = ''; // For AI analysis outside Claude.ai — users enter their own key
         let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
-        let supabaseUrl = '';
-        let supabaseAnonKey = '';
+        let supabaseUrl = 'https://dybetrrhshqezokcxiid.supabase.co';
+        let supabaseAnonKey = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
         let supabaseClient = null;
         let currentUser = null;
 
@@ -1849,18 +1849,24 @@
                 return;
             }
 
-            // Determine if we're inside Claude.ai or running externally
+            // Determine if we're inside Claude.ai
             const isClaudeAI = window.location.hostname.includes('claude.ai') ||
                               window.location.hostname.includes('anthropic.com') ||
                               (typeof window.storage !== 'undefined');
 
-            // Outside Claude.ai, an Anthropic API key is required
-            if (!isClaudeAI && !anthropicKey) {
+            // Determine which path to use:
+            // 1. User's own Anthropic key (direct call)
+            // 2. Claude.ai runtime (direct call, runtime handles auth)
+            // 3. Supabase Edge Function (server-side key)
+            const useDirectAPI = isClaudeAI || anthropicKey;
+            const useEdgeFunction = !useDirectAPI && supabaseUrl;
+
+            if (!useDirectAPI && !useEdgeFunction) {
                 analysisSection.innerHTML = `
                     <div class="card" style="background: #334155; padding: 20px;">
                         <h3 style="color: #cbd5e1; margin-bottom: 10px;">🤖 AI Analysis</h3>
                         <p style="color: #94a3b8; margin-bottom: 15px;">
-                            To use AI analysis outside of Claude.ai, you need an Anthropic API key.
+                            AI analysis requires either a Supabase connection or your own Anthropic API key.
                         </p>
                         <ol style="color: #94a3b8; margin-left: 20px; line-height: 1.8;">
                             <li>Get an API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com</a></li>
@@ -1879,26 +1885,27 @@
             analysisSection.innerHTML = '<div class="card loading">🔄 Analyzing your portfolio...</div>';
 
             try {
-                console.log('Sending API request...');
+                let data;
 
-                // Build headers: inside Claude.ai the runtime handles auth;
-                // outside we send the user's API key with direct browser access.
-                const headers = { 'Content-Type': 'application/json' };
-                if (!isClaudeAI && anthropicKey) {
-                    headers['x-api-key'] = anthropicKey;
-                    headers['anthropic-version'] = '2023-06-01';
-                    headers['anthropic-dangerous-direct-browser-access'] = 'true';
-                }
+                if (useDirectAPI) {
+                    // Direct Anthropic API call (Claude.ai or user's own key)
+                    console.log('Using direct Anthropic API...');
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (!isClaudeAI && anthropicKey) {
+                        headers['x-api-key'] = anthropicKey;
+                        headers['anthropic-version'] = '2023-06-01';
+                        headers['anthropic-dangerous-direct-browser-access'] = 'true';
+                    }
 
-                const response = await fetch('https://api.anthropic.com/v1/messages', {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify({
-                        model: 'claude-sonnet-4-20250514',
-                        max_tokens: 1000,
-                        messages: [{
-                            role: 'user',
-                            content: `You are a financial advisor AI. Analyze current market conditions and provide insights for a portfolio containing: ${portfolio.map(p => `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}`).join(', ')}.
+                    const response = await fetch('https://api.anthropic.com/v1/messages', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({
+                            model: 'claude-sonnet-4-20250514',
+                            max_tokens: 1000,
+                            messages: [{
+                                role: 'user',
+                                content: `You are a financial advisor AI. Analyze current market conditions and provide insights for a portfolio containing: ${portfolio.map(p => `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}`).join(', ')}.
 
 Please provide your analysis in JSON format with these fields:
 - marketOverview: brief overview of current market sentiment (2-3 sentences)
@@ -1906,21 +1913,53 @@ Please provide your analysis in JSON format with these fields:
 - ideas: array of 3 actionable ideas, each with "title" and "description"
 
 Respond ONLY with valid JSON, no markdown, no preamble.`
-                        }]
-                    })
-                });
+                            }]
+                        })
+                    });
 
-                console.log('API Response status:', response.status);
-
-                if (!response.ok) {
-                    const errBody = await response.text().catch(() => '');
-                    if (response.status === 401) {
-                        throw new Error('Invalid API key. Check your Anthropic key in API Keys settings.');
+                    if (!response.ok) {
+                        const errBody = await response.text().catch(() => '');
+                        if (response.status === 401) {
+                            throw new Error('Invalid API key. Check your Anthropic key in API Keys settings.');
+                        }
+                        throw new Error(`API returned status ${response.status}: ${errBody}`);
                     }
-                    throw new Error(`API returned status ${response.status}: ${errBody}`);
+
+                    data = await response.json();
+                } else {
+                    // Supabase Edge Function (server-side Anthropic key)
+                    console.log('Using Supabase Edge Function...');
+                    const edgeUrl = `${supabaseUrl}/functions/v1/analyze-portfolio`;
+
+                    const headers = { 'Content-Type': 'application/json' };
+                    // Include auth token if logged in
+                    if (supabaseClient && currentUser) {
+                        const { data: sessionData } = await supabaseClient.auth.getSession();
+                        if (sessionData?.session?.access_token) {
+                            headers['Authorization'] = `Bearer ${sessionData.session.access_token}`;
+                        }
+                    }
+
+                    const response = await fetch(edgeUrl, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({
+                            portfolio: portfolio.map(p => ({
+                                shares: p.shares,
+                                symbol: p.symbol,
+                                avgPrice: p.avgPrice
+                            }))
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errBody = await response.text().catch(() => '');
+                        throw new Error(`Edge Function error (${response.status}): ${errBody}`);
+                    }
+
+                    data = await response.json();
                 }
 
-                const data = await response.json();
                 console.log('API Response data:', data);
 
                 const text = data.content.find(c => c.type === 'text')?.text || '';
@@ -2091,40 +2130,31 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             }
         })();
         
-        // Load API keys from localStorage if available
+        // Load API key overrides from localStorage (defaults are hardcoded)
         const storedAVKey = localStorage.getItem('alphaVantageKey');
-        if (storedAVKey) {
-            alphaVantageKey = storedAVKey;
-            console.log('✓ Alpha Vantage key loaded from localStorage');
-        }
+        if (storedAVKey) { alphaVantageKey = storedAVKey; }
 
         const storedFHKey = localStorage.getItem('finnhubKey');
-        if (storedFHKey) {
-            finnhubKey = storedFHKey;
-            console.log('✓ Finnhub key loaded from localStorage');
-        }
+        if (storedFHKey) { finnhubKey = storedFHKey; }
 
         const storedFMPKey = localStorage.getItem('fmpKey');
-        if (storedFMPKey) {
-            fmpKey = storedFMPKey;
-            console.log('✓ FMP key loaded from localStorage');
-        }
+        if (storedFMPKey) { fmpKey = storedFMPKey; }
 
         const storedAntKey = localStorage.getItem('anthropicKey');
-        if (storedAntKey) {
-            anthropicKey = storedAntKey;
-            console.log('✓ Anthropic key loaded from localStorage');
-        }
+        if (storedAntKey) { anthropicKey = storedAntKey; }
 
-        // Load Supabase config from localStorage
+        console.log('✓ API keys ready (hardcoded defaults + localStorage overrides)');
+
+        // Load Supabase config overrides from localStorage (if user changed them)
         const storedSBUrl = localStorage.getItem('supabaseUrl');
         const storedSBKey = localStorage.getItem('supabaseAnonKey');
         if (storedSBUrl && storedSBKey) {
             supabaseUrl = storedSBUrl;
             supabaseAnonKey = storedSBKey;
-            console.log('✓ Supabase config loaded from localStorage');
-            initSupabase();
+            console.log('✓ Supabase config overridden from localStorage');
         }
+        // Always initialize — defaults are hardcoded
+        initSupabase();
 
         console.log('=== APP INITIALIZED ===');
         console.log('API Keys:', { finnhub: !!finnhubKey, fmp: !!fmpKey, alphaVantage: !!alphaVantageKey, anthropic: !!anthropicKey });
