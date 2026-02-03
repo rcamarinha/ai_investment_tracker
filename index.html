@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Financial Advisor</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -141,6 +142,43 @@
             .portfolio-header { flex-direction: column; align-items: flex-start; }
             .total-value { text-align: left; }
         }
+        .auth-bar {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 13px;
+        }
+        .auth-bar input[type="email"],
+        .auth-bar input[type="password"] {
+            padding: 8px 12px;
+            background: #334155;
+            color: white;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            font-size: 13px;
+            width: 200px;
+        }
+        .auth-bar .btn-sm {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            font-weight: 600;
+            color: white;
+        }
+        @media (max-width: 768px) {
+            .auth-bar input[type="email"],
+            .auth-bar input[type="password"] {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -150,6 +188,8 @@
             <p>Market analysis and personalized portfolio insights</p>
         </div>
         
+        <div id="authBar" class="auth-bar" style="display: none;"></div>
+
         <!-- Artifact Network Warning (shown only in artifacts) -->
         <div id="artifactWarning" style="display: none; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
             <div style="display: flex; align-items: start; gap: 10px;">
@@ -281,11 +321,43 @@
                     </div>
                 </div>
 
+                <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                        ☁️ Supabase Project URL (Cloud Database)
+                    </label>
+                    <input
+                        type="text"
+                        id="supabaseUrlInput"
+                        placeholder="https://your-project.supabase.co"
+                        style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;"
+                    />
+                    <div style="color: #94a3b8; font-size: 12px;">
+                        Get from: <a href="https://supabase.com/dashboard" target="_blank" style="color: #60a5fa;">Supabase Dashboard</a> &gt; Settings &gt; API
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                        🔑 Supabase Anon Key (Public)
+                    </label>
+                    <input
+                        type="text"
+                        id="supabaseAnonKeyInput"
+                        placeholder="eyJhbGciOiJIUzI1NiIs..."
+                        style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;"
+                    />
+                    <div style="color: #94a3b8; font-size: 12px;">
+                        This is the <strong>anon/public</strong> key (safe for browser use). Row Level Security protects your data.
+                    </div>
+                </div>
+
                 <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
                     <div style="color: #92400e; font-size: 13px;">
-                        <strong>🔒 Security:</strong> Keys saved in your browser only (localStorage). Never uploaded to GitHub.
+                        <strong>🔒 Security:</strong> API keys saved in your browser only (localStorage). Supabase anon key is safe for public use.
                         <br><br>
-                        <strong>📊 Coverage:</strong> All 3 APIs combined = ~98%+ success rate. Finnhub ~85%, FMP ~10%, Alpha Vantage ~5%.
+                        <strong>📊 Coverage:</strong> All 3 price APIs combined = ~98%+ success rate. Finnhub ~85%, FMP ~10%, Alpha Vantage ~5%.
                     </div>
                 </div>
                 
@@ -340,7 +412,11 @@
         let fmpKey = ''; // 250 calls/day
         let anthropicKey = ''; // For AI analysis outside Claude.ai
         let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
-        
+        let supabaseUrl = '';
+        let supabaseAnonKey = '';
+        let supabaseClient = null;
+        let currentUser = null;
+
         // Check if we're in a Claude artifact (restricted network)
         const isArtifact = window.location.hostname.includes('claude.ai') && 
                           window.location.pathname.includes('artifacts');
@@ -579,6 +655,8 @@
             document.getElementById('fmpKeyInput').value = fmpKey || '';
             document.getElementById('alphaVantageKeyInput').value = alphaVantageKey || '';
             document.getElementById('anthropicKeyInput').value = anthropicKey || '';
+            document.getElementById('supabaseUrlInput').value = supabaseUrl || '';
+            document.getElementById('supabaseAnonKeyInput').value = supabaseAnonKey || '';
             document.getElementById('apiKeyDialog').style.display = 'block';
         }
         
@@ -591,17 +669,16 @@
             const fmpKeyInput = document.getElementById('fmpKeyInput').value.trim();
             const avKey = document.getElementById('alphaVantageKeyInput').value.trim();
             const antKey = document.getElementById('anthropicKeyInput').value.trim();
-
-            if (!fhKey && !fmpKeyInput && !avKey && !antKey) {
-                alert('⚠️ Please enter at least one API key.');
-                return;
-            }
+            const sbUrl = document.getElementById('supabaseUrlInput').value.trim();
+            const sbKey = document.getElementById('supabaseAnonKeyInput').value.trim();
 
             // Save to variables
             finnhubKey = fhKey;
             fmpKey = fmpKeyInput;
             alphaVantageKey = avKey;
             anthropicKey = antKey;
+            supabaseUrl = sbUrl;
+            supabaseAnonKey = sbKey;
 
             // Save to localStorage
             if (fhKey) {
@@ -627,53 +704,342 @@
             } else {
                 localStorage.removeItem('anthropicKey');
             }
-            
-            let msg = '✓ API keys saved successfully!\n\n';
-            msg += 'Fetch Strategy:\n';
-            
-            if (fhKey) {
-                msg += '1️⃣ Finnhub (Primary - 60/min)\n';
+
+            if (sbUrl) {
+                localStorage.setItem('supabaseUrl', sbUrl);
+            } else {
+                localStorage.removeItem('supabaseUrl');
             }
-            if (fmpKeyInput) {
-                msg += '2️⃣ FMP (Fallback - 250/day)\n';
+
+            if (sbKey) {
+                localStorage.setItem('supabaseAnonKey', sbKey);
+            } else {
+                localStorage.removeItem('supabaseAnonKey');
             }
-            if (avKey) {
-                msg += '3️⃣ Alpha Vantage (Last resort - 5/min)\n';
+
+            // Initialize Supabase if config provided
+            if (sbUrl && sbKey) {
+                initSupabase();
+            } else {
+                supabaseClient = null;
+                currentUser = null;
+                updateAuthBar();
             }
-            
-            const totalSymbols = portfolio.length || 41;
-            msg += '\n⚡ Speed:\n';
-            
-            if (fhKey) {
-                msg += `~1 second per symbol = ~${Math.ceil(totalSymbols / 60)} min total\n`;
-            } else if (fmpKeyInput) {
-                msg += `~1 second per symbol = ~${Math.ceil(totalSymbols / 60)} min total\n`;
-            } else if (avKey) {
-                msg += `~12 seconds per symbol = ~${Math.ceil(totalSymbols * 12 / 60)} min total\n`;
-                msg += '\n💡 Add Finnhub or FMP for 12x faster!';
+
+            let msg = '✓ Settings saved!\n\n';
+
+            if (fhKey || fmpKeyInput || avKey) {
+                msg += 'Fetch Strategy:\n';
+                if (fhKey) msg += '1️⃣ Finnhub (Primary - 60/min)\n';
+                if (fmpKeyInput) msg += '2️⃣ FMP (Fallback - 250/day)\n';
+                if (avKey) msg += '3️⃣ Alpha Vantage (Last resort - 5/min)\n';
+
+                const totalSymbols = portfolio.length || 41;
+                msg += '\n⚡ Speed:\n';
+                if (fhKey) {
+                    msg += `~1 second per symbol = ~${Math.ceil(totalSymbols / 60)} min total\n`;
+                } else if (fmpKeyInput) {
+                    msg += `~1 second per symbol = ~${Math.ceil(totalSymbols / 60)} min total\n`;
+                } else if (avKey) {
+                    msg += `~12 seconds per symbol = ~${Math.ceil(totalSymbols * 12 / 60)} min total\n`;
+                    msg += '\n💡 Add Finnhub or FMP for 12x faster!';
+                }
             }
-            
+
+            if (sbUrl && sbKey) {
+                msg += '\n☁️ Cloud database configured! Use the auth bar to sign up or log in.';
+            }
+
             alert(msg);
             closeApiKeyDialog();
         }
         
         function clearApiKeys() {
-            if (confirm('⚠️ Clear all API keys?\n\nYou will need to re-enter them to fetch prices.')) {
+            if (confirm('⚠️ Clear all API keys and cloud settings?\n\nYou will need to re-enter them to fetch prices and sync.')) {
                 finnhubKey = '';
                 fmpKey = '';
                 alphaVantageKey = '';
                 anthropicKey = '';
+                supabaseUrl = '';
+                supabaseAnonKey = '';
+                supabaseClient = null;
+                currentUser = null;
                 localStorage.removeItem('finnhubKey');
                 localStorage.removeItem('fmpKey');
                 localStorage.removeItem('alphaVantageKey');
                 localStorage.removeItem('anthropicKey');
+                localStorage.removeItem('supabaseUrl');
+                localStorage.removeItem('supabaseAnonKey');
                 document.getElementById('finnhubKeyInput').value = '';
                 document.getElementById('fmpKeyInput').value = '';
                 document.getElementById('alphaVantageKeyInput').value = '';
                 document.getElementById('anthropicKeyInput').value = '';
-                alert('✓ All API keys cleared.');
+                document.getElementById('supabaseUrlInput').value = '';
+                document.getElementById('supabaseAnonKeyInput').value = '';
+                updateAuthBar();
+                alert('✓ All keys and settings cleared.');
             }
         }
+
+        // ========== SUPABASE INTEGRATION ==========
+
+        function initSupabase() {
+            if (!supabaseUrl || !supabaseAnonKey) {
+                updateAuthBar();
+                return false;
+            }
+            try {
+                supabaseClient = supabase.createClient(supabaseUrl, supabaseAnonKey);
+
+                supabaseClient.auth.onAuthStateChange((event, session) => {
+                    currentUser = session?.user || null;
+                    updateAuthBar();
+                    if (event === 'SIGNED_IN') {
+                        loadFromDatabase();
+                    }
+                });
+
+                supabaseClient.auth.getSession().then(({ data: { session } }) => {
+                    currentUser = session?.user || null;
+                    updateAuthBar();
+                    if (currentUser) {
+                        loadFromDatabase();
+                    }
+                });
+
+                console.log('✓ Supabase initialized');
+                return true;
+            } catch (err) {
+                console.error('Supabase init failed:', err);
+                return false;
+            }
+        }
+
+        function updateAuthBar() {
+            const authBar = document.getElementById('authBar');
+            if (!authBar) return;
+
+            if (!supabaseClient) {
+                authBar.style.display = 'none';
+                return;
+            }
+
+            authBar.style.display = 'flex';
+
+            if (currentUser) {
+                authBar.innerHTML = `
+                    <span style="color: #4ade80; font-weight: 600;">☁️ Connected</span>
+                    <span style="color: #94a3b8;">${escapeHTML(currentUser.email)}</span>
+                    <span style="flex: 1;"></span>
+                    <button class="btn-sm" style="background: #475569;" onclick="handleLogout()">Logout</button>
+                `;
+            } else {
+                authBar.innerHTML = `
+                    <span style="color: #94a3b8;">☁️ Cloud Sync</span>
+                    <input type="email" id="authEmail" placeholder="Email" />
+                    <input type="password" id="authPassword" placeholder="Password" onkeydown="if(event.key==='Enter') handleLogin()" />
+                    <button class="btn-sm" style="background: #2563eb;" onclick="handleLogin()">Login</button>
+                    <button class="btn-sm" style="background: #7c3aed;" onclick="handleSignup()">Sign Up</button>
+                `;
+            }
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById('authEmail').value.trim();
+            const password = document.getElementById('authPassword').value;
+
+            if (!email || !password) {
+                alert('Please enter email and password.');
+                return;
+            }
+
+            try {
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+                console.log('✓ Logged in:', data.user.email);
+            } catch (err) {
+                alert('Login failed: ' + err.message);
+            }
+        }
+
+        async function handleSignup() {
+            const email = document.getElementById('authEmail').value.trim();
+            const password = document.getElementById('authPassword').value;
+
+            if (!email || !password) {
+                alert('Please enter email and password.');
+                return;
+            }
+            if (password.length < 6) {
+                alert('Password must be at least 6 characters.');
+                return;
+            }
+
+            try {
+                const { data, error } = await supabaseClient.auth.signUp({ email, password });
+                if (error) throw error;
+                alert('Account created! Check your email to confirm your account, then log in.');
+                console.log('✓ Signed up:', data.user?.email);
+            } catch (err) {
+                alert('Sign up failed: ' + err.message);
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await supabaseClient.auth.signOut();
+                currentUser = null;
+                updateAuthBar();
+                console.log('✓ Logged out');
+            } catch (err) {
+                console.error('Logout error:', err);
+            }
+        }
+
+        async function loadFromDatabase() {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                console.log('☁️ Loading data from Supabase...');
+
+                // Load positions
+                const { data: dbPositions, error: posError } = await supabaseClient
+                    .from('positions')
+                    .select('*')
+                    .order('symbol');
+
+                if (posError) throw posError;
+
+                if (dbPositions && dbPositions.length > 0) {
+                    portfolio = dbPositions.map(p => ({
+                        name: p.name,
+                        symbol: p.symbol,
+                        platform: p.platform,
+                        shares: Number(p.shares),
+                        avgPrice: Number(p.avg_price)
+                    }));
+                    console.log('✓ Loaded', portfolio.length, 'positions from DB');
+                    renderPortfolio();
+                } else if (portfolio.length > 0) {
+                    // DB empty but local has data — sync up
+                    console.log('Syncing local portfolio to database...');
+                    await savePortfolioDB();
+                }
+
+                // Load snapshots
+                const { data: dbSnapshots, error: snapError } = await supabaseClient
+                    .from('snapshots')
+                    .select('*')
+                    .order('timestamp', { ascending: true });
+
+                if (snapError) throw snapError;
+
+                if (dbSnapshots && dbSnapshots.length > 0) {
+                    const existingTimestamps = new Set(portfolioHistory.map(s => s.timestamp));
+                    dbSnapshots.forEach(s => {
+                        const snap = {
+                            timestamp: s.timestamp,
+                            totalInvested: Number(s.total_invested),
+                            totalMarketValue: Number(s.total_market_value),
+                            positionCount: s.position_count,
+                            pricesAvailable: s.prices_available
+                        };
+                        if (!existingTimestamps.has(snap.timestamp)) {
+                            portfolioHistory.push(snap);
+                        }
+                    });
+                    portfolioHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    localStorage.setItem('portfolioHistory', JSON.stringify(portfolioHistory));
+                    console.log('✓ Total snapshots after merge:', portfolioHistory.length);
+                    updateHistoryDisplay();
+                } else if (portfolioHistory.length > 0) {
+                    // DB empty but local has snapshots — sync up
+                    console.log('Syncing local snapshots to database...');
+                    for (const snapshot of portfolioHistory) {
+                        await saveSnapshotToDB(snapshot);
+                    }
+                }
+
+            } catch (err) {
+                console.error('Failed to load from database:', err);
+            }
+        }
+
+        async function savePortfolioDB() {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                // Delete existing positions
+                const { error: deleteError } = await supabaseClient
+                    .from('positions')
+                    .delete()
+                    .eq('user_id', currentUser.id);
+
+                if (deleteError) throw deleteError;
+
+                // Insert new positions
+                if (portfolio.length > 0) {
+                    const rows = portfolio.map(p => ({
+                        user_id: currentUser.id,
+                        name: p.name,
+                        symbol: p.symbol,
+                        platform: p.platform,
+                        shares: p.shares,
+                        avg_price: p.avgPrice
+                    }));
+
+                    const { error: insertError } = await supabaseClient
+                        .from('positions')
+                        .insert(rows);
+
+                    if (insertError) throw insertError;
+                }
+
+                console.log('✓ Portfolio saved to Supabase');
+            } catch (err) {
+                console.error('Failed to save portfolio to DB:', err);
+            }
+        }
+
+        async function saveSnapshotToDB(snapshot) {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                const { error } = await supabaseClient
+                    .from('snapshots')
+                    .insert({
+                        user_id: currentUser.id,
+                        timestamp: snapshot.timestamp,
+                        total_invested: snapshot.totalInvested,
+                        total_market_value: snapshot.totalMarketValue,
+                        position_count: snapshot.positionCount,
+                        prices_available: snapshot.pricesAvailable
+                    });
+
+                if (error) throw error;
+                console.log('✓ Snapshot saved to Supabase');
+            } catch (err) {
+                console.error('Failed to save snapshot to DB:', err);
+            }
+        }
+
+        async function clearHistoryFromDB() {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                const { error } = await supabaseClient
+                    .from('snapshots')
+                    .delete()
+                    .eq('user_id', currentUser.id);
+
+                if (error) throw error;
+                console.log('✓ History cleared from Supabase');
+            } catch (err) {
+                console.error('Failed to clear history from DB:', err);
+            }
+        }
+
+        // ========== END SUPABASE INTEGRATION ==========
 
         function escapeHTML(str) {
             const div = document.createElement('div');
@@ -725,7 +1091,16 @@
             localStorage.setItem('portfolioHistory', JSON.stringify(portfolioHistory));
             
             let cloudSaved = false;
-            
+            let dbSaved = false;
+
+            // Save to Supabase (if connected)
+            try {
+                await saveSnapshotToDB(snapshot);
+                if (supabaseClient && currentUser) dbSaved = true;
+            } catch (err) {
+                console.warn('Supabase save failed:', err);
+            }
+
             // Save to Claude cloud storage (if available)
             if (typeof window.storage !== 'undefined') {
                 try {
@@ -733,7 +1108,7 @@
                     const snapshotKey = `snapshot:${Date.now()}`;
                     await window.storage.set(snapshotKey, JSON.stringify(snapshot), false);
                     console.log('✓ Snapshot saved to cloud:', snapshotKey);
-                    
+
                     // Save current portfolio state
                     await window.storage.set('current-portfolio', JSON.stringify({
                         portfolio: portfolio,
@@ -742,19 +1117,20 @@
                         lastUpdated: new Date().toISOString()
                     }), false);
                     console.log('✓ Portfolio saved to cloud');
-                    
+
                     cloudSaved = true;
                 } catch (err) {
                     console.warn('Cloud storage failed, saved locally only:', err);
                 }
             }
-            
+
             console.log('Portfolio snapshot saved:', snapshot);
             updateHistoryDisplay();
-            
+
             const gainLoss = totalMarketValue - totalInvested;
             const gainLossPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : 0;
-            alert(`✓ Portfolio snapshot saved!\n\nInvested: ${formatCurrency(totalInvested)}\nMarket Value: ${formatCurrency(totalMarketValue)}\nGain/Loss: ${formatCurrency(gainLoss)} (${formatPercent(gainLossPct)})\n\nTotal snapshots: ${portfolioHistory.length}\n\n${cloudSaved ? '☁️ Synced to cloud storage' : '💾 Saved to browser only'}`);
+            const syncStatus = dbSaved ? '☁️ Synced to Supabase' : cloudSaved ? '☁️ Synced to cloud storage' : '💾 Saved to browser only';
+            alert(`✓ Portfolio snapshot saved!\n\nInvested: ${formatCurrency(totalInvested)}\nMarket Value: ${formatCurrency(totalMarketValue)}\nGain/Loss: ${formatCurrency(gainLoss)} (${formatPercent(gainLossPct)})\n\nTotal snapshots: ${portfolioHistory.length}\n\n${syncStatus}`);
         }
 
         function updateHistoryDisplay() {
@@ -900,6 +1276,7 @@
             if (confirm('Are you sure you want to clear all portfolio history?\n\nThis cannot be undone.')) {
                 portfolioHistory = [];
                 localStorage.removeItem('portfolioHistory');
+                clearHistoryFromDB();
                 document.getElementById('historySection').style.display = 'none';
                 alert('✓ History cleared');
             }
@@ -1427,10 +1804,13 @@
                     portfolio = [...newPositions]; // Create new array to force reactivity
                     console.log('Portfolio OVERWRITTEN with:', portfolio);
                     console.log('First 3 positions:', portfolio.slice(0, 3));
-                    
+
+                    // Save to Supabase (if connected)
+                    savePortfolioDB();
+
                     // Close dialog first
                     closeImportDialog();
-                    
+
                     // Force multiple renders to ensure UI updates
                     renderPortfolio();
                     setTimeout(() => renderPortfolio(), 50);
@@ -1736,8 +2116,19 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             console.log('✓ Anthropic key loaded from localStorage');
         }
 
+        // Load Supabase config from localStorage
+        const storedSBUrl = localStorage.getItem('supabaseUrl');
+        const storedSBKey = localStorage.getItem('supabaseAnonKey');
+        if (storedSBUrl && storedSBKey) {
+            supabaseUrl = storedSBUrl;
+            supabaseAnonKey = storedSBKey;
+            console.log('✓ Supabase config loaded from localStorage');
+            initSupabase();
+        }
+
         console.log('=== APP INITIALIZED ===');
         console.log('API Keys:', { finnhub: !!finnhubKey, fmp: !!fmpKey, alphaVantage: !!alphaVantageKey, anthropic: !!anthropicKey });
+        console.log('Supabase:', { configured: !!(supabaseUrl && supabaseAnonKey) });
         console.log('Portfolio positions:', portfolio.length);
         console.log('History snapshots:', portfolioHistory.length);
         console.log('Is Artifact:', isArtifact);
