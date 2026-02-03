@@ -407,9 +407,9 @@
         let marketPrices = {}; // Store current market prices
         let priceMetadata = {}; // Store {timestamp, source, success} for each symbol
         let pricesLoading = false;
-        let alphaVantageKey = 'ABF4HZSG0I50VGLP'; // 25 calls/day, 5 calls/min
-        let finnhubKey = 'd5u9b19r01qtjet2flngd5u9b19r01qtjet2flo0'; // 60 calls/min
-        let fmpKey = 'driWloMwwLkFzzcl4Gvgv1CXhXa7jy2l'; // 250 calls/day
+        let alphaVantageKey = ''; // loaded from DB after login
+        let finnhubKey = ''; // loaded from DB after login
+        let fmpKey = ''; // loaded from DB after login
         let anthropicKey = ''; // For AI analysis outside Claude.ai — users enter their own key
         let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
         let supabaseUrl = 'https://dybetrrhshqezokcxiid.supabase.co';
@@ -960,6 +960,9 @@
                     }
                 }
 
+                // Load shared API keys from app_config
+                await loadAppConfig();
+
             } catch (err) {
                 console.error('Failed to load from database:', err);
             }
@@ -1036,6 +1039,33 @@
                 console.log('✓ History cleared from Supabase');
             } catch (err) {
                 console.error('Failed to clear history from DB:', err);
+            }
+        }
+
+        async function loadAppConfig() {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('app_config')
+                    .select('key, value');
+
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    data.forEach(row => {
+                        if (row.key === 'finnhubKey' && row.value) finnhubKey = row.value;
+                        if (row.key === 'fmpKey' && row.value) fmpKey = row.value;
+                        if (row.key === 'alphaVantageKey' && row.value) alphaVantageKey = row.value;
+                    });
+                    console.log('✓ API keys loaded from DB:', {
+                        finnhub: !!finnhubKey,
+                        fmp: !!fmpKey,
+                        alphaVantage: !!alphaVantageKey
+                    });
+                }
+            } catch (err) {
+                console.warn('Failed to load app config from DB:', err);
             }
         }
 

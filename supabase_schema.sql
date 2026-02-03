@@ -67,3 +67,28 @@ CREATE POLICY "Users can delete own snapshots"
 CREATE INDEX idx_positions_user_id ON positions(user_id);
 CREATE INDEX idx_snapshots_user_id ON snapshots(user_id);
 CREATE INDEX idx_snapshots_user_timestamp ON snapshots(user_id, timestamp DESC);
+
+-- ============================================
+-- App Config: shared API keys (admin-managed)
+-- ============================================
+-- Only authenticated users can read. No frontend writes allowed.
+-- Manage keys via Supabase Dashboard > Table Editor only.
+
+CREATE TABLE app_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can read config"
+    ON app_config FOR SELECT
+    USING (auth.role() = 'authenticated');
+
+-- Insert the shared API keys
+INSERT INTO app_config (key, value) VALUES
+    ('finnhubKey', 'd5u9b19r01qtjet2flngd5u9b19r01qtjet2flo0'),
+    ('fmpKey', 'driWloMwwLkFzzcl4Gvgv1CXhXa7jy2l'),
+    ('alphaVantageKey', 'ABF4HZSG0I50VGLP');
