@@ -1959,35 +1959,19 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                 } else {
                     // Supabase Edge Function (server-side Anthropic key)
                     console.log('Using Supabase Edge Function...');
-                    const edgeUrl = `${supabaseUrl}/functions/v1/analyze-portfolio`;
 
-                    const headers = { 'Content-Type': 'application/json' };
-                    // Include auth token if logged in
-                    if (supabaseClient && currentUser) {
-                        const { data: sessionData } = await supabaseClient.auth.getSession();
-                        if (sessionData?.session?.access_token) {
-                            headers['Authorization'] = `Bearer ${sessionData.session.access_token}`;
-                        }
-                    }
-
-                    const response = await fetch(edgeUrl, {
-                        method: 'POST',
-                        headers: headers,
-                        body: JSON.stringify({
+                    const { data: fnData, error: fnError } = await supabaseClient.functions.invoke('analyze-portfolio', {
+                        body: {
                             portfolio: portfolio.map(p => ({
                                 shares: p.shares,
                                 symbol: p.symbol,
                                 avgPrice: p.avgPrice
                             }))
-                        })
+                        }
                     });
 
-                    if (!response.ok) {
-                        const errBody = await response.text().catch(() => '');
-                        throw new Error(`Edge Function error (${response.status}): ${errBody}`);
-                    }
-
-                    data = await response.json();
+                    if (fnError) throw fnError;
+                    data = fnData;
                 }
 
                 console.log('API Response data:', data);
