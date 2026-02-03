@@ -412,8 +412,8 @@
         let fmpKey = ''; // 250 calls/day
         let anthropicKey = ''; // For AI analysis outside Claude.ai
         let portfolioHistory = []; // Array of {timestamp, totalInvested, totalMarketValue, positions}
-        let supabaseUrl = '';
-        let supabaseAnonKey = '';
+        let supabaseUrl = 'https://dybetrrhshqezokcxiid.supabase.co';
+        let supabaseAnonKey = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
         let supabaseClient = null;
         let currentUser = null;
 
@@ -2116,15 +2116,16 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             console.log('✓ Anthropic key loaded from localStorage');
         }
 
-        // Load Supabase config from localStorage
+        // Load Supabase config overrides from localStorage (if user changed them)
         const storedSBUrl = localStorage.getItem('supabaseUrl');
         const storedSBKey = localStorage.getItem('supabaseAnonKey');
         if (storedSBUrl && storedSBKey) {
             supabaseUrl = storedSBUrl;
             supabaseAnonKey = storedSBKey;
-            console.log('✓ Supabase config loaded from localStorage');
-            initSupabase();
+            console.log('✓ Supabase config overridden from localStorage');
         }
+        // Always initialize — defaults are hardcoded
+        initSupabase();
 
         console.log('=== APP INITIALIZED ===');
         console.log('API Keys:', { finnhub: !!finnhubKey, fmp: !!fmpKey, alphaVantage: !!alphaVantageKey, anthropic: !!anthropicKey });
