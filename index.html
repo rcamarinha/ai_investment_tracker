@@ -198,6 +198,12 @@
             font-size: 15px;
             margin-bottom: 2px;
         }
+        .perspective-info-desc {
+            color: #cbd5e1;
+            font-size: 13px;
+            line-height: 1.5;
+            margin-bottom: 4px;
+        }
         .perspective-info-figures {
             color: #94a3b8;
             font-size: 12px;
@@ -212,6 +218,39 @@
             font-weight: 600;
             color: white;
         }
+        .market-news-card {
+            border-left: 3px solid #60a5fa;
+        }
+        .trade-idea {
+            background: #475569;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .trade-idea-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .trade-ticker {
+            font-family: monospace;
+            font-weight: 700;
+            font-size: 15px;
+            color: #e2e8f0;
+            background: #1e293b;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .trade-action {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 12px;
+            letter-spacing: 0.5px;
+        }
+        .trade-title { font-weight: bold; margin-bottom: 6px; color: #e2e8f0; }
+        .trade-rationale { color: #cbd5e1; font-size: 13px; line-height: 1.5; }
         .loading { text-align: center; padding: 40px; color: #94a3b8; }
         .empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
         @media (max-width: 768px) {
@@ -514,6 +553,7 @@
                 icon: '📚',
                 color: '#059669',
                 figures: 'Benjamin Graham, Warren Buffett, Charlie Munger',
+                description: 'Buy securities trading below intrinsic value with a margin of safety. Seek statistical cheapness or wonderful businesses at fair prices.',
                 prompt: `You are analyzing this portfolio from the perspective of Classic Value Investing (Deep Intrinsic Value).
 
 Core Philosophy: Buy securities trading below intrinsic value with a margin of safety.
@@ -531,6 +571,7 @@ Apply these lenses:
                 icon: '🌱',
                 color: '#2563eb',
                 figures: 'Peter Lynch',
+                description: 'Find companies growing earnings fast but not at absurd valuations. Buy what you understand before Wall Street catches on.',
                 prompt: `You are analyzing this portfolio from the perspective of Growth at a Reasonable Price (GARP), as championed by Peter Lynch.
 
 Core Philosophy: "Buy what you understand." Focus on companies growing earnings rapidly but not at absurd valuations.
@@ -548,6 +589,7 @@ Apply these lenses:
                 icon: '🔢',
                 color: '#7c3aed',
                 figures: 'Jim Simons, Cliff Asness',
+                description: 'Use mathematical models, factor exposure, and statistical patterns to find edge. Data over narratives, risk-adjusted returns over raw gains.',
                 prompt: `You are analyzing this portfolio from the perspective of Quantitative & Systematic Investing, as practiced by Jim Simons and Cliff Asness.
 
 Core Philosophy: Use mathematical models, statistical patterns, and factor investing to generate alpha.
@@ -566,6 +608,7 @@ Apply these lenses:
                 icon: '🌍',
                 color: '#dc2626',
                 figures: 'George Soros, Ray Dalio',
+                description: 'Position for macroeconomic trends — interest rates, currencies, debt cycles, and geopolitical shifts. Think top-down, not bottom-up.',
                 prompt: `You are analyzing this portfolio from the perspective of Macro Investing (Top-Down), as practiced by George Soros and Ray Dalio.
 
 Core Philosophy: Position for macroeconomic trends — interest rates, currencies, geopolitical shifts, and economic cycles.
@@ -584,6 +627,7 @@ Apply these lenses:
                 icon: '📈',
                 color: '#f59e0b',
                 figures: 'John Bogle',
+                description: 'You cannot consistently beat the market — own it cheaply. Minimize costs, maximize diversification, and let compounding do the work.',
                 prompt: `You are analyzing this portfolio from the perspective of Indexing & Passive Investing, as championed by John Bogle.
 
 Core Philosophy: You cannot consistently beat the market — own the market cheaply. Time in market beats timing the market.
@@ -602,6 +646,7 @@ Apply these lenses:
                 icon: '📉',
                 color: '#ec4899',
                 figures: 'Jesse Livermore, Paul Tudor Jones',
+                description: 'Price action contains information. Identify trends, ride momentum, cut losers short, and let winners run.',
                 prompt: `You are analyzing this portfolio from the perspective of Technical & Momentum Investing, as practiced by Jesse Livermore and Paul Tudor Jones.
 
 Core Philosophy: Price action contains information. Identify and ride trends. Cut losses short and let winners run.
@@ -2090,6 +2135,7 @@ Apply these lenses:
                 <span class="perspective-info-icon">${active.icon}</span>
                 <div class="perspective-info-text">
                     <div class="perspective-info-name" style="color: ${active.color};">${active.name}</div>
+                    <div class="perspective-info-desc">${active.description}</div>
                     <div class="perspective-info-figures">Key figures: ${active.figures}</div>
                 </div>
             `;
@@ -2163,7 +2209,7 @@ Apply these lenses:
                         headers: headers,
                         body: JSON.stringify({
                             model: 'claude-sonnet-4-20250514',
-                            max_tokens: 1500,
+                            max_tokens: 2500,
                             messages: [{
                                 role: 'user',
                                 content: `${perspective.prompt}
@@ -2171,9 +2217,14 @@ Apply these lenses:
 The portfolio contains: ${portfolio.map(p => `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}${marketPrices[p.symbol] ? ` (current: $${marketPrices[p.symbol]})` : ''}`).join(', ')}.
 
 Please provide your analysis in JSON format with these fields:
-- marketOverview: your assessment of current conditions through the lens of this investment philosophy (2-3 sentences)
+- marketNews: an objective overview of current market conditions and recent notable events affecting equities, bonds, or macro (3-5 sentences, factual and perspective-neutral)
+- marketOverview: your assessment of these market conditions specifically through the lens of this investment philosophy (2-3 sentences)
 - portfolioImpact: how this philosophy evaluates the specific holdings in this portfolio — strengths and weaknesses (3-4 sentences)
-- ideas: array of 3 actionable ideas consistent with this investment perspective, each with "title" and "description"
+- trades: array of exactly 5 concrete trade ideas consistent with this investment perspective. Each trade must have:
+  - "ticker": the stock/ETF ticker symbol (e.g. "AAPL", "VTI")
+  - "action": one of "BUY", "SELL", "HOLD", "TRIM", or "ADD"
+  - "title": short trade idea title
+  - "rationale": 2-3 sentence explanation of why this trade fits the philosophy and current conditions
 
 Respond ONLY with valid JSON, no markdown, no preamble.`
                             }]
@@ -2237,7 +2288,18 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                 const analysis = JSON.parse(cleanText);
                 console.log('Parsed analysis:', analysis);
 
+                const actionColors = { BUY: '#4ade80', SELL: '#f87171', HOLD: '#94a3b8', TRIM: '#fbbf24', ADD: '#60a5fa' };
+                const actionIcons = { BUY: '🟢', SELL: '🔴', HOLD: '⚪', TRIM: '🟡', ADD: '🔵' };
+                const trades = analysis.trades || analysis.ideas || [];
+
                 analysisSection.innerHTML = `
+                    <div class="card analysis-section">
+                        <div class="analysis-card market-news-card">
+                            <div class="analysis-title">📰 Market News Overview</div>
+                            <div class="analysis-content">${escapeHTML(analysis.marketNews || analysis.marketOverview)}</div>
+                        </div>
+                    </div>
+
                     <div class="card analysis-section">
                         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
                             <span class="perspective-badge" style="background: ${perspective.color};">
@@ -2257,13 +2319,23 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                         </div>
 
                         <div class="analysis-card">
-                            <div class="analysis-title">💡 Actionable Ideas</div>
-                            ${analysis.ideas.map((idea, idx) => `
-                                <div class="idea-item">
-                                    <div class="idea-title">${idx + 1}. ${escapeHTML(idea.title)}</div>
-                                    <div class="idea-desc">${escapeHTML(idea.description)}</div>
-                                </div>
-                            `).join('')}
+                            <div class="analysis-title">💹 Trade Ideas</div>
+                            ${trades.map((trade, idx) => {
+                                const action = (trade.action || '').toUpperCase();
+                                const color = actionColors[action] || '#94a3b8';
+                                const icon = actionIcons[action] || '⚪';
+                                return `
+                                <div class="trade-idea">
+                                    <div class="trade-idea-header">
+                                        <span class="trade-ticker">${escapeHTML(trade.ticker || '')}</span>
+                                        <span class="trade-action" style="background: ${color}20; color: ${color}; border: 1px solid ${color}40;">
+                                            ${icon} ${escapeHTML(action)}
+                                        </span>
+                                    </div>
+                                    <div class="trade-title">${idx + 1}. ${escapeHTML(trade.title)}</div>
+                                    <div class="trade-rationale">${escapeHTML(trade.rationale || trade.description || '')}</div>
+                                </div>`;
+                            }).join('')}
                         </div>
 
                         <div class="disclaimer">
