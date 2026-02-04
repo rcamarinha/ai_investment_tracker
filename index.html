@@ -2217,14 +2217,14 @@ Apply these lenses:
 The portfolio contains: ${portfolio.map(p => `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}${marketPrices[p.symbol] ? ` (current: $${marketPrices[p.symbol]})` : ''}`).join(', ')}.
 
 Please provide your analysis in JSON format with these fields:
-- marketNews: an objective overview of current market conditions and recent notable events affecting equities, bonds, or macro (3-5 sentences, factual and perspective-neutral)
-- marketOverview: your assessment of these market conditions specifically through the lens of this investment philosophy (2-3 sentences)
-- portfolioImpact: how this philosophy evaluates the specific holdings in this portfolio — strengths and weaknesses (3-4 sentences)
-- trades: array of exactly 5 concrete trade ideas consistent with this investment perspective. Each trade must have:
-  - "ticker": the stock/ETF ticker symbol (e.g. "AAPL", "VTI")
-  - "action": one of "BUY", "SELL", "HOLD", "TRIM", or "ADD"
-  - "title": short trade idea title
-  - "rationale": 2-3 sentence explanation of why this trade fits the philosophy and current conditions
+- marketNews: an OBJECTIVE, perspective-neutral overview of current market conditions and recent notable events affecting equities, bonds, or macro (3-5 sentences). This section should be purely factual — no opinion from any investment philosophy.
+- marketOverview: your OPINIONATED assessment of these market conditions strictly through the lens of ${perspective.name}. Explain what a ${perspective.name} practitioner would focus on and how they would interpret current conditions (3-4 sentences). Make it clear this is a ${perspective.name} perspective.
+- portfolioImpact: evaluate the specific holdings in this portfolio through the ${perspective.name} lens — which positions align well with this philosophy, which don't, and why (3-4 sentences). Be specific about individual holdings.
+- trades: array of exactly 5 concrete trade ideas that a ${perspective.name} investor would make. Each trade MUST have ALL of these fields:
+  - "ticker": the stock/ETF ticker symbol (e.g. "AAPL", "VTI", "BRK.B")
+  - "action": exactly one of "BUY", "SELL", "HOLD", "TRIM", or "ADD"
+  - "title": short trade idea title (e.g. "Accumulate undervalued energy major")
+  - "rationale": 2-3 sentence explanation of why this specific trade fits the ${perspective.name} philosophy and current market conditions
 
 Respond ONLY with valid JSON, no markdown, no preamble.`
                             }]
@@ -2308,32 +2308,34 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                             <span style="color: #64748b; font-size: 12px;">Inspired by ${escapeHTML(perspective.figures)}</span>
                         </div>
 
-                        <div class="analysis-card">
-                            <div class="analysis-title">${perspective.icon} Market Assessment</div>
+                        <div class="analysis-card" style="border-left: 3px solid ${perspective.color};">
+                            <div class="analysis-title">${perspective.icon} Market Assessment — ${escapeHTML(perspective.name)} View</div>
                             <div class="analysis-content">${escapeHTML(analysis.marketOverview)}</div>
                         </div>
 
-                        <div class="analysis-card">
-                            <div class="analysis-title">🎯 Portfolio Evaluation</div>
+                        <div class="analysis-card" style="border-left: 3px solid ${perspective.color};">
+                            <div class="analysis-title">🎯 Portfolio Evaluation — ${escapeHTML(perspective.name)} View</div>
                             <div class="analysis-content">${escapeHTML(analysis.portfolioImpact)}</div>
                         </div>
 
                         <div class="analysis-card">
-                            <div class="analysis-title">💹 Trade Ideas</div>
+                            <div class="analysis-title">💹 Trade Ideas — ${escapeHTML(perspective.name)}</div>
                             ${trades.map((trade, idx) => {
                                 const action = (trade.action || '').toUpperCase();
                                 const color = actionColors[action] || '#94a3b8';
                                 const icon = actionIcons[action] || '⚪';
+                                const ticker = trade.ticker || '';
+                                const rationale = trade.rationale || trade.description || '';
                                 return `
                                 <div class="trade-idea">
                                     <div class="trade-idea-header">
-                                        <span class="trade-ticker">${escapeHTML(trade.ticker || '')}</span>
-                                        <span class="trade-action" style="background: ${color}20; color: ${color}; border: 1px solid ${color}40;">
+                                        ${ticker ? `<span class="trade-ticker">${escapeHTML(ticker)}</span>` : ''}
+                                        ${action ? `<span class="trade-action" style="background: ${color}20; color: ${color}; border: 1px solid ${color}40;">
                                             ${icon} ${escapeHTML(action)}
-                                        </span>
+                                        </span>` : ''}
                                     </div>
                                     <div class="trade-title">${idx + 1}. ${escapeHTML(trade.title)}</div>
-                                    <div class="trade-rationale">${escapeHTML(trade.rationale || trade.description || '')}</div>
+                                    <div class="trade-rationale">${escapeHTML(rationale)}</div>
                                 </div>`;
                             }).join('')}
                         </div>
