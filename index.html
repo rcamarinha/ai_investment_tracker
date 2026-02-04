@@ -131,6 +131,87 @@
             font-size: 13px;
             margin-top: 15px;
         }
+        .perspective-selector {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+        .perspective-header {
+            margin-bottom: 12px;
+        }
+        .perspective-label {
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .perspective-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .perspective-tab {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 2px solid #475569;
+            background: #0f172a;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .perspective-tab:hover {
+            border-color: #64748b;
+            color: #cbd5e1;
+            background: #1e293b;
+        }
+        .perspective-tab.active {
+            color: white;
+            background: #1e293b;
+        }
+        .perspective-info {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .perspective-info-icon {
+            font-size: 24px;
+        }
+        .perspective-info-text {
+            flex: 1;
+        }
+        .perspective-info-name {
+            color: #e2e8f0;
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 2px;
+        }
+        .perspective-info-figures {
+            color: #94a3b8;
+            font-size: 12px;
+        }
+        .perspective-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
         .loading { text-align: center; padding: 40px; color: #94a3b8; }
         .empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
         @media (max-width: 768px) {
@@ -226,10 +307,18 @@
                 <button class="btn btn-add" onclick="showImportDialog()">📋 Import Portfolio from Spreadsheet</button>
                 <button class="btn btn-add" onclick="fetchMarketPrices()" id="refreshBtn" style="background: #059669;">🔄 Update Prices</button>
                 <button class="btn btn-add" onclick="savePortfolioSnapshot()" style="background: #f59e0b;">💾 Save Snapshot</button>
+            </div>
+
+            <div class="perspective-selector" id="perspectiveSelector">
+                <div class="perspective-header">
+                    <span class="perspective-label">Investment Perspective:</span>
+                </div>
+                <div class="perspective-tabs" id="perspectiveTabs"></div>
+                <div class="perspective-info" id="perspectiveInfo"></div>
                 <button class="btn btn-analyze" onclick="analyzeMarkets()" id="analyzeBtn">Get AI Analysis</button>
             </div>
         </div>
-        
+
         <div id="apiKeyDialog" style="display: none;">
             <div class="card">
                 <h2 style="margin-bottom: 15px;">🔑 API Key Management</h2>
@@ -416,6 +505,117 @@
         let supabaseAnonKey = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
         let supabaseClient = null;
         let currentUser = null;
+        let selectedPerspective = 'value'; // Default investment perspective
+
+        // Investment perspective definitions
+        const INVESTMENT_PERSPECTIVES = {
+            value: {
+                name: 'Value Investing',
+                icon: '📚',
+                color: '#059669',
+                figures: 'Benjamin Graham, Warren Buffett, Charlie Munger',
+                prompt: `You are analyzing this portfolio from the perspective of Classic Value Investing (Deep Intrinsic Value).
+
+Core Philosophy: Buy securities trading below intrinsic value with a margin of safety.
+
+Apply these lenses:
+- Graham style: Look for statistical cheapness (low P/B ratios, net-net situations, earnings yield vs bond yields)
+- Buffett/Munger style: Identify high-quality businesses at fair prices with durable competitive advantages (moats)
+- Greenblatt's Magic Formula: Consider earnings yield and return on capital
+- Emphasize margin of safety, circle of competence, and long-term holding periods
+- Flag any positions that seem overvalued relative to intrinsic value estimates
+- Recommend positions that may benefit from a value-oriented approach`
+            },
+            garp: {
+                name: 'Growth at Reasonable Price',
+                icon: '🌱',
+                color: '#2563eb',
+                figures: 'Peter Lynch',
+                prompt: `You are analyzing this portfolio from the perspective of Growth at a Reasonable Price (GARP), as championed by Peter Lynch.
+
+Core Philosophy: "Buy what you understand." Focus on companies growing earnings rapidly but not at absurd valuations.
+
+Apply these lenses:
+- PEG ratio thinking: growth rate should justify the P/E multiple
+- Look for "ten-baggers" — scalable businesses before Wall Street fully prices them
+- Categorize positions as slow growers, stalwarts, fast growers, cyclicals, turnarounds, or asset plays
+- Identify companies with strong earnings growth that are still reasonably priced
+- Flag positions where growth expectations may already be fully priced in
+- Look for overlooked growth stories the market hasn't recognized yet`
+            },
+            quant: {
+                name: 'Quantitative & Systematic',
+                icon: '🔢',
+                color: '#7c3aed',
+                figures: 'Jim Simons, Cliff Asness',
+                prompt: `You are analyzing this portfolio from the perspective of Quantitative & Systematic Investing, as practiced by Jim Simons and Cliff Asness.
+
+Core Philosophy: Use mathematical models, statistical patterns, and factor investing to generate alpha.
+
+Apply these lenses:
+- Factor exposure analysis: evaluate portfolio tilt toward value, momentum, size, quality, and low-volatility factors
+- Assess portfolio diversification using correlation thinking — are positions truly independent bets?
+- Identify concentration risks and suggest systematic rebalancing approaches
+- Look for momentum signals (positive and negative) in current holdings
+- Evaluate risk-adjusted returns rather than absolute returns
+- Suggest factor-based portfolio construction improvements
+- Consider mean reversion vs trend-following signals`
+            },
+            macro: {
+                name: 'Macro Investing',
+                icon: '🌍',
+                color: '#dc2626',
+                figures: 'George Soros, Ray Dalio',
+                prompt: `You are analyzing this portfolio from the perspective of Macro Investing (Top-Down), as practiced by George Soros and Ray Dalio.
+
+Core Philosophy: Position for macroeconomic trends — interest rates, currencies, geopolitical shifts, and economic cycles.
+
+Apply these lenses:
+- Soros's Reflexivity: How are market participants' beliefs creating self-reinforcing or self-defeating cycles?
+- Dalio's Economic Machine: Where are we in the short-term and long-term debt cycles?
+- All Weather thinking: How would this portfolio perform across different economic environments (growth/inflation rising/falling)?
+- Assess interest rate sensitivity and inflation exposure of each position
+- Evaluate geopolitical risks affecting specific holdings
+- Consider currency exposure and global macro trends
+- Suggest hedging strategies for macro tail risks`
+            },
+            passive: {
+                name: 'Index & Passive',
+                icon: '📈',
+                color: '#f59e0b',
+                figures: 'John Bogle',
+                prompt: `You are analyzing this portfolio from the perspective of Indexing & Passive Investing, as championed by John Bogle.
+
+Core Philosophy: You cannot consistently beat the market — own the market cheaply. Time in market beats timing the market.
+
+Apply these lenses:
+- Compare this portfolio's likely performance drag vs a simple total-market index fund
+- Calculate implied costs: trading friction, tax inefficiency, and opportunity cost of concentration
+- Assess how diversified (or concentrated) this portfolio is compared to a broad market index
+- Identify positions that add unnecessary complexity without expected excess return
+- Suggest simplification opportunities — which positions could be replaced by low-cost index exposure?
+- Evaluate the portfolio's tracking error relative to major benchmarks
+- Consider tax-loss harvesting opportunities within a passive framework`
+            },
+            technical: {
+                name: 'Technical & Momentum',
+                icon: '📉',
+                color: '#ec4899',
+                figures: 'Jesse Livermore, Paul Tudor Jones',
+                prompt: `You are analyzing this portfolio from the perspective of Technical & Momentum Investing, as practiced by Jesse Livermore and Paul Tudor Jones.
+
+Core Philosophy: Price action contains information. Identify and ride trends. Cut losses short and let winners run.
+
+Apply these lenses:
+- Assess which positions are likely in uptrends vs downtrends based on recent price action
+- Identify positions that may be breaking out of consolidation patterns
+- Flag positions showing momentum deterioration (potential trend reversals)
+- Apply the "cut losers, ride winners" principle — which positions should be trimmed or added to?
+- Consider relative strength — which holdings are outperforming or underperforming the market?
+- Look for potential support/resistance levels and suggest entry/exit timing
+- Evaluate position sizing based on volatility and risk management principles`
+            }
+        };
 
         // Check if we're in a Claude artifact (restricted network)
         const isArtifact = window.location.hostname.includes('claude.ai') && 
@@ -1866,11 +2066,42 @@
             }
         }
 
+        function selectPerspective(key) {
+            selectedPerspective = key;
+            renderPerspectiveTabs();
+        }
+
+        function renderPerspectiveTabs() {
+            const tabsContainer = document.getElementById('perspectiveTabs');
+            const infoContainer = document.getElementById('perspectiveInfo');
+            if (!tabsContainer || !infoContainer) return;
+
+            tabsContainer.innerHTML = Object.entries(INVESTMENT_PERSPECTIVES).map(([key, p]) => `
+                <div class="perspective-tab ${key === selectedPerspective ? 'active' : ''}"
+                     style="${key === selectedPerspective ? `border-color: ${p.color}; box-shadow: 0 0 8px ${p.color}40;` : ''}"
+                     onclick="selectPerspective('${key}')">
+                    <span>${p.icon}</span>
+                    <span>${p.name}</span>
+                </div>
+            `).join('');
+
+            const active = INVESTMENT_PERSPECTIVES[selectedPerspective];
+            infoContainer.innerHTML = `
+                <span class="perspective-info-icon">${active.icon}</span>
+                <div class="perspective-info-text">
+                    <div class="perspective-info-name" style="color: ${active.color};">${active.name}</div>
+                    <div class="perspective-info-figures">Key figures: ${active.figures}</div>
+                </div>
+            `;
+        }
+
         async function analyzeMarkets() {
             const analyzeBtn = document.getElementById('analyzeBtn');
             const analysisSection = document.getElementById('analysisSection');
 
+            const perspective = INVESTMENT_PERSPECTIVES[selectedPerspective];
             console.log('=== ANALYZE MARKETS DEBUG ===');
+            console.log('Selected perspective:', selectedPerspective, perspective.name);
             console.log('Portfolio:', portfolio);
             console.log('Portfolio length:', portfolio.length);
 
@@ -1912,7 +2143,7 @@
             analyzeBtn.disabled = true;
             analyzeBtn.textContent = 'Analyzing...';
 
-            analysisSection.innerHTML = '<div class="card loading">🔄 Analyzing your portfolio...</div>';
+            analysisSection.innerHTML = `<div class="card loading">${perspective.icon} Analyzing through ${escapeHTML(perspective.name)} lens...</div>`;
 
             try {
                 let data;
@@ -1932,15 +2163,17 @@
                         headers: headers,
                         body: JSON.stringify({
                             model: 'claude-sonnet-4-20250514',
-                            max_tokens: 1000,
+                            max_tokens: 1500,
                             messages: [{
                                 role: 'user',
-                                content: `You are a financial advisor AI. Analyze current market conditions and provide insights for a portfolio containing: ${portfolio.map(p => `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}`).join(', ')}.
+                                content: `${perspective.prompt}
+
+The portfolio contains: ${portfolio.map(p => `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}${marketPrices[p.symbol] ? ` (current: $${marketPrices[p.symbol]})` : ''}`).join(', ')}.
 
 Please provide your analysis in JSON format with these fields:
-- marketOverview: brief overview of current market sentiment (2-3 sentences)
-- portfolioImpact: how current conditions affect this specific portfolio (2-3 sentences)
-- ideas: array of 3 actionable ideas, each with "title" and "description"
+- marketOverview: your assessment of current conditions through the lens of this investment philosophy (2-3 sentences)
+- portfolioImpact: how this philosophy evaluates the specific holdings in this portfolio — strengths and weaknesses (3-4 sentences)
+- ideas: array of 3 actionable ideas consistent with this investment perspective, each with "title" and "description"
 
 Respond ONLY with valid JSON, no markdown, no preamble.`
                             }]
@@ -1972,8 +2205,14 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                             portfolio: portfolio.map(p => ({
                                 shares: p.shares,
                                 symbol: p.symbol,
-                                avgPrice: p.avgPrice
-                            }))
+                                avgPrice: p.avgPrice,
+                                currentPrice: marketPrices[p.symbol] || null
+                            })),
+                            perspective: {
+                                key: selectedPerspective,
+                                name: perspective.name,
+                                prompt: perspective.prompt
+                            }
                         })
                     });
 
@@ -2000,13 +2239,20 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
 
                 analysisSection.innerHTML = `
                     <div class="card analysis-section">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                            <span class="perspective-badge" style="background: ${perspective.color};">
+                                ${perspective.icon} ${escapeHTML(perspective.name)}
+                            </span>
+                            <span style="color: #64748b; font-size: 12px;">Inspired by ${escapeHTML(perspective.figures)}</span>
+                        </div>
+
                         <div class="analysis-card">
-                            <div class="analysis-title">📊 Market Overview</div>
+                            <div class="analysis-title">${perspective.icon} Market Assessment</div>
                             <div class="analysis-content">${escapeHTML(analysis.marketOverview)}</div>
                         </div>
 
                         <div class="analysis-card">
-                            <div class="analysis-title">💰 Portfolio Impact</div>
+                            <div class="analysis-title">🎯 Portfolio Evaluation</div>
                             <div class="analysis-content">${escapeHTML(analysis.portfolioImpact)}</div>
                         </div>
 
@@ -2021,7 +2267,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                         </div>
 
                         <div class="disclaimer">
-                            <strong>Disclaimer:</strong> This analysis is for informational purposes only and should not be considered financial advice. Always consult with a qualified financial advisor before making investment decisions.
+                            <strong>Disclaimer:</strong> This analysis is generated from a ${escapeHTML(perspective.name)} perspective for educational purposes only. It should not be considered financial advice. Always consult with a qualified financial advisor before making investment decisions.
                         </div>
                     </div>
                 `;
@@ -2052,7 +2298,8 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
         }
 
         renderPortfolio();
-        
+        renderPerspectiveTabs();
+
         // Global error handler with detailed logging
         window.onerror = function(message, source, lineno, colno, error) {
             console.error('=== GLOBAL ERROR CAUGHT ===');
