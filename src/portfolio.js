@@ -63,13 +63,14 @@ export function parsePortfolioText(text) {
       const assetName = parts[0] ? parts[0].trim() : '';
       const symbol = parts[1] ? parts[1].trim().toUpperCase() : '';
       const platform = parts[2] ? parts[2].trim() : 'Unknown';
+      const assetType = parts[3] ? parts[3].trim() : 'Other';
       const sharesRaw = parts[4] ? parts[4].trim() : '';
       const shares = parseFloat(sharesRaw);
       const priceRaw = parts[7] ? parts[7].trim() : '';
       const avgPrice = parseFloat(priceRaw.replace(/[$,]/g, ''));
 
       if (symbol && !isNaN(shares) && !isNaN(avgPrice) && shares > 0 && avgPrice > 0) {
-        positions.push({ name: assetName, symbol, platform, shares, avgPrice });
+        positions.push({ name: assetName, symbol, platform, type: assetType, shares, avgPrice });
       } else {
         const reason = [];
         if (!symbol) reason.push('missing ticker');
@@ -84,7 +85,7 @@ export function parsePortfolioText(text) {
       const avgPrice = parseFloat(parts[2].replace(/[$,]/g, ''));
 
       if (symbol && !isNaN(shares) && !isNaN(avgPrice)) {
-        positions.push({ name: symbol, symbol, platform: 'Unknown', shares, avgPrice });
+        positions.push({ name: symbol, symbol, platform: 'Unknown', type: 'Stock', shares, avgPrice });
       } else {
         errors.push(`Line ${idx + 1}: Invalid simple format`);
       }
@@ -396,4 +397,83 @@ export function calculateRateDelay(keys) {
     return { delay: 12000, description: 'Using Alpha Vantage only (5 calls/min - slower)' };
   }
   return { delay: 1000, description: 'No API keys configured' };
+}
+
+// ── Weight Calculation ───────────────────────────────────────────────────────
+
+/**
+ * Calculate the weight of a position within the portfolio.
+ *
+ * @param {number} positionMarketValue - Market value of the position
+ * @param {number} totalMarketValue - Total portfolio market value
+ * @returns {number} Weight as a percentage (0-100)
+ */
+export function calculatePositionWeight(positionMarketValue, totalMarketValue) {
+  if (totalMarketValue <= 0) return 0;
+  return (positionMarketValue / totalMarketValue) * 100;
+}
+
+/**
+ * Calculate weights for all positions in a portfolio.
+ *
+ * @param {Array<{shares: number, avgPrice: number, symbol: string}>} portfolio
+ * @param {Object<string, number>} marketPrices - { symbol: currentPrice }
+ * @returns {Array<{symbol: string, marketValue: number, weight: number}>}
+ */
+export function calculatePortfolioWeights(portfolio, marketPrices = {}) {
+  // Calculate total market value
+  let totalMarketValue = 0;
+  const positionValues = portfolio.map((p) => {
+    const invested = p.shares * p.avgPrice;
+    const currentPrice = marketPrices[p.symbol];
+    const marketValue = currentPrice ? p.shares * currentPrice : invested;
+    totalMarketValue += marketValue;
+    return { symbol: p.symbol, marketValue };
+  });
+
+  // Calculate weights
+  return positionValues.map((pv) => ({
+    symbol: pv.symbol,
+    marketValue: pv.marketValue,
+    weight: calculatePositionWeight(pv.marketValue, totalMarketValue),
+  }));
+}
+
+// ── Type Aggregation ─────────────────────────────────────────────────────────
+
+/**
+ * Aggregate portfolio value by asset type.
+ *
+ * @param {Array<{shares: number, avgPrice: number, symbol: string, type?: string}>} portfolio
+ * @param {Object<string, number>} marketPrices - { symbol: currentPrice }
+ * @returns {{ allocations: Array<{type: string, value: number, weight: number}>, totalMarketValue: number }}
+ */
+export function aggregateByType(portfolio, marketPrices = {}) {
+  // Calculate total market value and aggregate by type
+  let totalMarketValue = 0;
+  const typeValues = {};
+
+  portfolio.forEach((p) => {
+    const invested = p.shares * p.avgPrice;
+    const currentPrice = marketPrices[p.symbol];
+    const marketValue = currentPrice ? p.shares * currentPrice : invested;
+    totalMarketValue += marketValue;
+
+    const assetType = p.type || 'Other';
+    if (!typeValues[assetType]) {
+      typeValues[assetType] = 0;
+    }
+    typeValues[assetType] += marketValue;
+  });
+
+  // Convert to array with weights, sorted by value descending
+  const allocations = Object.entries(typeValues)
+    .map(([type, value]) => ({
+      type,
+      value,
+      weight: totalMarketValue > 0 ? (value / totalMarketValue) * 100 : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  return { allocations, totalMarketValue };
 }
