@@ -21,7 +21,7 @@ describe('parsePortfolioText', () => {
   });
 
   describe('full format (8+ columns)', () => {
-    it('parses a valid full-format row', () => {
+    it('parses a valid full-format row with type', () => {
       const text = 'Apple Inc\tAAPL\tFidelity\tStock\t100\t15000\t15000\t150.00\t2024-01-01';
       const result = parsePortfolioText(text);
 
@@ -30,10 +30,31 @@ describe('parsePortfolioText', () => {
         name: 'Apple Inc',
         symbol: 'AAPL',
         platform: 'Fidelity',
+        type: 'Stock',
         shares: 100,
         avgPrice: 150,
       });
       expect(result.errors).toHaveLength(0);
+    });
+
+    it('captures different asset types', () => {
+      const text = [
+        'Bitcoin\tBTC\tCoinbase\tCrypto\t1\t50000\t50000\t50000\t-',
+        'SPY\tSPY\tFidelity\tETF\t100\t45000\t45000\t450\t-',
+        'Bond Fund\tBND\tVanguard\tBond\t200\t16000\t16000\t80\t-',
+      ].join('\n');
+      const result = parsePortfolioText(text);
+
+      expect(result.positions).toHaveLength(3);
+      expect(result.positions[0].type).toBe('Crypto');
+      expect(result.positions[1].type).toBe('ETF');
+      expect(result.positions[2].type).toBe('Bond');
+    });
+
+    it('defaults type to Other when empty', () => {
+      const text = 'Apple\tAAPL\tFidelity\t\t100\t15000\t15000\t150\t-';
+      const result = parsePortfolioText(text);
+      expect(result.positions[0].type).toBe('Other');
     });
 
     it('uppercases the ticker symbol', () => {
@@ -144,7 +165,7 @@ describe('parsePortfolioText', () => {
   });
 
   describe('simple format (3 columns)', () => {
-    it('parses valid simple-format row', () => {
+    it('parses valid simple-format row with default type', () => {
       const text = 'AAPL\t100\t150';
       const result = parsePortfolioText(text);
 
@@ -153,6 +174,7 @@ describe('parsePortfolioText', () => {
         name: 'AAPL',
         symbol: 'AAPL',
         platform: 'Unknown',
+        type: 'Stock',
         shares: 100,
         avgPrice: 150,
       });

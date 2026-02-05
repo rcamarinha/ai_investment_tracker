@@ -52,7 +52,7 @@
             padding: 12px 15px;
             margin-bottom: 1px;
             display: grid;
-            grid-template-columns: 100px 200px 70px 100px 100px 100px 100px 120px;
+            grid-template-columns: 100px 200px 70px 100px 100px 100px 100px 70px 120px;
             gap: 15px;
             align-items: center;
             font-size: 13px;
@@ -70,7 +70,7 @@
             border-radius: 10px 10px 0 0;
             padding: 12px 15px;
             display: grid;
-            grid-template-columns: 100px 200px 70px 100px 100px 100px 100px 120px;
+            grid-template-columns: 100px 200px 70px 100px 100px 100px 100px 70px 120px;
             gap: 15px;
             align-items: center;
             font-size: 11px;
@@ -218,6 +218,66 @@
             font-weight: 600;
             color: white;
         }
+        .allocation-section {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+        .allocation-charts {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        .allocation-chart-container {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .allocation-chart {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .allocation-bar-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .allocation-bar-label {
+            width: 100px;
+            font-size: 12px;
+            color: #cbd5e1;
+            text-align: right;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .allocation-bar-track {
+            flex: 1;
+            height: 24px;
+            background: #334155;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .allocation-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding-left: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            color: white;
+            transition: width 0.3s ease;
+        }
+        .allocation-bar-value {
+            width: 60px;
+            font-size: 12px;
+            color: #94a3b8;
+            text-align: right;
+        }
         .market-news-card {
             border-left: 3px solid #60a5fa;
         }
@@ -304,7 +364,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v2.0.3</span></h1>
+            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.0</span></h1>
             <p>Market analysis and personalized portfolio insights</p>
         </div>
         
@@ -346,6 +406,16 @@
                 <button class="btn btn-add" onclick="showImportDialog()">📋 Import Portfolio from Spreadsheet</button>
                 <button class="btn btn-add" onclick="fetchMarketPrices()" id="refreshBtn" style="background: #059669;">🔄 Update Prices</button>
                 <button class="btn btn-add" onclick="savePortfolioSnapshot()" style="background: #f59e0b;">💾 Save Snapshot</button>
+            </div>
+
+            <div id="allocationSection" class="allocation-section" style="display: none;">
+                <h3 style="color: #e2e8f0; margin-bottom: 15px;">📊 Portfolio Allocation</h3>
+                <div class="allocation-charts">
+                    <div class="allocation-chart-container">
+                        <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;">By Asset Type</h4>
+                        <div id="typeAllocationChart" class="allocation-chart"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="perspective-selector" id="perspectiveSelector">
@@ -1804,6 +1874,7 @@ Apply these lenses:
                     <div>Current Price</div>
                     <div>Invested</div>
                     <div>Market Value</div>
+                    <div>Weight</div>
                     <div>Gain/Loss</div>
                 </div>
             `;
@@ -1815,6 +1886,7 @@ Apply these lenses:
                 const marketValue = hasPrice ? pos.shares * currentPrice : invested;
                 const gainLoss = marketValue - invested;
                 const gainLossPct = invested > 0 ? (gainLoss / invested) * 100 : 0;
+                const weight = totalMarketValue > 0 ? (marketValue / totalMarketValue) * 100 : 0;
                 const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
                 
                 // Get price metadata
@@ -1878,6 +1950,9 @@ Apply these lenses:
                     <div class="position-value" style="color: ${color};">
                         ${formatCurrency(marketValue)}
                     </div>
+                    <div class="position-details" style="font-weight: 600;">
+                        ${weight.toFixed(1)}%
+                    </div>
                     <div style="color: ${color}; font-weight: bold;">
                         ${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss)}
                         <span style="font-size: 11px; margin-left: 4px;">(${formatPercent(gainLossPct)})</span>
@@ -1887,7 +1962,10 @@ Apply these lenses:
             }).join('');
             
             positionsDiv.innerHTML = html;
-            
+
+            // Render allocation charts
+            renderAllocationCharts();
+
             console.log('Portfolio rendered successfully');
         }
 
@@ -1990,15 +2068,16 @@ Apply these lenses:
                         const assetName = parts[0] ? parts[0].trim() : '';
                         const symbol = parts[1] ? parts[1].trim().toUpperCase() : '';
                         const platform = parts[2] ? parts[2].trim() : 'Unknown';
+                        const assetType = parts[3] ? parts[3].trim() : 'Other';
                         const sharesRaw = parts[4] ? parts[4].trim() : '';
                         const shares = parseFloat(sharesRaw);
                         const priceRaw = parts[7] ? parts[7].trim() : '';
                         const avgPrice = parseFloat(priceRaw.replace(/[$,]/g, ''));
 
-                        console.log(`  Parsed: Name="${assetName}", Symbol="${symbol}", Platform="${platform}", Shares="${sharesRaw}" (${shares}), Price="${priceRaw}" (${avgPrice})`);
+                        console.log(`  Parsed: Name="${assetName}", Symbol="${symbol}", Platform="${platform}", Type="${assetType}", Shares="${sharesRaw}" (${shares}), Price="${priceRaw}" (${avgPrice})`);
 
                         if (symbol && !isNaN(shares) && !isNaN(avgPrice) && shares > 0 && avgPrice > 0) {
-                            newPositions.push({ name: assetName, symbol, platform, shares, avgPrice });
+                            newPositions.push({ name: assetName, symbol, platform, type: assetType, shares, avgPrice });
                             console.log(`  ✓ SUCCESS: Added ${symbol} (${assetName}) on ${platform}`);
                             debugInfo.push(`Line ${idx + 1}: ✓ ${symbol} - ${shares} @ $${avgPrice} (${platform})`);
                         } else {
@@ -2020,7 +2099,7 @@ Apply these lenses:
                         console.log(`  Simple format: Symbol="${symbol}", Shares=${shares}, Price=${avgPrice}`);
 
                         if (symbol && !isNaN(shares) && !isNaN(avgPrice)) {
-                            newPositions.push({ name: symbol, symbol, platform: 'Unknown', shares, avgPrice });
+                            newPositions.push({ name: symbol, symbol, platform: 'Unknown', type: 'Stock', shares, avgPrice });
                             console.log(`  ✓ SUCCESS: Added ${symbol}`);
                             debugInfo.push(`Line ${idx + 1}: ✓ ${symbol}`);
                         } else {
@@ -2114,6 +2193,80 @@ Apply these lenses:
         function selectPerspective(key) {
             selectedPerspective = key;
             renderPerspectiveTabs();
+        }
+
+        function renderAllocationCharts() {
+            const allocationSection = document.getElementById('allocationSection');
+            const typeChart = document.getElementById('typeAllocationChart');
+
+            if (!allocationSection || !typeChart || portfolio.length === 0) {
+                if (allocationSection) allocationSection.style.display = 'none';
+                return;
+            }
+
+            // Calculate total market value
+            let totalMarketValue = 0;
+            portfolio.forEach(p => {
+                const currentPrice = marketPrices[p.symbol];
+                const invested = p.shares * p.avgPrice;
+                totalMarketValue += currentPrice ? p.shares * currentPrice : invested;
+            });
+
+            if (totalMarketValue === 0) {
+                allocationSection.style.display = 'none';
+                return;
+            }
+
+            // Aggregate by type
+            const typeAllocation = {};
+            portfolio.forEach(p => {
+                const assetType = p.type || 'Other';
+                const currentPrice = marketPrices[p.symbol];
+                const invested = p.shares * p.avgPrice;
+                const marketValue = currentPrice ? p.shares * currentPrice : invested;
+
+                if (!typeAllocation[assetType]) {
+                    typeAllocation[assetType] = 0;
+                }
+                typeAllocation[assetType] += marketValue;
+            });
+
+            // Sort by value descending
+            const sortedTypes = Object.entries(typeAllocation)
+                .sort((a, b) => b[1] - a[1]);
+
+            // Color palette for types
+            const typeColors = {
+                'Stock': '#3b82f6',
+                'ETF': '#8b5cf6',
+                'Crypto': '#f59e0b',
+                'Bond': '#10b981',
+                'REIT': '#ec4899',
+                'Commodity': '#f97316',
+                'Cash': '#6b7280',
+                'Other': '#64748b'
+            };
+            const defaultColors = ['#06b6d4', '#84cc16', '#ef4444', '#a855f7', '#14b8a6', '#eab308'];
+
+            // Render type allocation chart
+            let colorIdx = 0;
+            typeChart.innerHTML = sortedTypes.map(([type, value]) => {
+                const pct = (value / totalMarketValue * 100);
+                const color = typeColors[type] || defaultColors[colorIdx++ % defaultColors.length];
+                return `
+                    <div class="allocation-bar-row">
+                        <div class="allocation-bar-label" title="${escapeHTML(type)}">${escapeHTML(type)}</div>
+                        <div class="allocation-bar-track">
+                            <div class="allocation-bar-fill" style="width: ${pct}%; background: ${color};">
+                                ${pct >= 10 ? pct.toFixed(1) + '%' : ''}
+                            </div>
+                        </div>
+                        <div class="allocation-bar-value">${formatCurrency(value)}</div>
+                    </div>
+                `;
+            }).join('');
+
+            allocationSection.style.display = 'block';
         }
 
         function renderPerspectiveTabs() {
