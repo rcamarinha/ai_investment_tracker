@@ -218,6 +218,152 @@
             font-weight: 600;
             color: white;
         }
+        .perspective-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-trade-ideas {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+        }
+        .btn-trade-ideas:hover {
+            background: linear-gradient(135deg, #047857 0%, #059669 100%);
+        }
+        .trade-ideas-section {
+            margin-top: 20px;
+        }
+        .trade-idea-card {
+            background: #334155;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid;
+        }
+        .trade-idea-card.rebalance { border-left-color: #f59e0b; }
+        .trade-idea-card.buy { border-left-color: #10b981; }
+        .trade-idea-card.sell { border-left-color: #ef4444; }
+        .trade-idea-card.hold { border-left-color: #6366f1; }
+        .trade-idea-card.watch { border-left-color: #8b5cf6; }
+        .trade-idea-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .trade-idea-number {
+            background: #1e293b;
+            color: #e2e8f0;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .trade-idea-title-section {
+            flex: 1;
+        }
+        .trade-idea-title {
+            color: #e2e8f0;
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .trade-idea-subtitle {
+            color: #94a3b8;
+            font-size: 13px;
+        }
+        .trade-idea-context {
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 12px;
+        }
+        .trade-idea-context h4 {
+            color: #94a3b8;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .trade-idea-context ul {
+            margin: 0;
+            padding-left: 18px;
+            color: #cbd5e1;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .trade-idea-action {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 12px;
+            border: 1px solid #334155;
+        }
+        .trade-idea-action h4 {
+            color: #10b981;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .trade-idea-action p {
+            color: #e2e8f0;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0;
+        }
+        .trade-idea-rationale {
+            color: #94a3b8;
+            font-size: 13px;
+            line-height: 1.6;
+            font-style: italic;
+        }
+        .trade-ideas-summary {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+        .trade-ideas-summary h3 {
+            color: #e2e8f0;
+            font-size: 16px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .execution-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px solid #334155;
+        }
+        .execution-step:last-child {
+            border-bottom: none;
+        }
+        .execution-time {
+            background: #334155;
+            color: #94a3b8;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .execution-action {
+            color: #cbd5e1;
+            font-size: 13px;
+            line-height: 1.5;
+        }
         .allocation-section {
             background: #1e293b;
             border: 1px solid #334155;
@@ -424,7 +570,10 @@
                 </div>
                 <div class="perspective-tabs" id="perspectiveTabs"></div>
                 <div class="perspective-info" id="perspectiveInfo"></div>
-                <button class="btn btn-analyze" onclick="analyzeMarkets()" id="analyzeBtn">Get AI Analysis</button>
+                <div class="perspective-buttons">
+                    <button class="btn btn-analyze" onclick="analyzeMarkets()" id="analyzeBtn">Get AI Analysis</button>
+                    <button class="btn btn-trade-ideas" onclick="getTradeIdeas()" id="tradeIdeasBtn">💹 Get Trade Ideas</button>
+                </div>
             </div>
         </div>
 
