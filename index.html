@@ -1625,21 +1625,10 @@ Apply these lenses:
 
                 console.log('✓ Portfolio saved to Supabase');
 
-                // Also save/update assets metadata
+                // Also save/update global assets and reload to get IDs
                 const assetRecords = portfolio.map(p => buildAssetRecord(p));
                 await saveAssetsToDB(assetRecords);
-
-                // Update local assetDatabase
-                assetRecords.forEach(a => {
-                    assetDatabase[a.ticker] = {
-                        name: a.name,
-                        ticker: a.ticker,
-                        stockExchange: a.stock_exchange,
-                        sector: a.sector,
-                        currency: a.currency,
-                        assetType: a.asset_type
-                    };
-                });
+                await loadAssetsFromDB();
             } catch (err) {
                 console.error('Failed to save portfolio to DB:', err);
             }
@@ -1772,16 +1761,15 @@ Apply these lenses:
             };
         }
 
-        // Save/upsert assets to Supabase
+        // Save/upsert assets to Supabase (global — shared across all users)
         async function saveAssetsToDB(assets) {
-            if (!supabaseClient || !currentUser) return;
+            if (!supabaseClient) return;
 
             try {
                 for (const asset of assets) {
                     const { error } = await supabaseClient
                         .from('assets')
                         .upsert({
-                            user_id: currentUser.id,
                             ticker: asset.ticker,
                             name: asset.name,
                             stock_exchange: asset.stock_exchange,
@@ -1789,7 +1777,7 @@ Apply these lenses:
                             currency: asset.currency,
                             asset_type: asset.asset_type,
                             updated_at: new Date().toISOString()
-                        }, { onConflict: 'user_id,ticker' });
+                        }, { onConflict: 'ticker' });
 
                     if (error) {
                         console.warn(`Failed to upsert asset ${asset.ticker}:`, error.message);
@@ -1801,9 +1789,9 @@ Apply these lenses:
             }
         }
 
-        // Load assets from Supabase into assetDatabase
+        // Load all assets from Supabase (global catalog)
         async function loadAssetsFromDB() {
-            if (!supabaseClient || !currentUser) return;
+            if (!supabaseClient) return;
 
             try {
                 const { data, error } = await supabaseClient
@@ -1819,6 +1807,7 @@ Apply these lenses:
                 if (data && data.length > 0) {
                     data.forEach(a => {
                         assetDatabase[a.ticker.toUpperCase()] = {
+                            id: a.id,
                             name: a.name,
                             ticker: a.ticker,
                             stockExchange: a.stock_exchange,
@@ -1834,19 +1823,28 @@ Apply these lenses:
             }
         }
 
-        // Save a batch of prices to price_history
+        // Save a batch of prices to price_history (global — linked to asset_id)
         async function savePriceHistoryToDB(priceRecords) {
-            if (!supabaseClient || !currentUser) return;
+            if (!supabaseClient) return;
 
             try {
-                const rows = priceRecords.map(r => ({
-                    user_id: currentUser.id,
-                    ticker: r.ticker,
-                    price: r.price,
-                    currency: r.currency || 'USD',
-                    source: r.source,
-                    fetched_at: r.fetchedAt || new Date().toISOString()
-                }));
+                const rows = [];
+                for (const r of priceRecords) {
+                    const asset = assetDatabase[r.ticker.toUpperCase()];
+                    if (!asset || !asset.id) {
+                        console.warn(`Skipping price for ${r.ticker}: no asset_id in DB`);
+                        continue;
+                    }
+                    rows.push({
+                        asset_id: asset.id,
+                        price: r.price,
+                        currency: r.currency || 'USD',
+                        source: r.source,
+                        fetched_at: r.fetchedAt || new Date().toISOString()
+                    });
+                }
+
+                if (rows.length === 0) return;
 
                 const { error } = await supabaseClient
                     .from('price_history')
@@ -1862,21 +1860,25 @@ Apply these lenses:
             }
         }
 
-        // Load the most recent price for each ticker from price_history
+        // Load the most recent price for each ticker from price_history (global)
         async function loadLatestPricesFromDB() {
-            if (!supabaseClient || !currentUser) return;
+            if (!supabaseClient) return;
 
             try {
                 // Get unique tickers from portfolio
                 const tickers = [...new Set(portfolio.map(p => p.symbol.toUpperCase()))];
                 if (tickers.length === 0) return;
 
-                // For each ticker, get the most recent price
-                // Using a query that gets latest price per ticker
+                // Collect asset_ids for portfolio tickers
+                const assetIds = tickers
+                    .map(t => assetDatabase[t]?.id)
+                    .filter(Boolean);
+                if (assetIds.length === 0) return;
+
                 const { data, error } = await supabaseClient
                     .from('price_history')
-                    .select('ticker, price, currency, source, fetched_at')
-                    .in('ticker', tickers)
+                    .select('asset_id, price, currency, source, fetched_at')
+                    .in('asset_id', assetIds)
                     .order('fetched_at', { ascending: false });
 
                 if (error) {
@@ -1885,19 +1887,27 @@ Apply these lenses:
                 }
 
                 if (data && data.length > 0) {
-                    // Group by ticker and take the most recent (already sorted desc)
+                    // Build reverse lookup: asset_id -> ticker
+                    const idToTicker = {};
+                    for (const [ticker, info] of Object.entries(assetDatabase)) {
+                        if (info.id) idToTicker[info.id] = ticker;
+                    }
+
                     const seen = new Set();
                     let loadedCount = 0;
                     data.forEach(row => {
-                        if (!seen.has(row.ticker)) {
-                            seen.add(row.ticker);
-                            marketPrices[row.ticker] = Number(row.price);
-                            priceMetadata[row.ticker] = {
-                                timestamp: row.fetched_at,
-                                source: row.source + ' (cached)',
-                                success: true
-                            };
-                            loadedCount++;
+                        if (!seen.has(row.asset_id)) {
+                            seen.add(row.asset_id);
+                            const ticker = idToTicker[row.asset_id];
+                            if (ticker) {
+                                marketPrices[ticker] = Number(row.price);
+                                priceMetadata[ticker] = {
+                                    timestamp: row.fetched_at,
+                                    source: row.source + ' (cached)',
+                                    success: true
+                                };
+                                loadedCount++;
+                            }
                         }
                     });
                     console.log('✓ Loaded', loadedCount, 'cached prices from DB');
@@ -1909,13 +1919,16 @@ Apply these lenses:
 
         // Load price history for a specific asset (for charts/analysis)
         async function loadPriceHistoryForAsset(ticker, limit = 30) {
-            if (!supabaseClient || !currentUser) return [];
+            if (!supabaseClient) return [];
 
             try {
+                const asset = assetDatabase[ticker.toUpperCase()];
+                if (!asset || !asset.id) return [];
+
                 const { data, error } = await supabaseClient
                     .from('price_history')
                     .select('price, currency, source, fetched_at')
-                    .eq('ticker', ticker.toUpperCase())
+                    .eq('asset_id', asset.id)
                     .order('fetched_at', { ascending: false })
                     .limit(limit);
 
