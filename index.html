@@ -2335,8 +2335,14 @@ Apply these lenses:
                 
                 renderPortfolio();
 
-                // Save freshly fetched prices to price_history DB (skip cached ones from DB load)
+                // Ensure all portfolio assets exist in global DB, then save prices
                 if (successCount > 0) {
+                    // Upsert assets to DB and reload to get IDs
+                    const assetRecords = portfolio.map(p => buildAssetRecord(p));
+                    await saveAssetsToDB(assetRecords);
+                    await loadAssetsFromDB();
+
+                    // Save freshly fetched prices to price_history (skip cached ones from DB load)
                     const priceRecords = [];
                     const now = new Date().toISOString();
                     for (const [symbol, price] of Object.entries(marketPrices)) {
