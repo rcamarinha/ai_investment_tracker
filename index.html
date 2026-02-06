@@ -510,7 +510,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.0</span></h1>
+            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.1</span></h1>
             <p>Market analysis and personalized portfolio insights</p>
         </div>
         
@@ -560,6 +560,10 @@
                     <div class="allocation-chart-container">
                         <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;">By Asset Type</h4>
                         <div id="typeAllocationChart" class="allocation-chart"></div>
+                    </div>
+                    <div class="allocation-chart-container">
+                        <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;">By Sector</h4>
+                        <div id="sectorAllocationChart" class="allocation-chart"></div>
                     </div>
                 </div>
             </div>
@@ -764,6 +768,148 @@
         let supabaseClient = null;
         let currentUser = null;
         let selectedPerspective = 'value'; // Default investment perspective
+        let sectorCache = {}; // Cache for sector lookups {symbol: sector}
+
+        // Static sector mapping for common tickers (no API needed)
+        const SECTOR_MAPPING = {
+            // Technology
+            AAPL: 'Technology', MSFT: 'Technology', GOOGL: 'Technology', GOOG: 'Technology',
+            META: 'Technology', AMZN: 'Technology', NVDA: 'Technology', AMD: 'Technology',
+            INTC: 'Technology', CRM: 'Technology', ORCL: 'Technology', ADBE: 'Technology',
+            CSCO: 'Technology', IBM: 'Technology', QCOM: 'Technology', TXN: 'Technology',
+            AVGO: 'Technology', NOW: 'Technology', INTU: 'Technology', AMAT: 'Technology',
+            MU: 'Technology', LRCX: 'Technology', KLAC: 'Technology', SNPS: 'Technology',
+            CDNS: 'Technology', MRVL: 'Technology', NXPI: 'Technology', ASML: 'Technology',
+            TSM: 'Technology', ARM: 'Technology', PLTR: 'Technology', SNOW: 'Technology',
+            // Healthcare
+            JNJ: 'Healthcare', UNH: 'Healthcare', PFE: 'Healthcare', ABBV: 'Healthcare',
+            MRK: 'Healthcare', LLY: 'Healthcare', TMO: 'Healthcare', ABT: 'Healthcare',
+            DHR: 'Healthcare', BMY: 'Healthcare', AMGN: 'Healthcare', GILD: 'Healthcare',
+            MDT: 'Healthcare', CVS: 'Healthcare', ISRG: 'Healthcare', VRTX: 'Healthcare',
+            REGN: 'Healthcare', SYK: 'Healthcare', ZTS: 'Healthcare', BDX: 'Healthcare',
+            CI: 'Healthcare', HUM: 'Healthcare', ELV: 'Healthcare', MCK: 'Healthcare',
+            // Financial Services
+            JPM: 'Financial', BAC: 'Financial', WFC: 'Financial', GS: 'Financial',
+            MS: 'Financial', C: 'Financial', BLK: 'Financial', SCHW: 'Financial',
+            AXP: 'Financial', SPGI: 'Financial', CME: 'Financial', ICE: 'Financial',
+            USB: 'Financial', PNC: 'Financial', TFC: 'Financial', COF: 'Financial',
+            BK: 'Financial', STT: 'Financial', AIG: 'Financial', MET: 'Financial',
+            PRU: 'Financial', AFL: 'Financial', ALL: 'Financial', TRV: 'Financial',
+            V: 'Financial', MA: 'Financial', PYPL: 'Financial', SQ: 'Financial',
+            // Consumer Discretionary
+            TSLA: 'Consumer Discretionary', HD: 'Consumer Discretionary', NKE: 'Consumer Discretionary',
+            MCD: 'Consumer Discretionary', SBUX: 'Consumer Discretionary', LOW: 'Consumer Discretionary',
+            TJX: 'Consumer Discretionary', BKNG: 'Consumer Discretionary', MAR: 'Consumer Discretionary',
+            CMG: 'Consumer Discretionary', YUM: 'Consumer Discretionary', DPZ: 'Consumer Discretionary',
+            ORLY: 'Consumer Discretionary', AZO: 'Consumer Discretionary', ROST: 'Consumer Discretionary',
+            DHI: 'Consumer Discretionary', LEN: 'Consumer Discretionary', PHM: 'Consumer Discretionary',
+            F: 'Consumer Discretionary', GM: 'Consumer Discretionary', ABNB: 'Consumer Discretionary',
+            // Consumer Staples
+            PG: 'Consumer Staples', KO: 'Consumer Staples', PEP: 'Consumer Staples',
+            COST: 'Consumer Staples', WMT: 'Consumer Staples', PM: 'Consumer Staples',
+            MO: 'Consumer Staples', MDLZ: 'Consumer Staples', CL: 'Consumer Staples',
+            KMB: 'Consumer Staples', GIS: 'Consumer Staples', K: 'Consumer Staples',
+            HSY: 'Consumer Staples', SJM: 'Consumer Staples', CAG: 'Consumer Staples',
+            KHC: 'Consumer Staples', STZ: 'Consumer Staples', TAP: 'Consumer Staples',
+            // Energy
+            XOM: 'Energy', CVX: 'Energy', COP: 'Energy', EOG: 'Energy',
+            SLB: 'Energy', MPC: 'Energy', PSX: 'Energy', VLO: 'Energy',
+            OXY: 'Energy', PXD: 'Energy', DVN: 'Energy', HAL: 'Energy',
+            BKR: 'Energy', FANG: 'Energy', HES: 'Energy', MRO: 'Energy',
+            TTE: 'Energy', BP: 'Energy', SHEL: 'Energy', RDS: 'Energy',
+            // Industrials
+            CAT: 'Industrials', DE: 'Industrials', BA: 'Industrials', HON: 'Industrials',
+            UNP: 'Industrials', RTX: 'Industrials', LMT: 'Industrials', GE: 'Industrials',
+            MMM: 'Industrials', UPS: 'Industrials', FDX: 'Industrials', CSX: 'Industrials',
+            NSC: 'Industrials', WM: 'Industrials', RSG: 'Industrials', EMR: 'Industrials',
+            ITW: 'Industrials', ETN: 'Industrials', PH: 'Industrials', ROK: 'Industrials',
+            // Materials
+            LIN: 'Materials', APD: 'Materials', SHW: 'Materials', ECL: 'Materials',
+            FCX: 'Materials', NEM: 'Materials', NUE: 'Materials', DOW: 'Materials',
+            DD: 'Materials', PPG: 'Materials', VMC: 'Materials', MLM: 'Materials',
+            // Utilities
+            NEE: 'Utilities', DUK: 'Utilities', SO: 'Utilities', D: 'Utilities',
+            AEP: 'Utilities', EXC: 'Utilities', SRE: 'Utilities', XEL: 'Utilities',
+            ED: 'Utilities', WEC: 'Utilities', ES: 'Utilities', AWK: 'Utilities',
+            // Real Estate
+            PLD: 'Real Estate', AMT: 'Real Estate', CCI: 'Real Estate', EQIX: 'Real Estate',
+            SPG: 'Real Estate', PSA: 'Real Estate', O: 'Real Estate', WELL: 'Real Estate',
+            DLR: 'Real Estate', AVB: 'Real Estate', EQR: 'Real Estate', VTR: 'Real Estate',
+            // Communication Services
+            DIS: 'Communication', NFLX: 'Communication', CMCSA: 'Communication', T: 'Communication',
+            VZ: 'Communication', TMUS: 'Communication', CHTR: 'Communication', EA: 'Communication',
+            TTWO: 'Communication', ATVI: 'Communication', WBD: 'Communication', PARA: 'Communication',
+            // ETFs - categorize by their focus
+            SPY: 'Index ETF', VOO: 'Index ETF', IVV: 'Index ETF', VTI: 'Index ETF',
+            QQQ: 'Tech ETF', VGT: 'Tech ETF', XLK: 'Tech ETF', ARKK: 'Tech ETF',
+            XLF: 'Financial ETF', VFH: 'Financial ETF', KRE: 'Financial ETF',
+            XLE: 'Energy ETF', VDE: 'Energy ETF', OIH: 'Energy ETF',
+            XLV: 'Healthcare ETF', VHT: 'Healthcare ETF', IBB: 'Healthcare ETF',
+            XLY: 'Consumer ETF', VCR: 'Consumer ETF',
+            XLP: 'Consumer ETF', VDC: 'Consumer ETF',
+            XLI: 'Industrial ETF', VIS: 'Industrial ETF',
+            XLU: 'Utilities ETF', VPU: 'Utilities ETF',
+            XLRE: 'Real Estate ETF', VNQ: 'Real Estate ETF',
+            XLB: 'Materials ETF', VAW: 'Materials ETF',
+            BND: 'Bond ETF', AGG: 'Bond ETF', TLT: 'Bond ETF', LQD: 'Bond ETF',
+            HYG: 'Bond ETF', JNK: 'Bond ETF', VCIT: 'Bond ETF', VCSH: 'Bond ETF',
+            GLD: 'Commodity ETF', SLV: 'Commodity ETF', IAU: 'Commodity ETF',
+            VWO: 'Intl ETF', EFA: 'Intl ETF', IEFA: 'Intl ETF', VEA: 'Intl ETF',
+            EEM: 'Emerging ETF', VWO: 'Emerging ETF', IEMG: 'Emerging ETF',
+            // Crypto
+            BTC: 'Crypto', ETH: 'Crypto', SOL: 'Crypto', ADA: 'Crypto',
+            DOGE: 'Crypto', XRP: 'Crypto', DOT: 'Crypto', AVAX: 'Crypto',
+            GBTC: 'Crypto', ETHE: 'Crypto', BITO: 'Crypto',
+            // European stocks (common ones)
+            'MC.PA': 'Consumer Discretionary', 'OR.PA': 'Consumer Staples', 'SAN.PA': 'Healthcare',
+            'AIR.PA': 'Industrials', 'TTE.PA': 'Energy', 'BNP.PA': 'Financial',
+            'ASML.AS': 'Technology', 'ADYEN.AS': 'Technology', 'PRX.AS': 'Technology',
+            'SAP.DE': 'Technology', 'SIE.DE': 'Industrials', 'ALV.DE': 'Financial',
+            'NESN.SW': 'Consumer Staples', 'ROG.SW': 'Healthcare', 'NOVN.SW': 'Healthcare',
+            'SHEL.L': 'Energy', 'AZN.L': 'Healthcare', 'HSBA.L': 'Financial'
+        };
+
+        // Get sector for a symbol - checks static mapping first, then cache
+        function getSector(symbol) {
+            if (!symbol) return 'Other';
+            const upperSymbol = symbol.toUpperCase();
+
+            // Check static mapping first (no API needed)
+            if (SECTOR_MAPPING[upperSymbol]) {
+                return SECTOR_MAPPING[upperSymbol];
+            }
+
+            // Check cache (from previous API lookups)
+            if (sectorCache[upperSymbol]) {
+                return sectorCache[upperSymbol];
+            }
+
+            // Return 'Other' for unknown symbols
+            return 'Other';
+        }
+
+        // Load sector cache from localStorage on startup
+        function loadSectorCache() {
+            try {
+                const cached = localStorage.getItem('sectorCache');
+                if (cached) {
+                    sectorCache = JSON.parse(cached);
+                    console.log('Loaded sector cache with', Object.keys(sectorCache).length, 'entries');
+                }
+            } catch (e) {
+                console.warn('Failed to load sector cache:', e);
+                sectorCache = {};
+            }
+        }
+
+        // Save sector cache to localStorage
+        function saveSectorCache() {
+            try {
+                localStorage.setItem('sectorCache', JSON.stringify(sectorCache));
+            } catch (e) {
+                console.warn('Failed to save sector cache:', e);
+            }
+        }
 
         // Investment perspective definitions
         const INVESTMENT_PERSPECTIVES = {
@@ -2347,6 +2493,7 @@ Apply these lenses:
         function renderAllocationCharts() {
             const allocationSection = document.getElementById('allocationSection');
             const typeChart = document.getElementById('typeAllocationChart');
+            const sectorChart = document.getElementById('sectorAllocationChart');
 
             if (!allocationSection || !typeChart || portfolio.length === 0) {
                 if (allocationSection) allocationSection.style.display = 'none';
@@ -2380,8 +2527,25 @@ Apply these lenses:
                 typeAllocation[assetType] += marketValue;
             });
 
+            // Aggregate by sector
+            const sectorAllocation = {};
+            portfolio.forEach(p => {
+                const sector = getSector(p.symbol);
+                const currentPrice = marketPrices[p.symbol];
+                const invested = p.shares * p.avgPrice;
+                const marketValue = currentPrice ? p.shares * currentPrice : invested;
+
+                if (!sectorAllocation[sector]) {
+                    sectorAllocation[sector] = 0;
+                }
+                sectorAllocation[sector] += marketValue;
+            });
+
             // Sort by value descending
             const sortedTypes = Object.entries(typeAllocation)
+                .sort((a, b) => b[1] - a[1]);
+
+            const sortedSectors = Object.entries(sectorAllocation)
                 .sort((a, b) => b[1] - a[1]);
 
             // Color palette for types
@@ -2395,6 +2559,27 @@ Apply these lenses:
                 'Cash': '#6b7280',
                 'Other': '#64748b'
             };
+
+            // Color palette for sectors
+            const sectorColors = {
+                'Technology': '#3b82f6',
+                'Healthcare': '#10b981',
+                'Financial': '#f59e0b',
+                'Consumer Discretionary': '#ec4899',
+                'Consumer Staples': '#8b5cf6',
+                'Energy': '#ef4444',
+                'Industrials': '#6366f1',
+                'Materials': '#f97316',
+                'Utilities': '#14b8a6',
+                'Real Estate': '#a855f7',
+                'Communication': '#06b6d4',
+                'Crypto': '#eab308',
+                'Index ETF': '#64748b',
+                'Tech ETF': '#60a5fa',
+                'Bond ETF': '#34d399',
+                'Other': '#94a3b8'
+            };
+
             const defaultColors = ['#06b6d4', '#84cc16', '#ef4444', '#a855f7', '#14b8a6', '#eab308'];
 
             // Render type allocation chart
@@ -2414,6 +2599,26 @@ Apply these lenses:
                     </div>
                 `;
             }).join('');
+
+            // Render sector allocation chart
+            if (sectorChart) {
+                colorIdx = 0;
+                sectorChart.innerHTML = sortedSectors.map(([sector, value]) => {
+                    const pct = (value / totalMarketValue * 100);
+                    const color = sectorColors[sector] || defaultColors[colorIdx++ % defaultColors.length];
+                    return `
+                        <div class="allocation-bar-row">
+                            <div class="allocation-bar-label" title="${escapeHTML(sector)}">${escapeHTML(sector)}</div>
+                            <div class="allocation-bar-track">
+                                <div class="allocation-bar-fill" style="width: ${pct}%; background: ${color};">
+                                    ${pct >= 10 ? pct.toFixed(1) + '%' : ''}
+                                </div>
+                            </div>
+                            <div class="allocation-bar-value">${formatCurrency(value)}</div>
+                        </div>
+                    `;
+                }).join('');
+            }
 
             allocationSection.style.display = 'block';
         }
@@ -2692,6 +2897,33 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
             analysisSection.innerHTML = `<div class="card loading">💹 Generating concrete trade ideas for ${today}...</div>`;
 
+            // Determine which path to use (same logic as analyzeMarkets)
+            const isClaudeAI = window.location.hostname.includes('claude.ai') ||
+                              window.location.hostname.includes('claude.site') ||
+                              (typeof window.anthropic !== 'undefined');
+            const useDirectAPI = isClaudeAI || anthropicKey;
+            const useEdgeFunction = !useDirectAPI && supabaseUrl;
+
+            if (!useDirectAPI && !useEdgeFunction) {
+                analysisSection.innerHTML = `
+                    <div class="card" style="background: #334155; padding: 20px;">
+                        <h3 style="color: #cbd5e1; margin-bottom: 10px;">💹 Trade Ideas</h3>
+                        <p style="color: #94a3b8; margin-bottom: 15px;">
+                            Trade ideas require either a Supabase connection or your own Anthropic API key.
+                        </p>
+                        <ol style="color: #94a3b8; margin-left: 20px; line-height: 1.8;">
+                            <li>Get an API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com</a></li>
+                            <li>Click the <strong style="color: #cbd5e1;">🔑 API Keys</strong> button above</li>
+                            <li>Enter your Anthropic key and save</li>
+                            <li>Click "Get Trade Ideas" again</li>
+                        </ol>
+                    </div>
+                `;
+                tradeIdeasBtn.disabled = false;
+                tradeIdeasBtn.textContent = '💹 Get Trade Ideas';
+                return;
+            }
+
             try {
                 let data;
                 const portfolioSummary = portfolio.map(p => {
@@ -2703,27 +2935,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                     return `${p.symbol}: ${p.shares} shares @ $${p.avgPrice} avg${currentPrice ? `, current $${currentPrice} (${gainLoss >= 0 ? '+' : ''}${gainLossPct}%)` : ''}, type: ${p.type || 'Stock'}`;
                 }).join('\n');
 
-                if (anthropicKey) {
-                    console.log('Using direct Anthropic API...');
-
-                    const headers = {
-                        'Content-Type': 'application/json',
-                        'x-api-key': anthropicKey,
-                    };
-                    if (typeof window !== 'undefined' && !window.location.protocol.startsWith('file')) {
-                        headers['anthropic-dangerous-direct-browser-access'] = 'true';
-                    }
-                    headers['anthropic-version'] = '2023-06-01';
-
-                    const response = await fetch('https://api.anthropic.com/v1/messages', {
-                        method: 'POST',
-                        headers: headers,
-                        body: JSON.stringify({
-                            model: 'claude-sonnet-4-20250514',
-                            max_tokens: 4000,
-                            messages: [{
-                                role: 'user',
-                                content: `You are a ${perspective.name} investment advisor (inspired by ${perspective.figures}). Today is ${today}.
+                const tradeIdeasPrompt = `You are a ${perspective.name} investment advisor (inspired by ${perspective.figures}). Today is ${today}.
 
 ${perspective.prompt}
 
@@ -2764,19 +2976,71 @@ Respond in JSON format:
   ]
 }
 
-Respond ONLY with valid JSON, no markdown, no preamble.`
-                            }]
+Respond ONLY with valid JSON, no markdown, no preamble.`;
+
+                if (useDirectAPI) {
+                    console.log('Using direct Anthropic API for trade ideas...');
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (!isClaudeAI && anthropicKey) {
+                        headers['x-api-key'] = anthropicKey;
+                        headers['anthropic-version'] = '2023-06-01';
+                        headers['anthropic-dangerous-direct-browser-access'] = 'true';
+                    }
+
+                    const response = await fetch('https://api.anthropic.com/v1/messages', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({
+                            model: 'claude-sonnet-4-20250514',
+                            max_tokens: 4000,
+                            messages: [{ role: 'user', content: tradeIdeasPrompt }]
                         })
                     });
 
                     if (!response.ok) {
                         const errBody = await response.text().catch(() => '');
+                        if (response.status === 401) {
+                            throw new Error('Invalid API key. Check your Anthropic key in API Keys settings.');
+                        }
                         throw new Error(`API returned status ${response.status}: ${errBody}`);
                     }
 
                     data = await response.json();
                 } else {
-                    throw new Error('Please configure your Anthropic API key in API Keys settings to use this feature.');
+                    // Supabase Edge Function
+                    console.log('Using Supabase Edge Function for trade ideas...');
+
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    const response = await fetch(`${supabaseUrl}/functions/v1/analyze-portfolio`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'apikey': supabaseAnonKey,
+                            'Authorization': `Bearer ${session?.access_token || supabaseAnonKey}`
+                        },
+                        body: JSON.stringify({
+                            portfolio: portfolio.map(p => ({
+                                shares: p.shares,
+                                symbol: p.symbol,
+                                avgPrice: p.avgPrice,
+                                currentPrice: marketPrices[p.symbol] || null,
+                                type: p.type || 'Stock'
+                            })),
+                            perspective: {
+                                key: selectedPerspective,
+                                name: perspective.name,
+                                prompt: tradeIdeasPrompt
+                            },
+                            requestType: 'tradeIdeas'
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errBody = await response.text().catch(() => '');
+                        throw new Error(`Edge function returned ${response.status}: ${errBody}`);
+                    }
+
+                    data = await response.json();
                 }
 
                 const text = data.content.find(c => c.type === 'text')?.text || '';
@@ -3014,6 +3278,10 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
         if (storedAntKey) { anthropicKey = storedAntKey; }
 
         console.log('✓ API keys ready (hardcoded defaults + localStorage overrides)');
+
+        // Load sector cache from localStorage
+        loadSectorCache();
+        console.log('✓ Sector cache loaded');
 
         // Load Supabase config overrides from localStorage (if user changed them)
         const storedSBUrl = localStorage.getItem('supabaseUrl');
