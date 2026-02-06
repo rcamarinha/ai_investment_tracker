@@ -1712,38 +1712,46 @@ Apply these lenses:
 
         // ========== ASSETS & PRICE HISTORY DB ==========
         //
-        // SQL Migration — run this in Supabase SQL Editor to create the required tables:
+        // SQL Migration — copy the SQL below (without the "// " prefix) into Supabase SQL Editor.
+        // See the README or PR description for the clean copy-pasteable version.
         //
-        // CREATE TABLE assets (
-        //   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        //   user_id UUID REFERENCES auth.users(id) NOT NULL,
-        //   ticker TEXT NOT NULL,
-        //   name TEXT,
-        //   stock_exchange TEXT,
-        //   sector TEXT,
-        //   currency TEXT DEFAULT 'USD',
-        //   asset_type TEXT DEFAULT 'Stock',
-        //   created_at TIMESTAMPTZ DEFAULT NOW(),
-        //   updated_at TIMESTAMPTZ DEFAULT NOW(),
-        //   UNIQUE(user_id, ticker)
-        // );
-        // ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
-        // CREATE POLICY "Users can manage their own assets"
-        //   ON assets FOR ALL USING (auth.uid() = user_id);
-        //
-        // CREATE TABLE price_history (
-        //   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        //   user_id UUID REFERENCES auth.users(id) NOT NULL,
-        //   ticker TEXT NOT NULL,
-        //   price NUMERIC NOT NULL,
-        //   currency TEXT DEFAULT 'USD',
-        //   source TEXT,
-        //   fetched_at TIMESTAMPTZ DEFAULT NOW()
-        // );
-        // CREATE INDEX idx_price_history_lookup ON price_history(user_id, ticker, fetched_at DESC);
-        // ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
-        // CREATE POLICY "Users can manage their own price history"
-        //   ON price_history FOR ALL USING (auth.uid() = user_id);
+        /*  ---- SQL MIGRATION (paste into Supabase SQL Editor) ----
+
+        -- Assets table: stores master data for each asset (name, exchange, sector, currency)
+        CREATE TABLE assets (
+          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+          user_id UUID REFERENCES auth.users(id) NOT NULL,
+          ticker TEXT NOT NULL,
+          name TEXT,
+          stock_exchange TEXT,
+          sector TEXT,
+          currency TEXT DEFAULT 'USD',
+          asset_type TEXT DEFAULT 'Stock',
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE(user_id, ticker)
+        );
+        ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Users can manage their own assets"
+          ON assets FOR ALL USING (auth.uid() = user_id);
+
+        -- Price history table: stores every fetched price for historical tracking
+        CREATE TABLE price_history (
+          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+          user_id UUID REFERENCES auth.users(id) NOT NULL,
+          ticker TEXT NOT NULL,
+          price NUMERIC NOT NULL,
+          currency TEXT DEFAULT 'USD',
+          source TEXT,
+          fetched_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX idx_price_history_lookup ON price_history(user_id, ticker, fetched_at DESC);
+        ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Users can manage their own price history"
+          ON price_history FOR ALL USING (auth.uid() = user_id);
+
+        ---- END SQL MIGRATION ----
+        */
 
         // Determine stock exchange from ticker suffix
         function detectStockExchange(ticker) {
