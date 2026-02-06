@@ -1761,6 +1761,143 @@ Apply these lenses:
             };
         }
 
+        // Fetch asset profile (sector, industry) from APIs — 3-tier fallback
+        async function fetchAssetProfile(symbol) {
+            console.log(`Fetching profile for ${symbol}...`);
+
+            // Tier 1: Finnhub
+            if (finnhubKey) {
+                try {
+                    const url = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${finnhubKey}`;
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.finnhubIndustry) {
+                            console.log(`✓ ${symbol} profile from Finnhub: ${data.finnhubIndustry}`);
+                            return {
+                                sector: data.finnhubIndustry,
+                                industry: data.finnhubIndustry,
+                                currency: data.currency || null,
+                                exchange: data.exchange || null,
+                                source: 'Finnhub'
+                            };
+                        }
+                    }
+                } catch (err) {
+                    console.log(`Finnhub profile failed for ${symbol}:`, err.message);
+                }
+            }
+
+            // Tier 2: FMP
+            if (fmpKey) {
+                try {
+                    const url = `https://financialmodelingprep.com/stable/profile?symbol=${encodeURIComponent(symbol)}&apikey=${fmpKey}`;
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && Array.isArray(data) && data.length > 0 && data[0].sector) {
+                            console.log(`✓ ${symbol} profile from FMP: ${data[0].sector}`);
+                            return {
+                                sector: data[0].sector,
+                                industry: data[0].industry || null,
+                                currency: data[0].currency || null,
+                                exchange: data[0].exchangeShortName || null,
+                                source: 'FMP'
+                            };
+                        }
+                    }
+                } catch (err) {
+                    console.log(`FMP profile failed for ${symbol}:`, err.message);
+                }
+            }
+
+            // Tier 3: Alpha Vantage
+            if (alphaVantageKey) {
+                try {
+                    const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${alphaVantageKey}`;
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.Sector && data.Sector !== 'None') {
+                            console.log(`✓ ${symbol} profile from Alpha Vantage: ${data.Sector}`);
+                            return {
+                                sector: data.Sector,
+                                industry: data.Industry || null,
+                                currency: data.Currency || null,
+                                exchange: data.Exchange || null,
+                                source: 'Alpha Vantage'
+                            };
+                        }
+                    }
+                } catch (err) {
+                    console.log(`Alpha Vantage profile failed for ${symbol}:`, err.message);
+                }
+            }
+
+            return null;
+        }
+
+        // Update a single asset's sector (and optionally exchange/currency) in DB
+        async function updateAssetInDB(ticker, updates) {
+            if (!supabaseClient) return;
+            try {
+                const { error } = await supabaseClient
+                    .from('assets')
+                    .update({ ...updates, updated_at: new Date().toISOString() })
+                    .eq('ticker', ticker);
+                if (error) {
+                    console.warn(`Failed to update asset ${ticker}:`, error.message);
+                }
+            } catch (err) {
+                console.error(`Failed to update asset ${ticker}:`, err);
+            }
+        }
+
+        // Enrich assets that have sector "Other" — fetch real sector from APIs and persist
+        async function enrichUnknownAssets() {
+            const unknowns = Object.entries(assetDatabase)
+                .filter(([_, a]) => !a.sector || a.sector === 'Other')
+                .map(([ticker]) => ticker);
+
+            if (unknowns.length === 0) {
+                console.log('✓ All assets already have sector data');
+                return;
+            }
+
+            console.log(`=== ENRICHING ${unknowns.length} ASSETS WITH UNKNOWN SECTOR ===`);
+
+            let enriched = 0;
+            for (const ticker of unknowns) {
+                const profile = await fetchAssetProfile(ticker);
+                if (profile && profile.sector) {
+                    // Update local cache
+                    assetDatabase[ticker].sector = profile.sector;
+                    if (profile.currency) assetDatabase[ticker].currency = profile.currency;
+                    if (profile.exchange) assetDatabase[ticker].stockExchange = profile.exchange;
+
+                    // Persist to DB
+                    const dbUpdates = { sector: profile.sector };
+                    if (profile.currency) dbUpdates.currency = profile.currency;
+                    if (profile.exchange) dbUpdates.stock_exchange = profile.exchange;
+                    await updateAssetInDB(ticker, dbUpdates);
+
+                    enriched++;
+                    console.log(`✓ ${ticker}: sector=${profile.sector} (${profile.source})`);
+                } else {
+                    console.log(`✗ ${ticker}: no profile data found`);
+                }
+
+                // Rate limit: 1s between calls (Finnhub-safe)
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            console.log(`=== ENRICHMENT DONE: ${enriched}/${unknowns.length} resolved ===`);
+
+            if (enriched > 0) {
+                renderPortfolio();
+            }
+        }
+
         // Save/upsert assets to Supabase (global — shared across all users)
         async function saveAssetsToDB(assets) {
             if (!supabaseClient) return;
@@ -2341,6 +2478,9 @@ Apply these lenses:
                     const assetRecords = portfolio.map(p => buildAssetRecord(p));
                     await saveAssetsToDB(assetRecords);
                     await loadAssetsFromDB();
+
+                    // Enrich assets with "Other" sector from APIs (fetches once, persists to DB)
+                    await enrichUnknownAssets();
 
                     // Save freshly fetched prices to price_history (skip cached ones from DB load)
                     const priceRecords = [];
