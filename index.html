@@ -52,7 +52,7 @@
             padding: 12px 15px;
             margin-bottom: 1px;
             display: grid;
-            grid-template-columns: 100px 200px 70px 100px 100px 100px 100px 70px 120px;
+            grid-template-columns: 100px 180px 90px 70px 100px 100px 100px 100px 70px 120px;
             gap: 15px;
             align-items: center;
             font-size: 13px;
@@ -70,7 +70,7 @@
             border-radius: 10px 10px 0 0;
             padding: 12px 15px;
             display: grid;
-            grid-template-columns: 100px 200px 70px 100px 100px 100px 100px 70px 120px;
+            grid-template-columns: 100px 180px 90px 70px 100px 100px 100px 100px 70px 120px;
             gap: 15px;
             align-items: center;
             font-size: 11px;
@@ -769,6 +769,7 @@
         let currentUser = null;
         let selectedPerspective = 'value'; // Default investment perspective
         let sectorCache = {}; // Cache for sector lookups {symbol: sector}
+        let assetDatabase = {}; // DB-backed asset metadata {ticker: {name, ticker, stockExchange, sector, currency, assetType}}
 
         // Static sector mapping for common tickers (no API needed)
         const SECTOR_MAPPING = {
@@ -869,12 +870,17 @@
             'SHEL.L': 'Energy', 'AZN.L': 'Healthcare', 'HSBA.L': 'Financial'
         };
 
-        // Get sector for a symbol - checks static mapping first, then cache
+        // Get sector for a symbol - checks DB-backed assetDatabase first, then static mapping, then cache
         function getSector(symbol) {
             if (!symbol) return 'Other';
             const upperSymbol = symbol.toUpperCase();
 
-            // Check static mapping first (no API needed)
+            // Check DB-backed asset database first (fastest, user-specific)
+            if (assetDatabase[upperSymbol] && assetDatabase[upperSymbol].sector) {
+                return assetDatabase[upperSymbol].sector;
+            }
+
+            // Check static mapping (no API needed)
             if (SECTOR_MAPPING[upperSymbol]) {
                 return SECTOR_MAPPING[upperSymbol];
             }
@@ -1570,6 +1576,15 @@ Apply these lenses:
                     }
                 }
 
+                // Load assets from DB into assetDatabase
+                await loadAssetsFromDB();
+
+                // Load cached prices from price_history (instant display before API fetch)
+                await loadLatestPricesFromDB();
+                if (Object.keys(marketPrices).length > 0) {
+                    renderPortfolio();
+                }
+
                 // Load shared API keys from app_config
                 await loadAppConfig();
 
@@ -1609,6 +1624,22 @@ Apply these lenses:
                 }
 
                 console.log('✓ Portfolio saved to Supabase');
+
+                // Also save/update assets metadata
+                const assetRecords = portfolio.map(p => buildAssetRecord(p));
+                await saveAssetsToDB(assetRecords);
+
+                // Update local assetDatabase
+                assetRecords.forEach(a => {
+                    assetDatabase[a.ticker] = {
+                        name: a.name,
+                        ticker: a.ticker,
+                        stockExchange: a.stock_exchange,
+                        sector: a.sector,
+                        currency: a.currency,
+                        assetType: a.asset_type
+                    };
+                });
             } catch (err) {
                 console.error('Failed to save portfolio to DB:', err);
             }
@@ -1676,6 +1707,260 @@ Apply these lenses:
                 }
             } catch (err) {
                 console.warn('Failed to load app config from DB:', err);
+            }
+        }
+
+        // ========== ASSETS & PRICE HISTORY DB ==========
+        //
+        // SQL Migration — run this in Supabase SQL Editor to create the required tables:
+        //
+        // CREATE TABLE assets (
+        //   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        //   user_id UUID REFERENCES auth.users(id) NOT NULL,
+        //   ticker TEXT NOT NULL,
+        //   name TEXT,
+        //   stock_exchange TEXT,
+        //   sector TEXT,
+        //   currency TEXT DEFAULT 'USD',
+        //   asset_type TEXT DEFAULT 'Stock',
+        //   created_at TIMESTAMPTZ DEFAULT NOW(),
+        //   updated_at TIMESTAMPTZ DEFAULT NOW(),
+        //   UNIQUE(user_id, ticker)
+        // );
+        // ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
+        // CREATE POLICY "Users can manage their own assets"
+        //   ON assets FOR ALL USING (auth.uid() = user_id);
+        //
+        // CREATE TABLE price_history (
+        //   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        //   user_id UUID REFERENCES auth.users(id) NOT NULL,
+        //   ticker TEXT NOT NULL,
+        //   price NUMERIC NOT NULL,
+        //   currency TEXT DEFAULT 'USD',
+        //   source TEXT,
+        //   fetched_at TIMESTAMPTZ DEFAULT NOW()
+        // );
+        // CREATE INDEX idx_price_history_lookup ON price_history(user_id, ticker, fetched_at DESC);
+        // ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
+        // CREATE POLICY "Users can manage their own price history"
+        //   ON price_history FOR ALL USING (auth.uid() = user_id);
+
+        // Determine stock exchange from ticker suffix
+        function detectStockExchange(ticker) {
+            if (!ticker) return 'Unknown';
+            if (ticker.includes('.PA')) return 'Euronext Paris';
+            if (ticker.includes('.L')) return 'London (LSE)';
+            if (ticker.includes('.DE')) return 'Frankfurt (XETRA)';
+            if (ticker.includes('.AS')) return 'Euronext Amsterdam';
+            if (ticker.includes('.MI')) return 'Milan (Borsa)';
+            if (ticker.includes('.SW')) return 'Swiss (SIX)';
+            if (ticker.includes('.MC')) return 'Madrid';
+            if (ticker.includes('.BR')) return 'Brussels';
+            if (ticker.includes('.HE')) return 'Helsinki';
+            if (ticker.includes('.ST')) return 'Stockholm';
+            if (ticker.includes('.OL')) return 'Oslo';
+            if (ticker.includes('.CO')) return 'Copenhagen';
+            if (ticker.includes('.TO')) return 'Toronto (TSX)';
+            if (ticker.includes('.HK')) return 'Hong Kong';
+            if (ticker.includes('.T')) return 'Tokyo';
+            return 'US'; // Default for tickers without suffix
+        }
+
+        // Determine currency from stock exchange
+        function detectCurrency(stockExchange) {
+            const currencyMap = {
+                'US': 'USD',
+                'Euronext Paris': 'EUR',
+                'Frankfurt (XETRA)': 'EUR',
+                'Euronext Amsterdam': 'EUR',
+                'Milan (Borsa)': 'EUR',
+                'Madrid': 'EUR',
+                'Brussels': 'EUR',
+                'Helsinki': 'EUR',
+                'London (LSE)': 'GBP',
+                'Swiss (SIX)': 'CHF',
+                'Stockholm': 'SEK',
+                'Oslo': 'NOK',
+                'Copenhagen': 'DKK',
+                'Toronto (TSX)': 'CAD',
+                'Hong Kong': 'HKD',
+                'Tokyo': 'JPY'
+            };
+            return currencyMap[stockExchange] || 'USD';
+        }
+
+        // Build an asset record from a portfolio position
+        function buildAssetRecord(position) {
+            const ticker = position.symbol.toUpperCase();
+            const stockExchange = detectStockExchange(ticker);
+            const currency = detectCurrency(stockExchange);
+            const sector = getSector(ticker);
+            return {
+                ticker: ticker,
+                name: position.name || ticker,
+                stock_exchange: stockExchange,
+                sector: sector,
+                currency: currency,
+                asset_type: position.type || 'Stock'
+            };
+        }
+
+        // Save/upsert assets to Supabase
+        async function saveAssetsToDB(assets) {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                for (const asset of assets) {
+                    const { error } = await supabaseClient
+                        .from('assets')
+                        .upsert({
+                            user_id: currentUser.id,
+                            ticker: asset.ticker,
+                            name: asset.name,
+                            stock_exchange: asset.stock_exchange,
+                            sector: asset.sector,
+                            currency: asset.currency,
+                            asset_type: asset.asset_type,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'user_id,ticker' });
+
+                    if (error) {
+                        console.warn(`Failed to upsert asset ${asset.ticker}:`, error.message);
+                    }
+                }
+                console.log('✓ Saved', assets.length, 'assets to DB');
+            } catch (err) {
+                console.error('Failed to save assets to DB:', err);
+            }
+        }
+
+        // Load assets from Supabase into assetDatabase
+        async function loadAssetsFromDB() {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('assets')
+                    .select('*')
+                    .order('ticker');
+
+                if (error) {
+                    console.warn('Failed to load assets from DB:', error.message);
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    data.forEach(a => {
+                        assetDatabase[a.ticker.toUpperCase()] = {
+                            name: a.name,
+                            ticker: a.ticker,
+                            stockExchange: a.stock_exchange,
+                            sector: a.sector,
+                            currency: a.currency,
+                            assetType: a.asset_type
+                        };
+                    });
+                    console.log('✓ Loaded', data.length, 'assets from DB into assetDatabase');
+                }
+            } catch (err) {
+                console.error('Failed to load assets from DB:', err);
+            }
+        }
+
+        // Save a batch of prices to price_history
+        async function savePriceHistoryToDB(priceRecords) {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                const rows = priceRecords.map(r => ({
+                    user_id: currentUser.id,
+                    ticker: r.ticker,
+                    price: r.price,
+                    currency: r.currency || 'USD',
+                    source: r.source,
+                    fetched_at: r.fetchedAt || new Date().toISOString()
+                }));
+
+                const { error } = await supabaseClient
+                    .from('price_history')
+                    .insert(rows);
+
+                if (error) {
+                    console.warn('Failed to save price history:', error.message);
+                } else {
+                    console.log('✓ Saved', rows.length, 'price records to history');
+                }
+            } catch (err) {
+                console.error('Failed to save price history to DB:', err);
+            }
+        }
+
+        // Load the most recent price for each ticker from price_history
+        async function loadLatestPricesFromDB() {
+            if (!supabaseClient || !currentUser) return;
+
+            try {
+                // Get unique tickers from portfolio
+                const tickers = [...new Set(portfolio.map(p => p.symbol.toUpperCase()))];
+                if (tickers.length === 0) return;
+
+                // For each ticker, get the most recent price
+                // Using a query that gets latest price per ticker
+                const { data, error } = await supabaseClient
+                    .from('price_history')
+                    .select('ticker, price, currency, source, fetched_at')
+                    .in('ticker', tickers)
+                    .order('fetched_at', { ascending: false });
+
+                if (error) {
+                    console.warn('Failed to load latest prices from DB:', error.message);
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    // Group by ticker and take the most recent (already sorted desc)
+                    const seen = new Set();
+                    let loadedCount = 0;
+                    data.forEach(row => {
+                        if (!seen.has(row.ticker)) {
+                            seen.add(row.ticker);
+                            marketPrices[row.ticker] = Number(row.price);
+                            priceMetadata[row.ticker] = {
+                                timestamp: row.fetched_at,
+                                source: row.source + ' (cached)',
+                                success: true
+                            };
+                            loadedCount++;
+                        }
+                    });
+                    console.log('✓ Loaded', loadedCount, 'cached prices from DB');
+                }
+            } catch (err) {
+                console.error('Failed to load latest prices from DB:', err);
+            }
+        }
+
+        // Load price history for a specific asset (for charts/analysis)
+        async function loadPriceHistoryForAsset(ticker, limit = 30) {
+            if (!supabaseClient || !currentUser) return [];
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('price_history')
+                    .select('price, currency, source, fetched_at')
+                    .eq('ticker', ticker.toUpperCase())
+                    .order('fetched_at', { ascending: false })
+                    .limit(limit);
+
+                if (error) {
+                    console.warn(`Failed to load price history for ${ticker}:`, error.message);
+                    return [];
+                }
+
+                return (data || []).reverse(); // Return in chronological order
+            } catch (err) {
+                console.error(`Failed to load price history for ${ticker}:`, err);
+                return [];
             }
         }
 
@@ -2069,7 +2354,29 @@ Apply these lenses:
                 console.log('Failed:', failCount);
                 
                 renderPortfolio();
-                
+
+                // Save freshly fetched prices to price_history DB (skip cached ones from DB load)
+                if (successCount > 0) {
+                    const priceRecords = [];
+                    const now = new Date().toISOString();
+                    for (const [symbol, price] of Object.entries(marketPrices)) {
+                        const meta = priceMetadata[symbol];
+                        if (meta && meta.success && !meta.source.includes('(cached)')) {
+                            const assetInfo = assetDatabase[symbol.toUpperCase()];
+                            priceRecords.push({
+                                ticker: symbol.toUpperCase(),
+                                price: price,
+                                currency: assetInfo ? assetInfo.currency : 'USD',
+                                source: meta.source,
+                                fetchedAt: now
+                            });
+                        }
+                    }
+                    if (priceRecords.length > 0) {
+                        await savePriceHistoryToDB(priceRecords);
+                    }
+                }
+
                 let msg = `✓ Price update complete!\n\n`;
                 msg += `✓ Successfully fetched: ${successCount} symbols\n`;
                 if (failCount > 0) {
@@ -2079,7 +2386,7 @@ Apply these lenses:
                         msg += `• ${err}\n`;
                     });
                 }
-                
+
                 // Auto-save snapshot after price update
                 if (successCount > 0) {
                     await savePortfolioSnapshot();
@@ -2164,6 +2471,7 @@ Apply these lenses:
                 <div class="position-header-row">
                     <div>Symbol</div>
                     <div>Asset Name / Platform</div>
+                    <div>Sector</div>
                     <div>Shares</div>
                     <div>Avg Price</div>
                     <div>Current Price</div>
@@ -2235,6 +2543,10 @@ Apply these lenses:
                     <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}">
                         ${pos.name ? escapeHTML(pos.name.length > 30 ? pos.name.substring(0, 27) + '...' : pos.name) : escapeHTML(pos.symbol)}
                         ${pos.platform && pos.platform !== 'Unknown' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">📍 ${escapeHTML(pos.platform)}</div>` : ''}
+                    </div>
+                    <div class="position-details" style="font-size: 11px; color: #94a3b8;" title="${escapeHTML(getSector(pos.symbol))}${assetDatabase[pos.symbol.toUpperCase()] ? '\nExchange: ' + escapeHTML(assetDatabase[pos.symbol.toUpperCase()].stockExchange || '') + '\nCurrency: ' + escapeHTML(assetDatabase[pos.symbol.toUpperCase()].currency || '') : ''}">
+                        ${escapeHTML(getSector(pos.symbol))}
+                        ${assetDatabase[pos.symbol.toUpperCase()] && assetDatabase[pos.symbol.toUpperCase()].currency && assetDatabase[pos.symbol.toUpperCase()].currency !== 'USD' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">${escapeHTML(assetDatabase[pos.symbol.toUpperCase()].currency)}</div>` : ''}
                     </div>
                     <div class="position-details">${pos.shares}</div>
                     <div class="position-details">${formatCurrency(pos.avgPrice)}</div>
@@ -2454,7 +2766,21 @@ Apply these lenses:
                     console.log('Portfolio OVERWRITTEN with:', portfolio);
                     console.log('First 3 positions:', portfolio.slice(0, 3));
 
-                    // Save to Supabase (if connected)
+                    // Populate local assetDatabase from imported positions
+                    portfolio.forEach(p => {
+                        const assetRecord = buildAssetRecord(p);
+                        assetDatabase[assetRecord.ticker] = {
+                            name: assetRecord.name,
+                            ticker: assetRecord.ticker,
+                            stockExchange: assetRecord.stock_exchange,
+                            sector: assetRecord.sector,
+                            currency: assetRecord.currency,
+                            assetType: assetRecord.asset_type
+                        };
+                    });
+                    console.log('✓ Built assetDatabase with', Object.keys(assetDatabase).length, 'assets');
+
+                    // Save to Supabase (if connected) - this also saves assets
                     savePortfolioDB();
 
                     // Close dialog first
