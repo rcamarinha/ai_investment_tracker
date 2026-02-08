@@ -52,7 +52,7 @@
             padding: 12px 15px;
             margin-bottom: 1px;
             display: grid;
-            grid-template-columns: 100px 180px 90px 70px 100px 100px 100px 100px 70px 120px;
+            grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px;
             gap: 15px;
             align-items: center;
             font-size: 13px;
@@ -70,7 +70,7 @@
             border-radius: 10px 10px 0 0;
             padding: 12px 15px;
             display: grid;
-            grid-template-columns: 100px 180px 90px 70px 100px 100px 100px 100px 70px 120px;
+            grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px;
             gap: 15px;
             align-items: center;
             font-size: 11px;
@@ -510,7 +510,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.1</span></h1>
+            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.2</span></h1>
             <p>Market analysis and personalized portfolio insights</p>
         </div>
         
@@ -1531,6 +1531,7 @@ Apply these lenses:
                         name: p.name,
                         symbol: p.symbol,
                         platform: p.platform,
+                        type: p.asset_type || 'Stock',
                         shares: Number(p.shares),
                         avgPrice: Number(p.avg_price)
                     }));
@@ -1579,6 +1580,22 @@ Apply these lenses:
                 // Load assets from DB into assetDatabase
                 await loadAssetsFromDB();
 
+                // Enrich portfolio positions with asset_type from assetDatabase (fallback for older positions without type)
+                let enrichedCount = 0;
+                portfolio.forEach(p => {
+                    if (!p.type || p.type === 'Stock') {
+                        const dbAsset = assetDatabase[p.symbol.toUpperCase()];
+                        if (dbAsset && dbAsset.assetType && dbAsset.assetType !== 'Stock') {
+                            p.type = dbAsset.assetType;
+                            enrichedCount++;
+                        }
+                    }
+                });
+                if (enrichedCount > 0) {
+                    console.log(`✓ Enriched ${enrichedCount} positions with asset type from DB`);
+                    renderPortfolio();
+                }
+
                 // Load cached prices from price_history (instant display before API fetch)
                 await loadLatestPricesFromDB();
                 if (Object.keys(marketPrices).length > 0) {
@@ -1613,7 +1630,8 @@ Apply these lenses:
                         symbol: p.symbol,
                         platform: p.platform,
                         shares: p.shares,
-                        avg_price: p.avgPrice
+                        avg_price: p.avgPrice,
+                        asset_type: p.type || 'Stock'
                     }));
 
                     const { error: insertError } = await supabaseClient
@@ -2597,6 +2615,7 @@ Apply these lenses:
                 <div class="position-header-row">
                     <div>Symbol</div>
                     <div>Asset Name / Platform</div>
+                    <div>Type</div>
                     <div>Sector</div>
                     <div>Shares</div>
                     <div>Avg Price</div>
@@ -2669,6 +2688,9 @@ Apply these lenses:
                     <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}">
                         ${pos.name ? escapeHTML(pos.name.length > 30 ? pos.name.substring(0, 27) + '...' : pos.name) : escapeHTML(pos.symbol)}
                         ${pos.platform && pos.platform !== 'Unknown' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">📍 ${escapeHTML(pos.platform)}</div>` : ''}
+                    </div>
+                    <div class="position-details" style="font-size: 11px; color: ${({'ETF':'#8b5cf6','REIT':'#ec4899','Stock':'#3b82f6','Crypto':'#f59e0b'}[pos.type] || '#94a3b8')}; font-weight: 600;">
+                        ${escapeHTML(pos.type || 'Stock')}
                     </div>
                     <div class="position-details" style="font-size: 11px; color: #94a3b8;" title="${escapeHTML(getSector(pos.symbol))}${assetDatabase[pos.symbol.toUpperCase()] ? '\nExchange: ' + escapeHTML(assetDatabase[pos.symbol.toUpperCase()].stockExchange || '') + '\nCurrency: ' + escapeHTML(assetDatabase[pos.symbol.toUpperCase()].currency || '') : ''}">
                         ${escapeHTML(getSector(pos.symbol))}
