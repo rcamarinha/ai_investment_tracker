@@ -3603,12 +3603,19 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
 
                         <div style="background: #1e293b; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
                             <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Market Summary</div>
-                            <div style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.marketSummary || '')}</div>
+                            <div style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.marketSummary || ideas.marketOverview || '')}</div>
                         </div>
+
+                        ${ideas.portfolioImpact ? `
+                        <div style="background: #1e293b; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                            <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Portfolio Impact</div>
+                            <div style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.portfolioImpact)}</div>
+                        </div>
+                        ` : ''}
 
                         <h3 style="color: #e2e8f0; font-size: 18px; margin-bottom: 15px;">💹 Concrete Trade Ideas</h3>
 
-                        ${(ideas.trades || []).map((trade, idx) => {
+                        ${(ideas.trades || ideas.ideas || []).map((trade, idx) => {
                             const action = (trade.action || 'WATCH').toUpperCase();
                             const color = actionColors[action] || '#6366f1';
                             const icon = actionIcons[action] || '📋';
@@ -3634,12 +3641,14 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
 
                                 <div class="trade-idea-action">
                                     <h4>🎯 Specific Action</h4>
-                                    <p>${escapeHTML(trade.specificAction || '')}</p>
+                                    <p>${escapeHTML(trade.specificAction || trade.description || '')}</p>
                                 </div>
 
+                                ${(trade.rationale) ? `
                                 <div class="trade-idea-rationale">
-                                    <strong>Rationale:</strong> ${escapeHTML(trade.rationale || '')}
+                                    <strong>Rationale:</strong> ${escapeHTML(trade.rationale)}
                                 </div>
+                                ` : ''}
                             </div>
                             `;
                         }).join('')}
