@@ -52,7 +52,7 @@
             padding: 12px 15px;
             margin-bottom: 1px;
             display: grid;
-            grid-template-columns: 100px 180px 90px 70px 100px 100px 100px 100px 70px 120px;
+            grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px;
             gap: 15px;
             align-items: center;
             font-size: 13px;
@@ -70,7 +70,7 @@
             border-radius: 10px 10px 0 0;
             padding: 12px 15px;
             display: grid;
-            grid-template-columns: 100px 180px 90px 70px 100px 100px 100px 100px 70px 120px;
+            grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px;
             gap: 15px;
             align-items: center;
             font-size: 11px;
@@ -424,6 +424,40 @@
             color: #94a3b8;
             text-align: right;
         }
+        .allocation-bar-row.slicer {
+            cursor: pointer;
+            border-radius: 4px;
+            padding: 2px 4px;
+            margin: -2px -4px;
+            transition: background 0.15s ease;
+        }
+        .allocation-bar-row.slicer:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        .allocation-bar-row.slicer.active {
+            background: rgba(255,255,255,0.1);
+            outline: 1px solid rgba(255,255,255,0.15);
+        }
+        .allocation-bar-row.slicer.dimmed {
+            opacity: 0.35;
+        }
+        .slicer-hint {
+            font-size: 10px;
+            color: #64748b;
+            margin-top: 6px;
+            text-align: center;
+        }
+        .slicer-clear {
+            display: inline-block;
+            font-size: 11px;
+            color: #60a5fa;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+        .slicer-clear:hover {
+            color: #93c5fd;
+            text-decoration: underline;
+        }
         .market-news-card {
             border-left: 3px solid #60a5fa;
         }
@@ -510,7 +544,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.1</span></h1>
+            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.3</span></h1>
             <p>Market analysis and personalized portfolio insights</p>
         </div>
         
@@ -768,6 +802,7 @@
         let supabaseClient = null;
         let currentUser = null;
         let selectedPerspective = 'value'; // Default investment perspective
+        let selectedSector = null; // Sector slicer filter (null = show all)
         let sectorCache = {}; // Cache for sector lookups {symbol: sector}
         let assetDatabase = {}; // DB-backed asset metadata {ticker: {name, ticker, stockExchange, sector, currency, assetType}}
 
@@ -1531,6 +1566,7 @@ Apply these lenses:
                         name: p.name,
                         symbol: p.symbol,
                         platform: p.platform,
+                        type: p.asset_type || 'Stock',
                         shares: Number(p.shares),
                         avgPrice: Number(p.avg_price)
                     }));
@@ -1579,6 +1615,22 @@ Apply these lenses:
                 // Load assets from DB into assetDatabase
                 await loadAssetsFromDB();
 
+                // Enrich portfolio positions with asset_type from assetDatabase (fallback for older positions without type)
+                let enrichedCount = 0;
+                portfolio.forEach(p => {
+                    if (!p.type || p.type === 'Stock') {
+                        const dbAsset = assetDatabase[p.symbol.toUpperCase()];
+                        if (dbAsset && dbAsset.assetType && dbAsset.assetType !== 'Stock') {
+                            p.type = dbAsset.assetType;
+                            enrichedCount++;
+                        }
+                    }
+                });
+                if (enrichedCount > 0) {
+                    console.log(`✓ Enriched ${enrichedCount} positions with asset type from DB`);
+                    renderPortfolio();
+                }
+
                 // Load cached prices from price_history (instant display before API fetch)
                 await loadLatestPricesFromDB();
                 if (Object.keys(marketPrices).length > 0) {
@@ -1613,7 +1665,8 @@ Apply these lenses:
                         symbol: p.symbol,
                         platform: p.platform,
                         shares: p.shares,
-                        avg_price: p.avgPrice
+                        avg_price: p.avgPrice,
+                        asset_type: p.type || 'Stock'
                     }));
 
                     const { error: insertError } = await supabaseClient
@@ -2572,6 +2625,7 @@ Apply these lenses:
                     <div style="font-size: 13px; color: #94a3b8;">
                         ${portfolio.length} position${portfolio.length !== 1 ? 's' : ''}
                         ${Object.keys(marketPrices).length > 0 ? ` • ${positionsWithPrices} with live prices` : ' • Click "Update Prices" for live market data'}
+                        ${selectedSector ? `<span style="color: #60a5fa; margin-left: 8px;">Filtered: ${selectedSector} <span style="cursor:pointer; color:#f87171;" onclick="toggleSectorFilter('${selectedSector.replace(/'/g, "\\'")}')">✕</span></span>` : ''}
                     </div>
                 </div>
                 <div class="total-value">
@@ -2591,12 +2645,18 @@ Apply these lenses:
                 positionsDiv.innerHTML = '<div style="text-align: center; color: #64748b; padding: 40px;">No positions yet. Import your portfolio from spreadsheet to get started.</div>';
                 return;
             }
-            
+
+            // Apply sector slicer filter
+            const displayPositions = selectedSector
+                ? portfolio.filter(p => getSector(p.symbol) === selectedSector)
+                : portfolio;
+
             // Add header row
             let html = `
                 <div class="position-header-row">
                     <div>Symbol</div>
                     <div>Asset Name / Platform</div>
+                    <div>Type</div>
                     <div>Sector</div>
                     <div>Shares</div>
                     <div>Avg Price</div>
@@ -2607,8 +2667,8 @@ Apply these lenses:
                     <div>Gain/Loss</div>
                 </div>
             `;
-            
-            html += portfolio.map((pos, idx) => {
+
+            html += displayPositions.map((pos, idx) => {
                 const invested = pos.shares * pos.avgPrice;
                 const currentPrice = marketPrices[pos.symbol];
                 const hasPrice = currentPrice !== undefined;
@@ -2669,6 +2729,9 @@ Apply these lenses:
                     <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}">
                         ${pos.name ? escapeHTML(pos.name.length > 30 ? pos.name.substring(0, 27) + '...' : pos.name) : escapeHTML(pos.symbol)}
                         ${pos.platform && pos.platform !== 'Unknown' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">📍 ${escapeHTML(pos.platform)}</div>` : ''}
+                    </div>
+                    <div class="position-details" style="font-size: 11px; color: ${({'ETF':'#8b5cf6','REIT':'#ec4899','Stock':'#3b82f6','Crypto':'#f59e0b'}[pos.type] || '#94a3b8')}; font-weight: 600;">
+                        ${escapeHTML(pos.type || 'Stock')}
                     </div>
                     <div class="position-details" style="font-size: 11px; color: #94a3b8;" title="${escapeHTML(getSector(pos.symbol))}${assetDatabase[pos.symbol.toUpperCase()] ? '\nExchange: ' + escapeHTML(assetDatabase[pos.symbol.toUpperCase()].stockExchange || '') + '\nCurrency: ' + escapeHTML(assetDatabase[pos.symbol.toUpperCase()].currency || '') : ''}">
                         ${escapeHTML(getSector(pos.symbol))}
@@ -2942,6 +3005,11 @@ Apply these lenses:
             renderPerspectiveTabs();
         }
 
+        function toggleSectorFilter(sector) {
+            selectedSector = selectedSector === sector ? null : sector;
+            renderPortfolio();
+        }
+
         function renderAllocationCharts() {
             const allocationSection = document.getElementById('allocationSection');
             const typeChart = document.getElementById('typeAllocationChart');
@@ -3052,14 +3120,16 @@ Apply these lenses:
                 `;
             }).join('');
 
-            // Render sector allocation chart
+            // Render sector allocation chart (slicer)
             if (sectorChart) {
                 colorIdx = 0;
                 sectorChart.innerHTML = sortedSectors.map(([sector, value]) => {
                     const pct = (value / totalMarketValue * 100);
                     const color = sectorColors[sector] || defaultColors[colorIdx++ % defaultColors.length];
+                    const isActive = selectedSector === sector;
+                    const isDimmed = selectedSector && !isActive;
                     return `
-                        <div class="allocation-bar-row">
+                        <div class="allocation-bar-row slicer${isActive ? ' active' : ''}${isDimmed ? ' dimmed' : ''}" onclick="toggleSectorFilter('${escapeHTML(sector).replace(/'/g, "\\'")}')">
                             <div class="allocation-bar-label" title="${escapeHTML(sector)}">${escapeHTML(sector)}</div>
                             <div class="allocation-bar-track">
                                 <div class="allocation-bar-fill" style="width: ${pct}%; background: ${color};">
@@ -3070,6 +3140,7 @@ Apply these lenses:
                         </div>
                     `;
                 }).join('');
+                sectorChart.innerHTML += `<div class="slicer-hint">Click a sector to filter positions${selectedSector ? `<span class="slicer-clear" onclick="toggleSectorFilter('${escapeHTML(selectedSector).replace(/'/g, "\\'")}')">Clear filter</span>` : ''}</div>`;
             }
 
             allocationSection.style.display = 'block';
