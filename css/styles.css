@@ -1,0 +1,672 @@
+/* ============================================================================
+   AI Financial Advisor — Style Guide & Theme
+   ============================================================================
+
+   Color Palette (Tailwind Slate-based Dark Theme)
+   ────────────────────────────────────────────────
+   --bg-deep:        #0f172a   (deepest background)
+   --bg-base:        #1e293b   (card / section background)
+   --bg-elevated:    #334155   (elevated surfaces, inputs)
+   --bg-hover:       #475569   (hover states, borders)
+   --border:         #334155   (default border)
+   --border-active:  #475569   (active/focus border)
+   --text-primary:   #fff      (headings, emphasis)
+   --text-secondary: #cbd5e1   (body text)
+   --text-muted:     #94a3b8   (labels, captions)
+   --text-faint:     #64748b   (placeholders, hints)
+
+   Accent Colors
+   ────────────────────────────────────────────────
+   --accent-blue:    #2563eb   (primary actions)
+   --accent-purple:  #7c3aed   (AI / special actions)
+   --accent-green:   #4ade80   (positive values, success)
+   --accent-red:     #f87171   (negative values, danger)
+   --accent-amber:   #f59e0b   (warnings, pending)
+   --accent-teal:    #10b981   (trade ideas)
+
+   ============================================================================ */
+
+
+/* ── Reset & Base ────────────────────────────────────────────────────────── */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    color: #fff;
+    padding: 20px;
+    min-height: 100vh;
+}
+
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+
+.container { max-width: 1200px; margin: 0 auto; }
+
+.header {
+    background: linear-gradient(90deg, #2563eb 0%, #7c3aed 100%);
+    padding: 30px;
+    border-radius: 20px;
+    margin-bottom: 20px;
+}
+.header h1 { font-size: 28px; margin-bottom: 10px; }
+.header p { color: #bfdbfe; font-size: 14px; }
+
+.card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 15px;
+    padding: 25px;
+    margin-bottom: 20px;
+}
+
+
+/* ── Button Style Guide ──────────────────────────────────────────────────
+
+   All buttons use the `.btn` base class. Variants control color/purpose.
+
+   Sizes:
+     .btn        — default (15px font, 12px/24px padding)
+     .btn-sm     — compact  (13px font, 8px/16px padding)
+
+   Variants:
+     .btn-primary    — blue, standard actions (import, cancel, generic)
+     .btn-accent     — purple→blue gradient, AI/special actions
+     .btn-success    — green, positive actions (save, update)
+     .btn-warning    — amber, caution actions (snapshot)
+     .btn-danger     — red, destructive actions (clear, delete)
+     .btn-key        — purple, API key management
+     .btn-trade      — green gradient, trade ideas
+
+   States:
+     :disabled   — 50% opacity, not-allowed cursor
+     :hover      — slight brightness boost (via filter)
+
+   Usage:
+     <button class="btn btn-primary">Import</button>
+     <button class="btn btn-accent">Get AI Analysis</button>
+     <button class="btn btn-danger btn-sm">Clear</button>
+
+   ──────────────────────────────────────────────────────────────────────── */
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+    font-weight: 600;
+    margin-right: 10px;
+    margin-bottom: 10px;
+    color: white;
+    transition: filter 0.15s ease;
+}
+
+.btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-sm {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    color: white;
+}
+
+/* Variants */
+.btn-primary   { background: #2563eb; }
+.btn-accent    { background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%); }
+.btn-success   { background: #059669; }
+.btn-warning   { background: #f59e0b; }
+.btn-danger    { background: #dc2626; }
+.btn-key       { background: #7c3aed; }
+.btn-trade     { background: linear-gradient(135deg, #059669 0%, #10b981 100%); }
+.btn-trade:hover:not(:disabled) {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%);
+}
+
+/* Legacy compat: .btn-add and .btn-analyze map to new system */
+.btn-add     { background: #2563eb; color: white; }
+.btn-analyze { background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%); color: white; }
+
+
+/* ── Portfolio Header ────────────────────────────────────────────────────── */
+
+.portfolio-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.total-value { text-align: right; }
+.total-value div:first-child { color: #94a3b8; font-size: 12px; }
+.total-value div:last-child { color: #4ade80; font-size: 24px; font-weight: bold; }
+
+
+/* ── Portfolio Grid ──────────────────────────────────────────────────────── */
+
+.positions {
+    display: block;
+    margin-bottom: 20px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.position {
+    background: #334155;
+    border: 1px solid #475569;
+    border-radius: 0;
+    padding: 12px 15px;
+    margin-bottom: 1px;
+    display: grid;
+    grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px;
+    gap: 15px;
+    align-items: center;
+    font-size: 13px;
+    min-width: 1240px;
+}
+.position:first-child { border-radius: 10px 10px 0 0; }
+.position:last-child  { border-radius: 0 0 10px 10px; margin-bottom: 0; }
+
+.position-header-row {
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 10px 10px 0 0;
+    padding: 12px 15px;
+    display: grid;
+    grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px;
+    gap: 15px;
+    align-items: center;
+    font-size: 11px;
+    font-weight: bold;
+    color: #94a3b8;
+    text-transform: uppercase;
+    min-width: 1240px;
+}
+
+.position-symbol  { font-size: 15px; font-weight: bold; color: #fff; }
+.position-details { color: #cbd5e1; }
+.position-value   { color: #60a5fa; font-weight: bold; }
+
+
+/* ── Analysis Section ────────────────────────────────────────────────────── */
+
+.analysis-section { margin-top: 20px; }
+
+.analysis-card {
+    background: #334155;
+    border: 1px solid #475569;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 15px;
+}
+
+.analysis-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.analysis-content { color: #cbd5e1; line-height: 1.6; }
+
+.idea-item {
+    background: #475569;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+.idea-title { font-weight: bold; margin-bottom: 8px; }
+.idea-desc  { color: #cbd5e1; font-size: 14px; }
+
+.disclaimer {
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    color: #fcd34d;
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-top: 15px;
+}
+
+.market-news-card { border-left: 3px solid #60a5fa; }
+
+
+/* ── Perspective Selector ────────────────────────────────────────────────── */
+
+.perspective-selector {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 15px;
+}
+
+.perspective-header { margin-bottom: 12px; }
+
+.perspective-label {
+    color: #94a3b8;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.perspective-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.perspective-tab {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 2px solid #475569;
+    background: #0f172a;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.perspective-tab:hover {
+    border-color: #64748b;
+    color: #cbd5e1;
+    background: #1e293b;
+}
+.perspective-tab.active {
+    color: white;
+    background: #1e293b;
+}
+
+.perspective-info {
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.perspective-info-icon { font-size: 24px; }
+.perspective-info-text { flex: 1; }
+.perspective-info-name {
+    color: #e2e8f0;
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 2px;
+}
+.perspective-info-desc {
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 4px;
+}
+.perspective-info-figures {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.perspective-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    color: white;
+}
+
+.perspective-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+
+/* ── Trade Ideas ─────────────────────────────────────────────────────────── */
+
+.trade-ideas-section { margin-top: 20px; }
+
+.trade-idea-card {
+    background: #334155;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 15px;
+    border-left: 4px solid;
+}
+.trade-idea-card.rebalance { border-left-color: #f59e0b; }
+.trade-idea-card.buy       { border-left-color: #10b981; }
+.trade-idea-card.sell      { border-left-color: #ef4444; }
+.trade-idea-card.hold      { border-left-color: #6366f1; }
+.trade-idea-card.watch     { border-left-color: #8b5cf6; }
+
+.trade-idea-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.trade-idea-number {
+    background: #1e293b;
+    color: #e2e8f0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.trade-idea-title-section { flex: 1; }
+
+.trade-idea-title {
+    color: #e2e8f0;
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.trade-idea-subtitle {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+.trade-idea-context {
+    background: #1e293b;
+    border-radius: 8px;
+    padding: 12px 15px;
+    margin-bottom: 12px;
+}
+.trade-idea-context h4 {
+    color: #94a3b8;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+.trade-idea-context ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.trade-idea-action {
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 12px 15px;
+    margin-bottom: 12px;
+    border: 1px solid #334155;
+}
+.trade-idea-action h4 {
+    color: #10b981;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.trade-idea-action p {
+    color: #e2e8f0;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.trade-idea-rationale {
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 1.6;
+    font-style: italic;
+}
+
+.trade-ideas-summary {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 15px;
+}
+.trade-ideas-summary h3 {
+    color: #e2e8f0;
+    font-size: 16px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.execution-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #334155;
+}
+.execution-step:last-child { border-bottom: none; }
+
+.execution-time {
+    background: #334155;
+    color: #94a3b8;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.execution-action {
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+
+/* ── Allocation Charts ───────────────────────────────────────────────────── */
+
+.allocation-section {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 15px;
+}
+
+.allocation-charts {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+}
+
+.allocation-chart-container {
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 15px;
+}
+
+.allocation-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.allocation-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.allocation-bar-label {
+    width: 100px;
+    font-size: 12px;
+    color: #cbd5e1;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.allocation-bar-track {
+    flex: 1;
+    height: 24px;
+    background: #334155;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.allocation-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: white;
+    transition: width 0.3s ease;
+}
+
+.allocation-bar-value {
+    width: 60px;
+    font-size: 12px;
+    color: #94a3b8;
+    text-align: right;
+}
+
+/* Sector slicer (interactive bars) */
+.allocation-bar-row.slicer {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    transition: background 0.15s ease;
+}
+.allocation-bar-row.slicer:hover       { background: rgba(255,255,255,0.05); }
+.allocation-bar-row.slicer.active      { background: rgba(255,255,255,0.1); outline: 1px solid rgba(255,255,255,0.15); }
+.allocation-bar-row.slicer.dimmed      { opacity: 0.35; }
+
+.slicer-hint {
+    font-size: 10px;
+    color: #64748b;
+    margin-top: 6px;
+    text-align: center;
+}
+.slicer-clear {
+    display: inline-block;
+    font-size: 11px;
+    color: #60a5fa;
+    cursor: pointer;
+    margin-left: 8px;
+}
+.slicer-clear:hover { color: #93c5fd; text-decoration: underline; }
+
+
+/* ── Legacy Trade Idea (old format) ──────────────────────────────────────── */
+
+.trade-idea {
+    background: #475569;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.trade-ticker {
+    font-family: monospace;
+    font-weight: 700;
+    font-size: 15px;
+    color: #e2e8f0;
+    background: #1e293b;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.trade-action {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 12px;
+    letter-spacing: 0.5px;
+}
+
+.trade-title     { font-weight: bold; margin-bottom: 6px; color: #e2e8f0; }
+.trade-rationale { color: #cbd5e1; font-size: 13px; line-height: 1.5; }
+
+
+/* ── States ──────────────────────────────────────────────────────────────── */
+
+.loading     { text-align: center; padding: 40px; color: #94a3b8; }
+.empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
+
+
+/* ── Auth Bar ────────────────────────────────────────────────────────────── */
+
+.auth-bar {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 12px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 13px;
+}
+
+.auth-bar input[type="email"],
+.auth-bar input[type="password"] {
+    padding: 8px 12px;
+    background: #334155;
+    color: white;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 200px;
+}
+
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+    .position, .position-header-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        font-size: 12px;
+        min-width: 0;
+    }
+    .portfolio-header { flex-direction: column; align-items: flex-start; }
+    .total-value { text-align: left; }
+    .container { padding: 0 10px; }
+
+    .auth-bar input[type="email"],
+    .auth-bar input[type="password"] {
+        width: 100%;
+    }
+}
