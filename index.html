@@ -44,6 +44,8 @@
         .positions {
             display: block;
             margin-bottom: 20px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
         .position {
             background: #334155;
@@ -56,6 +58,7 @@
             gap: 15px;
             align-items: center;
             font-size: 13px;
+            min-width: 1240px;
         }
         .position:first-child {
             border-radius: 10px 10px 0 0;
@@ -77,6 +80,7 @@
             font-weight: bold;
             color: #94a3b8;
             text-transform: uppercase;
+            min-width: 1240px;
         }
         .position-symbol { font-size: 15px; font-weight: bold; color: #fff; }
         .position-details { color: #cbd5e1; }
@@ -498,9 +502,11 @@
                 grid-template-columns: 1fr 1fr;
                 gap: 8px;
                 font-size: 12px;
+                min-width: 0;
             }
             .portfolio-header { flex-direction: column; align-items: flex-start; }
             .total-value { text-align: left; }
+            .container { padding: 0 10px; }
         }
         .auth-bar {
             background: #1e293b;
@@ -544,7 +550,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.4</span></h1>
+            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.0.5</span></h1>
             <p>Market analysis and personalized portfolio insights</p>
         </div>
         
@@ -2625,7 +2631,7 @@ Apply these lenses:
                     <div style="font-size: 13px; color: #94a3b8;">
                         ${portfolio.length} position${portfolio.length !== 1 ? 's' : ''}
                         ${Object.keys(marketPrices).length > 0 ? ` • ${positionsWithPrices} with live prices` : ' • Click "Update Prices" for live market data'}
-                        ${selectedSector ? `<span style="color: #60a5fa; margin-left: 8px;">Filtered: ${selectedSector} <span style="cursor:pointer; color:#f87171;" onclick="toggleSectorFilter('${selectedSector.replace(/'/g, "\\'")}')">✕</span></span>` : ''}
+                        ${selectedSector ? `<span style="color: #60a5fa; margin-left: 8px;">Filtered: ${escapeHTML(selectedSector)} <span style="cursor:pointer; color:#f87171;" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(selectedSector).replace(/'/g, "\\'")}')">✕</span></span>` : ''}
                     </div>
                 </div>
                 <div class="total-value">
@@ -3129,7 +3135,7 @@ Apply these lenses:
                     const isActive = selectedSector === sector;
                     const isDimmed = selectedSector && !isActive;
                     return `
-                        <div class="allocation-bar-row slicer${isActive ? ' active' : ''}${isDimmed ? ' dimmed' : ''}" onclick="toggleSectorFilter('${escapeHTML(sector).replace(/'/g, "\\'")}')">
+                        <div class="allocation-bar-row slicer${isActive ? ' active' : ''}${isDimmed ? ' dimmed' : ''}" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(sector).replace(/'/g, "\\'")}')">
                             <div class="allocation-bar-label" title="${escapeHTML(sector)}">${escapeHTML(sector)}</div>
                             <div class="allocation-bar-track">
                                 <div class="allocation-bar-fill" style="width: ${pct}%; background: ${color};">
@@ -3140,7 +3146,7 @@ Apply these lenses:
                         </div>
                     `;
                 }).join('');
-                sectorChart.innerHTML += `<div class="slicer-hint">Click a sector to filter positions${selectedSector ? `<span class="slicer-clear" onclick="toggleSectorFilter('${escapeHTML(selectedSector).replace(/'/g, "\\'")}')">Clear filter</span>` : ''}</div>`;
+                sectorChart.innerHTML += `<div class="slicer-hint">Tap a sector to filter positions${selectedSector ? `<span class="slicer-clear" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(selectedSector).replace(/'/g, "\\'")}')">Clear filter</span>` : ''}</div>`;
             }
 
             allocationSection.style.display = 'block';
@@ -3250,11 +3256,6 @@ Please provide your analysis in JSON format with these fields:
 - marketNews: an OBJECTIVE, perspective-neutral overview of current market conditions and recent notable events affecting equities, bonds, or macro (3-5 sentences). This section should be purely factual — no opinion from any investment philosophy.
 - marketOverview: your OPINIONATED assessment of these market conditions strictly through the lens of ${perspective.name}. Explain what a ${perspective.name} practitioner would focus on and how they would interpret current conditions (3-4 sentences). Make it clear this is a ${perspective.name} perspective.
 - portfolioImpact: evaluate the specific holdings in this portfolio through the ${perspective.name} lens — which positions align well with this philosophy, which don't, and why (3-4 sentences). Be specific about individual holdings.
-- trades: array of exactly 5 concrete trade ideas that a ${perspective.name} investor would make. Each trade MUST have ALL of these fields:
-  - "ticker": the stock/ETF ticker symbol (e.g. "AAPL", "VTI", "BRK.B")
-  - "action": exactly one of "BUY", "SELL", "HOLD", "TRIM", or "ADD"
-  - "title": short trade idea title (e.g. "Accumulate undervalued energy major")
-  - "rationale": 2-3 sentence explanation of why this specific trade fits the ${perspective.name} philosophy and current market conditions
 
 Respond ONLY with valid JSON, no markdown, no preamble.`
                             }]
@@ -3318,10 +3319,6 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                 const analysis = JSON.parse(cleanText);
                 console.log('Parsed analysis:', analysis);
 
-                const actionColors = { BUY: '#4ade80', SELL: '#f87171', HOLD: '#94a3b8', TRIM: '#fbbf24', ADD: '#60a5fa' };
-                const actionIcons = { BUY: '🟢', SELL: '🔴', HOLD: '⚪', TRIM: '🟡', ADD: '🔵' };
-                const trades = analysis.trades || analysis.ideas || [];
-
                 analysisSection.innerHTML = `
                     <div class="card analysis-section">
                         <div class="analysis-card market-news-card">
@@ -3346,28 +3343,6 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                         <div class="analysis-card" style="border-left: 3px solid ${perspective.color};">
                             <div class="analysis-title">🎯 Portfolio Evaluation — ${escapeHTML(perspective.name)} View</div>
                             <div class="analysis-content">${escapeHTML(analysis.portfolioImpact)}</div>
-                        </div>
-
-                        <div class="analysis-card">
-                            <div class="analysis-title">💹 Trade Ideas — ${escapeHTML(perspective.name)}</div>
-                            ${trades.map((trade, idx) => {
-                                const action = (trade.action || '').toUpperCase();
-                                const color = actionColors[action] || '#94a3b8';
-                                const icon = actionIcons[action] || '⚪';
-                                const ticker = trade.ticker || '';
-                                const rationale = trade.rationale || trade.description || '';
-                                return `
-                                <div class="trade-idea">
-                                    <div class="trade-idea-header">
-                                        ${ticker ? `<span class="trade-ticker">${escapeHTML(ticker)}</span>` : ''}
-                                        ${action ? `<span class="trade-action" style="background: ${color}20; color: ${color}; border: 1px solid ${color}40;">
-                                            ${icon} ${escapeHTML(action)}
-                                        </span>` : ''}
-                                    </div>
-                                    <div class="trade-title">${idx + 1}. ${escapeHTML(trade.title)}</div>
-                                    <div class="trade-rationale">${escapeHTML(rationale)}</div>
-                                </div>`;
-                            }).join('')}
                         </div>
 
                         <div class="disclaimer">
