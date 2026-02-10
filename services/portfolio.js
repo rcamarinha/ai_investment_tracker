@@ -1,5 +1,5 @@
 /**
- * Portfolio service — rendering, import, snapshots, and history.
+ * Portfolio service — rendering, import, snapshots, history, and position management.
  */
 
 import state from './state.js';
@@ -7,18 +7,22 @@ import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord } from './u
 import { getSector } from '../data/sectors.js';
 import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB } from './storage.js';
-import { fetchMarketPrices } from './pricing.js';
+import { fetchMarketPrices, fetchStockPrice } from './pricing.js';
 
 // ── Portfolio Rendering ─────────────────────────────────────────────────────
 
 export function renderPortfolio() {
     const positionsDiv = document.getElementById('positions');
 
+    // Separate active and inactive positions
+    const activePositions = state.portfolio.filter(p => p.shares > 0);
+    const inactivePositions = state.portfolio.filter(p => p.shares <= 0);
+
     let totalInvested = 0;
     let totalMarketValue = 0;
     let positionsWithPrices = 0;
 
-    state.portfolio.forEach(p => {
+    activePositions.forEach(p => {
         const invested = p.shares * p.avgPrice;
         totalInvested += invested;
 
@@ -32,7 +36,7 @@ export function renderPortfolio() {
     });
 
     console.log('=== RENDER PORTFOLIO DEBUG ===');
-    console.log('Rendering portfolio:', state.portfolio.length, 'positions');
+    console.log('Rendering portfolio:', activePositions.length, 'active,', inactivePositions.length, 'closed');
     console.log('Positions with live prices:', positionsWithPrices);
 
     // Update header
@@ -41,12 +45,17 @@ export function renderPortfolio() {
     const totalGainLossPct = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
     const gainLossColor = totalGainLoss >= 0 ? '#4ade80' : '#f87171';
 
+    const inactiveToggle = inactivePositions.length > 0
+        ? `<span class="inactive-toggle" onclick="toggleInactivePositions()">${state.showInactivePositions ? 'Hide' : 'Show'} ${inactivePositions.length} closed position${inactivePositions.length !== 1 ? 's' : ''}</span>`
+        : '';
+
     portfolioHeader.innerHTML = `
         <div>
             <h2 style="margin-bottom: 5px;">\uD83D\uDCBC Your Portfolio</h2>
             <div style="font-size: 13px; color: #94a3b8;">
-                ${state.portfolio.length} position${state.portfolio.length !== 1 ? 's' : ''}
+                ${activePositions.length} active position${activePositions.length !== 1 ? 's' : ''}
                 ${Object.keys(state.marketPrices).length > 0 ? ` \u2022 ${positionsWithPrices} with live prices` : ' \u2022 Click "Update Prices" for live market data'}
+                ${inactiveToggle}
                 ${state.selectedSector ? `<span style="color: #60a5fa; margin-left: 8px;">Filtered: ${escapeHTML(state.selectedSector)} <span style="cursor:pointer; color:#f87171;" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(state.selectedSector).replace(/'/g, "\\'")}')">✕</span></span>` : ''}
             </div>
         </div>
@@ -64,14 +73,18 @@ export function renderPortfolio() {
     `;
 
     if (state.portfolio.length === 0) {
-        positionsDiv.innerHTML = '<div style="text-align: center; color: #64748b; padding: 40px;">No positions yet. Import your portfolio from spreadsheet to get started.</div>';
+        positionsDiv.innerHTML = '<div style="text-align: center; color: #64748b; padding: 40px;">No positions yet. Click "Add Position" or import your portfolio to get started.</div>';
         return;
     }
 
-    // Apply sector slicer filter
-    const displayPositions = state.selectedSector
-        ? state.portfolio.filter(p => getSector(p.symbol) === state.selectedSector)
-        : state.portfolio;
+    // Build display list: active + optionally inactive, filtered by sector
+    let displayPositions = state.showInactivePositions
+        ? [...activePositions, ...inactivePositions]
+        : [...activePositions];
+
+    if (state.selectedSector) {
+        displayPositions = displayPositions.filter(p => getSector(p.symbol) === state.selectedSector);
+    }
 
     let html = `
         <div class="position-header-row">
@@ -86,10 +99,12 @@ export function renderPortfolio() {
             <div>Market Value</div>
             <div>Weight</div>
             <div>Gain/Loss</div>
+            <div>Actions</div>
         </div>
     `;
 
     html += displayPositions.map((pos) => {
+        const isActive = pos.shares > 0;
         const invested = pos.shares * pos.avgPrice;
         const currentPrice = state.marketPrices[pos.symbol];
         const hasPrice = currentPrice !== undefined;
@@ -130,9 +145,18 @@ export function renderPortfolio() {
         }
 
         const dbAsset = state.assetDatabase[pos.symbol.toUpperCase()];
+        const escapedSymbol = escapeHTML(pos.symbol).replace(/'/g, "\\'");
+
+        // Action buttons: active positions get buy/sell/delete; inactive get just delete
+        const actionButtons = isActive
+            ? `<button class="position-action-btn action-buy" title="Add shares" onclick="showEditPositionDialog('${escapedSymbol}','buy')">+</button>
+               <button class="position-action-btn action-sell" title="Sell shares" onclick="showEditPositionDialog('${escapedSymbol}','sell')">-</button>
+               <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`
+            : `<span style="font-size: 11px; color: #64748b;">Closed</span>
+               <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
 
         return `
-        <div class="position">
+        <div class="position${isActive ? '' : ' inactive'}">
             <div class="position-symbol">
                 <div style="display: flex; align-items: center; gap: 5px;">
                     <span style="color: ${statusColor}; font-size: 14px;" title="${escapeHTML(statusText)}">${statusFlag}</span>
@@ -154,18 +178,21 @@ export function renderPortfolio() {
             <div class="position-details">${pos.shares}</div>
             <div class="position-details">${formatCurrency(pos.avgPrice)}</div>
             <div class="position-details" style="color: ${hasPrice ? '#60a5fa' : '#f59e0b'};">
-                ${hasPrice ? formatCurrency(currentPrice) : '\u23F3 Pending'}
+                ${hasPrice ? formatCurrency(currentPrice) : (isActive ? '\u23F3 Pending' : '\u2014')}
             </div>
-            <div class="position-details">${formatCurrency(invested)}</div>
-            <div class="position-value" style="color: ${color};">
-                ${formatCurrency(marketValue)}
+            <div class="position-details">${isActive ? formatCurrency(invested) : '\u2014'}</div>
+            <div class="position-value" style="color: ${isActive ? color : '#64748b'};">
+                ${isActive ? formatCurrency(marketValue) : '\u2014'}
             </div>
             <div class="position-details" style="font-weight: 600;">
-                ${weight.toFixed(1)}%
+                ${isActive ? weight.toFixed(1) + '%' : '\u2014'}
             </div>
-            <div style="color: ${color}; font-weight: bold;">
-                ${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss)}
-                <span style="font-size: 11px; margin-left: 4px;">(${formatPercent(gainLossPct)})</span>
+            <div style="color: ${isActive ? color : '#64748b'}; font-weight: bold;">
+                ${isActive ? `${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss)}
+                <span style="font-size: 11px; margin-left: 4px;">(${formatPercent(gainLossPct)})</span>` : '\u2014'}
+            </div>
+            <div class="position-actions">
+                ${actionButtons}
             </div>
         </div>
         `;
@@ -173,6 +200,7 @@ export function renderPortfolio() {
 
     positionsDiv.innerHTML = html;
     renderAllocationCharts();
+    renderSalesHistory();
     console.log('Portfolio rendered successfully');
 }
 
@@ -501,4 +529,510 @@ export function clearHistory() {
         document.getElementById('historySection').style.display = 'none';
         alert('\u2713 History cleared');
     }
+}
+
+// ── Position Management ────────────────────────────────────────────────────
+
+// -- Asset Search (uses Finnhub /search and FMP /search endpoints) --
+
+async function searchAssets(query) {
+    if (!query || query.length < 1) return [];
+
+    // Tier 1: Finnhub symbol search
+    if (state.finnhubKey) {
+        try {
+            const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${state.finnhubKey}`;
+            const response = await fetch(url);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.result && data.result.length > 0) {
+                    return data.result.slice(0, 8).map(r => ({
+                        symbol: r.symbol,
+                        name: r.description || r.symbol,
+                        type: r.type === 'Common Stock' ? 'Stock' : r.type === 'ETP' ? 'ETF' : r.type || 'Stock'
+                    }));
+                }
+            }
+        } catch (err) {
+            console.log('Finnhub search failed:', err.message);
+        }
+    }
+
+    // Tier 2: FMP symbol search
+    if (state.fmpKey) {
+        try {
+            const url = `https://financialmodelingprep.com/api/v3/search?query=${encodeURIComponent(query)}&limit=8&apikey=${state.fmpKey}`;
+            const response = await fetch(url);
+            if (response.ok) {
+                const data = await response.json();
+                if (data && Array.isArray(data) && data.length > 0) {
+                    return data.slice(0, 8).map(r => ({
+                        symbol: r.symbol,
+                        name: r.name || r.symbol,
+                        type: 'Stock'
+                    }));
+                }
+            }
+        } catch (err) {
+            console.log('FMP search failed:', err.message);
+        }
+    }
+
+    return [];
+}
+
+function renderSearchResults(results) {
+    const container = document.getElementById('searchResults');
+    if (!container) return;
+
+    if (results.length === 0) {
+        container.innerHTML = '<div class="search-no-results">No results found. You can enter ticker and details manually below.</div>';
+        return;
+    }
+
+    container.innerHTML = results.map(r => `
+        <div class="search-result-item" data-symbol="${escapeHTML(r.symbol)}" data-name="${escapeHTML(r.name)}" data-type="${escapeHTML(r.type)}">
+            <span class="search-result-symbol">${escapeHTML(r.symbol)}</span>
+            <span class="search-result-name">${escapeHTML(r.name)}</span>
+            <span class="search-result-type">${escapeHTML(r.type)}</span>
+        </div>
+    `).join('');
+}
+
+function selectSearchResult(symbol, name, type) {
+    document.getElementById('positionSearchInput').value = `${symbol} \u2014 ${name}`;
+    document.getElementById('positionSymbol').value = symbol;
+    document.getElementById('positionName').value = name;
+
+    const typeMap = {
+        'Common Stock': 'Stock', 'ETP': 'ETF', 'ADR': 'Stock',
+        'REIT': 'REIT', 'Crypto': 'Crypto', 'ETF': 'ETF'
+    };
+    document.getElementById('positionType').value = typeMap[type] || type || 'Stock';
+    document.getElementById('searchResults').innerHTML = '';
+    document.getElementById('positionShares').focus();
+}
+
+function updateCalculatedPrice() {
+    const shares = parseFloat(document.getElementById('positionShares').value);
+    const amount = parseFloat(document.getElementById('positionAmount').value);
+    const display = document.getElementById('positionCalcDisplay');
+    if (!display) return;
+
+    if (!isNaN(shares) && shares > 0 && !isNaN(amount) && amount > 0) {
+        display.textContent = `Price per share: ${formatCurrency(amount / shares)}`;
+    } else {
+        display.textContent = '';
+    }
+}
+
+// -- Init: attach event listeners for search and calculation --
+
+export function initPositionDialog() {
+    const searchInput = document.getElementById('positionSearchInput');
+    if (!searchInput) return;
+
+    let searchTimeout = null;
+    searchInput.addEventListener('input', (e) => {
+        clearTimeout(searchTimeout);
+        const query = e.target.value.trim();
+        if (query.length < 1) {
+            document.getElementById('searchResults').innerHTML = '';
+            return;
+        }
+        searchTimeout = setTimeout(async () => {
+            const results = await searchAssets(query);
+            renderSearchResults(results);
+        }, 300);
+    });
+
+    // Click delegation on search results
+    const resultsContainer = document.getElementById('searchResults');
+    if (resultsContainer) {
+        resultsContainer.addEventListener('click', (e) => {
+            const item = e.target.closest('.search-result-item');
+            if (!item) return;
+            selectSearchResult(
+                item.dataset.symbol,
+                item.dataset.name,
+                item.dataset.type
+            );
+        });
+    }
+
+    // Auto-calculate price per share
+    const sharesInput = document.getElementById('positionShares');
+    const amountInput = document.getElementById('positionAmount');
+    if (sharesInput) sharesInput.addEventListener('input', updateCalculatedPrice);
+    if (amountInput) amountInput.addEventListener('input', updateCalculatedPrice);
+}
+
+// -- Show Add Position Dialog --
+
+export function showAddPositionDialog() {
+    const dialog = document.getElementById('positionDialog');
+    if (!dialog) return;
+
+    dialog.dataset.mode = 'add';
+    dialog.dataset.symbol = '';
+    document.getElementById('positionDialogTitle').textContent = 'Add New Position';
+
+    // Reset all fields
+    document.getElementById('positionSearchInput').value = '';
+    document.getElementById('positionSymbol').value = '';
+    document.getElementById('positionName').value = '';
+    document.getElementById('positionType').value = 'Stock';
+    document.getElementById('positionPlatform').value = '';
+    document.getElementById('positionShares').value = '';
+    document.getElementById('positionAmount').value = '';
+    document.getElementById('positionDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('positionCalcDisplay').textContent = '';
+    document.getElementById('searchResults').innerHTML = '';
+
+    // Show search, hide sell info
+    document.getElementById('positionSearchSection').style.display = 'block';
+    document.getElementById('positionSellInfo').style.display = 'none';
+    document.getElementById('positionSymbolGroup').style.display = 'block';
+    document.getElementById('positionNameGroup').style.display = 'block';
+    document.getElementById('positionTypeGroup').style.display = 'block';
+    document.getElementById('positionPlatformGroup').style.display = 'block';
+
+    // Labels for add mode
+    document.getElementById('positionSharesLabel').textContent = 'Number of Shares *';
+    document.getElementById('positionAmountLabel').textContent = 'Invested Amount *';
+    document.getElementById('positionDialogSubmit').textContent = 'Add Position';
+    document.getElementById('positionDialogSubmit').className = 'btn btn-success';
+
+    dialog.style.display = 'flex';
+    document.getElementById('positionSearchInput').focus();
+}
+
+// -- Show Edit Position Dialog (buy more or sell) --
+
+export function showEditPositionDialog(symbol, mode) {
+    const position = state.portfolio.find(p => p.symbol === symbol);
+    if (!position) return;
+
+    const dialog = document.getElementById('positionDialog');
+    if (!dialog) return;
+
+    dialog.dataset.mode = mode; // 'buy' or 'sell'
+    dialog.dataset.symbol = symbol;
+
+    const isSell = mode === 'sell';
+    document.getElementById('positionDialogTitle').textContent =
+        isSell ? `Sell Shares \u2014 ${symbol}` : `Add Shares \u2014 ${symbol}`;
+
+    // Hide search section (we already know the asset)
+    document.getElementById('positionSearchSection').style.display = 'none';
+    document.getElementById('positionSymbolGroup').style.display = 'none';
+    document.getElementById('positionNameGroup').style.display = 'none';
+    document.getElementById('positionTypeGroup').style.display = 'none';
+    document.getElementById('positionPlatformGroup').style.display = 'none';
+
+    // Pre-fill hidden fields
+    document.getElementById('positionSymbol').value = position.symbol;
+    document.getElementById('positionName').value = position.name;
+    document.getElementById('positionType').value = position.type || 'Stock';
+    document.getElementById('positionPlatform').value = position.platform || '';
+
+    // Clear input fields
+    document.getElementById('positionShares').value = '';
+    document.getElementById('positionAmount').value = '';
+    document.getElementById('positionDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('positionCalcDisplay').textContent = '';
+    document.getElementById('searchResults').innerHTML = '';
+
+    // Show position info banner
+    const infoEl = document.getElementById('positionSellInfo');
+    if (isSell) {
+        infoEl.style.display = 'block';
+        infoEl.innerHTML = `
+            <strong>${escapeHTML(position.name || position.symbol)}</strong><br>
+            Current: <strong>${position.shares}</strong> shares @ ${formatCurrency(position.avgPrice)} avg cost
+            <br>Total invested: ${formatCurrency(position.shares * position.avgPrice)}
+        `;
+        document.getElementById('positionSharesLabel').textContent = 'Shares to Sell *';
+        document.getElementById('positionAmountLabel').textContent = 'Sale Amount *';
+        document.getElementById('positionDialogSubmit').textContent = 'Sell Shares';
+        document.getElementById('positionDialogSubmit').className = 'btn btn-warning';
+    } else {
+        infoEl.style.display = 'block';
+        infoEl.innerHTML = `
+            <strong>${escapeHTML(position.name || position.symbol)}</strong><br>
+            Current: <strong>${position.shares}</strong> shares @ ${formatCurrency(position.avgPrice)} avg cost
+        `;
+        document.getElementById('positionSharesLabel').textContent = 'Shares to Add *';
+        document.getElementById('positionAmountLabel').textContent = 'Invested Amount *';
+        document.getElementById('positionDialogSubmit').textContent = 'Add Shares';
+        document.getElementById('positionDialogSubmit').className = 'btn btn-success';
+    }
+
+    dialog.style.display = 'flex';
+    document.getElementById('positionShares').focus();
+}
+
+// -- Close Dialog --
+
+export function closePositionDialog() {
+    const dialog = document.getElementById('positionDialog');
+    if (dialog) dialog.style.display = 'none';
+    document.getElementById('searchResults').innerHTML = '';
+}
+
+// -- Submit Position (handles add, buy, sell) --
+
+export function submitPosition() {
+    const dialog = document.getElementById('positionDialog');
+    const mode = dialog.dataset.mode;
+
+    const symbol = document.getElementById('positionSymbol').value.trim().toUpperCase();
+    const name = document.getElementById('positionName').value.trim();
+    const type = document.getElementById('positionType').value;
+    const platform = document.getElementById('positionPlatform').value.trim() || 'Unknown';
+    const shares = parseFloat(document.getElementById('positionShares').value);
+    const totalAmount = parseFloat(document.getElementById('positionAmount').value);
+    const date = document.getElementById('positionDate').value;
+
+    // Validation
+    if (!symbol) { alert('Please enter or select a ticker symbol.'); return; }
+    if (isNaN(shares) || shares <= 0) { alert('Please enter a valid number of shares.'); return; }
+    if (isNaN(totalAmount) || totalAmount <= 0) { alert('Please enter a valid amount.'); return; }
+    if (!date) { alert('Please enter a date.'); return; }
+
+    const pricePerShare = totalAmount / shares;
+
+    if (mode === 'add') {
+        // Check for existing active position
+        const existing = state.portfolio.find(p => p.symbol === symbol);
+        if (existing && existing.shares > 0) {
+            alert(`An active position for ${symbol} already exists.\nUse the "+" button on that row to add more shares.`);
+            return;
+        }
+
+        // If position exists but inactive (0 shares), reactivate it
+        if (existing) {
+            existing.shares = shares;
+            existing.avgPrice = pricePerShare;
+            existing.name = name || existing.name;
+            existing.type = type;
+            existing.platform = platform;
+        } else {
+            state.portfolio.push({
+                name: name || symbol,
+                symbol,
+                platform,
+                type,
+                shares,
+                avgPrice: pricePerShare
+            });
+        }
+
+        // Build asset database record
+        const assetRecord = buildAssetRecord({ name: name || symbol, symbol, platform, type, shares, avgPrice: pricePerShare });
+        state.assetDatabase[assetRecord.ticker] = {
+            name: assetRecord.name,
+            ticker: assetRecord.ticker,
+            stockExchange: assetRecord.stock_exchange,
+            sector: assetRecord.sector,
+            currency: assetRecord.currency,
+            assetType: assetRecord.asset_type
+        };
+
+        recordTransaction(symbol, 'buy', shares, pricePerShare, date, totalAmount);
+
+    } else if (mode === 'buy') {
+        const position = state.portfolio.find(p => p.symbol === dialog.dataset.symbol);
+        if (!position) { alert('Position not found.'); return; }
+
+        // Weighted average price calculation
+        const oldTotal = position.shares * position.avgPrice;
+        const newTotal = shares * pricePerShare;
+        position.shares += shares;
+        position.avgPrice = (oldTotal + newTotal) / position.shares;
+
+        recordTransaction(position.symbol, 'buy', shares, pricePerShare, date, totalAmount);
+
+    } else if (mode === 'sell') {
+        const position = state.portfolio.find(p => p.symbol === dialog.dataset.symbol);
+        if (!position) { alert('Position not found.'); return; }
+
+        if (shares > position.shares) {
+            alert(`Cannot sell ${shares} shares. You only have ${position.shares} shares.`);
+            return;
+        }
+
+        // Record sale with cost basis and realized gain/loss
+        const costBasis = position.avgPrice;
+        const realizedGainLoss = (pricePerShare - costBasis) * shares;
+
+        recordTransaction(position.symbol, 'sell', shares, pricePerShare, date, totalAmount, costBasis, realizedGainLoss);
+
+        // Reduce shares (avgPrice stays the same for remaining shares)
+        position.shares -= shares;
+    }
+
+    // Persist and re-render
+    savePortfolioDB();
+    saveTransactionsToStorage();
+    closePositionDialog();
+    renderPortfolio();
+
+    // Try to fetch price for new position
+    if (mode === 'add' && (state.finnhubKey || state.fmpKey || state.alphaVantageKey)) {
+        setTimeout(async () => {
+            console.log(`Auto-fetching price for new position ${symbol}...`);
+            const result = await fetchStockPrice(symbol);
+            if (result.success) {
+                state.marketPrices[symbol] = result.price;
+                state.priceMetadata[symbol] = {
+                    timestamp: new Date().toISOString(),
+                    source: result.source,
+                    success: true
+                };
+                renderPortfolio();
+            }
+        }, 200);
+    }
+}
+
+// -- Delete Position --
+
+export function deletePosition(symbol) {
+    const position = state.portfolio.find(p => p.symbol === symbol);
+    if (!position) return;
+
+    const msg = `Delete ${symbol}` +
+        (position.name && position.name !== symbol ? ` (${position.name})` : '') +
+        `?\n\nThis will permanently remove this position and its transaction history.\nThis cannot be undone.`;
+
+    if (!confirm(msg)) return;
+
+    state.portfolio = state.portfolio.filter(p => p.symbol !== symbol);
+    delete state.transactions[symbol];
+    delete state.marketPrices[symbol];
+    delete state.priceMetadata[symbol];
+
+    savePortfolioDB();
+    saveTransactionsToStorage();
+    renderPortfolio();
+}
+
+// -- Toggle Inactive Positions Visibility --
+
+export function toggleInactivePositions() {
+    state.showInactivePositions = !state.showInactivePositions;
+    renderPortfolio();
+}
+
+// ── Transaction Recording & Persistence ────────────────────────────────────
+
+function recordTransaction(symbol, type, shares, price, date, totalAmount, costBasis, realizedGainLoss) {
+    if (!state.transactions[symbol]) {
+        state.transactions[symbol] = [];
+    }
+    const tx = {
+        type,
+        shares,
+        price,
+        date,
+        totalAmount,
+        timestamp: new Date().toISOString()
+    };
+    if (type === 'sell') {
+        tx.costBasis = costBasis;
+        tx.realizedGainLoss = realizedGainLoss;
+    }
+    state.transactions[symbol].push(tx);
+}
+
+export function saveTransactionsToStorage() {
+    try {
+        localStorage.setItem('positionTransactions', JSON.stringify(state.transactions));
+        console.log('\u2713 Transactions saved to localStorage');
+    } catch (err) {
+        console.error('Failed to save transactions:', err);
+    }
+}
+
+export function loadTransactionsFromStorage() {
+    try {
+        const stored = localStorage.getItem('positionTransactions');
+        if (stored) {
+            state.transactions = JSON.parse(stored);
+            console.log('\u2713 Loaded transactions:', Object.keys(state.transactions).length, 'symbols');
+        }
+    } catch (err) {
+        console.error('Error loading transactions:', err);
+    }
+}
+
+// ── Sales History Display ──────────────────────────────────────────────────
+
+function renderSalesHistory() {
+    const section = document.getElementById('salesHistorySection');
+    if (!section) return;
+
+    // Collect all sell transactions across all symbols
+    const allSales = [];
+    for (const [symbol, txs] of Object.entries(state.transactions)) {
+        txs.filter(t => t.type === 'sell').forEach(t => {
+            allSales.push({ symbol, ...t });
+        });
+    }
+
+    if (allSales.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    // Sort by date descending
+    allSales.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    let totalRealized = 0;
+    allSales.forEach(s => { totalRealized += s.realizedGainLoss || 0; });
+
+    const realizedColor = totalRealized >= 0 ? '#4ade80' : '#f87171';
+
+    section.style.display = 'block';
+    const content = section.querySelector('.card') || section;
+
+    content.innerHTML = `
+        <h2 style="margin-bottom: 15px;">\uD83D\uDCC9 Sales History</h2>
+        <div style="margin-bottom: 15px; font-size: 14px; color: #94a3b8;">
+            Total realized P&L: <span style="color: ${realizedColor}; font-weight: bold;">${totalRealized >= 0 ? '+' : ''}${formatCurrency(totalRealized)}</span>
+            &bull; ${allSales.length} sale${allSales.length !== 1 ? 's' : ''}
+        </div>
+        <div style="overflow-x: auto;">
+            <table class="sales-history-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Symbol</th>
+                        <th>Shares Sold</th>
+                        <th>Sale Price</th>
+                        <th>Cost Basis</th>
+                        <th>Sale Amount</th>
+                        <th>Realized P&L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${allSales.map(s => {
+                        const plColor = (s.realizedGainLoss || 0) >= 0 ? '#4ade80' : '#f87171';
+                        return `<tr>
+                            <td>${escapeHTML(s.date)}</td>
+                            <td style="font-weight: 600; color: #60a5fa;">${escapeHTML(s.symbol)}</td>
+                            <td>${s.shares}</td>
+                            <td>${formatCurrency(s.price)}</td>
+                            <td>${s.costBasis ? formatCurrency(s.costBasis) : '\u2014'}</td>
+                            <td>${formatCurrency(s.totalAmount)}</td>
+                            <td style="color: ${plColor}; font-weight: bold;">
+                                ${s.realizedGainLoss !== undefined ? `${s.realizedGainLoss >= 0 ? '+' : ''}${formatCurrency(s.realizedGainLoss)}` : '\u2014'}
+                            </td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
 }

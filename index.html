@@ -49,7 +49,8 @@
 
             <div>
                 <button class="btn btn-key" onclick="showApiKeyDialog()">🔑 API Keys</button>
-                <button class="btn btn-primary" onclick="showImportDialog()">📋 Import Portfolio from Spreadsheet</button>
+                <button class="btn btn-success" onclick="showAddPositionDialog()">➕ Add Position</button>
+                <button class="btn btn-primary" onclick="showImportDialog()">📋 Import from Spreadsheet</button>
                 <button class="btn btn-success" onclick="fetchMarketPrices()" id="refreshBtn">🔄 Update Prices</button>
                 <button class="btn btn-warning" onclick="savePortfolioSnapshot()">💾 Save Snapshot</button>
             </div>
@@ -181,6 +182,81 @@
             </div>
         </div>
 
+        <!-- Position Management Dialog (Add / Buy More / Sell) -->
+        <div id="positionDialog" style="display: none;">
+            <div class="card">
+                <h2 id="positionDialogTitle" style="margin-bottom: 15px;">Add New Position</h2>
+
+                <!-- Search section (visible for new positions) -->
+                <div id="positionSearchSection" class="position-form-group">
+                    <label>Search by Ticker or Company Name</label>
+                    <div class="search-container">
+                        <input type="text" id="positionSearchInput" placeholder="Type ticker or company name to search..." autocomplete="off" />
+                        <div id="searchResults" class="search-results"></div>
+                    </div>
+                </div>
+
+                <!-- Sell/buy info banner -->
+                <div id="positionSellInfo" class="position-sell-info" style="display: none;"></div>
+
+                <!-- Symbol & Name (shown for add, hidden for buy/sell) -->
+                <div class="position-form-row">
+                    <div id="positionSymbolGroup" class="position-form-group">
+                        <label>Ticker Symbol *</label>
+                        <input type="text" id="positionSymbol" placeholder="e.g. AAPL" style="text-transform: uppercase;" />
+                    </div>
+                    <div id="positionNameGroup" class="position-form-group">
+                        <label>Asset Name</label>
+                        <input type="text" id="positionName" placeholder="e.g. Apple Inc" />
+                    </div>
+                </div>
+
+                <div class="position-form-row">
+                    <div id="positionTypeGroup" class="position-form-group">
+                        <label>Asset Type</label>
+                        <select id="positionType">
+                            <option value="Stock">Stock</option>
+                            <option value="ETF">ETF</option>
+                            <option value="Crypto">Crypto</option>
+                            <option value="REIT">REIT</option>
+                            <option value="Bond">Bond</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div id="positionPlatformGroup" class="position-form-group">
+                        <label>Platform</label>
+                        <input type="text" id="positionPlatform" placeholder="e.g. Interactive Brokers" />
+                    </div>
+                </div>
+
+                <hr style="border: 1px solid #334155; margin: 16px 0;">
+
+                <!-- Shares and Amount (always visible) -->
+                <div class="position-form-row">
+                    <div class="position-form-group">
+                        <label id="positionSharesLabel">Number of Shares *</label>
+                        <input type="number" id="positionShares" placeholder="e.g. 10" min="0" step="any" />
+                    </div>
+                    <div class="position-form-group">
+                        <label id="positionAmountLabel">Invested Amount *</label>
+                        <input type="number" id="positionAmount" placeholder="e.g. 1500.00" min="0" step="any" />
+                    </div>
+                </div>
+
+                <div class="position-calc-display" id="positionCalcDisplay"></div>
+
+                <div class="position-form-group">
+                    <label>Date *</label>
+                    <input type="date" id="positionDate" />
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button id="positionDialogSubmit" class="btn btn-success" onclick="submitPosition()">Add Position</button>
+                    <button class="btn btn-primary" onclick="closePositionDialog()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
         <div id="analysisSection"></div>
 
         <div id="historySection" style="display: none;">
@@ -189,6 +265,10 @@
                 <div id="historyChart" style="margin-bottom: 20px;"></div>
                 <div id="historyLog"></div>
             </div>
+        </div>
+
+        <div id="salesHistorySection" style="display: none;">
+            <div class="card"></div>
         </div>
     </div>
 
@@ -206,7 +286,10 @@
                  showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './services/ui.js';
         import { renderPortfolio, showImportDialog, closeImportDialog,
                  importPositions, savePortfolioSnapshot, updateHistoryDisplay,
-                 clearHistory } from './services/portfolio.js';
+                 clearHistory, initPositionDialog, showAddPositionDialog,
+                 showEditPositionDialog, closePositionDialog, submitPosition,
+                 deletePosition, toggleInactivePositions,
+                 loadTransactionsFromStorage } from './services/portfolio.js';
         import { fetchMarketPrices } from './services/pricing.js';
         import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
         import { initSupabase } from './services/storage.js';
@@ -230,6 +313,12 @@
         window.handleSignup        = handleSignup;
         window.handleLogout        = handleLogout;
         window.clearHistory        = clearHistory;
+        window.showAddPositionDialog  = showAddPositionDialog;
+        window.showEditPositionDialog = showEditPositionDialog;
+        window.closePositionDialog    = closePositionDialog;
+        window.submitPosition         = submitPosition;
+        window.deletePosition         = deletePosition;
+        window.toggleInactivePositions = toggleInactivePositions;
 
         // ── Initialization ──────────────────────────────────────────────────
         console.log('=== APP INITIALIZING (modular) ===');
@@ -300,6 +389,9 @@
 
         console.log('✓ API keys ready');
 
+        // Load transactions from localStorage
+        loadTransactionsFromStorage();
+
         // Load sector cache
         loadSectorCache();
 
@@ -315,6 +407,9 @@
         // Render initial UI
         renderPortfolio();
         renderPerspectiveTabs();
+
+        // Initialize position dialog event listeners
+        initPositionDialog();
 
         // Show artifact warning if detected
         if (isArtifact) {
