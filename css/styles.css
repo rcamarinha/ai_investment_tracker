@@ -171,11 +171,11 @@ body {
     padding: 12px 15px;
     margin-bottom: 1px;
     display: grid;
-    grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px;
+    grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px 80px;
     gap: 15px;
     align-items: center;
     font-size: 13px;
-    min-width: 1240px;
+    min-width: 1340px;
 }
 .position:first-child { border-radius: 10px 10px 0 0; }
 .position:last-child  { border-radius: 0 0 10px 10px; margin-bottom: 0; }
@@ -186,14 +186,14 @@ body {
     border-radius: 10px 10px 0 0;
     padding: 12px 15px;
     display: grid;
-    grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px;
+    grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px 80px;
     gap: 15px;
     align-items: center;
     font-size: 11px;
     font-weight: bold;
     color: #94a3b8;
     text-transform: uppercase;
-    min-width: 1240px;
+    min-width: 1340px;
 }
 
 .position-symbol  { font-size: 15px; font-weight: bold; color: #fff; }
@@ -618,6 +618,212 @@ body {
 .trade-title     { font-weight: bold; margin-bottom: 6px; color: #e2e8f0; }
 .trade-rationale { color: #cbd5e1; font-size: 13px; line-height: 1.5; }
 
+
+/* ── Position Management Dialogs ─────────────────────────────────────────── */
+
+#positionDialog {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+}
+
+#positionDialog .card {
+    max-width: 520px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.position-form-group {
+    margin-bottom: 16px;
+}
+
+.position-form-group label {
+    display: block;
+    color: #cbd5e1;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.position-form-group input,
+.position-form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    background: #334155;
+    color: white;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.position-form-group select {
+    cursor: pointer;
+    appearance: auto;
+}
+
+.position-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.position-calc-display {
+    color: #60a5fa;
+    font-size: 13px;
+    margin-top: 6px;
+    min-height: 18px;
+}
+
+/* Search autocomplete */
+.search-container {
+    position: relative;
+}
+
+.search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 0 0 8px 8px;
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.search-result-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid #334155;
+    transition: background 0.1s ease;
+}
+.search-result-item:hover {
+    background: #334155;
+}
+.search-result-item:last-child {
+    border-bottom: none;
+}
+
+.search-result-symbol {
+    font-weight: 700;
+    color: #60a5fa;
+    font-size: 14px;
+    min-width: 70px;
+}
+.search-result-name {
+    color: #cbd5e1;
+    font-size: 13px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.search-result-type {
+    color: #94a3b8;
+    font-size: 11px;
+    background: #0f172a;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.search-no-results {
+    padding: 12px;
+    color: #64748b;
+    font-size: 13px;
+    text-align: center;
+}
+
+/* Sell info banner */
+.position-sell-info {
+    background: #0f172a;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+/* Position action buttons in grid rows */
+.position-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.position-action-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter 0.15s ease, opacity 0.15s ease;
+    padding: 0;
+    color: white;
+}
+.position-action-btn:hover {
+    filter: brightness(1.2);
+}
+.position-action-btn.action-buy  { background: #059669; }
+.position-action-btn.action-sell { background: #f59e0b; }
+.position-action-btn.action-del  { background: #dc2626; }
+
+/* Inactive position row */
+.position.inactive {
+    opacity: 0.45;
+    background: #2d3748;
+}
+.position.inactive:hover {
+    opacity: 0.7;
+}
+
+/* Inactive toggle */
+.inactive-toggle {
+    font-size: 12px;
+    color: #64748b;
+    cursor: pointer;
+    user-select: none;
+    margin-left: 12px;
+}
+.inactive-toggle:hover {
+    color: #94a3b8;
+}
+
+/* Sales history section */
+.sales-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.sales-history-table th {
+    text-align: left;
+    color: #94a3b8;
+    font-size: 11px;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    border-bottom: 1px solid #475569;
+}
+.sales-history-table td {
+    padding: 8px 10px;
+    color: #cbd5e1;
+    border-bottom: 1px solid #334155;
+}
+.sales-history-table tr:last-child td {
+    border-bottom: none;
+}
 
 /* ── States ──────────────────────────────────────────────────────────────── */
 

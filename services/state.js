@@ -23,6 +23,8 @@ const state = {
     selectedSector: null,
     sectorCache: {},
     assetDatabase: {},
+    transactions: {},          // {SYMBOL: [{type, shares, price, date, totalAmount, costBasis?, realizedGainLoss?}]}
+    showInactivePositions: false,
 };
 
 export default state;

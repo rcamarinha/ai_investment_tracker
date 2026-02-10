@@ -439,6 +439,179 @@ export function calculatePortfolioWeights(portfolio, marketPrices = {}) {
   }));
 }
 
+// ── Position Management (pure logic) ─────────────────────────────────────────
+
+/**
+ * Add a new position to a portfolio array (immutable — returns new array).
+ * If a closed position (shares=0) for the symbol already exists, it is reactivated.
+ *
+ * @param {Array} portfolio - Current portfolio
+ * @param {{ symbol: string, name?: string, platform?: string, type?: string, shares: number, totalAmount: number, date: string }} params
+ * @returns {{ portfolio: Array, transaction: Object|null, error?: string }}
+ */
+export function addPosition(portfolio, { symbol, name, platform, type, shares, totalAmount, date }) {
+  const pricePerShare = totalAmount / shares;
+  const existing = portfolio.find(p => p.symbol === symbol);
+
+  let newPortfolio;
+  if (existing && existing.shares > 0) {
+    return { portfolio, transaction: null, error: `Active position for ${symbol} already exists` };
+  } else if (existing) {
+    newPortfolio = portfolio.map(p =>
+      p.symbol === symbol
+        ? { ...p, shares, avgPrice: pricePerShare, name: name || p.name, type: type || p.type, platform: platform || p.platform }
+        : p
+    );
+  } else {
+    newPortfolio = [...portfolio, {
+      name: name || symbol,
+      symbol,
+      platform: platform || 'Unknown',
+      type: type || 'Stock',
+      shares,
+      avgPrice: pricePerShare
+    }];
+  }
+
+  const transaction = { type: 'buy', shares, price: pricePerShare, date, totalAmount };
+  return { portfolio: newPortfolio, transaction };
+}
+
+/**
+ * Add more shares to an existing position (buy). Recalculates weighted average price.
+ *
+ * @param {Array} portfolio
+ * @param {string} symbol
+ * @param {number} shares
+ * @param {number} totalAmount
+ * @param {string} date
+ * @returns {{ portfolio: Array, transaction: Object|null, error?: string }}
+ */
+export function buyMoreShares(portfolio, symbol, shares, totalAmount, date) {
+  const position = portfolio.find(p => p.symbol === symbol);
+  if (!position) {
+    return { portfolio, transaction: null, error: `Position ${symbol} not found` };
+  }
+
+  const pricePerShare = totalAmount / shares;
+  const oldTotal = position.shares * position.avgPrice;
+  const newTotal = shares * pricePerShare;
+  const newShares = position.shares + shares;
+  const newAvgPrice = (oldTotal + newTotal) / newShares;
+
+  const newPortfolio = portfolio.map(p =>
+    p.symbol === symbol
+      ? { ...p, shares: newShares, avgPrice: newAvgPrice }
+      : p
+  );
+
+  const transaction = { type: 'buy', shares, price: pricePerShare, date, totalAmount };
+  return { portfolio: newPortfolio, transaction };
+}
+
+/**
+ * Sell shares from an existing position. Records cost basis and realized P&L.
+ * If all shares are sold, position becomes inactive (shares=0).
+ *
+ * @param {Array} portfolio
+ * @param {string} symbol
+ * @param {number} shares
+ * @param {number} totalAmount
+ * @param {string} date
+ * @returns {{ portfolio: Array, transaction: Object|null, error?: string }}
+ */
+export function sellShares(portfolio, symbol, shares, totalAmount, date) {
+  const position = portfolio.find(p => p.symbol === symbol);
+  if (!position) {
+    return { portfolio, transaction: null, error: `Position ${symbol} not found` };
+  }
+  if (shares > position.shares) {
+    return { portfolio, transaction: null, error: `Cannot sell ${shares} shares, only have ${position.shares}` };
+  }
+
+  const pricePerShare = totalAmount / shares;
+  const costBasis = position.avgPrice;
+  const realizedGainLoss = (pricePerShare - costBasis) * shares;
+  const remainingShares = position.shares - shares;
+
+  const newPortfolio = portfolio.map(p =>
+    p.symbol === symbol
+      ? { ...p, shares: remainingShares }
+      : p
+  );
+
+  const transaction = {
+    type: 'sell', shares, price: pricePerShare, date, totalAmount,
+    costBasis, realizedGainLoss
+  };
+  return { portfolio: newPortfolio, transaction };
+}
+
+/**
+ * Delete a position entirely from the portfolio.
+ *
+ * @param {Array} portfolio
+ * @param {string} symbol
+ * @returns {{ portfolio: Array, removed: boolean }}
+ */
+export function removePosition(portfolio, symbol) {
+  const exists = portfolio.some(p => p.symbol === symbol);
+  if (!exists) return { portfolio, removed: false };
+  return { portfolio: portfolio.filter(p => p.symbol !== symbol), removed: true };
+}
+
+/**
+ * Filter portfolio into active (shares > 0) and inactive (shares <= 0) positions.
+ *
+ * @param {Array} portfolio
+ * @returns {{ active: Array, inactive: Array }}
+ */
+export function partitionPositions(portfolio) {
+  const active = portfolio.filter(p => p.shares > 0);
+  const inactive = portfolio.filter(p => p.shares <= 0);
+  return { active, inactive };
+}
+
+/**
+ * Record a transaction into a transactions map (immutable).
+ *
+ * @param {Object} transactions - { SYMBOL: [tx, ...] }
+ * @param {string} symbol
+ * @param {Object} tx
+ * @returns {Object} new transactions map
+ */
+export function recordTransaction(transactions, symbol, tx) {
+  const existing = transactions[symbol] || [];
+  return { ...transactions, [symbol]: [...existing, tx] };
+}
+
+/**
+ * Collect all sell transactions across all symbols, sorted by date descending.
+ *
+ * @param {Object} transactions - { SYMBOL: [tx, ...] }
+ * @returns {Array<Object>} sorted sell transactions with symbol field added
+ */
+export function collectSalesHistory(transactions) {
+  const sales = [];
+  for (const [symbol, txs] of Object.entries(transactions)) {
+    txs.filter(t => t.type === 'sell').forEach(t => {
+      sales.push({ symbol, ...t });
+    });
+  }
+  sales.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return sales;
+}
+
+/**
+ * Calculate total realized P&L from sell transactions.
+ *
+ * @param {Array<Object>} sales - Array of sell transactions with realizedGainLoss field
+ * @returns {number}
+ */
+export function calculateTotalRealizedPnL(sales) {
+  return sales.reduce((sum, s) => sum + (s.realizedGainLoss || 0), 0);
+}
+
 // ── Type Aggregation ─────────────────────────────────────────────────────────
 
 /**
