@@ -1,21 +1,32 @@
-# AI Financial Advisor
+# AI Investment Tracker
 
-A browser-based portfolio tracker that fetches live market prices, calculates gains/losses, and optionally provides AI-powered investment insights via Claude.
+A modular browser-based portfolio management application that fetches live market prices, tracks performance over time, and generates AI-powered insights via the Claude API.
 
 ## Features
 
-- **Portfolio Import** - Paste tab-separated data directly from a spreadsheet
-- **Live Market Prices** - 3-tier API fallback (Finnhub, FMP, Alpha Vantage) for ~98% fetch success
-- **International Stocks** - Smart ticker resolution for European exchanges (Paris, London, Frankfurt, Amsterdam, Milan, Swiss)
-- **Portfolio History** - Save snapshots over time with visual bar chart tracking
-- **AI Analysis** - Get personalized portfolio insights powered by Claude (requires claude.ai)
-- **Cloud Sync** - Cross-device portfolio sync when running inside claude.ai
+- **Portfolio Import** — Paste tab-separated data directly from a spreadsheet (full or simple format)
+- **Live Market Prices** — 3-tier API fallback (Finnhub → FMP → Alpha Vantage) for ~98% fetch success
+- **International Stocks** — Smart ticker resolution for European exchanges (Paris, London, Frankfurt, Amsterdam, Milan, Swiss)
+- **Portfolio History** — Save snapshots over time with visual bar chart tracking
+- **AI Analysis** — Personalized portfolio insights powered by Claude with 6 investment perspectives (Value, GARP, Quant, Macro, Passive, Technical)
+- **Trade Ideas** — Concrete daily trade suggestions with execution plans via Claude API
+- **Allocation Charts** — Interactive type and sector allocation breakdowns with sector slicer
+- **Cloud Sync** — Cross-device portfolio sync via Supabase (with authentication) or Claude cloud storage
+- **No framework, no build step** — Vanilla HTML + CSS + JavaScript using ES modules
 
 ## Getting Started
 
-### 1. Open the app
+### 1. Start a local server
 
-Open `index.html` in any modern browser. No install or build step required.
+The app uses ES modules, which require an HTTP server (opening `index.html` directly via `file://` won't work).
+
+```bash
+python -m http.server 8000
+```
+
+Then open [http://localhost:8000](http://localhost:8000) in your browser.
+
+Alternatively, deploy to GitHub Pages or any static hosting.
 
 ### 2. Get API keys (free)
 
@@ -28,6 +39,8 @@ You need at least one API key to fetch live prices. All are free tier:
 | [Alpha Vantage](https://www.alphavantage.co/support/#api-key) | alphavantage.co | 5 calls/min, 25/day |
 
 Click the **API Keys** button in the app and enter your key(s).
+
+For AI analysis features, you'll also need a [Claude API key](https://console.anthropic.com/).
 
 ### 3. Import your portfolio
 
@@ -55,27 +68,102 @@ Click **Update Prices** to fetch current market data. The app uses your fastest 
 
 | Button | Action |
 |--------|--------|
-| API Keys | Configure your market data API keys |
-| Import Portfolio | Load positions from spreadsheet data |
-| Update Prices | Fetch current market prices for all positions |
-| Save Snapshot | Save current portfolio state to history |
-| Get AI Analysis | Generate AI insights (claude.ai only) |
+| **API Keys** | Configure market data and AI API keys |
+| **Import Portfolio** | Load positions from spreadsheet data |
+| **Update Prices** | Fetch current market prices for all positions |
+| **Save Snapshot** | Save current portfolio state to history |
+| **Get AI Analysis** | Generate perspective-based portfolio insights |
+| **Get Trade Ideas** | Get concrete daily trade suggestions |
 
-## How It Works
+### Investment Perspectives
 
-The app runs entirely in the browser with no backend server. Portfolio data and API keys are stored in your browser's localStorage.
+The AI analysis adapts to your selected investment philosophy:
 
-**Price fetching** follows a 3-tier strategy:
-1. Finnhub (fastest, no daily limit)
-2. Financial Modeling Prep (generous daily limit)
-3. Alpha Vantage (last resort, strict limits)
+- **Value** — Warren Buffett / Benjamin Graham style fundamental analysis
+- **GARP** — Growth at a Reasonable Price (Peter Lynch approach)
+- **Quant** — Data-driven quantitative analysis
+- **Macro** — Top-down macroeconomic perspective
+- **Passive** — Index-focused, cost-conscious strategy
+- **Technical** — Chart patterns and technical indicators
 
-If a ticker fails on all APIs, the app tries alternative exchange suffixes and smart name-to-ticker mappings for international stocks.
+## Architecture
 
-**AI Analysis** is only available when running inside [claude.ai](https://claude.ai) as an artifact, where it can call the Claude API and sync data across devices.
+```
+ai_investment_tracker/
+├── index.html              # Entry point: HTML structure + module init
+├── css/
+│   └── styles.css          # All styles + button style guide
+├── data/
+│   ├── sectors.js          # Sector mapping + getSector() helpers
+│   └── perspectives.js     # 6 investment perspectives with AI prompts
+├── services/
+│   ├── state.js            # Shared application state
+│   ├── utils.js            # Formatting, escaping, exchange detection
+│   ├── pricing.js          # 3-tier price fetching with rate limiting
+│   ├── storage.js          # Supabase DB + localStorage + Claude cloud
+│   ├── auth.js             # Supabase authentication
+│   ├── portfolio.js        # Render, import, snapshots, history
+│   ├── analysis.js         # AI analysis & trade ideas via Claude API
+│   └── ui.js               # Allocation charts, perspective tabs, dialogs
+├── src/
+│   └── portfolio.js        # Pure functions mirror (for testing)
+├── tests/                  # Vitest test suite
+├── supabase/
+│   └── functions/
+│       └── analyze-portfolio/
+│           └── index.ts    # Edge function for server-side analysis
+├── supabase_schema.sql     # Database schema
+├── vitest.config.js
+└── package.json
+```
+
+## Data Persistence
+
+The app supports three storage layers:
+
+- **localStorage** — API keys, sector cache, portfolio history (works offline, single device)
+- **Supabase** — Positions, snapshots, assets, price history (cloud sync, multi-device, requires account)
+- **Claude cloud storage** — Portfolio state + snapshots (when running inside claude.ai)
+
+## Cloud Sync (Optional)
+
+For cross-device sync, you can connect a [Supabase](https://supabase.com/) project:
+
+1. Create a free Supabase project
+2. Run the schema from `supabase_schema.sql` in the SQL editor
+3. Enter your Supabase URL and anon key in the API Keys dialog
+4. Sign up / log in to sync your data
+
+## Development
+
+### Running locally
+
+```bash
+python -m http.server 8000
+# Open http://localhost:8000
+```
+
+### Making changes
+
+Each concern lives in its own file:
+
+1. **Styles** → `css/styles.css`
+2. **HTML structure** → `index.html` (just layout + init)
+3. **Data** → `data/sectors.js`, `data/perspectives.js`
+4. **Logic** → `services/*.js` (one file per concern)
+
+### Running tests
+
+```bash
+npm install
+npx vitest run
+```
+
+Tests import from `src/portfolio.js` (pure function mirror of `services/portfolio.js`).
 
 ## Requirements
 
 - A modern web browser (Chrome, Firefox, Safari, Edge)
+- Python 3 (for local server) or any static file server
 - At least one free API key for live prices
-- No server, database, or package manager needed
+- Claude API key for AI analysis features (optional)
