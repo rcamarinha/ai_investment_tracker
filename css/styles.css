@@ -42,7 +42,7 @@ body {
 
 /* ── Layout ──────────────────────────────────────────────────────────────── */
 
-.container { max-width: 1200px; margin: 0 auto; }
+.container { margin: 0 auto; padding: 0 10px; }
 
 .header {
     background: linear-gradient(90deg, #2563eb 0%, #7c3aed 100%);
@@ -160,22 +160,19 @@ body {
 .positions {
     display: block;
     margin-bottom: 20px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
 }
 
 .position {
     background: #334155;
     border: 1px solid #475569;
     border-radius: 0;
-    padding: 12px 15px;
+    padding: 10px 12px;
     margin-bottom: 1px;
     display: grid;
-    grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px 80px;
-    gap: 15px;
+    grid-template-columns: 90px minmax(120px, 1fr) 70px 110px 130px 130px 90px;
+    gap: 10px;
     align-items: center;
     font-size: 13px;
-    min-width: 1340px;
 }
 .position:first-child { border-radius: 10px 10px 0 0; }
 .position:last-child  { border-radius: 0 0 10px 10px; margin-bottom: 0; }
@@ -184,21 +181,25 @@ body {
     background: #1e293b;
     border: 1px solid #475569;
     border-radius: 10px 10px 0 0;
-    padding: 12px 15px;
+    padding: 10px 12px;
     display: grid;
-    grid-template-columns: 100px 180px 60px 90px 70px 100px 100px 100px 100px 70px 120px 80px;
-    gap: 15px;
+    grid-template-columns: 90px minmax(120px, 1fr) 70px 110px 130px 130px 90px;
+    gap: 10px;
     align-items: center;
     font-size: 11px;
     font-weight: bold;
     color: #94a3b8;
     text-transform: uppercase;
-    min-width: 1340px;
 }
 
 .position-symbol  { font-size: 15px; font-weight: bold; color: #fff; }
 .position-details { color: #cbd5e1; }
 .position-value   { color: #60a5fa; font-weight: bold; }
+
+/* Two-line cell helpers */
+.pos-cell { min-width: 0; }
+.pos-secondary { font-size: 11px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pos-right { text-align: right; }
 
 
 /* ── Analysis Section ────────────────────────────────────────────────────── */
@@ -862,14 +863,14 @@ body {
 
 @media (max-width: 768px) {
     .position, .position-header-row {
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
+        grid-template-columns: 60px 1fr 80px 80px;
+        gap: 6px;
         font-size: 12px;
-        min-width: 0;
+        padding: 8px 10px;
     }
+    .pos-hide-mobile { display: none; }
     .portfolio-header { flex-direction: column; align-items: flex-start; }
     .total-value { text-align: left; }
-    .container { padding: 0 10px; }
 
     .auth-bar input[type="email"],
     .auth-bar input[type="password"] {
