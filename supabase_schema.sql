@@ -63,41 +63,10 @@ CREATE POLICY "Users can delete own snapshots"
     ON snapshots FOR DELETE
     USING (auth.uid() = user_id);
 
--- Transactions table: records every buy/sell action for audit trail + P&L
-CREATE TABLE transactions (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-    symbol TEXT NOT NULL,
-    type TEXT NOT NULL CHECK (type IN ('buy', 'sell')),
-    shares NUMERIC NOT NULL,
-    price NUMERIC NOT NULL,
-    total_amount NUMERIC NOT NULL,
-    date DATE NOT NULL,
-    cost_basis NUMERIC,         -- avg cost at time of sale (sell only)
-    realized_gain_loss NUMERIC, -- realized P&L (sell only)
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can view own transactions"
-    ON transactions FOR SELECT
-    USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own transactions"
-    ON transactions FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own transactions"
-    ON transactions FOR DELETE
-    USING (auth.uid() = user_id);
-
 -- Performance indexes
 CREATE INDEX idx_positions_user_id ON positions(user_id);
 CREATE INDEX idx_snapshots_user_id ON snapshots(user_id);
 CREATE INDEX idx_snapshots_user_timestamp ON snapshots(user_id, timestamp DESC);
-CREATE INDEX idx_transactions_user_id ON transactions(user_id);
-CREATE INDEX idx_transactions_user_symbol ON transactions(user_id, symbol);
 
 -- ============================================
 -- App Config: shared API keys (admin-managed)
