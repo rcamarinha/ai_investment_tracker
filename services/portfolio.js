@@ -6,7 +6,8 @@ import state from './state.js';
 import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord } from './utils.js';
 import { getSector } from '../data/sectors.js';
 import { renderAllocationCharts } from './ui.js';
-import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB } from './storage.js';
+import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
+         saveTransactionsToDB, deleteTransactionsForSymbol } from './storage.js';
 import { fetchMarketPrices, fetchStockPrice } from './pricing.js';
 
 // ── Portfolio Rendering ─────────────────────────────────────────────────────
@@ -913,6 +914,7 @@ export function deletePosition(symbol) {
 
     savePortfolioDB();
     saveTransactionsToStorage();
+    deleteTransactionsForSymbol(symbol);
     renderPortfolio();
 }
 
@@ -948,6 +950,8 @@ export function saveTransactionsToStorage() {
     try {
         localStorage.setItem('positionTransactions', JSON.stringify(state.transactions));
         console.log('\u2713 Transactions saved to localStorage');
+        // Also persist to Supabase
+        saveTransactionsToDB();
     } catch (err) {
         console.error('Failed to save transactions:', err);
     }
