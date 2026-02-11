@@ -169,7 +169,7 @@ body {
     padding: 10px 12px;
     margin-bottom: 1px;
     display: grid;
-    grid-template-columns: 90px minmax(120px, 1fr) 70px 110px 130px 130px 90px;
+    grid-template-columns: 90px minmax(120px, 1fr) 70px 110px 130px 130px 120px;
     gap: 10px;
     align-items: center;
     font-size: 13px;
@@ -183,7 +183,7 @@ body {
     border-radius: 10px 10px 0 0;
     padding: 10px 12px;
     display: grid;
-    grid-template-columns: 90px minmax(120px, 1fr) 70px 110px 130px 130px 90px;
+    grid-template-columns: 90px minmax(120px, 1fr) 70px 110px 130px 130px 120px;
     gap: 10px;
     align-items: center;
     font-size: 11px;
@@ -778,6 +778,7 @@ body {
 .position-action-btn:hover {
     filter: brightness(1.2);
 }
+.position-action-btn.action-refresh { background: #2563eb; }
 .position-action-btn.action-buy  { background: #059669; }
 .position-action-btn.action-sell { background: #f59e0b; }
 .position-action-btn.action-del  { background: #dc2626; }

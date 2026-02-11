@@ -146,9 +146,10 @@ export function renderPortfolio() {
         const typeColor = ({ 'ETF': '#8b5cf6', 'REIT': '#ec4899', 'Stock': '#3b82f6', 'Crypto': '#f59e0b' }[pos.type] || '#94a3b8');
         const currency = dbAsset && dbAsset.currency && dbAsset.currency !== 'USD' ? dbAsset.currency : '';
 
-        // Action buttons: active positions get buy/sell/delete; inactive get just delete
+        // Action buttons: active positions get refresh/buy/sell/delete; inactive get just delete
         const actionButtons = isActive
-            ? `<button class="position-action-btn action-buy" title="Add shares" onclick="showEditPositionDialog('${escapedSymbol}','buy')">+</button>
+            ? `<button class="position-action-btn action-refresh" title="Refresh price" onclick="refreshSinglePrice('${escapedSymbol}')">&#x21bb;</button>
+               <button class="position-action-btn action-buy" title="Add shares" onclick="showEditPositionDialog('${escapedSymbol}','buy')">+</button>
                <button class="position-action-btn action-sell" title="Sell shares" onclick="showEditPositionDialog('${escapedSymbol}','sell')">-</button>
                <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`
             : `<button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
@@ -893,6 +894,37 @@ export function submitPosition() {
             }
         }, 200);
     }
+}
+
+// -- Refresh Single Asset Price --
+
+export async function refreshSinglePrice(symbol) {
+    if (!state.finnhubKey && !state.fmpKey && !state.alphaVantageKey) {
+        alert('No API keys configured. Set up at least one pricing API key first.');
+        return;
+    }
+
+    // Update metadata to show loading state
+    state.priceMetadata[symbol] = { timestamp: new Date().toISOString(), source: 'Fetching...', success: true };
+    renderPortfolio();
+
+    const result = await fetchStockPrice(symbol);
+    if (result.success) {
+        state.marketPrices[symbol] = result.price;
+        state.priceMetadata[symbol] = {
+            timestamp: new Date().toISOString(),
+            source: result.source,
+            success: true
+        };
+    } else {
+        state.priceMetadata[symbol] = {
+            timestamp: new Date().toISOString(),
+            source: '',
+            success: false,
+            error: result.error || 'Failed'
+        };
+    }
+    renderPortfolio();
 }
 
 // -- Delete Position --
