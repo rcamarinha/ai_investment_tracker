@@ -4,7 +4,7 @@
 
 import state from './state.js';
 import { buildAssetRecord } from './utils.js';
-import { updateAuthBar } from './auth.js';
+import { updateAuthBar, checkUserRole } from './auth.js';
 import { renderPortfolio, updateHistoryDisplay } from './portfolio.js';
 import { fetchAssetProfile } from './pricing.js';
 
@@ -591,6 +591,9 @@ export async function loadFromDatabase() {
 
         // Load shared API keys
         await loadAppConfig();
+
+        // Check user role (admin vs regular user)
+        await checkUserRole();
     } catch (err) {
         console.error('Failed to load from database:', err);
     }
