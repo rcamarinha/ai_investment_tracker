@@ -868,11 +868,79 @@ body {
     border-radius: 12px;
     padding: 12px 20px;
     margin-bottom: 20px;
+    font-size: 13px;
+}
+
+.auth-logged-in {
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+}
+
+.auth-login-panel {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.auth-sso-section {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.auth-email-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.auth-divider {
+    color: #64748b;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+}
+.auth-divider span {
+    white-space: nowrap;
+}
+
+/* SSO Buttons */
+.btn-sso {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border: 1px solid #475569;
+    border-radius: 6px;
     font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s ease, background 0.15s ease;
+    white-space: nowrap;
+}
+.btn-sso:hover {
+    filter: brightness(1.1);
+}
+
+.btn-google {
+    background: #1e293b;
+    color: #e2e8f0;
+}
+.btn-google:hover {
+    background: #334155;
+}
+
+.btn-github {
+    background: #24292e;
+    color: #fff;
+    border-color: #444d56;
+}
+.btn-github:hover {
+    background: #2f363d;
 }
 
 .auth-bar input[type="email"],
@@ -883,7 +951,7 @@ body {
     border: 1px solid #475569;
     border-radius: 6px;
     font-size: 13px;
-    width: 200px;
+    width: 180px;
 }
 
 
@@ -921,6 +989,19 @@ body {
     .portfolio-header { flex-direction: column; align-items: flex-start; }
     .total-value { text-align: left; }
 
+    .auth-login-panel {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .auth-sso-section {
+        flex-direction: column;
+    }
+    .auth-email-section {
+        flex-direction: column;
+    }
+    .auth-divider {
+        justify-content: center;
+    }
     .auth-bar input[type="email"],
     .auth-bar input[type="password"] {
         width: 100%;
