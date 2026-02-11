@@ -8,7 +8,8 @@ import { getSector } from '../data/sectors.js';
 import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveTransactionsToDB, deleteTransactionsForSymbol } from './storage.js';
-import { fetchMarketPrices, fetchStockPrice } from './pricing.js';
+import { fetchMarketPrices, fetchStockPrice, getExchangeRate } from './pricing.js';
+import { getAssetCurrency, toBaseCurrency } from './utils.js';
 
 // ── Portfolio Rendering ─────────────────────────────────────────────────────
 
@@ -19,32 +20,57 @@ export function renderPortfolio() {
     const activePositions = state.portfolio.filter(p => p.shares > 0);
     const inactivePositions = state.portfolio.filter(p => p.shares <= 0);
 
-    let totalInvested = 0;
-    let totalMarketValue = 0;
+    const base = state.baseCurrency || 'EUR';
+    let totalInvestedBase = 0;  // In base currency (EUR)
+    let totalMarketValueBase = 0;
     let positionsWithPrices = 0;
 
     activePositions.forEach(p => {
-        const invested = p.shares * p.avgPrice;
-        totalInvested += invested;
+        const currency = getAssetCurrency(p.symbol);
+        const investedNative = p.shares * p.avgPrice;
 
+        // Invested in base currency: use transaction-stored rates if available, else current rate
+        const txs = state.transactions[p.symbol];
+        if (txs && txs.length > 0) {
+            // Sum buy transactions converted at their historical rates
+            let investedBase = 0;
+            let soldBase = 0;
+            txs.forEach(tx => {
+                const rate = tx.exchangeRate || getExchangeRate(tx.currency || currency);
+                if (tx.type === 'buy') investedBase += tx.totalAmount * rate;
+                else if (tx.type === 'sell') soldBase += tx.totalAmount * rate;
+            });
+            // Invested = total buys minus total sells (in base), proportional to remaining shares
+            const totalBuyShares = txs.filter(t => t.type === 'buy').reduce((s, t) => s + t.shares, 0);
+            const totalSellShares = txs.filter(t => t.type === 'sell').reduce((s, t) => s + t.shares, 0);
+            const remainingRatio = totalBuyShares > 0 ? p.shares / totalBuyShares : 1;
+            totalInvestedBase += investedBase * remainingRatio;
+        } else {
+            // No transactions: fallback to current rate
+            totalInvestedBase += toBaseCurrency(investedNative, currency);
+        }
+
+        // Market value in base currency: always use current exchange rate
         const currentPrice = state.marketPrices[p.symbol];
         if (currentPrice) {
-            totalMarketValue += p.shares * currentPrice;
+            totalMarketValueBase += toBaseCurrency(p.shares * currentPrice, currency);
             positionsWithPrices++;
         } else {
-            totalMarketValue += invested;
+            totalMarketValueBase += toBaseCurrency(investedNative, currency);
         }
     });
 
     console.log('=== RENDER PORTFOLIO DEBUG ===');
     console.log('Rendering portfolio:', activePositions.length, 'active,', inactivePositions.length, 'closed');
     console.log('Positions with live prices:', positionsWithPrices);
+    console.log('Totals in', base, '- Invested:', totalInvestedBase.toFixed(2), 'Market:', totalMarketValueBase.toFixed(2));
 
     // Update header
     const portfolioHeader = document.querySelector('.portfolio-header');
-    const totalGainLoss = totalMarketValue - totalInvested;
-    const totalGainLossPct = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
+    const totalGainLoss = totalMarketValueBase - totalInvestedBase;
+    const totalGainLossPct = totalInvestedBase > 0 ? (totalGainLoss / totalInvestedBase) * 100 : 0;
     const gainLossColor = totalGainLoss >= 0 ? '#4ade80' : '#f87171';
+    const hasRates = Object.keys(state.exchangeRates).length > 0;
 
     const inactiveToggle = inactivePositions.length > 0
         ? `<span class="inactive-toggle" onclick="toggleInactivePositions()">${state.showInactivePositions ? 'Hide' : 'Show'} ${inactivePositions.length} closed position${inactivePositions.length !== 1 ? 's' : ''}</span>`
@@ -56,18 +82,19 @@ export function renderPortfolio() {
             <div style="font-size: 13px; color: #94a3b8;">
                 ${activePositions.length} active position${activePositions.length !== 1 ? 's' : ''}
                 ${Object.keys(state.marketPrices).length > 0 ? ` \u2022 ${positionsWithPrices} with live prices` : ' \u2022 Click "Update Prices" for live market data'}
+                ${hasRates ? ` \u2022 FX rates loaded` : ''}
                 ${inactiveToggle}
                 ${state.selectedSector ? `<span style="color: #60a5fa; margin-left: 8px;">Filtered: ${escapeHTML(state.selectedSector)} <span style="cursor:pointer; color:#f87171;" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(state.selectedSector).replace(/'/g, "\\'")}')">✕</span></span>` : ''}
             </div>
         </div>
         <div class="total-value">
-            <div style="color: #94a3b8; font-size: 12px;">Total Invested</div>
-            <div style="color: #cbd5e1; font-size: 16px; margin-bottom: 5px;">${formatCurrency(totalInvested)}</div>
-            <div style="color: #94a3b8; font-size: 12px;">Market Value</div>
-            <div style="color: ${gainLossColor}; font-size: 24px; font-weight: bold;">${formatCurrency(totalMarketValue)}</div>
-            ${totalInvested > 0 ? `
+            <div style="color: #94a3b8; font-size: 12px;">Total Invested (${escapeHTML(base)})</div>
+            <div style="color: #cbd5e1; font-size: 16px; margin-bottom: 5px;">${formatCurrency(totalInvestedBase, base)}</div>
+            <div style="color: #94a3b8; font-size: 12px;">Market Value (${escapeHTML(base)})</div>
+            <div style="color: ${gainLossColor}; font-size: 24px; font-weight: bold;">${formatCurrency(totalMarketValueBase, base)}</div>
+            ${totalInvestedBase > 0 ? `
                 <div style="color: ${gainLossColor}; font-size: 14px; margin-top: 5px;">
-                    ${formatCurrency(totalGainLoss)} (${formatPercent(totalGainLossPct)})
+                    ${formatCurrency(totalGainLoss, base)} (${formatPercent(totalGainLossPct)})
                 </div>
             ` : ''}
         </div>
@@ -101,13 +128,16 @@ export function renderPortfolio() {
 
     html += displayPositions.map((pos) => {
         const isActive = pos.shares > 0;
-        const invested = pos.shares * pos.avgPrice;
+        const currency = getAssetCurrency(pos.symbol);
+        const invested = pos.shares * pos.avgPrice; // native currency
         const currentPrice = state.marketPrices[pos.symbol];
         const hasPrice = currentPrice !== undefined;
-        const marketValue = hasPrice ? pos.shares * currentPrice : invested;
-        const gainLoss = marketValue - invested;
+        const marketValue = hasPrice ? pos.shares * currentPrice : invested; // native currency
+        const gainLoss = marketValue - invested; // native currency P&L
         const gainLossPct = invested > 0 ? (gainLoss / invested) * 100 : 0;
-        const weight = totalMarketValue > 0 ? (marketValue / totalMarketValue) * 100 : 0;
+        // Weight uses base currency conversion
+        const marketValueBase = toBaseCurrency(marketValue, currency);
+        const weight = totalMarketValueBase > 0 ? (marketValueBase / totalMarketValueBase) * 100 : 0;
         const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
 
         // Price metadata
@@ -140,11 +170,9 @@ export function renderPortfolio() {
             }
         }
 
-        const dbAsset = state.assetDatabase[pos.symbol.toUpperCase()];
         const escapedSymbol = escapeHTML(pos.symbol).replace(/'/g, "\\'");
         const sector = getSector(pos.symbol);
         const typeColor = ({ 'ETF': '#8b5cf6', 'REIT': '#ec4899', 'Stock': '#3b82f6', 'Crypto': '#f59e0b' }[pos.type] || '#94a3b8');
-        const currency = dbAsset && dbAsset.currency && dbAsset.currency !== 'USD' ? dbAsset.currency : '';
 
         // Action buttons: active positions get refresh/buy/sell/delete; inactive get just delete
         const actionButtons = isActive
@@ -171,21 +199,21 @@ export function renderPortfolio() {
             </div>
             <div class="pos-cell pos-hide-mobile">
                 <div style="font-size: 11px; color: ${typeColor}; font-weight: 600;">${escapeHTML(pos.type || 'Stock')}</div>
-                ${currency ? `<div class="pos-secondary">${escapeHTML(currency)}</div>` : ''}
+                <div class="pos-secondary">${escapeHTML(currency)}</div>
             </div>
             <div class="pos-cell pos-right">
                 <div>${isActive ? pos.shares + ' shares' : '\u2014'}</div>
-                <div class="pos-secondary">${isActive ? 'avg ' + formatCurrency(pos.avgPrice) : 'Closed'}</div>
+                <div class="pos-secondary">${isActive ? 'avg ' + formatCurrency(pos.avgPrice, currency) : 'Closed'}</div>
             </div>
             <div class="pos-cell pos-right">
                 <div style="color: ${hasPrice ? '#60a5fa' : '#f59e0b'}; font-weight: bold;">
-                    ${isActive ? formatCurrency(marketValue) : '\u2014'}
+                    ${isActive ? formatCurrency(marketValue, currency) : '\u2014'}
                 </div>
-                <div class="pos-secondary">${isActive ? (hasPrice ? formatCurrency(currentPrice) + ' \u2022 ' + weight.toFixed(1) + '%' : '\u23F3 Pending') : ''}</div>
+                <div class="pos-secondary">${isActive ? (hasPrice ? formatCurrency(currentPrice, currency) + ' \u2022 ' + weight.toFixed(1) + '%' : '\u23F3 Pending') : ''}</div>
             </div>
             <div class="pos-cell pos-right pos-hide-mobile">
                 <div style="color: ${isActive ? color : '#64748b'}; font-weight: bold;">
-                    ${isActive ? `${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss)}` : '\u2014'}
+                    ${isActive ? `${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss, currency)}` : '\u2014'}
                 </div>
                 <div class="pos-secondary" style="color: ${isActive ? color : '#64748b'};">
                     ${isActive ? formatPercent(gainLossPct) : ''}
@@ -963,12 +991,16 @@ function recordTransaction(symbol, type, shares, price, date, totalAmount, costB
     if (!state.transactions[symbol]) {
         state.transactions[symbol] = [];
     }
+    const currency = getAssetCurrency(symbol);
+    const exchangeRate = getExchangeRate(currency);
     const tx = {
         type,
         shares,
         price,
         date,
         totalAmount,
+        currency,
+        exchangeRate,
         timestamp: new Date().toISOString()
     };
     if (type === 'sell') {

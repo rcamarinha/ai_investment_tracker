@@ -2,14 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { formatCurrency, formatPercent, escapeHTML } from '../src/portfolio.js';
 
 describe('formatCurrency', () => {
-  it('formats a positive number', () => {
+  it('defaults to EUR symbol when no currency specified', () => {
     const result = formatCurrency(1234.56);
-    // toLocaleString is locale-dependent; just check structure
-    expect(result).toMatch(/^\$[\d,]+\.56$/);
+    expect(result).toMatch(/^\u20ac[\d,]+\.56$/);
   });
 
   it('formats zero', () => {
-    expect(formatCurrency(0)).toMatch(/^\$0\.00$/);
+    expect(formatCurrency(0)).toMatch(/^\u20ac0\.00$/);
   });
 
   it('formats a negative number', () => {
@@ -30,7 +29,19 @@ describe('formatCurrency', () => {
 
   it('handles very small numbers', () => {
     const result = formatCurrency(0.001);
-    expect(result).toMatch(/^\$0\.00$/);
+    expect(result).toMatch(/^\u20ac0\.00$/);
+  });
+
+  it('uses USD symbol when currency is USD', () => {
+    expect(formatCurrency(100, 'USD')).toMatch(/^\$100\.00$/);
+  });
+
+  it('uses GBP symbol when currency is GBP', () => {
+    expect(formatCurrency(100, 'GBP')).toMatch(/^\u00a3100\.00$/);
+  });
+
+  it('uses currency code as prefix for unknown currencies', () => {
+    expect(formatCurrency(50, 'BRL')).toMatch(/^BRL\s50\.00$/);
   });
 });
 

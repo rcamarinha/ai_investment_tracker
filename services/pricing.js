@@ -463,3 +463,69 @@ export async function fetchMarketPrices() {
         refreshBtn.textContent = originalText;
     }
 }
+
+// ── Exchange Rate Fetching ──────────────────────────────────────────────────
+
+/**
+ * Fetch current exchange rates relative to baseCurrency.
+ * Stores rates as: 1 unit of foreign currency = X units of baseCurrency.
+ * Uses free API (no key required).
+ */
+export async function fetchExchangeRates() {
+    const base = state.baseCurrency || 'EUR';
+    console.log(`=== FETCHING EXCHANGE RATES (base: ${base}) ===`);
+
+    try {
+        const url = `https://open.er-api.com/v6/latest/${base}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+
+        if (data.result === 'success' && data.rates) {
+            // We need: 1 foreign = X base. API gives: 1 base = X foreign.
+            // So invert: rate_to_base = 1 / rate_from_base
+            const rates = {};
+            for (const [currency, rateFromBase] of Object.entries(data.rates)) {
+                if (rateFromBase > 0) {
+                    rates[currency] = 1 / rateFromBase;
+                }
+            }
+            // Base currency rate is always 1
+            rates[base] = 1;
+            state.exchangeRates = rates;
+            state.exchangeRatesTimestamp = new Date().toISOString();
+            localStorage.setItem('exchangeRates', JSON.stringify({ rates, timestamp: state.exchangeRatesTimestamp }));
+            console.log(`\u2713 Loaded ${Object.keys(rates).length} exchange rates`);
+            return true;
+        }
+        throw new Error('Invalid response format');
+    } catch (err) {
+        console.warn('Primary forex API failed:', err.message);
+    }
+
+    // Fallback: try loading cached rates from localStorage
+    try {
+        const cached = localStorage.getItem('exchangeRates');
+        if (cached) {
+            const { rates, timestamp } = JSON.parse(cached);
+            state.exchangeRates = rates;
+            state.exchangeRatesTimestamp = timestamp;
+            console.log('\u2713 Loaded cached exchange rates from localStorage');
+            return true;
+        }
+    } catch (err) {
+        console.warn('Failed to load cached exchange rates:', err);
+    }
+
+    console.warn('\u2717 No exchange rates available');
+    return false;
+}
+
+/**
+ * Get the exchange rate for a specific currency to base currency.
+ * Returns 1 if same as base or rate unknown.
+ */
+export function getExchangeRate(fromCurrency) {
+    if (!fromCurrency || fromCurrency === state.baseCurrency) return 1;
+    return state.exchangeRates[fromCurrency] || 1;
+}

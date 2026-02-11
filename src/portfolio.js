@@ -8,8 +8,14 @@
 
 // ── Formatting ──────────────────────────────────────────────────────────────
 
-export function formatCurrency(num) {
-  return '$' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const CURRENCY_SYMBOLS = {
+  USD: '$', EUR: '\u20ac', GBP: '\u00a3', CHF: 'CHF ', SEK: 'kr ',
+  NOK: 'kr ', DKK: 'kr ', CAD: 'C$', HKD: 'HK$', JPY: '\u00a5'
+};
+
+export function formatCurrency(num, currency) {
+  const symbol = currency ? (CURRENCY_SYMBOLS[currency] || currency + ' ') : '\u20ac';
+  return symbol + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function formatPercent(num) {
