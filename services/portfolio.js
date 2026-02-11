@@ -89,16 +89,11 @@ export function renderPortfolio() {
     let html = `
         <div class="position-header-row">
             <div>Symbol</div>
-            <div>Asset Name / Platform</div>
-            <div>Type</div>
-            <div>Sector</div>
-            <div>Shares</div>
-            <div>Avg Price</div>
-            <div>Current Price</div>
-            <div>Invested</div>
-            <div>Market Value</div>
-            <div>Weight</div>
-            <div>Gain/Loss</div>
+            <div>Asset</div>
+            <div class="pos-hide-mobile">Type</div>
+            <div class="pos-right">Position</div>
+            <div class="pos-right">Market Value</div>
+            <div class="pos-right pos-hide-mobile">P&L</div>
             <div>Actions</div>
         </div>
     `;
@@ -146,50 +141,53 @@ export function renderPortfolio() {
 
         const dbAsset = state.assetDatabase[pos.symbol.toUpperCase()];
         const escapedSymbol = escapeHTML(pos.symbol).replace(/'/g, "\\'");
+        const sector = getSector(pos.symbol);
+        const typeColor = ({ 'ETF': '#8b5cf6', 'REIT': '#ec4899', 'Stock': '#3b82f6', 'Crypto': '#f59e0b' }[pos.type] || '#94a3b8');
+        const currency = dbAsset && dbAsset.currency && dbAsset.currency !== 'USD' ? dbAsset.currency : '';
 
         // Action buttons: active positions get buy/sell/delete; inactive get just delete
         const actionButtons = isActive
             ? `<button class="position-action-btn action-buy" title="Add shares" onclick="showEditPositionDialog('${escapedSymbol}','buy')">+</button>
                <button class="position-action-btn action-sell" title="Sell shares" onclick="showEditPositionDialog('${escapedSymbol}','sell')">-</button>
                <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`
-            : `<span style="font-size: 11px; color: #64748b;">Closed</span>
-               <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
+            : `<button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
 
         return `
         <div class="position${isActive ? '' : ' inactive'}">
-            <div class="position-symbol">
-                <div style="display: flex; align-items: center; gap: 5px;">
-                    <span style="color: ${statusColor}; font-size: 14px;" title="${escapeHTML(statusText)}">${statusFlag}</span>
+            <div class="pos-cell position-symbol">
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <span style="color: ${statusColor}; font-size: 12px;" title="${escapeHTML(statusText)}">${statusFlag}</span>
                     <span>${escapeHTML(pos.symbol)}</span>
                 </div>
-                ${timestampText ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">${escapeHTML(timestampText)}</div>` : ''}
+                <div class="pos-secondary">${timestampText ? escapeHTML(timestampText) : ''}</div>
             </div>
-            <div class="position-details" style="font-size: 12px; color: #94a3b8;" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}">
-                ${pos.name ? escapeHTML(pos.name.length > 30 ? pos.name.substring(0, 27) + '...' : pos.name) : escapeHTML(pos.symbol)}
-                ${pos.platform && pos.platform !== 'Unknown' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">\uD83D\uDCCD ${escapeHTML(pos.platform)}</div>` : ''}
+            <div class="pos-cell" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
+                <div style="font-size: 12px; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${pos.name ? escapeHTML(pos.name.length > 35 ? pos.name.substring(0, 32) + '...' : pos.name) : escapeHTML(pos.symbol)}
+                </div>
+                <div class="pos-secondary">${pos.platform && pos.platform !== 'Unknown' ? escapeHTML(pos.platform) : ''}${pos.platform && pos.platform !== 'Unknown' && sector !== 'Other' ? ' \u2022 ' : ''}${sector !== 'Other' ? escapeHTML(sector) : ''}</div>
             </div>
-            <div class="position-details" style="font-size: 11px; color: ${({ 'ETF': '#8b5cf6', 'REIT': '#ec4899', 'Stock': '#3b82f6', 'Crypto': '#f59e0b' }[pos.type] || '#94a3b8')}; font-weight: 600;">
-                ${escapeHTML(pos.type || 'Stock')}
+            <div class="pos-cell pos-hide-mobile">
+                <div style="font-size: 11px; color: ${typeColor}; font-weight: 600;">${escapeHTML(pos.type || 'Stock')}</div>
+                ${currency ? `<div class="pos-secondary">${escapeHTML(currency)}</div>` : ''}
             </div>
-            <div class="position-details" style="font-size: 11px; color: #94a3b8;" title="${escapeHTML(getSector(pos.symbol))}${dbAsset ? '\nExchange: ' + escapeHTML(dbAsset.stockExchange || '') + '\nCurrency: ' + escapeHTML(dbAsset.currency || '') : ''}">
-                ${escapeHTML(getSector(pos.symbol))}
-                ${dbAsset && dbAsset.currency && dbAsset.currency !== 'USD' ? `<div style="font-size: 9px; color: #64748b; margin-top: 2px;">${escapeHTML(dbAsset.currency)}</div>` : ''}
+            <div class="pos-cell pos-right">
+                <div>${isActive ? pos.shares + ' shares' : '\u2014'}</div>
+                <div class="pos-secondary">${isActive ? 'avg ' + formatCurrency(pos.avgPrice) : 'Closed'}</div>
             </div>
-            <div class="position-details">${pos.shares}</div>
-            <div class="position-details">${formatCurrency(pos.avgPrice)}</div>
-            <div class="position-details" style="color: ${hasPrice ? '#60a5fa' : '#f59e0b'};">
-                ${hasPrice ? formatCurrency(currentPrice) : (isActive ? '\u23F3 Pending' : '\u2014')}
+            <div class="pos-cell pos-right">
+                <div style="color: ${hasPrice ? '#60a5fa' : '#f59e0b'}; font-weight: bold;">
+                    ${isActive ? formatCurrency(marketValue) : '\u2014'}
+                </div>
+                <div class="pos-secondary">${isActive ? (hasPrice ? formatCurrency(currentPrice) + ' \u2022 ' + weight.toFixed(1) + '%' : '\u23F3 Pending') : ''}</div>
             </div>
-            <div class="position-details">${isActive ? formatCurrency(invested) : '\u2014'}</div>
-            <div class="position-value" style="color: ${isActive ? color : '#64748b'};">
-                ${isActive ? formatCurrency(marketValue) : '\u2014'}
-            </div>
-            <div class="position-details" style="font-weight: 600;">
-                ${isActive ? weight.toFixed(1) + '%' : '\u2014'}
-            </div>
-            <div style="color: ${isActive ? color : '#64748b'}; font-weight: bold;">
-                ${isActive ? `${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss)}
-                <span style="font-size: 11px; margin-left: 4px;">(${formatPercent(gainLossPct)})</span>` : '\u2014'}
+            <div class="pos-cell pos-right pos-hide-mobile">
+                <div style="color: ${isActive ? color : '#64748b'}; font-weight: bold;">
+                    ${isActive ? `${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss)}` : '\u2014'}
+                </div>
+                <div class="pos-secondary" style="color: ${isActive ? color : '#64748b'};">
+                    ${isActive ? formatPercent(gainLossPct) : ''}
+                </div>
             </div>
             <div class="position-actions">
                 ${actionButtons}
