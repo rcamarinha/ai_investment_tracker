@@ -414,7 +414,9 @@ export async function saveTransactionsToDB() {
                     total_amount: tx.totalAmount,
                     date: tx.date,
                     cost_basis: tx.costBasis || null,
-                    realized_gain_loss: tx.realizedGainLoss || null
+                    realized_gain_loss: tx.realizedGainLoss || null,
+                    currency: tx.currency || null,
+                    exchange_rate: tx.exchangeRate || null
                 });
             }
         }
@@ -455,6 +457,8 @@ export async function loadTransactionsFromDB() {
                     price: Number(row.price),
                     date: row.date,
                     totalAmount: Number(row.total_amount),
+                    currency: row.currency || null,
+                    exchangeRate: row.exchange_rate ? Number(row.exchange_rate) : null,
                     timestamp: row.created_at
                 };
                 if (row.type === 'sell') {

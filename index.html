@@ -291,7 +291,7 @@
                  deletePosition, toggleInactivePositions,
                  refreshSinglePrice,
                  loadTransactionsFromStorage } from './services/portfolio.js';
-        import { fetchMarketPrices } from './services/pricing.js';
+        import { fetchMarketPrices, fetchExchangeRates } from './services/pricing.js';
         import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
         import { initSupabase } from './services/storage.js';
         import { handleLogin, handleSignup, handleLogout } from './services/auth.js';
@@ -405,6 +405,11 @@
             state.supabaseAnonKey = storedSBKey;
         }
         initSupabase();
+
+        // Fetch exchange rates (non-blocking, re-renders when done)
+        fetchExchangeRates().then(() => {
+            renderPortfolio();
+        });
 
         // Render initial UI
         renderPortfolio();

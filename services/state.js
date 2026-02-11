@@ -25,6 +25,9 @@ const state = {
     assetDatabase: {},
     transactions: {},          // {SYMBOL: [{type, shares, price, date, totalAmount, costBasis?, realizedGainLoss?}]}
     showInactivePositions: false,
+    baseCurrency: 'EUR',       // User's home currency for portfolio totals
+    exchangeRates: {},         // {USD: 0.92, GBP: 1.17, ...} — rates TO baseCurrency (1 foreign = X base)
+    exchangeRatesTimestamp: null, // When rates were last fetched
 };
 
 export default state;
