@@ -924,6 +924,24 @@ export function submitPosition() {
     }
 }
 
+// -- Switch Base Currency --
+
+export async function setBaseCurrency(currency) {
+    state.baseCurrency = currency;
+    localStorage.setItem('baseCurrency', currency);
+    console.log(`=== BASE CURRENCY CHANGED TO ${currency} ===`);
+
+    // Update selector UI
+    document.querySelectorAll('.currency-option').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.currency === currency);
+    });
+
+    // Re-fetch exchange rates with new base, then re-render
+    const { fetchExchangeRates } = await import('./pricing.js');
+    await fetchExchangeRates();
+    renderPortfolio();
+}
+
 // -- Refresh Single Asset Price --
 
 export async function refreshSinglePrice(symbol) {

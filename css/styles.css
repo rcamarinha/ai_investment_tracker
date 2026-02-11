@@ -139,6 +139,33 @@ body {
 .btn-analyze { background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%); color: white; }
 
 
+/* ── Currency Selector ───────────────────────────────────────────────────── */
+
+.currency-selector {
+    display: inline-flex;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #475569;
+    margin-left: auto;
+}
+.currency-option {
+    background: #334155;
+    color: #94a3b8;
+    border: none;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.currency-option:not(:last-child) { border-right: 1px solid #475569; }
+.currency-option:hover { background: #475569; color: #cbd5e1; }
+.currency-option.active {
+    background: #2563eb;
+    color: #fff;
+}
+
+
 /* ── Portfolio Header ────────────────────────────────────────────────────── */
 
 .portfolio-header {

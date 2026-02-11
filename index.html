@@ -10,7 +10,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.2.1</span></h1>
+            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.3.0</span></h1>
             <p>Market analysis and personalized portfolio insights</p>
         </div>
 
@@ -47,12 +47,16 @@
 
             <div class="positions" id="positions"></div>
 
-            <div>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
                 <button class="btn btn-key" onclick="showApiKeyDialog()">🔑 API Keys</button>
                 <button class="btn btn-success" onclick="showAddPositionDialog()">➕ Add Position</button>
                 <button class="btn btn-primary" onclick="showImportDialog()">📋 Import from Spreadsheet</button>
                 <button class="btn btn-success" onclick="fetchMarketPrices()" id="refreshBtn">🔄 Update Prices</button>
                 <button class="btn btn-warning" onclick="savePortfolioSnapshot()">💾 Save Snapshot</button>
+                <div class="currency-selector" id="currencySelector">
+                    <button class="currency-option active" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
+                    <button class="currency-option" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
+                </div>
             </div>
 
             <div id="allocationSection" class="allocation-section" style="display: none;">
@@ -289,7 +293,7 @@
                  clearHistory, initPositionDialog, showAddPositionDialog,
                  showEditPositionDialog, closePositionDialog, submitPosition,
                  deletePosition, toggleInactivePositions,
-                 refreshSinglePrice,
+                 refreshSinglePrice, setBaseCurrency,
                  loadTransactionsFromStorage } from './services/portfolio.js';
         import { fetchMarketPrices, fetchExchangeRates } from './services/pricing.js';
         import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
@@ -321,6 +325,7 @@
         window.deletePosition         = deletePosition;
         window.toggleInactivePositions = toggleInactivePositions;
         window.refreshSinglePrice     = refreshSinglePrice;
+        window.setBaseCurrency        = setBaseCurrency;
 
         // ── Initialization ──────────────────────────────────────────────────
         console.log('=== APP INITIALIZING (modular) ===');
@@ -393,6 +398,15 @@
 
         // Load transactions from localStorage
         loadTransactionsFromStorage();
+
+        // Load base currency preference
+        const storedBaseCurrency = localStorage.getItem('baseCurrency');
+        if (storedBaseCurrency && ['EUR', 'USD'].includes(storedBaseCurrency)) {
+            state.baseCurrency = storedBaseCurrency;
+            document.querySelectorAll('.currency-option').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.currency === storedBaseCurrency);
+            });
+        }
 
         // Load sector cache
         loadSectorCache();
