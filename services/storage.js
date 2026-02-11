@@ -387,6 +387,107 @@ export async function loadPriceHistoryForAsset(ticker, limit = 30) {
     }
 }
 
+// ── Transaction DB Operations ──────────────────────────────────────────────
+
+export async function saveTransactionsToDB() {
+    if (!state.supabaseClient || !state.currentUser) return;
+
+    try {
+        // Delete existing transactions for this user
+        const { error: deleteError } = await state.supabaseClient
+            .from('transactions')
+            .delete()
+            .eq('user_id', state.currentUser.id);
+
+        if (deleteError) throw deleteError;
+
+        // Flatten state.transactions into rows
+        const rows = [];
+        for (const [symbol, txs] of Object.entries(state.transactions)) {
+            for (const tx of txs) {
+                rows.push({
+                    user_id: state.currentUser.id,
+                    symbol,
+                    type: tx.type,
+                    shares: tx.shares,
+                    price: tx.price,
+                    total_amount: tx.totalAmount,
+                    date: tx.date,
+                    cost_basis: tx.costBasis || null,
+                    realized_gain_loss: tx.realizedGainLoss || null
+                });
+            }
+        }
+
+        if (rows.length > 0) {
+            const { error: insertError } = await state.supabaseClient
+                .from('transactions')
+                .insert(rows);
+
+            if (insertError) throw insertError;
+        }
+
+        console.log('\u2713 Transactions saved to Supabase:', rows.length, 'records');
+    } catch (err) {
+        console.error('Failed to save transactions to DB:', err);
+    }
+}
+
+export async function loadTransactionsFromDB() {
+    if (!state.supabaseClient || !state.currentUser) return;
+
+    try {
+        const { data, error } = await state.supabaseClient
+            .from('transactions')
+            .select('*')
+            .order('date', { ascending: true });
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+            // Group by symbol into state.transactions format
+            const grouped = {};
+            data.forEach(row => {
+                if (!grouped[row.symbol]) grouped[row.symbol] = [];
+                const tx = {
+                    type: row.type,
+                    shares: Number(row.shares),
+                    price: Number(row.price),
+                    date: row.date,
+                    totalAmount: Number(row.total_amount),
+                    timestamp: row.created_at
+                };
+                if (row.type === 'sell') {
+                    if (row.cost_basis !== null) tx.costBasis = Number(row.cost_basis);
+                    if (row.realized_gain_loss !== null) tx.realizedGainLoss = Number(row.realized_gain_loss);
+                }
+                grouped[row.symbol].push(tx);
+            });
+            state.transactions = grouped;
+            console.log('\u2713 Loaded', data.length, 'transactions from DB for', Object.keys(grouped).length, 'symbols');
+        }
+    } catch (err) {
+        console.error('Failed to load transactions from DB:', err);
+    }
+}
+
+export async function deleteTransactionsForSymbol(symbol) {
+    if (!state.supabaseClient || !state.currentUser) return;
+
+    try {
+        const { error } = await state.supabaseClient
+            .from('transactions')
+            .delete()
+            .eq('user_id', state.currentUser.id)
+            .eq('symbol', symbol);
+
+        if (error) throw error;
+        console.log(`\u2713 Deleted transactions for ${symbol} from DB`);
+    } catch (err) {
+        console.error(`Failed to delete transactions for ${symbol}:`, err);
+    }
+}
+
 // ── Full Database Load ──────────────────────────────────────────────────────
 
 export async function loadFromDatabase() {
@@ -469,6 +570,13 @@ export async function loadFromDatabase() {
         if (enrichedCount > 0) {
             console.log(`\u2713 Enriched ${enrichedCount} positions with asset type from DB`);
             renderPortfolio();
+        }
+
+        // Load transactions
+        await loadTransactionsFromDB();
+        // Also persist to localStorage so offline works
+        if (Object.keys(state.transactions).length > 0) {
+            localStorage.setItem('positionTransactions', JSON.stringify(state.transactions));
         }
 
         // Load cached prices
