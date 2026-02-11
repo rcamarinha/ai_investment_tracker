@@ -45,10 +45,8 @@
                 </div>
             </div>
 
-            <div class="positions" id="positions"></div>
-
-            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
-                <button class="btn btn-key" onclick="showApiKeyDialog()">🔑 API Keys</button>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
+                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()">🔑 API Keys</button>
                 <button class="btn btn-success" onclick="showAddPositionDialog()">➕ Add Position</button>
                 <button class="btn btn-primary" onclick="showImportDialog()">📋 Import from Spreadsheet</button>
                 <button class="btn btn-success" onclick="fetchMarketPrices()" id="refreshBtn">🔄 Update Prices</button>
@@ -58,6 +56,8 @@
                     <button class="currency-option" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
                 </div>
             </div>
+
+            <div class="positions" id="positions"></div>
 
             <div id="allocationSection" class="allocation-section" style="display: none;">
                 <h3 style="color: #e2e8f0; margin-bottom: 15px;">📊 Portfolio Allocation</h3>
@@ -298,7 +298,7 @@
         import { fetchMarketPrices, fetchExchangeRates } from './services/pricing.js';
         import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
         import { initSupabase } from './services/storage.js';
-        import { handleLogin, handleSignup, handleLogout } from './services/auth.js';
+        import { handleLogin, handleSignup, handleLogout, checkUserRole, updateActionVisibility } from './services/auth.js';
 
         // ── Expose functions to onclick handlers ────────────────────────────
         window.showApiKeyDialog    = showApiKeyDialog;
@@ -428,6 +428,7 @@
         // Render initial UI
         renderPortfolio();
         renderPerspectiveTabs();
+        updateActionVisibility();
 
         // Initialize position dialog event listeners
         initPositionDialog();

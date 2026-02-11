@@ -8,7 +8,7 @@ import { getSector } from '../data/sectors.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
 import { renderPortfolio } from './portfolio.js';
 import { initSupabase } from './storage.js';
-import { updateAuthBar } from './auth.js';
+import { updateAuthBar, isAdmin } from './auth.js';
 
 // ── Perspective Selector ────────────────────────────────────────────────────
 
@@ -160,6 +160,10 @@ export function renderAllocationCharts() {
 // ── API Key Dialog ──────────────────────────────────────────────────────────
 
 export function showApiKeyDialog() {
+    if (!isAdmin()) {
+        alert('Only administrators can manage API keys.');
+        return;
+    }
     document.getElementById('finnhubKeyInput').value = state.finnhubKey || '';
     document.getElementById('fmpKeyInput').value = state.fmpKey || '';
     document.getElementById('alphaVantageKeyInput').value = state.alphaVantageKey || '';

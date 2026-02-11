@@ -92,3 +92,12 @@ INSERT INTO app_config (key, value) VALUES
     ('finnhubKey', 'd5u9b19r01qtjet2flngd5u9b19r01qtjet2flo0'),
     ('fmpKey', 'driWloMwwLkFzzcl4Gvgv1CXhXa7jy2l'),
     ('alphaVantageKey', 'ABF4HZSG0I50VGLP');
+
+-- ============================================
+-- Admin Emails: comma-separated list of admin users
+-- ============================================
+-- Users whose email is in this list get the 'admin' role and can manage API keys.
+-- All other authenticated users get the 'user' role (read-only for keys).
+-- If this row doesn't exist, all users default to admin (backward-compatible).
+INSERT INTO app_config (key, value) VALUES
+    ('adminEmails', 'admin@example.com');

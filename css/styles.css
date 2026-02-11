@@ -887,6 +887,27 @@ body {
 }
 
 
+/* ── Role Badges ────────────────────────────────────────────────────────── */
+
+.role-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+.role-admin {
+    background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%);
+    color: #fff;
+}
+.role-user {
+    background: #334155;
+    color: #94a3b8;
+}
+
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
