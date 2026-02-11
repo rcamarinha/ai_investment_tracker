@@ -289,6 +289,7 @@
                  clearHistory, initPositionDialog, showAddPositionDialog,
                  showEditPositionDialog, closePositionDialog, submitPosition,
                  deletePosition, toggleInactivePositions,
+                 refreshSinglePrice,
                  loadTransactionsFromStorage } from './services/portfolio.js';
         import { fetchMarketPrices } from './services/pricing.js';
         import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
@@ -319,6 +320,7 @@
         window.submitPosition         = submitPosition;
         window.deletePosition         = deletePosition;
         window.toggleInactivePositions = toggleInactivePositions;
+        window.refreshSinglePrice     = refreshSinglePrice;
 
         // ── Initialization ──────────────────────────────────────────────────
         console.log('=== APP INITIALIZING (modular) ===');
