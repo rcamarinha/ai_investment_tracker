@@ -253,8 +253,10 @@ export function closeImportDialog() {
     try {
         const dialog = document.getElementById('importDialog');
         const textarea = document.getElementById('importText');
+        const reportArea = document.getElementById('importReportArea');
         if (dialog) dialog.style.display = 'none';
         if (textarea) textarea.value = '';
+        if (reportArea) reportArea.innerHTML = '';
     } catch (err) {
         console.error('=== CLOSE IMPORT DIALOG ERROR ===', err);
     }
@@ -262,7 +264,217 @@ export function closeImportDialog() {
 
 // ── Import Positions ────────────────────────────────────────────────────────
 
-export function importPositions() {
+// Column-role aliases: map various header names to canonical role names.
+// Roles: 'symbol' (ticker/ISIN), 'shares' (quantity), 'price' (avg unit cost),
+//        'name' (asset name), 'platform', 'type' (asset type), 'amount' (total invested)
+const COLUMN_ALIASES = {
+    // Symbol / Ticker / ISIN
+    symbol:   ['ticker', 'symbol', 'isin', 'code', 'instrument', 'stock', 'asset code', 'security', 'id', 'wkn', 'sedol', 'cusip', 'valor'],
+    // Quantity / Shares
+    shares:   ['shares', 'quantity', 'qty', 'units', 'amount of shares', 'no. of shares', 'no of shares', 'number of shares', 'holding', 'holdings', 'position', 'volume', 'lots', 'antal'],
+    // Average price per unit
+    price:    ['avg price', 'avg unit price', 'average price', 'avg cost', 'average cost', 'unit cost', 'cost price', 'purchase price', 'buy price', 'price per share', 'price/share', 'entry price', 'cost basis per share', 'cost/share', 'avg unit cost', 'prix moyen', 'snitt'],
+    // Asset name
+    name:     ['asset', 'asset name', 'name', 'company', 'company name', 'description', 'security name', 'instrument name', 'stock name', 'product'],
+    // Platform / Broker
+    platform: ['platform', 'broker', 'account', 'exchange', 'market', 'provider', 'source', 'brokerage'],
+    // Asset type
+    type:     ['type', 'asset type', 'security type', 'instrument type', 'asset class', 'category', 'class'],
+    // Total invested amount (alternative to avg price)
+    amount:   ['invested', 'invested amount', 'total invested', 'total cost', 'cost basis', 'total amount', 'amount invested', 'book value', 'book cost', 'market value', 'value', 'total value'],
+};
+
+/** Check if a header cell text matches a given role. */
+function matchesRole(headerText, role) {
+    const lower = headerText.toLowerCase().trim();
+    const aliases = COLUMN_ALIASES[role];
+    if (!aliases) return false;
+    return aliases.some(alias => lower === alias || lower.replace(/[^a-z0-9 ]/g, '').trim() === alias);
+}
+
+/** ISIN pattern: 2 uppercase letters + 10 alphanumeric characters */
+function isISIN(value) {
+    return /^[A-Z]{2}[A-Z0-9]{10}$/.test(value);
+}
+
+/** Detect the separator used in the pasted data (tab, semicolon, comma, or pipe). */
+function detectSeparator(text) {
+    const firstLines = text.split('\n').slice(0, 5).join('\n');
+    const tabCount = (firstLines.match(/\t/g) || []).length;
+    const semiCount = (firstLines.match(/;/g) || []).length;
+    const pipeCount = (firstLines.match(/\|/g) || []).length;
+    // Comma is tricky (appears inside numbers). Only use if others are absent.
+    const commaCount = (firstLines.match(/,/g) || []).length;
+    const counts = { '\t': tabCount, ';': semiCount, '|': pipeCount, ',': commaCount };
+    // Prefer tab > semicolon > pipe > comma
+    const preferred = ['\t', ';', '|', ','];
+    for (const sep of preferred) {
+        if (counts[sep] >= 1) return sep;
+    }
+    return '\t'; // default
+}
+
+/** Parse a numeric string, handling European formats (1.234,56), currency symbols, etc. */
+function parseFlexibleNumber(raw) {
+    if (!raw) return NaN;
+    let s = raw.trim();
+    // Remove currency symbols and whitespace
+    s = s.replace(/[$\u20ac\u00a3\u00a5C\$HK\$kr\s]/gi, '').trim();
+    // Remove leading/trailing non-numeric chars (e.g. parentheses for negatives)
+    s = s.replace(/^\((.+)\)$/, '-$1');
+    // Detect European format: digits.digits,digits -> convert to US format
+    if (/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s)) {
+        s = s.replace(/\./g, '').replace(',', '.');
+    }
+    // Also handle: digits,digits without thousands separator (e.g. "12,50")
+    else if (/^\d+(,\d{1,2})$/.test(s)) {
+        s = s.replace(',', '.');
+    }
+    // Remove any remaining commas (US thousands separators)
+    s = s.replace(/,/g, '');
+    return parseFloat(s);
+}
+
+/**
+ * Try to auto-detect column roles from the header row.
+ * Returns a mapping: { symbol: colIndex, shares: colIndex, ... } or null if no header detected.
+ */
+function detectColumnMapping(headerParts) {
+    const mapping = {};
+    let matchCount = 0;
+
+    headerParts.forEach((cell, idx) => {
+        for (const role of Object.keys(COLUMN_ALIASES)) {
+            if (!mapping[role] && matchesRole(cell, role)) {
+                mapping[role] = idx;
+                matchCount++;
+                break;
+            }
+        }
+    });
+
+    // We need at least symbol+shares to consider this a valid header
+    if (mapping.symbol !== undefined && mapping.shares !== undefined) {
+        console.log('Header mapping detected:', mapping, `(${matchCount} roles matched)`);
+        return mapping;
+    }
+    return null;
+}
+
+/**
+ * Use Claude API to resolve ISINs (and unknown identifiers) to ticker symbols.
+ * Returns a map: { isin: { ticker, name, type, exchange } }
+ */
+async function resolveIdentifiersWithClaude(identifiers) {
+    const isClaudeAI = window.location.hostname.includes('claude.ai') ||
+                        window.location.hostname.includes('anthropic.com') ||
+                        (typeof window.storage !== 'undefined');
+    const hasKey = isClaudeAI || state.anthropicKey;
+
+    if (!hasKey || identifiers.length === 0) return {};
+
+    console.log(`=== RESOLVING ${identifiers.length} IDENTIFIERS VIA CLAUDE ===`);
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (!isClaudeAI && state.anthropicKey) {
+        headers['x-api-key'] = state.anthropicKey;
+        headers['anthropic-version'] = '2023-06-01';
+        headers['anthropic-dangerous-direct-browser-access'] = 'true';
+    }
+
+    try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 2000,
+                messages: [{
+                    role: 'user',
+                    content: `I have these financial instrument identifiers that I need resolved to their commonly-used stock ticker symbols. They may be ISINs, WKNs, SEDOLs, company names, or partial tickers.
+
+Identifiers:
+${identifiers.map((id, i) => `${i + 1}. ${id}`).join('\n')}
+
+For each one, return the most commonly used ticker symbol (preferring the primary listing exchange), the full company/fund name, the asset type (Stock, ETF, REIT, Crypto, Bond), and the exchange suffix if non-US (e.g. ".PA" for Paris, ".L" for London, ".DE" for Frankfurt).
+
+Respond ONLY with valid JSON, no markdown, no preamble. Format:
+{"results": [{"input": "...", "ticker": "...", "name": "...", "type": "Stock", "exchange": ""}]}`
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            console.warn('Claude API returned', response.status, 'for identifier resolution');
+            return {};
+        }
+
+        const data = await response.json();
+        const text = data.content.find(c => c.type === 'text')?.text || '';
+        const cleanText = text.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(cleanText);
+
+        const resultMap = {};
+        (parsed.results || []).forEach(r => {
+            if (r.input && r.ticker) {
+                resultMap[r.input.toUpperCase()] = {
+                    ticker: (r.ticker + (r.exchange || '')).toUpperCase(),
+                    name: r.name || r.ticker,
+                    type: r.type || 'Stock',
+                    exchange: r.exchange || ''
+                };
+            }
+        });
+        console.log('Claude resolved identifiers:', resultMap);
+        return resultMap;
+    } catch (err) {
+        console.warn('Failed to resolve identifiers via Claude:', err.message);
+        return {};
+    }
+}
+
+/** Show the import report inside the import dialog (replaces basic alert). */
+function showImportReport(container, report) {
+    const { newPositions, errors, warnings, needsPriceLookup } = report;
+    const successCount = newPositions.length;
+    const errCount = errors.length;
+    const warnCount = warnings.length;
+
+    let html = `<div class="import-report" style="background: #1e293b; border-radius: 10px; padding: 18px; margin-bottom: 15px; font-size: 13px; max-height: 350px; overflow-y: auto;">`;
+    html += `<div style="font-weight: 700; font-size: 15px; color: #e2e8f0; margin-bottom: 10px;">Import Report</div>`;
+    html += `<div style="color: #4ade80; margin-bottom: 4px;">\u2713 Successfully parsed: ${successCount} positions</div>`;
+    if (errCount > 0) html += `<div style="color: #f87171; margin-bottom: 4px;">\u2717 Failed: ${errCount} lines</div>`;
+    if (warnCount > 0) html += `<div style="color: #f59e0b; margin-bottom: 4px;">\u26A0 Warnings: ${warnCount}</div>`;
+
+    if (warnings.length > 0) {
+        html += `<div style="margin-top: 10px; padding: 10px; background: #422006; border-radius: 6px; border-left: 3px solid #f59e0b;">`;
+        warnings.forEach(w => { html += `<div style="color: #fbbf24; font-size: 12px; margin-bottom: 3px;">\u26A0 ${escapeHTML(w)}</div>`; });
+        html += `</div>`;
+    }
+
+    if (errors.length > 0) {
+        html += `<div style="margin-top: 10px; padding: 10px; background: #350a0a; border-radius: 6px; border-left: 3px solid #f87171;">`;
+        errors.slice(0, 15).forEach(e => { html += `<div style="color: #fca5a5; font-size: 12px; margin-bottom: 3px;">${escapeHTML(e)}</div>`; });
+        if (errors.length > 15) html += `<div style="color: #fca5a5; font-size: 11px;">... and ${errors.length - 15} more</div>`;
+        html += `</div>`;
+    }
+
+    if (successCount > 0) {
+        html += `<div style="margin-top: 12px;"><div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">Parsed positions (first 10)</div>`;
+        newPositions.slice(0, 10).forEach(p => {
+            const priceNote = p._needsCurrentPrice ? ' <span style="color:#f59e0b;">(price TBD)</span>' : '';
+            const isinNote = p._resolvedFrom ? ` <span style="color:#60a5fa;">(from ${escapeHTML(p._resolvedFrom)})</span>` : '';
+            html += `<div style="color: #cbd5e1; font-size: 12px; margin-bottom: 2px;">\u2022 <strong>${escapeHTML(p.symbol)}</strong>${isinNote}: ${p.shares} shares @ ${p.avgPrice > 0 ? '$' + p.avgPrice.toFixed(2) : 'pending'}${priceNote}</div>`;
+        });
+        if (successCount > 10) html += `<div style="color: #94a3b8; font-size: 11px;">... and ${successCount - 10} more</div>`;
+        html += `</div>`;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+export async function importPositions() {
     console.log('=== IMPORT POSITIONS STARTED ===');
 
     const text = document.getElementById('importText').value.trim();
@@ -271,117 +483,304 @@ export function importPositions() {
         return;
     }
 
+    const separator = detectSeparator(text);
+    console.log('Detected separator:', JSON.stringify(separator));
+
     const lines = text.split('\n');
     const newPositions = [];
     const errors = [];
-    let isFirstLine = true;
+    const warnings = [];
+    const needsPriceLookup = []; // symbols that need current price as avgPrice
+    const unknownIdentifiers = []; // ISINs or codes we need to resolve
 
     console.log('Total lines:', lines.length);
 
     try {
-        lines.forEach((line, idx) => {
-            const trimmed = line.trim();
-            if (!trimmed) return;
+        // ── Step 1: Parse header and detect column mapping ───────────────
+        let mapping = null;
+        let dataStartIdx = 0;
 
-            const parts = trimmed.split('\t');
-
-            if (isFirstLine && (trimmed.includes('Asset') || trimmed.includes('Ticker'))) {
-                isFirstLine = false;
-                return;
+        // Try the first non-empty line as a header
+        for (let i = 0; i < Math.min(3, lines.length); i++) {
+            const trimmed = lines[i].trim();
+            if (!trimmed) continue;
+            const headerParts = trimmed.split(separator).map(s => s.trim());
+            mapping = detectColumnMapping(headerParts);
+            if (mapping) {
+                dataStartIdx = i + 1;
+                console.log(`Header found on line ${i + 1}`);
+                break;
             }
-            isFirstLine = false;
-
-            if (parts.length >= 8) {
-                const assetName = parts[0] ? parts[0].trim() : '';
-                const symbol = parts[1] ? parts[1].trim().toUpperCase() : '';
-                const platform = parts[2] ? parts[2].trim() : 'Unknown';
-                const assetType = parts[3] ? parts[3].trim() : 'Other';
-                const sharesRaw = parts[4] ? parts[4].trim() : '';
-                const shares = parseFloat(sharesRaw);
-                const priceRaw = parts[7] ? parts[7].trim() : '';
-                const avgPrice = parseFloat(priceRaw.replace(/[$,]/g, ''));
-
-                if (symbol && !isNaN(shares) && !isNaN(avgPrice) && shares > 0 && avgPrice > 0) {
-                    newPositions.push({ name: assetName, symbol, platform, type: assetType, shares, avgPrice });
-                } else {
-                    const reason = [];
-                    if (!symbol) reason.push('missing ticker');
-                    if (isNaN(shares) || shares <= 0) reason.push(`invalid shares (${sharesRaw})`);
-                    if (isNaN(avgPrice) || avgPrice <= 0) reason.push(`invalid price (${priceRaw})`);
-                    errors.push(`Line ${idx + 1}: \u2717 Failed - ${reason.join(', ')}`);
-                }
-            } else if (parts.length >= 3) {
-                const symbol = parts[0].toUpperCase();
-                const shares = parseFloat(parts[1]);
-                const avgPrice = parseFloat(parts[2].replace(/[$,]/g, ''));
-
-                if (symbol && !isNaN(shares) && !isNaN(avgPrice)) {
-                    newPositions.push({ name: symbol, symbol, platform: 'Unknown', type: 'Stock', shares, avgPrice });
-                } else {
-                    errors.push(`Line ${idx + 1}: \u2717 Invalid simple format`);
-                }
-            } else {
-                errors.push(`Line ${idx + 1}: \u2717 Only ${parts.length} columns (need at least 8 for full format or 3 for simple)`);
-            }
-        });
-
-        let reportMsg = `\uD83D\uDCCA Import Report:\n\n`;
-        reportMsg += `\u2713 Successfully parsed: ${newPositions.length} positions\n`;
-        reportMsg += `\u2717 Failed/Skipped: ${errors.length} lines\n\n`;
-
-        if (errors.length > 0) {
-            reportMsg += `--- Errors ---\n`;
-            reportMsg += errors.slice(0, 10).join('\n');
-            if (errors.length > 10) reportMsg += `\n... and ${errors.length - 10} more errors`;
-            reportMsg += '\n\n';
         }
 
-        if (newPositions.length === 0) {
-            reportMsg += '\n\u274C No positions could be imported.\n\nTip: Make sure your data is tab-separated.';
-            alert(reportMsg);
+        // ── Step 2: Fallback — no header detected, use heuristic ─────────
+        if (!mapping) {
+            console.log('No header detected, using heuristic column detection...');
+            // Find the first non-empty data line to analyze structure
+            let sampleLine = null;
+            for (let i = 0; i < lines.length; i++) {
+                const t = lines[i].trim();
+                if (t) { sampleLine = t; break; }
+            }
+            if (sampleLine) {
+                const parts = sampleLine.split(separator).map(s => s.trim());
+                if (parts.length >= 8) {
+                    // Legacy 8+ column format: Name, Ticker, Platform, Type, Shares, ?, ?, AvgPrice
+                    mapping = { name: 0, symbol: 1, platform: 2, type: 3, shares: 4, price: 7 };
+                    // Check if first line looks like a header (contains common words)
+                    const firstLower = sampleLine.toLowerCase();
+                    if (/\b(asset|ticker|symbol|name|shares|price|type|platform)\b/.test(firstLower)) {
+                        dataStartIdx = 1;
+                    }
+                    console.log('Assuming legacy 8-column format');
+                } else if (parts.length >= 2) {
+                    // Minimal: try to identify which columns are symbol vs number
+                    const colTypes = parts.map(p => {
+                        if (!p) return 'empty';
+                        if (!isNaN(parseFlexibleNumber(p))) return 'number';
+                        if (isISIN(p.toUpperCase())) return 'isin';
+                        if (/^[A-Z0-9.]{1,12}$/i.test(p)) return 'ticker';
+                        return 'text';
+                    });
+                    console.log('Column types detected:', colTypes);
+
+                    // Find first ticker/isin column → symbol, first number → shares, second number → price
+                    const symbolIdx = colTypes.findIndex(t => t === 'ticker' || t === 'isin');
+                    const numberIdxs = colTypes.reduce((acc, t, i) => { if (t === 'number') acc.push(i); return acc; }, []);
+
+                    if (symbolIdx >= 0 && numberIdxs.length >= 1) {
+                        mapping = { symbol: symbolIdx, shares: numberIdxs[0] };
+                        if (numberIdxs.length >= 2) mapping.price = numberIdxs[1];
+                        // Try to find a text column before symbol as name
+                        const nameIdx = colTypes.findIndex((t, i) => (t === 'text') && i !== symbolIdx);
+                        if (nameIdx >= 0) mapping.name = nameIdx;
+                        console.log('Heuristic mapping:', mapping);
+                    }
+
+                    // Check if first line is actually a header by seeing if "number" columns contain text
+                    const firstLower = sampleLine.toLowerCase();
+                    if (/\b(asset|ticker|symbol|isin|name|shares|price|quantity|units)\b/.test(firstLower)) {
+                        // Re-detect with header logic
+                        const headerParts = sampleLine.split(separator).map(s => s.trim());
+                        mapping = detectColumnMapping(headerParts);
+                        dataStartIdx = 1;
+                    }
+                }
+            }
+        }
+
+        if (!mapping || mapping.symbol === undefined || mapping.shares === undefined) {
+            alert('\u274C Could not detect column layout.\n\nMake sure your data includes at least:\n\u2022 A Ticker/Symbol/ISIN column\n\u2022 A Quantity/Shares column\n\nAccepted separators: Tab, semicolon, comma, pipe.\nHeaders help but are not required.');
             return;
         }
 
-        reportMsg += `\nFirst 5 positions:\n`;
-        newPositions.slice(0, 5).forEach(p => {
-            reportMsg += `  \u2022 ${p.symbol}: ${p.shares} shares @ $${p.avgPrice}\n`;
-        });
-        if (newPositions.length > 5) reportMsg += `  ... and ${newPositions.length - 5} more\n`;
+        // ── Step 3: Parse data rows ──────────────────────────────────────
+        for (let idx = dataStartIdx; idx < lines.length; idx++) {
+            const trimmed = lines[idx].trim();
+            if (!trimmed) continue;
 
-        alert(reportMsg);
+            // Split the original line (not trimmed) to preserve empty leading/trailing fields
+            const parts = lines[idx].split(separator).map(s => s.trim());
+            const lineNum = idx + 1;
 
-        if (newPositions.length > 0) {
-            state.portfolio = [...newPositions];
+            // Extract values using the mapping
+            const rawSymbol = parts[mapping.symbol] ? parts[mapping.symbol].trim() : '';
+            const rawShares = parts[mapping.shares] ? parts[mapping.shares].trim() : '';
+            const rawPrice = mapping.price !== undefined && parts[mapping.price] ? parts[mapping.price].trim() : '';
+            const rawName = mapping.name !== undefined && parts[mapping.name] ? parts[mapping.name].trim() : '';
+            const rawPlatform = mapping.platform !== undefined && parts[mapping.platform] ? parts[mapping.platform].trim() : '';
+            const rawType = mapping.type !== undefined && parts[mapping.type] ? parts[mapping.type].trim() : '';
+            const rawAmount = mapping.amount !== undefined && parts[mapping.amount] ? parts[mapping.amount].trim() : '';
 
-            // Populate local assetDatabase
-            state.portfolio.forEach(p => {
-                const assetRecord = buildAssetRecord(p);
-                state.assetDatabase[assetRecord.ticker] = {
-                    name: assetRecord.name,
-                    ticker: assetRecord.ticker,
-                    stockExchange: assetRecord.stock_exchange,
-                    sector: assetRecord.sector,
-                    currency: assetRecord.currency,
-                    assetType: assetRecord.asset_type
-                };
-            });
+            // Validate mandatory: symbol
+            if (!rawSymbol) {
+                errors.push(`Line ${lineNum}: Missing ticker/symbol/ISIN`);
+                continue;
+            }
 
-            savePortfolioDB();
-            closeImportDialog();
+            // Validate mandatory: shares
+            const shares = parseFlexibleNumber(rawShares);
+            if (isNaN(shares) || shares <= 0) {
+                errors.push(`Line ${lineNum}: Invalid quantity "${rawShares}" for ${rawSymbol}`);
+                continue;
+            }
 
-            renderPortfolio();
-            setTimeout(() => renderPortfolio(), 50);
-            setTimeout(() => renderPortfolio(), 200);
+            // Determine symbol — could be ISIN, ticker, or unknown identifier
+            let symbol = rawSymbol.toUpperCase();
+            let resolvedFrom = null;
 
-            setTimeout(() => {
-                console.log('Auto-fetching market prices...');
-                fetchMarketPrices();
-            }, 500);
+            if (isISIN(symbol)) {
+                // Mark for Claude resolution later
+                unknownIdentifiers.push({ isin: symbol, lineNum, rawName });
+                resolvedFrom = symbol;
+            }
 
-            setTimeout(() => {
-                alert(`\u2713 Successfully imported ${newPositions.length} position(s)!\n\nFetching current market prices...`);
-            }, 300);
+            // Parse price: try direct price first, then try computing from total amount
+            let avgPrice = parseFlexibleNumber(rawPrice);
+            let needsCurrentPrice = false;
+
+            if ((isNaN(avgPrice) || avgPrice <= 0) && rawAmount) {
+                // Try to derive price from total amount / shares
+                const totalAmount = parseFlexibleNumber(rawAmount);
+                if (!isNaN(totalAmount) && totalAmount > 0) {
+                    avgPrice = totalAmount / shares;
+                    console.log(`Line ${lineNum}: Derived price ${avgPrice.toFixed(2)} from amount ${totalAmount} / ${shares} shares`);
+                }
+            }
+
+            if (isNaN(avgPrice) || avgPrice <= 0) {
+                // No price available — will use current market price
+                avgPrice = 0;
+                needsCurrentPrice = true;
+                warnings.push(`${rawSymbol}: No acquisition price found — will use current market price as cost basis`);
+            }
+
+            // Determine asset type
+            let assetType = rawType || 'Stock';
+            const typeMap = { 'etf': 'ETF', 'reit': 'REIT', 'crypto': 'Crypto', 'stock': 'Stock', 'bond': 'Bond', 'fund': 'ETF', 'equity': 'Stock', 'common stock': 'Stock', 'etp': 'ETF' };
+            assetType = typeMap[assetType.toLowerCase()] || assetType;
+
+            const position = {
+                name: rawName || symbol,
+                symbol,
+                platform: rawPlatform || 'Unknown',
+                type: assetType,
+                shares,
+                avgPrice,
+                _needsCurrentPrice: needsCurrentPrice,
+                _resolvedFrom: resolvedFrom
+            };
+
+            newPositions.push(position);
         }
+
+        // ── Step 4: Resolve ISINs and unknown identifiers via Claude ─────
+        const isinsToResolve = unknownIdentifiers.map(u => u.isin);
+        // Also check if any symbols look non-standard and might need resolution
+        newPositions.forEach(p => {
+            if (!p._resolvedFrom && isISIN(p.symbol)) {
+                if (!isinsToResolve.includes(p.symbol)) isinsToResolve.push(p.symbol);
+            }
+        });
+
+        if (isinsToResolve.length > 0) {
+            const statusEl = document.getElementById('importReportArea');
+            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ${isinsToResolve.length} ISIN(s) via Claude AI...</div>`;
+
+            const resolved = await resolveIdentifiersWithClaude(isinsToResolve);
+
+            // Apply resolutions
+            newPositions.forEach(p => {
+                const resolution = resolved[p.symbol];
+                if (resolution) {
+                    console.log(`Resolved ${p.symbol} → ${resolution.ticker} (${resolution.name})`);
+                    p._resolvedFrom = p.symbol;
+                    p.symbol = resolution.ticker;
+                    p.name = resolution.name || p.name;
+                    if (resolution.type) p.type = resolution.type;
+                }
+            });
+        }
+
+        // ── Step 5: Show report and let user confirm ─────────────────────
+        const reportArea = document.getElementById('importReportArea');
+        if (reportArea) {
+            showImportReport(reportArea, { newPositions, errors, warnings, needsPriceLookup });
+        }
+
+        if (newPositions.length === 0) {
+            let msg = '\u274C No positions could be imported.\n\n';
+            if (errors.length > 0) {
+                msg += 'Errors:\n' + errors.slice(0, 10).join('\n');
+            } else {
+                msg += 'Tip: Make sure your data contains at least a Ticker/ISIN column and a Quantity column.';
+            }
+            alert(msg);
+            return;
+        }
+
+        // Build confirmation message
+        let confirmMsg = `Import ${newPositions.length} position(s)?`;
+        if (warnings.length > 0) {
+            confirmMsg += `\n\n\u26A0 ${warnings.length} warning(s) — some positions have no acquisition price and will use current market price.`;
+        }
+        if (errors.length > 0) {
+            confirmMsg += `\n\n\u2717 ${errors.length} line(s) skipped due to errors.`;
+        }
+
+        if (!confirm(confirmMsg)) return;
+
+        // ── Step 6: Import confirmed — clean up temp fields and save ─────
+        const positionsNeedingPrice = [];
+        newPositions.forEach(p => {
+            if (p._needsCurrentPrice) positionsNeedingPrice.push(p.symbol);
+            delete p._needsCurrentPrice;
+            delete p._resolvedFrom;
+        });
+
+        state.portfolio = [...newPositions];
+
+        // Populate local assetDatabase
+        state.portfolio.forEach(p => {
+            const assetRecord = buildAssetRecord(p);
+            state.assetDatabase[assetRecord.ticker] = {
+                name: assetRecord.name,
+                ticker: assetRecord.ticker,
+                stockExchange: assetRecord.stock_exchange,
+                sector: assetRecord.sector,
+                currency: assetRecord.currency,
+                assetType: assetRecord.asset_type
+            };
+        });
+
+        savePortfolioDB();
+        closeImportDialog();
+
+        renderPortfolio();
+        setTimeout(() => renderPortfolio(), 50);
+        setTimeout(() => renderPortfolio(), 200);
+
+        // ── Step 7: Fetch prices, then fill in missing avgPrices ─────────
+        setTimeout(async () => {
+            console.log('Auto-fetching market prices...');
+            await fetchMarketPrices();
+
+            // For positions without acquisition price, use current market price
+            if (positionsNeedingPrice.length > 0) {
+                let filledCount = 0;
+                positionsNeedingPrice.forEach(symbol => {
+                    const price = state.marketPrices[symbol];
+                    if (price && price > 0) {
+                        const pos = state.portfolio.find(p => p.symbol === symbol);
+                        if (pos && pos.avgPrice <= 0) {
+                            pos.avgPrice = price;
+                            filledCount++;
+                            console.log(`Set ${symbol} avgPrice to current market price: ${price}`);
+                        }
+                    }
+                });
+
+                if (filledCount > 0) {
+                    savePortfolioDB();
+                    renderPortfolio();
+                    alert(`\u26A0 ${filledCount} position(s) had no acquisition price.\n\nTheir cost basis has been set to the current market price. You can adjust this by selling and re-adding the position with the correct price.`);
+                }
+
+                // Warn about positions where price couldn't be found
+                const unfilled = positionsNeedingPrice.filter(s => {
+                    const pos = state.portfolio.find(p => p.symbol === s);
+                    return pos && pos.avgPrice <= 0;
+                });
+                if (unfilled.length > 0) {
+                    alert(`\u274C Could not determine price for: ${unfilled.join(', ')}.\n\nPlease update these positions manually.`);
+                }
+            }
+        }, 500);
+
+        setTimeout(() => {
+            alert(`\u2713 Successfully imported ${newPositions.length} position(s)!\n\nFetching current market prices...`);
+        }, 300);
+
     } catch (err) {
         console.error('=== IMPORT ERROR ===', err);
         alert(`\u274C Import failed: ${err.message}\n\nCheck the browser console (F12) for details.`);
