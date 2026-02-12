@@ -934,15 +934,6 @@ body {
     background: #334155;
 }
 
-.btn-github {
-    background: #24292e;
-    color: #fff;
-    border-color: #444d56;
-}
-.btn-github:hover {
-    background: #2f363d;
-}
-
 .auth-bar input[type="email"],
 .auth-bar input[type="password"] {
     padding: 8px 12px;
