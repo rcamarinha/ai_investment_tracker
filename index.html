@@ -170,16 +170,22 @@
         <div id="importDialog" style="display: none;">
             <div class="card">
                 <h2 style="margin-bottom: 15px;">📋 Import Positions</h2>
-                <p style="color: #cbd5e1; margin-bottom: 15px;">
-                    Paste your positions directly from your spreadsheet - including all columns. The app will automatically extract the Ticker, Units, and Avg Unit Price.
+                <p style="color: #cbd5e1; margin-bottom: 12px;">
+                    Paste your positions from any spreadsheet or broker export. The app will auto-detect column layout.
                 </p>
-                <p style="color: #94a3b8; font-size: 13px; margin-bottom: 10px;">
-                    ✅ Just copy your entire spreadsheet rows and paste them here!<br>
-                    ✅ Works with Excel, Google Sheets, Numbers<br>
-                    ✅ Header row is automatically detected and skipped
-                </p>
-                <textarea id="importText" placeholder="Paste your spreadsheet data here (with or without headers)..." style="width: 100%; height: 200px; padding: 15px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 12px; margin-bottom: 15px;"></textarea>
-                <div>
+                <div style="color: #94a3b8; font-size: 12px; margin-bottom: 12px; line-height: 1.6;">
+                    <div style="margin-bottom: 6px;"><strong style="color: #60a5fa;">Required columns:</strong> Ticker/Symbol/ISIN + Quantity/Shares</div>
+                    <div style="margin-bottom: 6px;"><strong style="color: #60a5fa;">Optional columns:</strong> Avg Price, Name, Platform, Type, Total Amount</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px;">
+                        <span>✅ Tab, comma, semicolon, or pipe separated</span>
+                        <span>✅ ISINs resolved via AI</span>
+                        <span>✅ European number formats (1.234,56)</span>
+                        <span>✅ Missing price → uses current market price</span>
+                    </div>
+                </div>
+                <textarea id="importText" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10" style="width: 100%; height: 200px; padding: 15px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 12px; margin-bottom: 10px;"></textarea>
+                <div id="importReportArea"></div>
+                <div style="display: flex; gap: 10px;">
                     <button class="btn btn-accent" onclick="importPositions()">Import Positions</button>
                     <button class="btn btn-primary" onclick="closeImportDialog()">Cancel</button>
                 </div>

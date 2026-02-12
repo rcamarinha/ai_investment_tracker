@@ -32,75 +32,226 @@ export function escapeHTML(str) {
     .replace(/'/g, '&#039;');
 }
 
-// ── Import Parsing ──────────────────────────────────────────────────────────
+// ── Column Alias Definitions ────────────────────────────────────────────────
 
-/**
- * Parse tab-separated portfolio data into position objects.
- * Mirrors the parsing logic in importPositions() from index.html.
- *
- * @param {string} text - Raw tab-separated text from spreadsheet paste
- * @returns {{ positions: Array, errors: string[] }}
- */
-export function parsePortfolioText(text) {
-  if (!text || !text.trim()) {
-    return { positions: [], errors: ['No text provided'] };
+const COLUMN_ALIASES = {
+  symbol:   ['ticker', 'symbol', 'isin', 'code', 'instrument', 'stock', 'asset code', 'security', 'id', 'wkn', 'sedol', 'cusip', 'valor'],
+  shares:   ['shares', 'quantity', 'qty', 'units', 'amount of shares', 'no. of shares', 'no of shares', 'number of shares', 'holding', 'holdings', 'position', 'volume', 'lots', 'antal'],
+  price:    ['avg price', 'avg unit price', 'average price', 'avg cost', 'average cost', 'unit cost', 'cost price', 'purchase price', 'buy price', 'price per share', 'price/share', 'entry price', 'cost basis per share', 'cost/share', 'avg unit cost', 'prix moyen', 'snitt'],
+  name:     ['asset', 'asset name', 'name', 'company', 'company name', 'description', 'security name', 'instrument name', 'stock name', 'product'],
+  platform: ['platform', 'broker', 'account', 'exchange', 'market', 'provider', 'source', 'brokerage'],
+  type:     ['type', 'asset type', 'security type', 'instrument type', 'asset class', 'category', 'class'],
+  amount:   ['invested', 'invested amount', 'total invested', 'total cost', 'cost basis', 'total amount', 'amount invested', 'book value', 'book cost', 'market value', 'value', 'total value'],
+};
+
+// ── Flexible Parsing Helpers ────────────────────────────────────────────────
+
+export function matchesRole(headerText, role) {
+  const lower = headerText.toLowerCase().trim();
+  const aliases = COLUMN_ALIASES[role];
+  if (!aliases) return false;
+  return aliases.some(alias => lower === alias || lower.replace(/[^a-z0-9 ]/g, '').trim() === alias);
+}
+
+export function isISIN(value) {
+  return /^[A-Z]{2}[A-Z0-9]{10}$/.test(value);
+}
+
+export function detectSeparator(text) {
+  const firstLines = text.split('\n').slice(0, 5).join('\n');
+  const tabCount = (firstLines.match(/\t/g) || []).length;
+  const semiCount = (firstLines.match(/;/g) || []).length;
+  const pipeCount = (firstLines.match(/\|/g) || []).length;
+  const commaCount = (firstLines.match(/,/g) || []).length;
+  const counts = { '\t': tabCount, ';': semiCount, '|': pipeCount, ',': commaCount };
+  const preferred = ['\t', ';', '|', ','];
+  for (const sep of preferred) {
+    if (counts[sep] >= 1) return sep;
   }
+  return '\t';
+}
 
-  const lines = text.split('\n');
-  const positions = [];
-  const errors = [];
-  let isFirstLine = true;
+export function parseFlexibleNumber(raw) {
+  if (!raw) return NaN;
+  let s = raw.trim();
+  s = s.replace(/[$\u20ac\u00a3\u00a5C\$HK\$kr\s]/gi, '').trim();
+  s = s.replace(/^\((.+)\)$/, '-$1');
+  if (/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s)) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (/^\d+(,\d{1,2})$/.test(s)) {
+    s = s.replace(',', '.');
+  }
+  s = s.replace(/,/g, '');
+  return parseFloat(s);
+}
 
-  lines.forEach((line, idx) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
+export function detectColumnMapping(headerParts) {
+  const mapping = {};
+  let matchCount = 0;
 
-    const parts = trimmed.split('\t');
-
-    // Skip header row
-    if (isFirstLine && (trimmed.includes('Asset') || trimmed.includes('Ticker'))) {
-      isFirstLine = false;
-      return;
-    }
-    isFirstLine = false;
-
-    if (parts.length >= 8) {
-      // Full format: Asset, Ticker, Platform, Type, Units, TotalInvestment, ActiveInvestment, AvgUnitPrice
-      const assetName = parts[0] ? parts[0].trim() : '';
-      const symbol = parts[1] ? parts[1].trim().toUpperCase() : '';
-      const platform = parts[2] ? parts[2].trim() : 'Unknown';
-      const assetType = parts[3] ? parts[3].trim() : 'Other';
-      const sharesRaw = parts[4] ? parts[4].trim() : '';
-      const shares = parseFloat(sharesRaw);
-      const priceRaw = parts[7] ? parts[7].trim() : '';
-      const avgPrice = parseFloat(priceRaw.replace(/[$,]/g, ''));
-
-      if (symbol && !isNaN(shares) && !isNaN(avgPrice) && shares > 0 && avgPrice > 0) {
-        positions.push({ name: assetName, symbol, platform, type: assetType, shares, avgPrice });
-      } else {
-        const reason = [];
-        if (!symbol) reason.push('missing ticker');
-        if (isNaN(shares) || shares <= 0) reason.push(`invalid shares (${sharesRaw})`);
-        if (isNaN(avgPrice) || avgPrice <= 0) reason.push(`invalid price (${priceRaw})`);
-        errors.push(`Line ${idx + 1}: ${reason.join(', ')}`);
+  headerParts.forEach((cell, idx) => {
+    for (const role of Object.keys(COLUMN_ALIASES)) {
+      if (!mapping[role] && matchesRole(cell, role)) {
+        mapping[role] = idx;
+        matchCount++;
+        break;
       }
-    } else if (parts.length >= 3) {
-      // Simple format: Ticker, Shares, Price
-      const symbol = parts[0].toUpperCase();
-      const shares = parseFloat(parts[1]);
-      const avgPrice = parseFloat(parts[2].replace(/[$,]/g, ''));
-
-      if (symbol && !isNaN(shares) && !isNaN(avgPrice)) {
-        positions.push({ name: symbol, symbol, platform: 'Unknown', type: 'Stock', shares, avgPrice });
-      } else {
-        errors.push(`Line ${idx + 1}: Invalid simple format`);
-      }
-    } else {
-      errors.push(`Line ${idx + 1}: Only ${parts.length} columns (need at least 3)`);
     }
   });
 
-  return { positions, errors };
+  if (mapping.symbol !== undefined && mapping.shares !== undefined) {
+    return mapping;
+  }
+  return null;
+}
+
+// ── Import Parsing (Flexible) ──────────────────────────────────────────────
+
+/**
+ * Parse portfolio data from various formats into position objects.
+ * Supports flexible column detection, multiple separators, ISIN identifiers,
+ * European number formats, and optional price columns.
+ *
+ * @param {string} text - Raw text from spreadsheet paste
+ * @returns {{ positions: Array, errors: string[], warnings: string[] }}
+ */
+export function parsePortfolioText(text) {
+  if (!text || !text.trim()) {
+    return { positions: [], errors: ['No text provided'], warnings: [] };
+  }
+
+  const separator = detectSeparator(text);
+  const lines = text.split('\n');
+  const positions = [];
+  const errors = [];
+  const warnings = [];
+
+  // Step 1: Try to detect header row and column mapping
+  let mapping = null;
+  let dataStartIdx = 0;
+
+  for (let i = 0; i < Math.min(3, lines.length); i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    const headerParts = trimmed.split(separator).map(s => s.trim());
+    mapping = detectColumnMapping(headerParts);
+    if (mapping) {
+      dataStartIdx = i + 1;
+      break;
+    }
+  }
+
+  // Step 2: Fallback heuristic if no header detected
+  if (!mapping) {
+    let sampleLine = null;
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (t) { sampleLine = t; break; }
+    }
+    if (sampleLine) {
+      const parts = sampleLine.split(separator).map(s => s.trim());
+      if (parts.length >= 8) {
+        mapping = { name: 0, symbol: 1, platform: 2, type: 3, shares: 4, price: 7 };
+        const firstLower = sampleLine.toLowerCase();
+        if (/\b(asset|ticker|symbol|name|shares|price|type|platform)\b/.test(firstLower)) {
+          dataStartIdx = 1;
+        }
+      } else if (parts.length >= 2) {
+        const colTypes = parts.map(p => {
+          if (!p) return 'empty';
+          if (!isNaN(parseFlexibleNumber(p))) return 'number';
+          if (isISIN(p.toUpperCase())) return 'isin';
+          if (/^[A-Z0-9.]{1,12}$/i.test(p)) return 'ticker';
+          return 'text';
+        });
+
+        const symbolIdx = colTypes.findIndex(t => t === 'ticker' || t === 'isin');
+        const numberIdxs = colTypes.reduce((acc, t, i) => { if (t === 'number') acc.push(i); return acc; }, []);
+
+        if (symbolIdx >= 0 && numberIdxs.length >= 1) {
+          mapping = { symbol: symbolIdx, shares: numberIdxs[0] };
+          if (numberIdxs.length >= 2) mapping.price = numberIdxs[1];
+          const nameIdx = colTypes.findIndex((t, i) => (t === 'text') && i !== symbolIdx);
+          if (nameIdx >= 0) mapping.name = nameIdx;
+        }
+
+        const firstLower = sampleLine.toLowerCase();
+        if (/\b(asset|ticker|symbol|isin|name|shares|price|quantity|units)\b/.test(firstLower)) {
+          const headerParts = sampleLine.split(separator).map(s => s.trim());
+          mapping = detectColumnMapping(headerParts);
+          dataStartIdx = 1;
+        }
+      }
+    }
+  }
+
+  if (!mapping || mapping.symbol === undefined || mapping.shares === undefined) {
+    return { positions: [], errors: ['Could not detect column layout — need at least a Ticker/Symbol/ISIN column and a Quantity/Shares column'], warnings: [] };
+  }
+
+  // Step 3: Parse data rows
+  for (let idx = dataStartIdx; idx < lines.length; idx++) {
+    const trimmed = lines[idx].trim();
+    if (!trimmed) continue;
+
+    // Split the original line (not trimmed) to preserve empty leading/trailing fields
+    const parts = lines[idx].split(separator).map(s => s.trim());
+    const lineNum = idx + 1;
+
+    const rawSymbol = parts[mapping.symbol] ? parts[mapping.symbol].trim() : '';
+    const rawShares = parts[mapping.shares] ? parts[mapping.shares].trim() : '';
+    const rawPrice = mapping.price !== undefined && parts[mapping.price] ? parts[mapping.price].trim() : '';
+    const rawName = mapping.name !== undefined && parts[mapping.name] ? parts[mapping.name].trim() : '';
+    const rawPlatform = mapping.platform !== undefined && parts[mapping.platform] ? parts[mapping.platform].trim() : '';
+    const rawType = mapping.type !== undefined && parts[mapping.type] ? parts[mapping.type].trim() : '';
+    const rawAmount = mapping.amount !== undefined && parts[mapping.amount] ? parts[mapping.amount].trim() : '';
+
+    if (!rawSymbol) {
+      errors.push(`Line ${lineNum}: Missing ticker/symbol/ISIN`);
+      continue;
+    }
+
+    const shares = parseFlexibleNumber(rawShares);
+    if (isNaN(shares) || shares <= 0) {
+      errors.push(`Line ${lineNum}: Invalid quantity "${rawShares}" for ${rawSymbol}`);
+      continue;
+    }
+
+    let symbol = rawSymbol.toUpperCase();
+
+    let avgPrice = parseFlexibleNumber(rawPrice);
+    let needsCurrentPrice = false;
+
+    if ((isNaN(avgPrice) || avgPrice <= 0) && rawAmount) {
+      const totalAmount = parseFlexibleNumber(rawAmount);
+      if (!isNaN(totalAmount) && totalAmount > 0) {
+        avgPrice = totalAmount / shares;
+      }
+    }
+
+    if (isNaN(avgPrice) || avgPrice <= 0) {
+      avgPrice = 0;
+      needsCurrentPrice = true;
+      warnings.push(`${rawSymbol}: No acquisition price — will use current market price`);
+    }
+
+    let assetType = rawType || 'Stock';
+    const typeMap = { 'etf': 'ETF', 'reit': 'REIT', 'crypto': 'Crypto', 'stock': 'Stock', 'bond': 'Bond', 'fund': 'ETF', 'equity': 'Stock', 'common stock': 'Stock', 'etp': 'ETF' };
+    assetType = typeMap[assetType.toLowerCase()] || assetType;
+
+    positions.push({
+      name: rawName || symbol,
+      symbol,
+      platform: rawPlatform || 'Unknown',
+      type: assetType,
+      shares,
+      avgPrice,
+      ...(needsCurrentPrice ? { _needsCurrentPrice: true } : {}),
+      ...(isISIN(symbol) ? { _resolvedFrom: symbol } : {}),
+    });
+  }
+
+  return { positions, errors, warnings };
 }
 
 // ── Gain / Loss Calculations ────────────────────────────────────────────────
