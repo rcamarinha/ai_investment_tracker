@@ -277,6 +277,11 @@ export async function fetchAssetProfile(symbol) {
 // ── Batch Price Fetching ────────────────────────────────────────────────────
 
 export async function fetchMarketPrices() {
+    // Auth guard: require login when Supabase is configured
+    if (state.supabaseClient && !state.currentUser) {
+        alert('\u{1F512} Please log in to fetch market prices.\n\nSign in with your email or Google account above.');
+        return;
+    }
     if (state.portfolio.length === 0) {
         alert('\u274C No positions in portfolio. Import your portfolio first.');
         return;

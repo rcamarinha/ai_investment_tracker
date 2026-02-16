@@ -123,6 +123,23 @@ export async function clearHistoryFromDB() {
     }
 }
 
+export async function deleteSnapshotFromDB(timestamp) {
+    if (!state.supabaseClient || !state.currentUser) return;
+
+    try {
+        const { error } = await state.supabaseClient
+            .from('snapshots')
+            .delete()
+            .eq('user_id', state.currentUser.id)
+            .eq('timestamp', timestamp);
+
+        if (error) throw error;
+        console.log('\u2713 Snapshot deleted from Supabase:', timestamp);
+    } catch (err) {
+        console.error('Failed to delete snapshot from DB:', err);
+    }
+}
+
 // ── App Config ──────────────────────────────────────────────────────────────
 
 export async function loadAppConfig() {
@@ -159,17 +176,21 @@ export async function saveAssetsToDB(assets) {
 
     try {
         for (const asset of assets) {
+            const upsertData = {
+                ticker: asset.ticker,
+                name: asset.name,
+                stock_exchange: asset.stock_exchange,
+                sector: asset.sector,
+                currency: asset.currency,
+                asset_type: asset.asset_type,
+                updated_at: new Date().toISOString()
+            };
+            // Include ISIN if available (for ISIN→ticker lookup on future imports)
+            if (asset.isin) upsertData.isin = asset.isin;
+
             const { error } = await state.supabaseClient
                 .from('assets')
-                .upsert({
-                    ticker: asset.ticker,
-                    name: asset.name,
-                    stock_exchange: asset.stock_exchange,
-                    sector: asset.sector,
-                    currency: asset.currency,
-                    asset_type: asset.asset_type,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'ticker' });
+                .upsert(upsertData, { onConflict: 'ticker' });
 
             if (error) {
                 console.warn(`Failed to upsert asset ${asset.ticker}:`, error.message);
@@ -204,7 +225,8 @@ export async function loadAssetsFromDB() {
                     stockExchange: a.stock_exchange,
                     sector: a.sector,
                     currency: a.currency,
-                    assetType: a.asset_type
+                    assetType: a.asset_type,
+                    isin: a.isin || null
                 };
             });
             console.log('\u2713 Loaded', data.length, 'assets from DB into assetDatabase');

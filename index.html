@@ -296,7 +296,7 @@
                  showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './services/ui.js';
         import { renderPortfolio, showImportDialog, closeImportDialog,
                  importPositions, savePortfolioSnapshot, updateHistoryDisplay,
-                 clearHistory, initPositionDialog, showAddPositionDialog,
+                 clearHistory, deleteSnapshot, initPositionDialog, showAddPositionDialog,
                  showEditPositionDialog, closePositionDialog, submitPosition,
                  deletePosition, toggleInactivePositions,
                  refreshSinglePrice, setBaseCurrency,
@@ -325,6 +325,7 @@
         window.handleLogout        = handleLogout;
         window.handleGoogleLogin   = handleGoogleLogin;
         window.clearHistory        = clearHistory;
+        window.deleteSnapshot      = deleteSnapshot;
         window.showAddPositionDialog  = showAddPositionDialog;
         window.showEditPositionDialog = showEditPositionDialog;
         window.closePositionDialog    = closePositionDialog;
