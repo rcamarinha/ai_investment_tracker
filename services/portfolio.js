@@ -456,17 +456,19 @@ async function resolveIdentifiersWithClaude(identifiers) {
                 max_tokens: 2000,
                 messages: [{
                     role: 'user',
-                    content: `I have these financial instrument identifiers that I need resolved to their commonly-used stock ticker symbols. They may be ISINs, WKNs, SEDOLs, company names, or partial tickers.
+                    content: `I have these financial instrument identifiers that I need resolved to their commonly-used stock TICKER symbols. They may be ISINs, WKNs, SEDOLs, company names, or partial tickers.
+
+IMPORTANT: The "ticker" field MUST always be a real stock exchange ticker symbol (e.g. "AAPL", "MSFT", "SAN.PA", "VOW3.DE"). NEVER return an ISIN, WKN, SEDOL, or any other identifier code as the ticker. If you cannot determine the ticker, set "ticker" to null.
 
 Identifiers:
 ${needsResolution.map((id, i) => `${i + 1}. ${id}`).join('\n')}
 
 For each one, return the most commonly used ticker symbol (preferring the primary listing exchange), the full company/fund name, the asset type (Stock, ETF, REIT, Crypto, Bond), and the exchange suffix if non-US (e.g. ".PA" for Paris, ".L" for London, ".DE" for Frankfurt).
 
-If you are NOT confident about the resolution for an identifier, include "alternatives" with up to 3 possible matches so the user can pick.
+If you are NOT confident about the resolution for an identifier, include "alternatives" with up to 3 possible matches so the user can pick. Each alternative must also have a real ticker symbol, not an ISIN.
 
 Respond ONLY with valid JSON, no markdown, no preamble. Format:
-{"results": [{"input": "...", "ticker": "...", "name": "...", "type": "Stock", "exchange": "", "confident": true, "alternatives": []}]}`
+{"results": [{"input": "...", "ticker": "AAPL", "name": "...", "type": "Stock", "exchange": "", "confident": true, "alternatives": []}]}`
                 }]
             })
         });
@@ -486,6 +488,14 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
         (parsed.results || []).forEach(r => {
             if (r.input && r.ticker) {
                 const inputUpper = r.input.toUpperCase();
+                const rawTicker = r.ticker.toUpperCase();
+
+                // Reject if Claude returned an ISIN as the ticker
+                if (isISIN(rawTicker)) {
+                    console.warn(`Claude returned ISIN as ticker for ${r.input} — skipping`);
+                    return;
+                }
+
                 const resolvedTicker = (r.ticker + (r.exchange || '')).toUpperCase();
 
                 resultMap[inputUpper] = {
@@ -825,9 +835,15 @@ export async function importPositions() {
                 }
             }
 
-            // Warn about completely unresolved ISINs
+            // Warn about completely unresolved ISINs — exclude them from import
             if (unresolvedISINs.length > 0) {
-                warnings.push(`Could not resolve ${unresolvedISINs.length} ISIN(s): ${unresolvedISINs.join(', ')}. They will be imported as-is — update the ticker manually.`);
+                errors.push(`Could not resolve ${unresolvedISINs.length} ISIN(s) to tickers: ${unresolvedISINs.join(', ')}. These positions were skipped — please provide the correct ticker symbol.`);
+                // Remove unresolved ISIN positions from the import
+                for (let i = newPositions.length - 1; i >= 0; i--) {
+                    if (isISIN(newPositions[i].symbol)) {
+                        newPositions.splice(i, 1);
+                    }
+                }
             }
         }
 
@@ -868,6 +884,14 @@ export async function importPositions() {
         if (!confirm(confirmMsg)) return;
 
         // ── Step 6: Import confirmed — clean up temp fields and save ─────
+        // Final safety: reject any position still using an ISIN as symbol
+        for (let i = newPositions.length - 1; i >= 0; i--) {
+            if (isISIN(newPositions[i].symbol)) {
+                errors.push(`${newPositions[i].symbol}: ISIN not resolved to ticker — skipped.`);
+                newPositions.splice(i, 1);
+            }
+        }
+
         const positionsNeedingPrice = [];
         newPositions.forEach(p => {
             if (p._needsCurrentPrice) positionsNeedingPrice.push(p.symbol);
@@ -1403,6 +1427,7 @@ export function submitPosition() {
 
     // Validation
     if (!symbol) { alert('Please enter or select a ticker symbol.'); return; }
+    if (isISIN(symbol)) { alert('Please enter a ticker symbol, not an ISIN.\n\nUse the import function to resolve ISINs automatically.'); return; }
     if (isNaN(shares) || shares <= 0) { alert('Please enter a valid number of shares.'); return; }
     if (isNaN(totalAmount) || totalAmount <= 0) { alert('Please enter a valid amount.'); return; }
     if (!date) { alert('Please enter a date.'); return; }
