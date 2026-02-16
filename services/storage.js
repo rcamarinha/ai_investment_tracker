@@ -219,7 +219,6 @@ export async function loadAssetsFromDB() {
         if (data && data.length > 0) {
             data.forEach(a => {
                 state.assetDatabase[a.ticker.toUpperCase()] = {
-                    id: a.id,
                     name: a.name,
                     ticker: a.ticker,
                     stockExchange: a.stock_exchange,
@@ -300,13 +299,13 @@ export async function savePriceHistoryToDB(priceRecords) {
     try {
         const rows = [];
         for (const r of priceRecords) {
-            const asset = state.assetDatabase[r.ticker.toUpperCase()];
-            if (!asset || !asset.id) {
-                console.warn(`Skipping price for ${r.ticker}: no asset_id in DB`);
+            const ticker = r.ticker.toUpperCase();
+            if (!state.assetDatabase[ticker]) {
+                console.warn(`Skipping price for ${r.ticker}: not in asset DB`);
                 continue;
             }
             rows.push({
-                asset_id: asset.id,
+                ticker: ticker,
                 price: r.price,
                 currency: r.currency || 'USD',
                 source: r.source,
@@ -337,15 +336,14 @@ export async function loadLatestPricesFromDB() {
         const tickers = [...new Set(state.portfolio.map(p => p.symbol.toUpperCase()))];
         if (tickers.length === 0) return;
 
-        const assetIds = tickers
-            .map(t => state.assetDatabase[t]?.id)
-            .filter(Boolean);
-        if (assetIds.length === 0) return;
+        // Only query tickers that exist in the asset database
+        const knownTickers = tickers.filter(t => state.assetDatabase[t]);
+        if (knownTickers.length === 0) return;
 
         const { data, error } = await state.supabaseClient
             .from('price_history')
-            .select('asset_id, price, currency, source, fetched_at')
-            .in('asset_id', assetIds)
+            .select('ticker, price, currency, source, fetched_at')
+            .in('ticker', knownTickers)
             .order('fetched_at', { ascending: false });
 
         if (error) {
@@ -354,26 +352,18 @@ export async function loadLatestPricesFromDB() {
         }
 
         if (data && data.length > 0) {
-            const idToTicker = {};
-            for (const [ticker, info] of Object.entries(state.assetDatabase)) {
-                if (info.id) idToTicker[info.id] = ticker;
-            }
-
             const seen = new Set();
             let loadedCount = 0;
             data.forEach(row => {
-                if (!seen.has(row.asset_id)) {
-                    seen.add(row.asset_id);
-                    const ticker = idToTicker[row.asset_id];
-                    if (ticker) {
-                        state.marketPrices[ticker] = Number(row.price);
-                        state.priceMetadata[ticker] = {
-                            timestamp: row.fetched_at,
-                            source: row.source + ' (cached)',
-                            success: true
-                        };
-                        loadedCount++;
-                    }
+                if (!seen.has(row.ticker)) {
+                    seen.add(row.ticker);
+                    state.marketPrices[row.ticker] = Number(row.price);
+                    state.priceMetadata[row.ticker] = {
+                        timestamp: row.fetched_at,
+                        source: row.source + ' (cached)',
+                        success: true
+                    };
+                    loadedCount++;
                 }
             });
             console.log('\u2713 Loaded', loadedCount, 'cached prices from DB');
@@ -387,13 +377,13 @@ export async function loadPriceHistoryForAsset(ticker, limit = 30) {
     if (!state.supabaseClient) return [];
 
     try {
-        const asset = state.assetDatabase[ticker.toUpperCase()];
-        if (!asset || !asset.id) return [];
+        const upperTicker = ticker.toUpperCase();
+        if (!state.assetDatabase[upperTicker]) return [];
 
         const { data, error } = await state.supabaseClient
             .from('price_history')
             .select('price, currency, source, fetched_at')
-            .eq('asset_id', asset.id)
+            .eq('ticker', upperTicker)
             .order('fetched_at', { ascending: false })
             .limit(limit);
 
