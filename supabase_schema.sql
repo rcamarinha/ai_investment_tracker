@@ -94,6 +94,48 @@ INSERT INTO app_config (key, value) VALUES
     ('alphaVantageKey', 'ABF4HZSG0I50VGLP');
 
 -- ============================================
+-- Assets table: stores asset metadata (sector, exchange, ISIN mappings)
+-- ============================================
+
+CREATE TABLE assets (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    ticker TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL DEFAULT '',
+    stock_exchange TEXT DEFAULT '',
+    sector TEXT DEFAULT '',
+    currency TEXT DEFAULT '',
+    asset_type TEXT DEFAULT 'Stock',
+    isin TEXT DEFAULT NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can view assets"
+    ON assets FOR SELECT
+    USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can insert assets"
+    ON assets FOR INSERT
+    WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can update assets"
+    ON assets FOR UPDATE
+    USING (auth.role() = 'authenticated');
+
+-- Index for ISIN lookups
+CREATE INDEX idx_assets_isin ON assets(isin) WHERE isin IS NOT NULL;
+CREATE INDEX idx_assets_ticker ON assets(ticker);
+
+-- ============================================
+-- Migration: Add ISIN column to existing assets table
+-- ============================================
+-- Run this if the assets table already exists without the isin column:
+-- ALTER TABLE assets ADD COLUMN IF NOT EXISTS isin TEXT DEFAULT NULL;
+-- CREATE INDEX IF NOT EXISTS idx_assets_isin ON assets(isin) WHERE isin IS NOT NULL;
+
+-- ============================================
 -- Admin Emails: comma-separated list of admin users
 -- ============================================
 -- Users whose email is in this list get the 'admin' role and can manage API keys.

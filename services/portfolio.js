@@ -7,9 +7,21 @@ import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord } from './u
 import { getSector } from '../data/sectors.js';
 import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
-         saveTransactionsToDB, deleteTransactionsForSymbol } from './storage.js';
+         saveTransactionsToDB, deleteTransactionsForSymbol,
+         saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
 import { fetchMarketPrices, fetchStockPrice, getExchangeRate } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
+
+// ── Auth Guard ──────────────────────────────────────────────────────────────
+
+/** Check if user is logged in (when Supabase is configured). Returns true if OK to proceed. */
+function requireAuth(actionName) {
+    // If Supabase is not configured, allow everything (local-only mode)
+    if (!state.supabaseClient) return true;
+    if (state.currentUser) return true;
+    alert(`\u{1F512} Please log in to ${actionName}.\n\nSign in with your email or Google account above.`);
+    return false;
+}
 
 // ── Portfolio Rendering ─────────────────────────────────────────────────────
 
@@ -365,15 +377,68 @@ function detectColumnMapping(headerParts) {
  * Use Claude API to resolve ISINs (and unknown identifiers) to ticker symbols.
  * Returns a map: { isin: { ticker, name, type, exchange } }
  */
+/**
+ * Look up an ISIN/identifier in the local asset database.
+ * Assets are stored with an `isin` field when resolved, so future imports
+ * can skip the Claude API call.
+ */
+function lookupIdentifierInDB(identifier) {
+    const upper = identifier.toUpperCase();
+    // Check if any asset in the database has this ISIN stored
+    for (const [ticker, asset] of Object.entries(state.assetDatabase)) {
+        if (asset.isin === upper) {
+            return {
+                ticker: ticker,
+                name: asset.name || ticker,
+                type: asset.assetType || 'Stock',
+                exchange: ''
+            };
+        }
+    }
+    return null;
+}
+
+/**
+ * Resolve ISINs and unknown identifiers to ticker symbols.
+ * 1. First checks the local asset database (cached ISIN→ticker mappings)
+ * 2. Falls back to Claude API for unknown identifiers
+ * 3. Persists resolved mappings to the asset table for future imports
+ * Returns a map: { identifier: { ticker, name, type, exchange } }
+ */
 async function resolveIdentifiersWithClaude(identifiers) {
+    if (identifiers.length === 0) return {};
+
+    const resultMap = {};
+    const needsResolution = [];
+
+    // Step 1: Check local asset database first
+    identifiers.forEach(id => {
+        const cached = lookupIdentifierInDB(id);
+        if (cached) {
+            resultMap[id.toUpperCase()] = cached;
+            console.log(`ISIN ${id} → ${cached.ticker} (from asset database)`);
+        } else {
+            needsResolution.push(id);
+        }
+    });
+
+    if (needsResolution.length === 0) {
+        console.log(`All ${identifiers.length} identifiers resolved from asset database`);
+        return resultMap;
+    }
+
+    // Step 2: Call Claude API for unresolved identifiers
     const isClaudeAI = window.location.hostname.includes('claude.ai') ||
                         window.location.hostname.includes('anthropic.com') ||
                         (typeof window.storage !== 'undefined');
     const hasKey = isClaudeAI || state.anthropicKey;
 
-    if (!hasKey || identifiers.length === 0) return {};
+    if (!hasKey) {
+        console.warn('No Claude API key available for identifier resolution');
+        return resultMap;
+    }
 
-    console.log(`=== RESOLVING ${identifiers.length} IDENTIFIERS VIA CLAUDE ===`);
+    console.log(`=== RESOLVING ${needsResolution.length} IDENTIFIERS VIA CLAUDE ===`);
 
     const headers = { 'Content-Type': 'application/json' };
     if (!isClaudeAI && state.anthropicKey) {
@@ -394,19 +459,21 @@ async function resolveIdentifiersWithClaude(identifiers) {
                     content: `I have these financial instrument identifiers that I need resolved to their commonly-used stock ticker symbols. They may be ISINs, WKNs, SEDOLs, company names, or partial tickers.
 
 Identifiers:
-${identifiers.map((id, i) => `${i + 1}. ${id}`).join('\n')}
+${needsResolution.map((id, i) => `${i + 1}. ${id}`).join('\n')}
 
 For each one, return the most commonly used ticker symbol (preferring the primary listing exchange), the full company/fund name, the asset type (Stock, ETF, REIT, Crypto, Bond), and the exchange suffix if non-US (e.g. ".PA" for Paris, ".L" for London, ".DE" for Frankfurt).
 
+If you are NOT confident about the resolution for an identifier, include "alternatives" with up to 3 possible matches so the user can pick.
+
 Respond ONLY with valid JSON, no markdown, no preamble. Format:
-{"results": [{"input": "...", "ticker": "...", "name": "...", "type": "Stock", "exchange": ""}]}`
+{"results": [{"input": "...", "ticker": "...", "name": "...", "type": "Stock", "exchange": "", "confident": true, "alternatives": []}]}`
                 }]
             })
         });
 
         if (!response.ok) {
             console.warn('Claude API returned', response.status, 'for identifier resolution');
-            return {};
+            return resultMap;
         }
 
         const data = await response.json();
@@ -414,22 +481,61 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
         const cleanText = text.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(cleanText);
 
-        const resultMap = {};
+        // Step 3: Process results and persist ISIN→ticker mappings
+        const assetsToSave = [];
         (parsed.results || []).forEach(r => {
             if (r.input && r.ticker) {
-                resultMap[r.input.toUpperCase()] = {
-                    ticker: (r.ticker + (r.exchange || '')).toUpperCase(),
+                const inputUpper = r.input.toUpperCase();
+                const resolvedTicker = (r.ticker + (r.exchange || '')).toUpperCase();
+
+                resultMap[inputUpper] = {
+                    ticker: resolvedTicker,
                     name: r.name || r.ticker,
                     type: r.type || 'Stock',
-                    exchange: r.exchange || ''
+                    exchange: r.exchange || '',
+                    confident: r.confident !== false,
+                    alternatives: r.alternatives || []
                 };
+
+                // Save ISIN→ticker mapping to asset database for future lookups
+                if (isISIN(inputUpper)) {
+                    assetsToSave.push({
+                        ticker: resolvedTicker,
+                        name: r.name || r.ticker,
+                        asset_type: r.type || 'Stock',
+                        isin: inputUpper,
+                        stock_exchange: r.exchange || '',
+                        sector: 'Other',
+                        currency: 'USD'
+                    });
+
+                    // Also update local state
+                    state.assetDatabase[resolvedTicker] = {
+                        ...(state.assetDatabase[resolvedTicker] || {}),
+                        name: r.name || r.ticker,
+                        ticker: resolvedTicker,
+                        assetType: r.type || 'Stock',
+                        isin: inputUpper
+                    };
+                }
             }
         });
+
+        // Persist to DB
+        if (assetsToSave.length > 0) {
+            try {
+                await saveAssetsToDB(assetsToSave);
+                console.log(`Persisted ${assetsToSave.length} ISIN→ticker mappings to asset database`);
+            } catch (err) {
+                console.warn('Failed to persist ISIN mappings:', err.message);
+            }
+        }
+
         console.log('Claude resolved identifiers:', resultMap);
         return resultMap;
     } catch (err) {
         console.warn('Failed to resolve identifiers via Claude:', err.message);
-        return {};
+        return resultMap;
     }
 }
 
@@ -475,6 +581,7 @@ function showImportReport(container, report) {
 }
 
 export async function importPositions() {
+    if (!requireAuth('import positions')) return;
     console.log('=== IMPORT POSITIONS STARTED ===');
 
     const text = document.getElementById('importText').value.trim();
@@ -665,22 +772,72 @@ export async function importPositions() {
 
         if (isinsToResolve.length > 0) {
             const statusEl = document.getElementById('importReportArea');
-            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ${isinsToResolve.length} ISIN(s) via Claude AI...</div>`;
+            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ${isinsToResolve.length} ISIN(s)...</div>`;
 
             const resolved = await resolveIdentifiersWithClaude(isinsToResolve);
 
             // Apply resolutions
-            newPositions.forEach(p => {
+            const unresolvedISINs = [];
+            for (const p of newPositions) {
                 const resolution = resolved[p.symbol];
                 if (resolution) {
-                    console.log(`Resolved ${p.symbol} → ${resolution.ticker} (${resolution.name})`);
-                    p._resolvedFrom = p.symbol;
-                    p.symbol = resolution.ticker;
-                    p.name = resolution.name || p.name;
-                    if (resolution.type) p.type = resolution.type;
+                    // If resolution is not confident and has alternatives, let user pick
+                    if (!resolution.confident && resolution.alternatives && resolution.alternatives.length > 0) {
+                        const options = [
+                            `${resolution.ticker} — ${resolution.name} (best guess)`,
+                            ...resolution.alternatives.map(a => `${a.ticker || a} — ${a.name || ''}`)
+                        ];
+                        const choice = prompt(
+                            `\u{1F50D} Uncertain match for ${p.symbol}:\n\n` +
+                            options.map((o, i) => `${i + 1}. ${o}`).join('\n') +
+                            `\n\nEnter number (1-${options.length}) or type a ticker manually:`,
+                            '1'
+                        );
+
+                        if (choice && !isNaN(parseInt(choice))) {
+                            const idx = parseInt(choice) - 1;
+                            if (idx === 0) {
+                                // Use best guess
+                                p._resolvedFrom = p.symbol;
+                                p.symbol = resolution.ticker;
+                                p.name = resolution.name || p.name;
+                                if (resolution.type) p.type = resolution.type;
+                            } else if (idx > 0 && idx <= resolution.alternatives.length) {
+                                const alt = resolution.alternatives[idx - 1];
+                                p._resolvedFrom = p.symbol;
+                                p.symbol = (alt.ticker || alt).toUpperCase();
+                                p.name = alt.name || p.name;
+                            }
+                        } else if (choice && choice.trim()) {
+                            p._resolvedFrom = p.symbol;
+                            p.symbol = choice.trim().toUpperCase();
+                        }
+                    } else {
+                        console.log(`Resolved ${p.symbol} \u2192 ${resolution.ticker} (${resolution.name})`);
+                        p._resolvedFrom = p.symbol;
+                        p.symbol = resolution.ticker;
+                        p.name = resolution.name || p.name;
+                        if (resolution.type) p.type = resolution.type;
+                    }
+                } else if (isISIN(p.symbol)) {
+                    // Claude couldn't resolve at all
+                    unresolvedISINs.push(p.symbol);
                 }
-            });
+            }
+
+            // Warn about completely unresolved ISINs
+            if (unresolvedISINs.length > 0) {
+                warnings.push(`Could not resolve ${unresolvedISINs.length} ISIN(s): ${unresolvedISINs.join(', ')}. They will be imported as-is — update the ticker manually.`);
+            }
         }
+
+        // Check for duplicate tickers (same symbol already in portfolio)
+        const existingSymbols = new Set(state.portfolio.map(p => p.symbol));
+        newPositions.forEach(p => {
+            if (existingSymbols.has(p.symbol)) {
+                warnings.push(`${p.symbol}: Already in portfolio — will be replaced on import`);
+            }
+        });
 
         // ── Step 5: Show report and let user confirm ─────────────────────
         const reportArea = document.getElementById('importReportArea');
@@ -790,6 +947,7 @@ export async function importPositions() {
 // ── Snapshots ───────────────────────────────────────────────────────────────
 
 export async function savePortfolioSnapshot() {
+    if (!requireAuth('save snapshots')) return;
     if (state.portfolio.length === 0) {
         alert('\u274C No portfolio to save. Import your portfolio first.');
         return;
@@ -873,11 +1031,15 @@ export function updateHistoryDisplay() {
                     const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
                     const gainLossPct = snapshot.totalInvested > 0 ? (gainLoss / snapshot.totalInvested) * 100 : 0;
                     const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
+                    const ts = encodeURIComponent(snapshot.timestamp);
                     return `
                         <div style="background: #334155; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid ${color};">
-                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                                 <div style="font-size: 13px; color: #94a3b8;">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
-                                <div style="font-size: 12px; color: #94a3b8;">${snapshot.positionCount} positions \u2022 ${snapshot.pricesAvailable} with prices</div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <div style="font-size: 12px; color: #94a3b8;">${snapshot.positionCount} positions \u2022 ${snapshot.pricesAvailable} with prices</div>
+                                    <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" style="background: none; border: none; cursor: pointer; color: #94a3b8; font-size: 14px; padding: 2px 4px; border-radius: 4px; transition: color 0.2s;" onmouseover="this.style.color='#f87171'" onmouseout="this.style.color='#94a3b8'">\u{1F5D1}\u{FE0F}</button>
+                                </div>
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
                                 <div><div style="color: #94a3b8; font-size: 11px;">Invested</div><div style="color: #cbd5e1;">${formatCurrency(snapshot.totalInvested)}</div></div>
@@ -947,6 +1109,22 @@ function updateChart() {
 }
 
 // ── Clear History ───────────────────────────────────────────────────────────
+
+export async function deleteSnapshot(timestamp) {
+    const ts = decodeURIComponent(timestamp);
+    const idx = state.portfolioHistory.findIndex(s => s.timestamp === ts);
+    if (idx === -1) {
+        alert('Snapshot not found.');
+        return;
+    }
+    const date = new Date(ts);
+    if (!confirm(`Delete snapshot from ${date.toLocaleDateString()} ${date.toLocaleTimeString()}?`)) return;
+
+    state.portfolioHistory.splice(idx, 1);
+    localStorage.setItem('portfolioHistory', JSON.stringify(state.portfolioHistory));
+    await deleteSnapshotFromDB(ts);
+    updateHistoryDisplay();
+}
 
 export function clearHistory() {
     if (confirm('Are you sure you want to clear all portfolio history?\n\nThis cannot be undone.')) {
@@ -1097,6 +1275,7 @@ export function initPositionDialog() {
 // -- Show Add Position Dialog --
 
 export function showAddPositionDialog() {
+    if (!requireAuth('add positions')) return;
     const dialog = document.getElementById('positionDialog');
     if (!dialog) return;
 
@@ -1210,6 +1389,7 @@ export function closePositionDialog() {
 // -- Submit Position (handles add, buy, sell) --
 
 export function submitPosition() {
+    if (!requireAuth('manage positions')) return;
     const dialog = document.getElementById('positionDialog');
     const mode = dialog.dataset.mode;
 
@@ -1375,6 +1555,7 @@ export async function refreshSinglePrice(symbol) {
 // -- Delete Position --
 
 export function deletePosition(symbol) {
+    if (!requireAuth('delete positions')) return;
     const position = state.portfolio.find(p => p.symbol === symbol);
     if (!position) return;
 

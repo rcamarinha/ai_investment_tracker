@@ -9,6 +9,10 @@ import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
 // ── AI Analysis ─────────────────────────────────────────────────────────────
 
 export async function analyzeMarkets() {
+    if (state.supabaseClient && !state.currentUser) {
+        alert('\u{1F512} Please log in to use AI analysis.\n\nSign in with your email or Google account above.');
+        return;
+    }
     const analyzeBtn = document.getElementById('analyzeBtn');
     const analysisSection = document.getElementById('analysisSection');
 
@@ -165,6 +169,10 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
 // ── Trade Ideas ─────────────────────────────────────────────────────────────
 
 export async function getTradeIdeas() {
+    if (state.supabaseClient && !state.currentUser) {
+        alert('\u{1F512} Please log in to get trade ideas.\n\nSign in with your email or Google account above.');
+        return;
+    }
     const tradeIdeasBtn = document.getElementById('tradeIdeasBtn');
     const analysisSection = document.getElementById('analysisSection');
     const perspective = INVESTMENT_PERSPECTIVES[state.selectedPerspective];
