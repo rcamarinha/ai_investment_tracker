@@ -95,11 +95,11 @@ INSERT INTO app_config (key, value) VALUES
 
 -- ============================================
 -- Assets table: stores asset metadata (sector, exchange, ISIN mappings)
+-- Ticker is the primary key — no UUID needed.
 -- ============================================
 
 CREATE TABLE assets (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    ticker TEXT NOT NULL UNIQUE,
+    ticker TEXT PRIMARY KEY,
     name TEXT NOT NULL DEFAULT '',
     stock_exchange TEXT DEFAULT '',
     sector TEXT DEFAULT '',
@@ -126,14 +126,33 @@ CREATE POLICY "Authenticated users can update assets"
 
 -- Index for ISIN lookups
 CREATE INDEX idx_assets_isin ON assets(isin) WHERE isin IS NOT NULL;
-CREATE INDEX idx_assets_ticker ON assets(ticker);
 
 -- ============================================
--- Migration: Add ISIN column to existing assets table
+-- Price History table: stores fetched prices over time
+-- References assets by ticker directly.
 -- ============================================
--- Run this if the assets table already exists without the isin column:
--- ALTER TABLE assets ADD COLUMN IF NOT EXISTS isin TEXT DEFAULT NULL;
--- CREATE INDEX IF NOT EXISTS idx_assets_isin ON assets(isin) WHERE isin IS NOT NULL;
+
+CREATE TABLE price_history (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    ticker TEXT NOT NULL REFERENCES assets(ticker) ON DELETE CASCADE,
+    price NUMERIC NOT NULL,
+    currency TEXT DEFAULT 'USD',
+    source TEXT DEFAULT '',
+    fetched_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can view price history"
+    ON price_history FOR SELECT
+    USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can insert price history"
+    ON price_history FOR INSERT
+    WITH CHECK (auth.role() = 'authenticated');
+
+CREATE INDEX idx_price_history_ticker ON price_history(ticker);
+CREATE INDEX idx_price_history_ticker_fetched ON price_history(ticker, fetched_at DESC);
 
 -- ============================================
 -- Admin Emails: comma-separated list of admin users
