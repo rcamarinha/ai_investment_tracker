@@ -163,6 +163,6 @@ CREATE INDEX idx_price_history_ticker_fetched ON price_history(ticker, fetched_a
 -- ============================================
 -- Users whose email is in this list get the 'admin' role and can manage API keys.
 -- All other authenticated users get the 'user' role (read-only for keys).
--- If this row doesn't exist, all users default to admin (backward-compatible).
+-- If this row doesn't exist, all users default to regular 'user' (safe default).
 INSERT INTO app_config (key, value) VALUES
     ('adminEmails', 'admin@example.com');
