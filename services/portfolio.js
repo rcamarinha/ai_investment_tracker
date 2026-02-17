@@ -399,19 +399,171 @@ function lookupIdentifierInDB(identifier) {
 }
 
 /**
- * Resolve ISINs and unknown identifiers to ticker symbols.
- * 1. First checks the local asset database (cached ISIN→ticker mappings)
- * 2. Falls back to Claude API for unknown identifiers
- * 3. Persists resolved mappings to the asset table for future imports
+ * Look up an ISIN using Finnhub API endpoints.
+ * Tries /stock/profile2?isin= first, then /search?q= for additional candidates.
+ * Returns array of { ticker, name, type, exchange } candidates.
+ */
+async function lookupISINviaFinnhub(isin) {
+    if (!state.finnhubKey) return [];
+    const candidates = [];
+
+    // Method 1: Company Profile 2 (direct ISIN→ticker mapping)
+    try {
+        const url = `https://finnhub.io/api/v1/stock/profile2?isin=${encodeURIComponent(isin)}&token=${state.finnhubKey}`;
+        const response = await fetch(url);
+        if (response.ok) {
+            const data = await response.json();
+            if (data && data.ticker) {
+                candidates.push({
+                    ticker: data.ticker.toUpperCase(),
+                    name: data.name || data.ticker,
+                    type: 'Stock',
+                    exchange: data.exchange || ''
+                });
+            }
+        }
+    } catch (err) {
+        console.log(`Finnhub profile2 failed for ${isin}:`, err.message);
+    }
+
+    // Method 2: Symbol Search (may return additional exchange listings)
+    try {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(isin)}&token=${state.finnhubKey}`;
+        const response = await fetch(url);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.result && data.result.length > 0) {
+                const typeMap = { 'Common Stock': 'Stock', 'ETP': 'ETF', 'ADR': 'Stock', 'REIT': 'REIT' };
+                data.result.slice(0, 5).forEach(r => {
+                    const ticker = r.symbol.toUpperCase();
+                    if (!candidates.find(c => c.ticker === ticker)) {
+                        candidates.push({
+                            ticker,
+                            name: r.description || r.symbol,
+                            type: typeMap[r.type] || r.type || 'Stock',
+                            exchange: ''
+                        });
+                    }
+                });
+            }
+        }
+    } catch (err) {
+        console.log(`Finnhub search failed for ${isin}:`, err.message);
+    }
+
+    return candidates;
+}
+
+/**
+ * Look up an ISIN using FMP's dedicated ISIN search endpoint.
+ * Returns array of { ticker, name, type, exchange } candidates.
+ */
+async function lookupISINviaFMP(isin) {
+    if (!state.fmpKey) return [];
+    const candidates = [];
+
+    try {
+        const url = `https://financialmodelingprep.com/stable/search-isin?isin=${encodeURIComponent(isin)}&apikey=${state.fmpKey}`;
+        const response = await fetch(url);
+        if (response.ok) {
+            const data = await response.json();
+            if (data && Array.isArray(data) && data.length > 0) {
+                data.slice(0, 5).forEach(r => {
+                    if (r.symbol) {
+                        candidates.push({
+                            ticker: r.symbol.toUpperCase(),
+                            name: r.companyName || r.name || r.symbol,
+                            type: 'Stock',
+                            exchange: r.exchangeShortName || r.exchange || ''
+                        });
+                    }
+                });
+            }
+        }
+    } catch (err) {
+        console.log(`FMP ISIN search failed for ${isin}:`, err.message);
+    }
+
+    return candidates;
+}
+
+/**
+ * Given ticker candidates for an ISIN, pick the best one by preferring
+ * a ticker already present in the portfolio or asset database.
+ * This avoids duplicate positions when an ISIN maps to multiple exchange listings.
+ */
+function pickBestTicker(candidates) {
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    // Prefer a ticker already in the current portfolio
+    for (const c of candidates) {
+        if (state.portfolio.find(p => p.symbol.toUpperCase() === c.ticker)) {
+            console.log(`  → Preferred ${c.ticker} (already in portfolio)`);
+            return c;
+        }
+    }
+
+    // Prefer a ticker already in the asset database
+    for (const c of candidates) {
+        if (state.assetDatabase[c.ticker]) {
+            console.log(`  → Preferred ${c.ticker} (already in asset database)`);
+            return c;
+        }
+    }
+
+    // No match — return first candidate (primary listing)
+    return candidates[0];
+}
+
+/**
+ * Persist an ISIN→ticker mapping to the asset database and Supabase.
+ */
+async function persistISINMapping(isin, resolved) {
+    const ticker = resolved.ticker;
+    state.assetDatabase[ticker] = {
+        ...(state.assetDatabase[ticker] || {}),
+        name: resolved.name || ticker,
+        ticker,
+        assetType: resolved.type || 'Stock',
+        isin
+    };
+
+    try {
+        await saveAssetsToDB([{
+            ticker,
+            name: resolved.name || ticker,
+            asset_type: resolved.type || 'Stock',
+            isin,
+            stock_exchange: resolved.exchange || '',
+            sector: 'Other',
+            currency: 'USD'
+        }]);
+    } catch (err) {
+        console.warn(`Failed to persist ISIN mapping ${isin} → ${ticker}:`, err.message);
+    }
+}
+
+/**
+ * Resolve ISINs and unknown identifiers to ticker symbols using a 4-tier strategy:
+ *   Tier 0: Local asset database (cached ISIN→ticker mappings)
+ *   Tier 1: Finnhub API (profile2 + search — direct ISIN lookup)
+ *   Tier 2: FMP API (dedicated ISIN search endpoint)
+ *   Tier 3: Claude AI (last resort, with hallucination risk)
+ *
+ * After resolution, each ticker is checked against the existing portfolio and
+ * asset database to prefer known tickers and avoid duplicates.
+ *
  * Returns a map: { identifier: { ticker, name, type, exchange } }
  */
-async function resolveIdentifiersWithClaude(identifiers) {
+async function resolveIdentifiers(identifiers) {
     if (identifiers.length === 0) return {};
 
     const resultMap = {};
-    const needsResolution = [];
+    let needsResolution = [];
 
-    // Step 1: Check local asset database first
+    // ── Tier 0: Check local asset database ──────────────────────────────
     identifiers.forEach(id => {
         const cached = lookupIdentifierInDB(id);
         if (cached) {
@@ -427,7 +579,58 @@ async function resolveIdentifiersWithClaude(identifiers) {
         return resultMap;
     }
 
-    // Step 2: Call Claude API for unresolved identifiers
+    // Update progress UI
+    const statusEl = document.getElementById('importReportArea');
+
+    // ── Tier 1: Finnhub API ─────────────────────────────────────────────
+    let afterFinnhub = [];
+    if (state.finnhubKey) {
+        for (const id of needsResolution) {
+            if (!isISIN(id.toUpperCase())) { afterFinnhub.push(id); continue; }
+            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — Finnhub lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
+            const candidates = await lookupISINviaFinnhub(id);
+            if (candidates.length > 0) {
+                const best = pickBestTicker(candidates);
+                resultMap[id.toUpperCase()] = { ...best, confident: true };
+                console.log(`ISIN ${id} → ${best.ticker} (Finnhub, ${candidates.length} candidate(s))`);
+                await persistISINMapping(id.toUpperCase(), best);
+            } else {
+                afterFinnhub.push(id);
+            }
+            // Rate limit: profile2 + search = 2 calls per ISIN; 60/min → ~2s between ISINs
+            await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+    } else {
+        afterFinnhub = [...needsResolution];
+    }
+
+    // ── Tier 2: FMP API ─────────────────────────────────────────────────
+    let needsClaude = [];
+    if (state.fmpKey && afterFinnhub.length > 0) {
+        for (const id of afterFinnhub) {
+            if (!isISIN(id.toUpperCase())) { needsClaude.push(id); continue; }
+            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — FMP lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
+            const candidates = await lookupISINviaFMP(id);
+            if (candidates.length > 0) {
+                const best = pickBestTicker(candidates);
+                resultMap[id.toUpperCase()] = { ...best, confident: true };
+                console.log(`ISIN ${id} → ${best.ticker} (FMP, ${candidates.length} candidate(s))`);
+                await persistISINMapping(id.toUpperCase(), best);
+            } else {
+                needsClaude.push(id);
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    } else {
+        needsClaude = [...afterFinnhub];
+    }
+
+    if (needsClaude.length === 0) {
+        console.log(`All identifiers resolved via API lookups (Finnhub/FMP)`);
+        return resultMap;
+    }
+
+    // ── Tier 3: Claude API (last resort) ────────────────────────────────
     const isClaudeAI = window.location.hostname.includes('claude.ai') ||
                         window.location.hostname.includes('anthropic.com') ||
                         (typeof window.storage !== 'undefined');
@@ -438,7 +641,8 @@ async function resolveIdentifiersWithClaude(identifiers) {
         return resultMap;
     }
 
-    console.log(`=== RESOLVING ${needsResolution.length} IDENTIFIERS VIA CLAUDE ===`);
+    console.log(`=== RESOLVING ${needsClaude.length} IDENTIFIERS VIA CLAUDE (tier 3) ===`);
+    if (statusEl) statusEl.innerHTML = `<div style="color: #a78bfa; padding: 10px; font-size: 13px;">\u23F3 Resolving ${needsClaude.length} remaining ISIN(s) via Claude AI...</div>`;
 
     const headers = { 'Content-Type': 'application/json' };
     if (!isClaudeAI && state.anthropicKey) {
@@ -461,7 +665,7 @@ async function resolveIdentifiersWithClaude(identifiers) {
 IMPORTANT: The "ticker" field MUST always be a real stock exchange ticker symbol (e.g. "AAPL", "MSFT", "SAN.PA", "VOW3.DE"). NEVER return an ISIN, WKN, SEDOL, or any other identifier code as the ticker. If you cannot determine the ticker, set "ticker" to null.
 
 Identifiers:
-${needsResolution.map((id, i) => `${i + 1}. ${id}`).join('\n')}
+${needsClaude.map((id, i) => `${i + 1}. ${id}`).join('\n')}
 
 For each one, return the most commonly used ticker symbol (preferring the primary listing exchange), the full company/fund name, the asset type (Stock, ETF, REIT, Crypto, Bond), and the exchange suffix if non-US (e.g. ".PA" for Paris, ".L" for London, ".DE" for Frankfurt).
 
@@ -483,7 +687,6 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
         const cleanText = text.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(cleanText);
 
-        // Step 3: Process results and persist ISIN→ticker mappings
         const assetsToSave = [];
         (parsed.results || []).forEach(r => {
             if (r.input && r.ticker) {
@@ -497,6 +700,13 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
                 }
 
                 const resolvedTicker = (r.ticker + (r.exchange || '')).toUpperCase();
+
+                // Check if this ticker already exists in DB — log for visibility
+                const existingInPortfolio = state.portfolio.find(p => p.symbol.toUpperCase() === resolvedTicker);
+                const existingInDB = state.assetDatabase[resolvedTicker];
+                if (existingInPortfolio || existingInDB) {
+                    console.log(`Claude resolved ${inputUpper} → ${resolvedTicker} (matches existing DB entry)`);
+                }
 
                 resultMap[inputUpper] = {
                     ticker: resolvedTicker,
@@ -519,7 +729,6 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
                         currency: 'USD'
                     });
 
-                    // Also update local state
                     state.assetDatabase[resolvedTicker] = {
                         ...(state.assetDatabase[resolvedTicker] || {}),
                         name: r.name || r.ticker,
@@ -782,9 +991,9 @@ export async function importPositions() {
 
         if (isinsToResolve.length > 0) {
             const statusEl = document.getElementById('importReportArea');
-            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ${isinsToResolve.length} ISIN(s)...</div>`;
+            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ${isinsToResolve.length} ISIN(s) via API lookup...</div>`;
 
-            const resolved = await resolveIdentifiersWithClaude(isinsToResolve);
+            const resolved = await resolveIdentifiers(isinsToResolve);
 
             // Apply resolutions
             const unresolvedISINs = [];
