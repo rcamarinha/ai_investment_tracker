@@ -134,6 +134,7 @@ CREATE INDEX idx_assets_isin ON assets(isin) WHERE isin IS NOT NULL;
 
 CREATE TABLE price_history (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     ticker TEXT NOT NULL REFERENCES assets(ticker) ON DELETE CASCADE,
     price NUMERIC NOT NULL,
     currency TEXT DEFAULT 'USD',
@@ -143,14 +144,17 @@ CREATE TABLE price_history (
 
 ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
 
+-- All authenticated users can read price history (shared price cache)
 CREATE POLICY "Authenticated users can view price history"
     ON price_history FOR SELECT
     USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Authenticated users can insert price history"
+-- Users can only insert price history rows tagged with their own user_id
+CREATE POLICY "Users can insert own price history"
     ON price_history FOR INSERT
-    WITH CHECK (auth.role() = 'authenticated');
+    WITH CHECK (auth.uid() = user_id);
 
+CREATE INDEX idx_price_history_user_id ON price_history(user_id);
 CREATE INDEX idx_price_history_ticker ON price_history(ticker);
 CREATE INDEX idx_price_history_ticker_fetched ON price_history(ticker, fetched_at DESC);
 

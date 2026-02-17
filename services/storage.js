@@ -308,7 +308,7 @@ export async function enrichUnknownAssets() {
 // ── Price History DB ────────────────────────────────────────────────────────
 
 export async function savePriceHistoryToDB(priceRecords) {
-    if (!state.supabaseClient) return;
+    if (!state.supabaseClient || !state.currentUser) return;
 
     try {
         const rows = [];
@@ -319,6 +319,7 @@ export async function savePriceHistoryToDB(priceRecords) {
                 continue;
             }
             rows.push({
+                user_id: state.currentUser.id,
                 ticker: ticker,
                 price: r.price,
                 currency: r.currency || 'USD',
