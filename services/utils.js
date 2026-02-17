@@ -111,3 +111,46 @@ export function toBaseCurrency(amount, fromCurrency) {
 export const isArtifact = typeof window !== 'undefined' &&
     window.location.hostname.includes('claude.ai') &&
     window.location.pathname.includes('artifacts');
+
+// ── Canonical Asset Types ───────────────────────────────────────────────────
+
+/** The canonical set of asset types used throughout the application. */
+export const CANONICAL_ASSET_TYPES = ['Stock', 'ETF', 'Crypto', 'REIT', 'Bond', 'Commodity', 'Cash', 'Other'];
+
+/** Map of known aliases (lowercase) → canonical type. */
+const ASSET_TYPE_ALIASES = {
+    // Stock variants
+    'stock': 'Stock', 'stocks': 'Stock', 'equity': 'Stock', 'equities': 'Stock',
+    'common stock': 'Stock', 'ordinary share': 'Stock', 'ordinary shares': 'Stock',
+    'share': 'Stock', 'shares': 'Stock', 'adr': 'Stock', 'gdr': 'Stock',
+    'preferred stock': 'Stock', 'preference share': 'Stock',
+    // ETF variants
+    'etf': 'ETF', 'etp': 'ETF', 'fund': 'ETF', 'index fund': 'ETF',
+    'exchange traded fund': 'ETF', 'mutual fund': 'ETF', 'tracker': 'ETF',
+    'ucits': 'ETF', 'sicav': 'ETF', 'oeic': 'ETF', 'unit trust': 'ETF',
+    // Crypto variants
+    'crypto': 'Crypto', 'cryptocurrency': 'Crypto', 'digital asset': 'Crypto',
+    'token': 'Crypto', 'coin': 'Crypto',
+    // REIT variants
+    'reit': 'REIT', 'real estate': 'REIT', 'real estate investment trust': 'REIT',
+    // Bond variants
+    'bond': 'Bond', 'bonds': 'Bond', 'fixed income': 'Bond', 'debt': 'Bond',
+    'note': 'Bond', 'treasury': 'Bond', 'government bond': 'Bond',
+    'corporate bond': 'Bond', 'bond etf': 'Bond',
+    // Commodity variants
+    'commodity': 'Commodity', 'commodities': 'Commodity',
+    // Cash variants
+    'cash': 'Cash', 'money market': 'Cash',
+    // Other
+    'other': 'Other',
+};
+
+/**
+ * Normalize an asset type string to one of the canonical types.
+ * Returns the canonical type, or 'Other' if unrecognized.
+ */
+export function normalizeAssetType(rawType) {
+    if (!rawType) return 'Stock';
+    const lower = rawType.trim().toLowerCase();
+    return ASSET_TYPE_ALIASES[lower] || (CANONICAL_ASSET_TYPES.includes(rawType.trim()) ? rawType.trim() : 'Other');
+}

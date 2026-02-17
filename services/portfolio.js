@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord } from './utils.js';
+import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord, normalizeAssetType } from './utils.js';
 import { getSector } from '../data/sectors.js';
 import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
@@ -269,6 +269,9 @@ export function closeImportDialog() {
         if (dialog) dialog.style.display = 'none';
         if (textarea) textarea.value = '';
         if (reportArea) reportArea.innerHTML = '';
+        // Reset import mode to default
+        const addRadio = document.querySelector('input[name="importMode"][value="add"]');
+        if (addRadio) addRadio.checked = true;
     } catch (err) {
         console.error('=== CLOSE IMPORT DIALOG ERROR ===', err);
     }
@@ -434,14 +437,13 @@ async function lookupISINviaFinnhub(isin) {
         if (response.ok) {
             const data = await response.json();
             if (data.result && data.result.length > 0) {
-                const typeMap = { 'Common Stock': 'Stock', 'ETP': 'ETF', 'ADR': 'Stock', 'REIT': 'REIT' };
                 data.result.slice(0, 5).forEach(r => {
                     const ticker = r.symbol.toUpperCase();
                     if (!candidates.find(c => c.ticker === ticker)) {
                         candidates.push({
                             ticker,
                             name: r.description || r.symbol,
-                            type: typeMap[r.type] || r.type || 'Stock',
+                            type: normalizeAssetType(r.type),
                             exchange: ''
                         });
                     }
@@ -961,10 +963,8 @@ export async function importPositions() {
                 warnings.push(`${rawSymbol}: No acquisition price found — will use current market price as cost basis`);
             }
 
-            // Determine asset type
-            let assetType = rawType || 'Stock';
-            const typeMap = { 'etf': 'ETF', 'reit': 'REIT', 'crypto': 'Crypto', 'stock': 'Stock', 'bond': 'Bond', 'fund': 'ETF', 'equity': 'Stock', 'common stock': 'Stock', 'etp': 'ETF' };
-            assetType = typeMap[assetType.toLowerCase()] || assetType;
+            // Determine asset type (normalize to canonical types)
+            const assetType = normalizeAssetType(rawType);
 
             const position = {
                 name: rawName || symbol,
@@ -1056,13 +1056,19 @@ export async function importPositions() {
             }
         }
 
+        // Detect import mode from radio buttons
+        const importModeEl = document.querySelector('input[name="importMode"]:checked');
+        const importMode = importModeEl ? importModeEl.value : 'add';
+
         // Check for duplicate tickers (same symbol already in portfolio)
         const existingSymbols = new Set(state.portfolio.map(p => p.symbol));
-        newPositions.forEach(p => {
-            if (existingSymbols.has(p.symbol)) {
-                warnings.push(`${p.symbol}: Already in portfolio — will be replaced on import`);
-            }
-        });
+        if (importMode === 'add') {
+            newPositions.forEach(p => {
+                if (existingSymbols.has(p.symbol)) {
+                    warnings.push(`${p.symbol}: Already in portfolio — will be updated with imported data`);
+                }
+            });
+        }
 
         // ── Step 5: Show report and let user confirm ─────────────────────
         const reportArea = document.getElementById('importReportArea');
@@ -1082,7 +1088,13 @@ export async function importPositions() {
         }
 
         // Build confirmation message
-        let confirmMsg = `Import ${newPositions.length} position(s)?`;
+        const modeLabel = importMode === 'add' ? 'Add' : 'Replace';
+        let confirmMsg = `${modeLabel} ${newPositions.length} position(s)?`;
+        if (importMode === 'add' && state.portfolio.length > 0) {
+            confirmMsg += `\n\nExisting portfolio has ${state.portfolio.length} position(s). New positions will be merged in (duplicates updated).`;
+        } else if (importMode === 'replace' && state.portfolio.length > 0) {
+            confirmMsg += `\n\n\u26A0 This will replace your entire portfolio (${state.portfolio.length} existing positions).`;
+        }
         if (warnings.length > 0) {
             confirmMsg += `\n\n\u26A0 ${warnings.length} warning(s) — some positions have no acquisition price and will use current market price.`;
         }
@@ -1108,10 +1120,27 @@ export async function importPositions() {
             delete p._resolvedFrom;
         });
 
-        state.portfolio = [...newPositions];
+        if (importMode === 'add' && state.portfolio.length > 0) {
+            // Merge: update existing positions by symbol, add new ones
+            const importedSymbols = new Set();
+            newPositions.forEach(np => {
+                importedSymbols.add(np.symbol);
+                const existingIdx = state.portfolio.findIndex(p => p.symbol === np.symbol);
+                if (existingIdx >= 0) {
+                    // Update existing position with imported data
+                    state.portfolio[existingIdx] = np;
+                } else {
+                    // Add new position
+                    state.portfolio.push(np);
+                }
+            });
+        } else {
+            // Replace: overwrite entire portfolio
+            state.portfolio = [...newPositions];
+        }
 
         // Populate local assetDatabase
-        state.portfolio.forEach(p => {
+        newPositions.forEach(p => {
             const assetRecord = buildAssetRecord(p);
             state.assetDatabase[assetRecord.ticker] = {
                 name: assetRecord.name,
@@ -1387,7 +1416,7 @@ async function searchAssets(query) {
                     return data.result.slice(0, 8).map(r => ({
                         symbol: r.symbol,
                         name: r.description || r.symbol,
-                        type: r.type === 'Common Stock' ? 'Stock' : r.type === 'ETP' ? 'ETF' : r.type || 'Stock'
+                        type: normalizeAssetType(r.type)
                     }));
                 }
             }
@@ -1442,11 +1471,7 @@ function selectSearchResult(symbol, name, type) {
     document.getElementById('positionSymbol').value = symbol;
     document.getElementById('positionName').value = name;
 
-    const typeMap = {
-        'Common Stock': 'Stock', 'ETP': 'ETF', 'ADR': 'Stock',
-        'REIT': 'REIT', 'Crypto': 'Crypto', 'ETF': 'ETF'
-    };
-    document.getElementById('positionType').value = typeMap[type] || type || 'Stock';
+    document.getElementById('positionType').value = normalizeAssetType(type);
     document.getElementById('searchResults').innerHTML = '';
     document.getElementById('positionShares').focus();
 }
