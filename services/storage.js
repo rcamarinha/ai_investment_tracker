@@ -23,6 +23,18 @@ export function initSupabase() {
             updateAuthBar();
             if (event === 'SIGNED_IN') {
                 loadFromDatabase();
+            } else if (event === 'SIGNED_OUT') {
+                // Clear user-specific state (handles session expiry, sign-out from other tabs)
+                state.portfolio = [];
+                state.portfolioHistory = [];
+                state.marketPrices = {};
+                state.priceMetadata = {};
+                state.transactions = {};
+                state.userRole = 'user';
+                localStorage.removeItem('portfolioHistory');
+                localStorage.removeItem('positionTransactions');
+                renderPortfolio();
+                updateHistoryDisplay();
             }
         });
 
@@ -456,6 +468,7 @@ export async function loadTransactionsFromDB() {
         const { data, error } = await state.supabaseClient
             .from('transactions')
             .select('*')
+            .eq('user_id', state.currentUser.id)
             .order('date', { ascending: true });
 
         if (error) throw error;
@@ -514,10 +527,18 @@ export async function loadFromDatabase() {
     try {
         console.log('\u2601\uFE0F Loading data from Supabase...');
 
+        // Clear user-specific state before loading (prevents cross-user data leaks)
+        state.portfolio = [];
+        state.portfolioHistory = [];
+        state.marketPrices = {};
+        state.priceMetadata = {};
+        state.transactions = {};
+
         // Load positions
         const { data: dbPositions, error: posError } = await state.supabaseClient
             .from('positions')
             .select('*')
+            .eq('user_id', state.currentUser.id)
             .order('symbol');
 
         if (posError) throw posError;
@@ -533,42 +554,29 @@ export async function loadFromDatabase() {
             }));
             console.log('\u2713 Loaded', state.portfolio.length, 'positions from DB');
             renderPortfolio();
-        } else if (state.portfolio.length > 0) {
-            console.log('Syncing local portfolio to database...');
-            await savePortfolioDB();
         }
 
         // Load snapshots
         const { data: dbSnapshots, error: snapError } = await state.supabaseClient
             .from('snapshots')
             .select('*')
+            .eq('user_id', state.currentUser.id)
             .order('timestamp', { ascending: true });
 
         if (snapError) throw snapError;
 
         if (dbSnapshots && dbSnapshots.length > 0) {
-            const existingTimestamps = new Set(state.portfolioHistory.map(s => s.timestamp));
-            dbSnapshots.forEach(s => {
-                const snap = {
-                    timestamp: s.timestamp,
-                    totalInvested: Number(s.total_invested),
-                    totalMarketValue: Number(s.total_market_value),
-                    positionCount: s.position_count,
-                    pricesAvailable: s.prices_available
-                };
-                if (!existingTimestamps.has(snap.timestamp)) {
-                    state.portfolioHistory.push(snap);
-                }
-            });
+            state.portfolioHistory = dbSnapshots.map(s => ({
+                timestamp: s.timestamp,
+                totalInvested: Number(s.total_invested),
+                totalMarketValue: Number(s.total_market_value),
+                positionCount: s.position_count,
+                pricesAvailable: s.prices_available
+            }));
             state.portfolioHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             localStorage.setItem('portfolioHistory', JSON.stringify(state.portfolioHistory));
-            console.log('\u2713 Total snapshots after merge:', state.portfolioHistory.length);
+            console.log('\u2713 Loaded', state.portfolioHistory.length, 'snapshots from DB');
             updateHistoryDisplay();
-        } else if (state.portfolioHistory.length > 0) {
-            console.log('Syncing local snapshots to database...');
-            for (const snapshot of state.portfolioHistory) {
-                await saveSnapshotToDB(snapshot);
-            }
         }
 
         // Load assets
