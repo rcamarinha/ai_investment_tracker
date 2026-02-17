@@ -10,7 +10,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.5.0</span></h1>
+            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.6.0</span></h1>
             <p>Market analysis and personalized portfolio insights</p>
         </div>
 
@@ -184,6 +184,16 @@
                     </div>
                 </div>
                 <textarea id="importText" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10" style="width: 100%; height: 200px; padding: 15px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 12px; margin-bottom: 10px;"></textarea>
+                <div style="display: flex; gap: 16px; margin-bottom: 12px; padding: 10px 14px; background: #0f172a; border-radius: 8px; font-size: 13px;">
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #cbd5e1;">
+                        <input type="radio" name="importMode" value="add" checked style="accent-color: #4ade80;" />
+                        <span><strong>Add</strong> to existing portfolio</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #cbd5e1;">
+                        <input type="radio" name="importMode" value="replace" style="accent-color: #f59e0b;" />
+                        <span><strong>Replace</strong> entire portfolio</span>
+                    </label>
+                </div>
                 <div id="importReportArea"></div>
                 <div style="display: flex; gap: 10px;">
                     <button class="btn btn-accent" onclick="importPositions()">Import Positions</button>
