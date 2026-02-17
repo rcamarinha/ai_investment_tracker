@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord, normalizeAssetType } from './utils.js';
+import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord, normalizeAssetType, detectStockExchange } from './utils.js';
 import { getSector } from '../data/sectors.js';
 import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
@@ -591,11 +591,21 @@ async function resolveIdentifiers(identifiers) {
             if (!isISIN(id.toUpperCase())) { afterFinnhub.push(id); continue; }
             if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — Finnhub lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
             const candidates = await lookupISINviaFinnhub(id);
-            if (candidates.length > 0) {
+            if (candidates.length > 1) {
+                // Multiple listings found — let user pick later
                 const best = pickBestTicker(candidates);
-                resultMap[id.toUpperCase()] = { ...best, confident: true };
-                console.log(`ISIN ${id} → ${best.ticker} (Finnhub, ${candidates.length} candidate(s))`);
+                resultMap[id.toUpperCase()] = {
+                    ...best,
+                    confident: false,
+                    multipleListings: true,
+                    alternatives: candidates.filter(c => c.ticker !== best.ticker)
+                };
+                console.log(`ISIN ${id} → ${best.ticker} (Finnhub, ${candidates.length} listing(s) — user will pick)`);
                 await persistISINMapping(id.toUpperCase(), best);
+            } else if (candidates.length === 1) {
+                resultMap[id.toUpperCase()] = { ...candidates[0], confident: true };
+                console.log(`ISIN ${id} → ${candidates[0].ticker} (Finnhub, single match)`);
+                await persistISINMapping(id.toUpperCase(), candidates[0]);
             } else {
                 afterFinnhub.push(id);
             }
@@ -613,11 +623,20 @@ async function resolveIdentifiers(identifiers) {
             if (!isISIN(id.toUpperCase())) { needsClaude.push(id); continue; }
             if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — FMP lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
             const candidates = await lookupISINviaFMP(id);
-            if (candidates.length > 0) {
+            if (candidates.length > 1) {
                 const best = pickBestTicker(candidates);
-                resultMap[id.toUpperCase()] = { ...best, confident: true };
-                console.log(`ISIN ${id} → ${best.ticker} (FMP, ${candidates.length} candidate(s))`);
+                resultMap[id.toUpperCase()] = {
+                    ...best,
+                    confident: false,
+                    multipleListings: true,
+                    alternatives: candidates.filter(c => c.ticker !== best.ticker)
+                };
+                console.log(`ISIN ${id} → ${best.ticker} (FMP, ${candidates.length} listing(s) — user will pick)`);
                 await persistISINMapping(id.toUpperCase(), best);
+            } else if (candidates.length === 1) {
+                resultMap[id.toUpperCase()] = { ...candidates[0], confident: true };
+                console.log(`ISIN ${id} → ${candidates[0].ticker} (FMP, single match)`);
+                await persistISINMapping(id.toUpperCase(), candidates[0]);
             } else {
                 needsClaude.push(id);
             }
@@ -799,6 +818,60 @@ function showImportReport(container, report) {
 
     html += `</div>`;
     container.innerHTML = html;
+}
+
+/**
+ * Show a modal dialog for the user to pick which ticker/exchange listing to use
+ * when an ISIN maps to multiple tickers.
+ * Returns a promise that resolves with the chosen { ticker, name, type, exchange }.
+ */
+function showTickerPickerDialog(isin, primary, alternatives) {
+    return new Promise(resolve => {
+        const allOptions = [primary, ...alternatives];
+
+        // Build exchange labels from ticker suffix or explicit exchange field
+        const optionsHTML = allOptions.map((opt, idx) => {
+            const exchange = opt.exchange || detectStockExchange(opt.ticker);
+            const typeBadge = opt.type && opt.type !== 'Stock' ? opt.type : '';
+            return `
+                <label class="ticker-picker-option" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 6px; background: ${idx === 0 ? '#1e3a5f' : '#1e293b'}; border: 2px solid ${idx === 0 ? '#3b82f6' : '#334155'}; border-radius: 8px; cursor: pointer; transition: border-color 0.15s;"
+                    onmouseover="this.style.borderColor='#60a5fa'" onmouseout="this.style.borderColor='${idx === 0 ? '#3b82f6' : '#334155'}'">
+                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} style="accent-color: #3b82f6; width: 16px; height: 16px;" />
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span style="font-weight: 700; color: #e2e8f0; font-size: 15px;">${escapeHTML(opt.ticker)}</span>
+                            <span style="color: #60a5fa; font-size: 12px; background: #1e3a5f; padding: 1px 8px; border-radius: 4px;">${escapeHTML(exchange)}</span>
+                            ${typeBadge ? `<span style="color: #a78bfa; font-size: 11px; background: #2e1065; padding: 1px 6px; border-radius: 4px;">${escapeHTML(typeBadge)}</span>` : ''}
+                        </div>
+                        <div style="color: #94a3b8; font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHTML(opt.name || opt.ticker)}</div>
+                    </div>
+                </label>`;
+        }).join('');
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:10000;';
+        overlay.innerHTML = `
+            <div style="background: #0f172a; border: 1px solid #334155; border-radius: 14px; padding: 24px; max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+                <div style="font-size: 16px; font-weight: 700; color: #e2e8f0; margin-bottom: 4px;">Multiple listings found</div>
+                <div style="font-size: 13px; color: #94a3b8; margin-bottom: 16px;">
+                    <span style="color: #60a5fa; font-weight: 600;">${escapeHTML(isin)}</span> is listed on multiple exchanges. Select the one you want to track:
+                </div>
+                <div style="margin-bottom: 16px;">${optionsHTML}</div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn btn-primary" id="tickerPickerConfirm">Confirm Selection</button>
+                </div>
+            </div>`;
+
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#tickerPickerConfirm').addEventListener('click', () => {
+            const selected = overlay.querySelector('input[name="tickerPick"]:checked');
+            const idx = selected ? parseInt(selected.value) : 0;
+            const chosen = allOptions[idx];
+            document.body.removeChild(overlay);
+            resolve(chosen);
+        });
+    });
 }
 
 export async function importPositions() {
@@ -995,48 +1068,32 @@ export async function importPositions() {
 
             const resolved = await resolveIdentifiers(isinsToResolve);
 
-            // Apply resolutions
+            // Apply resolutions — show picker dialog when multiple listings exist
             const unresolvedISINs = [];
             for (const p of newPositions) {
                 const resolution = resolved[p.symbol];
                 if (resolution) {
-                    // If resolution is not confident and has alternatives, let user pick
-                    if (!resolution.confident && resolution.alternatives && resolution.alternatives.length > 0) {
-                        const options = [
-                            `${resolution.ticker} — ${resolution.name} (best guess)`,
-                            ...resolution.alternatives.map(a => `${a.ticker || a} — ${a.name || ''}`)
-                        ];
-                        const choice = prompt(
-                            `\u{1F50D} Uncertain match for ${p.symbol}:\n\n` +
-                            options.map((o, i) => `${i + 1}. ${o}`).join('\n') +
-                            `\n\nEnter number (1-${options.length}) or type a ticker manually:`,
-                            '1'
-                        );
+                    const hasAlternatives = resolution.alternatives && resolution.alternatives.length > 0;
 
-                        if (choice && !isNaN(parseInt(choice))) {
-                            const idx = parseInt(choice) - 1;
-                            if (idx === 0) {
-                                // Use best guess
-                                p._resolvedFrom = p.symbol;
-                                p.symbol = resolution.ticker;
-                                p.name = resolution.name || p.name;
-                                if (resolution.type) p.type = resolution.type;
-                            } else if (idx > 0 && idx <= resolution.alternatives.length) {
-                                const alt = resolution.alternatives[idx - 1];
-                                p._resolvedFrom = p.symbol;
-                                p.symbol = (alt.ticker || alt).toUpperCase();
-                                p.name = alt.name || p.name;
-                            }
-                        } else if (choice && choice.trim()) {
-                            p._resolvedFrom = p.symbol;
-                            p.symbol = choice.trim().toUpperCase();
-                        }
+                    if (hasAlternatives) {
+                        // Multiple listings or uncertain match — let user pick via modal
+                        const chosen = await showTickerPickerDialog(
+                            p.symbol,
+                            { ticker: resolution.ticker, name: resolution.name, type: resolution.type, exchange: resolution.exchange },
+                            resolution.alternatives
+                        );
+                        p._resolvedFrom = p.symbol;
+                        p.symbol = chosen.ticker.toUpperCase();
+                        p.name = chosen.name || p.name;
+                        if (chosen.type) p.type = normalizeAssetType(chosen.type);
+                        console.log(`User picked ${chosen.ticker} for ${p._resolvedFrom}`);
                     } else {
+                        // Single confident match — apply directly
                         console.log(`Resolved ${p.symbol} \u2192 ${resolution.ticker} (${resolution.name})`);
                         p._resolvedFrom = p.symbol;
                         p.symbol = resolution.ticker;
                         p.name = resolution.name || p.name;
-                        if (resolution.type) p.type = resolution.type;
+                        if (resolution.type) p.type = normalizeAssetType(resolution.type);
                     }
                 } else if (isISIN(p.symbol)) {
                     // Claude couldn't resolve at all
