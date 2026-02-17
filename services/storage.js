@@ -251,8 +251,10 @@ export async function updateAssetInDB(ticker, updates) {
 }
 
 export async function enrichUnknownAssets() {
+    // Only enrich assets that belong to the current user's portfolio
+    const portfolioTickers = new Set(state.portfolio.map(p => p.symbol.toUpperCase()));
     const unknowns = Object.entries(state.assetDatabase)
-        .filter(([_, a]) => !a.sector || a.sector === 'Other')
+        .filter(([ticker, a]) => portfolioTickers.has(ticker) && (!a.sector || a.sector === 'Other'))
         .map(([ticker]) => ticker);
 
     if (unknowns.length === 0) {
