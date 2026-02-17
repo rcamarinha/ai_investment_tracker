@@ -9,6 +9,7 @@
 import state from './state.js';
 import { escapeHTML } from './utils.js';
 import { loadFromDatabase } from './storage.js';
+import { renderPortfolio, updateHistoryDisplay } from './portfolio.js';
 
 // ── Role Helpers ─────────────────────────────────────────────────────────────
 
@@ -192,9 +193,45 @@ export async function handleLogout() {
         await state.supabaseClient.auth.signOut();
         state.currentUser = null;
         state.userRole = 'user';
+
+        // Clear all user-specific state
+        state.portfolio = [];
+        state.portfolioHistory = [];
+        state.marketPrices = {};
+        state.priceMetadata = {};
+        state.transactions = {};
+        state.selectedSector = null;
+        state.showInactivePositions = false;
+
+        // Clear user-specific localStorage to prevent data leaks on shared browsers
+        localStorage.removeItem('portfolioHistory');
+        localStorage.removeItem('positionTransactions');
+
+        // Re-render UI to reflect empty state
+        renderPortfolio();
+        updateHistoryDisplay();
+
+        // Clear analysis section
+        const analysisSection = document.getElementById('analysisSection');
+        if (analysisSection) analysisSection.innerHTML = '';
+
+        // Hide allocation charts
+        const allocationSection = document.getElementById('allocationSection');
+        if (allocationSection) allocationSection.style.display = 'none';
+
+        // Hide sales history
+        const salesSection = document.getElementById('salesHistorySection');
+        if (salesSection) salesSection.style.display = 'none';
+
+        // Close any open dialogs
+        ['importDialog', 'apiKeyDialog', 'positionDialog'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+
         updateAuthBar();
         updateActionVisibility();
-        console.log('\u2713 Logged out');
+        console.log('\u2713 Logged out — UI cleared');
     } catch (err) {
         console.error('Logout error:', err);
     }
