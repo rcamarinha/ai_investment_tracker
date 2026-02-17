@@ -4,7 +4,9 @@ A modular browser-based portfolio management application that fetches live marke
 
 ## Features
 
-- **Portfolio Import** — Paste tab-separated data directly from a spreadsheet (full or simple format)
+- **Portfolio Import** — Paste data from any spreadsheet or broker export (tab, comma, semicolon, pipe separated). Choose to **add to** or **replace** your existing portfolio
+- **ISIN Resolution** — Automatic ISIN-to-ticker resolution via a 4-tier strategy (local DB → Finnhub → FMP → Claude AI). When an ISIN maps to multiple exchange listings, a picker dialog lets you choose the correct one
+- **Asset Type Normalization** — Imported asset types (Common Stock, ETP, ADR, Mutual Fund, UCITS, etc.) are automatically normalized to canonical types: Stock, ETF, Crypto, REIT, Bond, Commodity, Cash, Other
 - **Live Market Prices** — 3-tier API fallback (Finnhub → FMP → Alpha Vantage) for ~98% fetch success
 - **International Stocks** — Smart ticker resolution for European exchanges (Paris, London, Frankfurt, Amsterdam, Milan, Swiss)
 - **Portfolio History** — Save snapshots over time with visual bar chart tracking
@@ -44,7 +46,7 @@ For AI analysis features, you'll also need a [Claude API key](https://console.an
 
 ### 3. Import your portfolio
 
-Click **Import Portfolio** and paste tab-separated data from your spreadsheet.
+Click **Import Portfolio** and paste data from your spreadsheet or broker export. The app auto-detects column layout and separator (tab, comma, semicolon, pipe).
 
 **Full format** (8+ columns):
 
@@ -60,6 +62,19 @@ AAPL    10    150
 MSFT    5     350
 ```
 
+**ISIN format** (resolved automatically):
+
+```
+IE00BYXVGX24    100
+US0378331005    50
+```
+
+When importing, you can choose:
+- **Add to existing portfolio** — merges new positions in, updating duplicates
+- **Replace entire portfolio** — overwrites all existing positions
+
+If an ISIN maps to multiple exchange listings (e.g., the same ETF on London, Frankfurt, and Amsterdam), a picker dialog will appear so you can select the exact listing you want to track.
+
 ### 4. Fetch prices
 
 Click **Update Prices** to fetch current market data. The app uses your fastest available API first and falls back automatically if a source fails.
@@ -69,7 +84,7 @@ Click **Update Prices** to fetch current market data. The app uses your fastest 
 | Button | Action |
 |--------|--------|
 | **API Keys** | Configure market data and AI API keys |
-| **Import Portfolio** | Load positions from spreadsheet data |
+| **Import Portfolio** | Load positions from spreadsheet/broker export (add or replace) |
 | **Update Prices** | Fetch current market prices for all positions |
 | **Save Snapshot** | Save current portfolio state to history |
 | **Get AI Analysis** | Generate perspective-based portfolio insights |
@@ -98,7 +113,7 @@ ai_investment_tracker/
 │   └── perspectives.js     # 6 investment perspectives with AI prompts
 ├── services/
 │   ├── state.js            # Shared application state
-│   ├── utils.js            # Formatting, escaping, exchange detection
+│   ├── utils.js            # Formatting, escaping, exchange detection, asset type normalization
 │   ├── pricing.js          # 3-tier price fetching with rate limiting
 │   ├── storage.js          # Supabase DB + localStorage + Claude cloud
 │   ├── auth.js             # Supabase authentication
@@ -167,3 +182,14 @@ Tests import from `src/portfolio.js` (pure function mirror of `services/portfoli
 - Python 3 (for local server) or any static file server
 - At least one free API key for live prices
 - Claude API key for AI analysis features (optional)
+
+## Changelog
+
+### v3.6.1
+- **ISIN multi-ticker picker** — When an ISIN resolves to multiple exchange listings (e.g., same ETF on London, Frankfurt, Amsterdam), a styled modal dialog lets the user choose which listing to track, showing ticker, exchange name, and asset type for each option
+- Finnhub and FMP resolution tiers now preserve all candidates instead of silently auto-picking one
+
+### v3.6.0
+- **Import mode: Add or Replace** — Import dialog now lets users choose between merging new positions into the existing portfolio (default) or replacing it entirely
+- **Canonical asset type normalization** — All imported asset types are normalized to a standard set (Stock, ETF, Crypto, REIT, Bond, Commodity, Cash, Other) via a centralized mapping that handles dozens of aliases (Common Stock, ETP, ADR, Mutual Fund, UCITS, SICAV, etc.)
+- Consolidated 6 scattered inline type maps into a single `normalizeAssetType()` utility
