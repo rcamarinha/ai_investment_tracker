@@ -38,9 +38,9 @@ export async function checkUserRole() {
             .single();
 
         if (error || !data) {
-            // No adminEmails config → first user / legacy setup → default to admin
-            console.log('No adminEmails config found — defaulting to admin');
-            state.userRole = 'admin';
+            // No adminEmails config → safe default is regular user
+            console.log('No adminEmails config found — defaulting to user');
+            state.userRole = 'user';
             updateActionVisibility();
             updateAuthBar();
             return;
