@@ -1272,21 +1272,46 @@ export async function savePortfolioSnapshot() {
         return;
     }
 
+    const base = state.baseCurrency || 'EUR';
     let totalInvested = 0;
     let totalMarketValue = 0;
 
-    state.portfolio.forEach(p => {
-        const invested = p.shares * p.avgPrice;
-        totalInvested += invested;
+    const activePositions = state.portfolio.filter(p => p.shares > 0);
+
+    activePositions.forEach(p => {
+        const currency = getAssetCurrency(p.symbol);
+        const investedNative = p.shares * p.avgPrice;
+
+        // Invested in base currency: use transaction-stored rates if available, else current rate
+        const txs = state.transactions[p.symbol];
+        if (txs && txs.length > 0) {
+            let investedBase = 0;
+            txs.forEach(tx => {
+                const rate = tx.exchangeRate || getExchangeRate(tx.currency || currency);
+                if (tx.type === 'buy') investedBase += tx.totalAmount * rate;
+            });
+            const totalBuyShares = txs.filter(t => t.type === 'buy').reduce((s, t) => s + t.shares, 0);
+            const remainingRatio = totalBuyShares > 0 ? p.shares / totalBuyShares : 1;
+            totalInvested += investedBase * remainingRatio;
+        } else {
+            totalInvested += toBaseCurrency(investedNative, currency);
+        }
+
+        // Market value in base currency: always use current exchange rate
         const currentPrice = state.marketPrices[p.symbol];
-        totalMarketValue += currentPrice ? p.shares * currentPrice : invested;
+        if (currentPrice) {
+            totalMarketValue += toBaseCurrency(p.shares * currentPrice, currency);
+        } else {
+            totalMarketValue += toBaseCurrency(investedNative, currency);
+        }
     });
 
     const snapshot = {
         timestamp: new Date().toISOString(),
+        baseCurrency: base,
         totalInvested,
         totalMarketValue,
-        positionCount: state.portfolio.length,
+        positionCount: activePositions.length,
         pricesAvailable: Object.keys(state.marketPrices).length
     };
 
@@ -1324,7 +1349,7 @@ export async function savePortfolioSnapshot() {
     const gainLoss = totalMarketValue - totalInvested;
     const gainLossPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : 0;
     const syncStatus = dbSaved ? '\u2601\uFE0F Synced to Supabase' : cloudSaved ? '\u2601\uFE0F Synced to cloud storage' : '\uD83D\uDCBE Saved to browser only';
-    alert(`\u2713 Portfolio snapshot saved!\n\nInvested: ${formatCurrency(totalInvested)}\nMarket Value: ${formatCurrency(totalMarketValue)}\nGain/Loss: ${formatCurrency(gainLoss)} (${formatPercent(gainLossPct)})\n\nTotal snapshots: ${state.portfolioHistory.length}\n\n${syncStatus}`);
+    alert(`\u2713 Portfolio snapshot saved!\n\nInvested: ${formatCurrency(totalInvested, base)}\nMarket Value: ${formatCurrency(totalMarketValue, base)}\nGain/Loss: ${formatCurrency(gainLoss, base)} (${formatPercent(gainLossPct)})\n\nAll values converted to ${base}\nTotal snapshots: ${state.portfolioHistory.length}\n\n${syncStatus}`);
 }
 
 // ── History Display ─────────────────────────────────────────────────────────
@@ -1361,9 +1386,9 @@ export function updateHistoryDisplay() {
                                 </div>
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
-                                <div><div style="color: #94a3b8; font-size: 11px;">Invested</div><div style="color: #cbd5e1;">${formatCurrency(snapshot.totalInvested)}</div></div>
-                                <div><div style="color: #94a3b8; font-size: 11px;">Market Value</div><div style="color: #cbd5e1;">${formatCurrency(snapshot.totalMarketValue)}</div></div>
-                                <div><div style="color: #94a3b8; font-size: 11px;">Gain/Loss</div><div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss)} (${formatPercent(gainLossPct)})</div></div>
+                                <div><div style="color: #94a3b8; font-size: 11px;">Invested${snapshot.baseCurrency ? ' (' + snapshot.baseCurrency + ')' : ''}</div><div style="color: #cbd5e1;">${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}</div></div>
+                                <div><div style="color: #94a3b8; font-size: 11px;">Market Value</div><div style="color: #cbd5e1;">${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}</div></div>
+                                <div><div style="color: #94a3b8; font-size: 11px;">Gain/Loss</div><div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss, snapshot.baseCurrency)} (${formatPercent(gainLossPct)})</div></div>
                             </div>
                         </div>
                     `;
@@ -1404,8 +1429,8 @@ function updateChart() {
             chartHTML += `
                 <div style="flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 40px;">
                     <div style="position: relative; width: 100%; height: 180px; display: flex; align-items: flex-end; justify-content: center; gap: 2px;">
-                        <div style="width: 45%; background: #60a5fa; height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(snapshot.totalInvested)}"></div>
-                        <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0;" title="Market: ${formatCurrency(snapshot.totalMarketValue)}"></div>
+                        <div style="width: 45%; background: #60a5fa; height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}"></div>
+                        <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0;" title="Market: ${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}"></div>
                     </div>
                     <div style="font-size: 10px; color: #94a3b8; margin-top: 5px; text-align: center;">${label}</div>
                 </div>
