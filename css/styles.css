@@ -854,6 +854,139 @@ body {
     border-bottom: none;
 }
 
+/* ── Top Movers Section ──────────────────────────────────────────────────── */
+
+.movers-section {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+}
+
+.movers-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.movers-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.movers-timestamp {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.movers-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.movers-column-header {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 8px;
+}
+
+.movers-column-header.gainers { color: #4ade80; }
+.movers-column-header.losers  { color: #f87171; }
+
+.mover-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.mover-chip.gain {
+    background: rgba(74, 222, 128, 0.08);
+    border: 1px solid rgba(74, 222, 128, 0.2);
+}
+
+.mover-chip.loss {
+    background: rgba(248, 113, 113, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.2);
+}
+
+.mover-symbol {
+    font-weight: 700;
+    font-family: monospace;
+    font-size: 13px;
+    color: #e2e8f0;
+}
+
+.mover-name {
+    font-size: 11px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    text-align: center;
+}
+
+.mover-pct {
+    font-weight: 700;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.mover-pct.gain { color: #4ade80; }
+.mover-pct.loss { color: #f87171; }
+
+.movers-ai-section {
+    border-top: 1px solid #334155;
+    padding-top: 12px;
+    margin-top: 4px;
+}
+
+.movers-ai-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #7c3aed;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.movers-ai-text {
+    font-size: 13px;
+    color: #cbd5e1;
+    line-height: 1.7;
+}
+
+.movers-ai-loading {
+    font-size: 13px;
+    color: #64748b;
+    font-style: italic;
+}
+
+@media (max-width: 640px) {
+    .movers-grid { grid-template-columns: 1fr; }
+}
+
+
 /* ── States ──────────────────────────────────────────────────────────────── */
 
 .loading     { text-align: center; padding: 40px; color: #94a3b8; }

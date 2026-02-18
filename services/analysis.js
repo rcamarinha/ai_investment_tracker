@@ -366,3 +366,92 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
     tradeIdeasBtn.disabled = false;
     tradeIdeasBtn.textContent = '\uD83D\uDCC8 Get Trade Ideas';
 }
+
+// ── Movers Analysis ──────────────────────────────────────────────────────────
+
+/**
+ * Explain the biggest price movers via Claude API and update #moversAiText.
+ * Called automatically after fetchMarketPrices() completes.
+ * @param {Array} movers - [{symbol, name, changePct, prevPrice, newPrice}]
+ */
+export async function analyzeMovers(movers) {
+    const aiTextEl = document.getElementById('moversAiText');
+    if (!aiTextEl || !movers || movers.length === 0) return;
+
+    const isClaudeAI = window.location.hostname.includes('claude.ai') ||
+                        window.location.hostname.includes('anthropic.com') ||
+                        (typeof window.storage !== 'undefined');
+    const useDirectAPI = isClaudeAI || state.anthropicKey;
+
+    if (!useDirectAPI) {
+        aiTextEl.textContent = 'Add an Anthropic API key in \uD83D\uDD11 API Keys to get AI-powered explanations of these moves.';
+        aiTextEl.classList.remove('movers-ai-loading');
+        return;
+    }
+
+    const today = new Date().toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    // Build a concise summary of significant movers (up to 6)
+    const significant = movers
+        .filter(m => Math.abs(m.changePct) >= 0.1)
+        .slice(0, 6);
+
+    if (significant.length === 0) {
+        aiTextEl.textContent = 'No significant moves detected since the last price update.';
+        aiTextEl.classList.remove('movers-ai-loading');
+        return;
+    }
+
+    const moversList = significant.map(m => {
+        const dir = m.changePct >= 0 ? 'up' : 'down';
+        return `${m.symbol} ${dir} ${Math.abs(m.changePct).toFixed(2)}% (${m.prevPrice.toFixed(2)} → ${m.newPrice.toFixed(2)})`;
+    }).join('; ');
+
+    const prompt = `Today is ${today}. A portfolio tracker just updated prices and detected these notable moves compared to the previous price snapshot: ${moversList}.
+
+In 2-3 concise sentences, explain what general market factors, sector news, or company events could plausibly explain these kinds of price moves. Be specific about each ticker if you can, drawing on your knowledge of each company and its sector. Acknowledge if your training data may not cover the latest events, and suggest the investor checks financial news for the latest catalyst.
+
+Reply with plain text only — no markdown, no bullet points, no JSON.`;
+
+    try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (!isClaudeAI && state.anthropicKey) {
+            headers['x-api-key'] = state.anthropicKey;
+            headers['anthropic-version'] = '2023-06-01';
+            headers['anthropic-dangerous-direct-browser-access'] = 'true';
+        }
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 350,
+                messages: [{ role: 'user', content: prompt }]
+            })
+        });
+
+        if (!response.ok) {
+            const errBody = await response.text().catch(() => '');
+            throw new Error(`API ${response.status}: ${errBody}`);
+        }
+
+        const data = await response.json();
+        const text = data.content.find(c => c.type === 'text')?.text?.trim() || '';
+
+        const el = document.getElementById('moversAiText');
+        if (el) {
+            el.textContent = text || 'No explanation available.';
+            el.classList.remove('movers-ai-loading');
+        }
+    } catch (err) {
+        console.warn('analyzeMovers failed:', err.message);
+        const el = document.getElementById('moversAiText');
+        if (el) {
+            el.textContent = 'Could not load AI explanation. Check console for details.';
+            el.classList.remove('movers-ai-loading');
+        }
+    }
+}

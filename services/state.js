@@ -29,6 +29,7 @@ const state = {
     baseCurrency: 'EUR',       // User's home currency for portfolio totals
     exchangeRates: {},         // {USD: 0.92, GBP: 1.17, ...} — rates TO baseCurrency (1 foreign = X base)
     exchangeRatesTimestamp: null, // When rates were last fetched
+    lastMovers: null,          // Top movers from the most recent price update {movers, updatedAt}
 };
 
 export default state;

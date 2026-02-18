@@ -244,6 +244,75 @@ export function renderPortfolio() {
     console.log('Portfolio rendered successfully');
 }
 
+// ── Top Movers Section ───────────────────────────────────────────────────────
+
+/**
+ * Render the "Biggest Movers Since Last Update" card above the positions list.
+ * @param {Array} movers  - [{symbol, name, prevPrice, newPrice, changePct}]
+ * @param {string} updatedAt - ISO timestamp of when prices were fetched
+ */
+export function renderMoversSection(movers, updatedAt) {
+    const section = document.getElementById('moversSection');
+    if (!section) return;
+
+    if (!movers || movers.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    const gainers = movers.filter(m => m.changePct > 0)
+        .sort((a, b) => b.changePct - a.changePct)
+        .slice(0, 3);
+    const losers = movers.filter(m => m.changePct < 0)
+        .sort((a, b) => a.changePct - b.changePct)
+        .slice(0, 3);
+
+    if (gainers.length === 0 && losers.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    const timeLabel = updatedAt
+        ? new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '';
+
+    const chipHtml = (mover, isGain) => `
+        <div class="mover-chip ${isGain ? 'gain' : 'loss'}">
+            <span class="mover-symbol">${escapeHTML(mover.symbol)}</span>
+            <span class="mover-name">${escapeHTML(mover.name !== mover.symbol ? mover.name : '')}</span>
+            <span class="mover-pct ${isGain ? 'gain' : 'loss'}">${formatPercent(mover.changePct)}</span>
+        </div>
+    `;
+
+    section.innerHTML = `
+        <div class="movers-section">
+            <div class="movers-header">
+                <div class="movers-title">📊 Biggest Movers Since Last Update</div>
+                ${timeLabel ? `<div class="movers-timestamp">Updated ${escapeHTML(timeLabel)}</div>` : ''}
+            </div>
+            <div class="movers-grid">
+                <div>
+                    <div class="movers-column-header gainers">▲ Top Gainers</div>
+                    ${gainers.length > 0
+                        ? gainers.map(m => chipHtml(m, true)).join('')
+                        : '<div style="color:#64748b;font-size:13px;">No gainers this update</div>'}
+                </div>
+                <div>
+                    <div class="movers-column-header losers">▼ Top Losers</div>
+                    ${losers.length > 0
+                        ? losers.map(m => chipHtml(m, false)).join('')
+                        : '<div style="color:#64748b;font-size:13px;">No losers this update</div>'}
+                </div>
+            </div>
+            <div class="movers-ai-section">
+                <div class="movers-ai-label">🤖 AI Insight</div>
+                <div class="movers-ai-text movers-ai-loading" id="moversAiText">Analyzing what drove these moves…</div>
+            </div>
+        </div>
+    `;
+    section.style.display = 'block';
+}
+
 // ── Import Dialog ───────────────────────────────────────────────────────────
 
 export function showImportDialog() {

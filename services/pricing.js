@@ -8,12 +8,13 @@
 
 import state from './state.js';
 import { buildAssetRecord } from './utils.js';
-import { renderPortfolio } from './portfolio.js';
+import { renderPortfolio, renderMoversSection } from './portfolio.js';
 import { savePortfolioSnapshot } from './portfolio.js';
 import {
     saveAssetsToDB, loadAssetsFromDB,
     savePriceHistoryToDB, enrichUnknownAssets
 } from './storage.js';
+import { analyzeMovers } from './analysis.js';
 
 // ── Single Symbol Fetch ─────────────────────────────────────────────────────
 
@@ -302,6 +303,8 @@ export async function fetchMarketPrices() {
     refreshBtn.textContent = '\u23F3 Fetching...';
 
     state.pricesLoading = true;
+    // Snapshot prices before update so we can compute movers afterwards
+    const previousPrices = { ...state.marketPrices };
     const symbols = [...new Set(state.portfolio.map(p => p.symbol))];
 
     // Determine rate limiting
@@ -416,6 +419,31 @@ export async function fetchMarketPrices() {
         console.log('Failed:', failCount);
 
         renderPortfolio();
+
+        // Compute & display top movers (only where we had a previous price to compare)
+        if (successCount > 0 && Object.keys(previousPrices).length > 0) {
+            const now = new Date().toISOString();
+            const movers = [];
+            for (const [symbol, newPrice] of Object.entries(state.marketPrices)) {
+                const prevPrice = previousPrices[symbol];
+                if (prevPrice && prevPrice > 0 && newPrice > 0) {
+                    const changePct = ((newPrice - prevPrice) / prevPrice) * 100;
+                    const position = state.portfolio.find(p => p.symbol === symbol);
+                    movers.push({
+                        symbol,
+                        name: position?.name || symbol,
+                        prevPrice,
+                        newPrice,
+                        changePct
+                    });
+                }
+            }
+            movers.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+            state.lastMovers = { movers, updatedAt: now };
+            renderMoversSection(movers, now);
+            // Fire-and-forget AI explanation (non-blocking)
+            analyzeMovers(movers).catch(err => console.warn('analyzeMovers error:', err));
+        }
 
         // Post-fetch: save assets and prices to DB
         if (successCount > 0) {
