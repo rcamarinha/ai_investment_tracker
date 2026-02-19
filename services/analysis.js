@@ -382,8 +382,9 @@ export async function analyzeMovers(movers) {
                         window.location.hostname.includes('anthropic.com') ||
                         (typeof window.storage !== 'undefined');
     const useDirectAPI = isClaudeAI || state.anthropicKey;
+    const useEdgeFunction = !useDirectAPI && state.supabaseUrl;
 
-    if (!useDirectAPI) {
+    if (!useDirectAPI && !useEdgeFunction) {
         aiTextEl.textContent = 'Add an Anthropic API key in \uD83D\uDD11 API Keys to get AI-powered explanations of these moves.';
         aiTextEl.classList.remove('movers-ai-loading');
         return;
@@ -416,29 +417,54 @@ In 2-3 concise sentences, explain what general market factors, sector news, or c
 Reply with plain text only — no markdown, no bullet points, no JSON.`;
 
     try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (!isClaudeAI && state.anthropicKey) {
-            headers['x-api-key'] = state.anthropicKey;
-            headers['anthropic-version'] = '2023-06-01';
-            headers['anthropic-dangerous-direct-browser-access'] = 'true';
+        let data;
+
+        if (useDirectAPI) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (!isClaudeAI && state.anthropicKey) {
+                headers['x-api-key'] = state.anthropicKey;
+                headers['anthropic-version'] = '2023-06-01';
+                headers['anthropic-dangerous-direct-browser-access'] = 'true';
+            }
+
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    model: 'claude-sonnet-4-20250514',
+                    max_tokens: 350,
+                    messages: [{ role: 'user', content: prompt }]
+                })
+            });
+
+            if (!response.ok) {
+                const errBody = await response.text().catch(() => '');
+                throw new Error(`API ${response.status}: ${errBody}`);
+            }
+            data = await response.json();
+        } else {
+            // Use Supabase Edge Function (server-side Anthropic key)
+            const { data: { session } } = await state.supabaseClient.auth.getSession();
+            const response = await fetch(`${state.supabaseUrl}/functions/v1/analyze-portfolio`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': state.supabaseAnonKey,
+                    'Authorization': `Bearer ${session?.access_token || state.supabaseAnonKey}`
+                },
+                body: JSON.stringify({
+                    prompt,
+                    requestType: 'movers'
+                })
+            });
+
+            if (!response.ok) {
+                const errBody = await response.text().catch(() => '');
+                throw new Error(`Edge function ${response.status}: ${errBody}`);
+            }
+            data = await response.json();
         }
 
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 350,
-                messages: [{ role: 'user', content: prompt }]
-            })
-        });
-
-        if (!response.ok) {
-            const errBody = await response.text().catch(() => '');
-            throw new Error(`API ${response.status}: ${errBody}`);
-        }
-
-        const data = await response.json();
         const text = data.content.find(c => c.type === 'text')?.text?.trim() || '';
 
         const el = document.getElementById('moversAiText');
