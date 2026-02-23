@@ -1,153 +1,217 @@
-# AI Investment Tracker
+# Investment Hub
 
-A modular browser-based portfolio management application that fetches live market prices, tracks performance over time, and generates AI-powered insights via the Claude API.
+A modular browser-based investment tracking suite — **Stock Portfolio** and **Wine Cellar** — with AI-powered analysis via the Claude API and optional cloud sync via Supabase.
 
-## Features
+---
+
+## Trackers
+
+### 📈 Stock Portfolio Tracker (`portfolio.html`)
 
 - **Portfolio Import** — Paste data from any spreadsheet or broker export (tab, comma, semicolon, pipe separated). Choose to **add to** or **replace** your existing portfolio
-- **ISIN Resolution** — Automatic ISIN-to-ticker resolution via a 4-tier strategy (local DB → Finnhub → FMP → Claude AI). When an ISIN maps to multiple exchange listings, a picker dialog lets you choose the correct one
-- **Asset Type Normalization** — Imported asset types (Common Stock, ETP, ADR, Mutual Fund, UCITS, etc.) are automatically normalized to canonical types: Stock, ETF, Crypto, REIT, Bond, Commodity, Cash, Other
+- **ISIN Resolution** — Automatic ISIN-to-ticker resolution via a 4-tier strategy (local DB → Finnhub → FMP → Claude AI)
+- **Asset Type Normalization** — Imported asset types normalized to Stock, ETF, Crypto, REIT, Bond, Commodity, Cash, Other
 - **Live Market Prices** — 3-tier API fallback (Finnhub → FMP → Alpha Vantage) for ~98% fetch success
 - **International Stocks** — Smart ticker resolution for European exchanges (Paris, London, Frankfurt, Amsterdam, Milan, Swiss)
 - **Portfolio History** — Save snapshots over time with visual bar chart tracking
-- **AI Analysis** — Personalized portfolio insights powered by Claude with 6 investment perspectives (Value, GARP, Quant, Macro, Passive, Technical)
-- **Trade Ideas** — Concrete daily trade suggestions with execution plans via Claude API
-- **Allocation Charts** — Interactive type and sector allocation breakdowns with sector slicer
-- **Cloud Sync** — Cross-device portfolio sync via Supabase (with authentication) or Claude cloud storage
-- **No framework, no build step** — Vanilla HTML + CSS + JavaScript using ES modules
+- **AI Analysis** — Personalized portfolio insights via Claude with 6 investment perspectives
+- **Trade Ideas** — Concrete daily trade suggestions with execution plans
+- **Allocation Charts** — Interactive type and sector allocation breakdowns
+
+### 🍷 Wine Cellar Tracker (`wine.html`)
+
+- **Label Scanning** — Take a photo of any wine label; Claude Vision AI identifies the wine and pre-fills all details
+  - Mobile: opens device camera directly (`capture="environment"`)
+  - Desktop: file picker OR live camera via `getUserMedia`
+- **AI Valuations** — Claude estimates current market value (per bottle, in EUR) plus optimal drinking window
+- **Cellar Management** — Add, edit, and delete bottles with full metadata (vintage, region, varietal, appellation, etc.)
+- **Gain / Loss Tracking** — Compare purchase price vs. estimated value per bottle and for the whole cellar
+- **Allocation Charts** — Breakdown by region, varietal, or country
+- **Cellar History** — Save value snapshots over time
+- **AI Cellar Analysis** — Drink-window recommendations, portfolio highlights, diversification assessment, and buying suggestions
+
+---
 
 ## Getting Started
 
 ### 1. Start a local server
 
-The app uses ES modules, which require an HTTP server (opening `index.html` directly via `file://` won't work).
+ES modules require an HTTP server (`file://` won't work):
 
 ```bash
 python -m http.server 8000
+# Then open http://localhost:8000
 ```
 
-Then open [http://localhost:8000](http://localhost:8000) in your browser.
+Or deploy to GitHub Pages / any static host.
 
-Alternatively, deploy to GitHub Pages or any static hosting.
+### 2. API keys
 
-### 2. Get API keys (free)
+#### Stock Portfolio
 
-You need at least one API key to fetch live prices. All are free tier:
-
-| Provider | Sign Up | Rate Limit |
-|----------|---------|------------|
-| [Finnhub](https://finnhub.io/register) (recommended) | finnhub.io/register | 60 calls/min |
+| Provider | Free Sign-Up | Rate Limit |
+|----------|-------------|------------|
+| [Finnhub](https://finnhub.io/register) (primary) | finnhub.io | 60 calls/min |
 | [Financial Modeling Prep](https://site.financialmodelingprep.com/developer/docs/) | financialmodelingprep.com | 250 calls/day |
 | [Alpha Vantage](https://www.alphavantage.co/support/#api-key) | alphavantage.co | 5 calls/min, 25/day |
+| [Claude API](https://console.anthropic.com/) | console.anthropic.com | Per-key |
 
-Click the **API Keys** button in the app and enter your key(s).
+#### Wine Cellar
 
-For AI analysis features, you'll also need a [Claude API key](https://console.anthropic.com/).
+| Provider | Used For |
+|----------|----------|
+| [Claude API](https://console.anthropic.com/) | Label scanning (vision), valuations, cellar analysis |
 
-### 3. Import your portfolio
+The wine tracker needs **only** the Anthropic API key for all AI features. Supabase is optional for cloud sync.
 
-Click **Import Portfolio** and paste data from your spreadsheet or broker export. The app auto-detects column layout and separator (tab, comma, semicolon, pipe).
+Enter keys via the **🔑 API Keys** button in each tracker.
 
-**Full format** (8+ columns):
+### 3. Cloud Sync (optional — both trackers)
 
-```
-Asset    Ticker    Platform    Type    Units    Total Investment    Active Investment    Avg Unit Price
-Apple    AAPL      Broker      Stock   10       1500                1600                 150
-```
+1. Create a free [Supabase](https://supabase.com/) project
+2. Run `supabase_schema.sql` in the SQL Editor (stock tracker tables)
+3. Run `wine_schema.sql` in the SQL Editor (wine cellar tables)
+4. Enter your Supabase URL and anon key in the API Keys dialog of each tracker
+5. Sign up / log in — data syncs automatically
 
-**Simple format** (3 columns):
+Both trackers share the same Supabase project and user account.
 
-```
-AAPL    10    150
-MSFT    5     350
-```
-
-**ISIN format** (resolved automatically):
-
-```
-IE00BYXVGX24    100
-US0378331005    50
-```
-
-When importing, you can choose:
-- **Add to existing portfolio** — merges new positions in, updating duplicates
-- **Replace entire portfolio** — overwrites all existing positions
-
-If an ISIN maps to multiple exchange listings (e.g., the same ETF on London, Frankfurt, and Amsterdam), a picker dialog will appear so you can select the exact listing you want to track.
-
-### 4. Fetch prices
-
-Click **Update Prices** to fetch current market data. The app uses your fastest available API first and falls back automatically if a source fails.
-
-## Usage
-
-| Button | Action |
-|--------|--------|
-| **API Keys** | Configure market data and AI API keys |
-| **Import Portfolio** | Load positions from spreadsheet/broker export (add or replace) |
-| **Update Prices** | Fetch current market prices for all positions |
-| **Save Snapshot** | Save current portfolio state to history |
-| **Get AI Analysis** | Generate perspective-based portfolio insights |
-| **Get Trade Ideas** | Get concrete daily trade suggestions |
-
-### Investment Perspectives
-
-The AI analysis adapts to your selected investment philosophy:
-
-- **Value** — Warren Buffett / Benjamin Graham style fundamental analysis
-- **GARP** — Growth at a Reasonable Price (Peter Lynch approach)
-- **Quant** — Data-driven quantitative analysis
-- **Macro** — Top-down macroeconomic perspective
-- **Passive** — Index-focused, cost-conscious strategy
-- **Technical** — Chart patterns and technical indicators
+---
 
 ## Architecture
 
 ```
 ai_investment_tracker/
-├── index.html              # Entry point: HTML structure + module init
+│
+├── index.html              # Hub: landing page linking to both trackers
+├── portfolio.html          # Stock Portfolio Tracker
+├── wine.html               # Wine Cellar Tracker
+│
 ├── css/
-│   └── styles.css          # All styles + button style guide
+│   ├── styles.css          # Shared dark-theme styles + button guide
+│   └── wine.css            # Wine-specific styles (burgundy palette)
+│
 ├── data/
 │   ├── sectors.js          # Sector mapping + getSector() helpers
 │   └── perspectives.js     # 6 investment perspectives with AI prompts
-├── services/
-│   ├── state.js            # Shared application state
-│   ├── utils.js            # Formatting, escaping, exchange detection, asset type normalization
-│   ├── pricing.js          # 3-tier price fetching with rate limiting
-│   ├── storage.js          # Supabase DB + localStorage + Claude cloud
-│   ├── auth.js             # Supabase authentication
-│   ├── portfolio.js        # Render, import, snapshots, history
-│   ├── analysis.js         # AI analysis & trade ideas via Claude API
-│   └── ui.js               # Allocation charts, perspective tabs, dialogs
+│
+├── services/               # Stock tracker modules
+│   ├── state.js
+│   ├── utils.js
+│   ├── pricing.js
+│   ├── storage.js
+│   ├── auth.js
+│   ├── portfolio.js
+│   ├── analysis.js
+│   └── ui.js
+│
+├── wine/                   # Wine tracker modules
+│   ├── state.js            # Shared wine state
+│   ├── label.js            # Camera capture + Claude Vision label recognition
+│   ├── storage.js          # Supabase auth + CRUD (self-contained)
+│   ├── cellar.js           # Rendering, add/edit/delete, snapshots, history
+│   ├── valuation.js        # Per-bottle AI market value estimation
+│   ├── analysis.js         # AI cellar analysis (drink windows, recommendations)
+│   └── ui.js               # Allocation charts, API key dialog
+│
 ├── src/
-│   └── portfolio.js        # Pure functions mirror (for testing)
-├── tests/                  # Vitest test suite
+│   ├── portfolio.js        # Pure functions mirror of services/portfolio.js (for tests)
+│   └── wine.js             # Pure functions mirror of wine/ modules (for tests)
+│
+├── tests/                  # Vitest test suite (266 tests across 9 files)
+│   ├── wine.test.js        # Wine: totals, gains, grouping, validation, scan parsing
+│   ├── calculations.test.js
+│   ├── allocation.test.js
+│   ├── import-parsing.test.js
+│   ├── position-management.test.js
+│   ├── price-fetching.test.js
+│   ├── snapshots.test.js
+│   ├── ticker-resolution.test.js
+│   └── utils.test.js
+│
 ├── supabase/
 │   └── functions/
 │       └── analyze-portfolio/
-│           └── index.ts    # Edge function for server-side analysis
-├── supabase_schema.sql     # Database schema
+│           └── index.ts    # Edge function for server-side stock analysis
+│
+├── supabase_schema.sql     # Stock tracker DB schema
+├── wine_schema.sql         # Wine cellar DB schema
 ├── vitest.config.js
 └── package.json
 ```
 
+---
+
+## Wine Cellar — Detailed Usage
+
+### Scanning a label
+
+1. Open **Wine Cellar** (`wine.html`)
+2. Click **📷 Take Photo / Upload Image** (on mobile, this opens the camera directly)
+3. Photograph the front label clearly
+4. Claude Vision AI identifies the wine and shows the result
+5. Click **➕ Add to Cellar** — the form is pre-filled; confirm and save
+
+On desktop you can also use **🎥 Live Camera** for a live-preview capture.
+
+### Updating valuations
+
+Click **💎 Update Valuations** to ask Claude to estimate current market value for all unvalued bottles. Individual bottles can also be valuated with the 💎 button on their card.
+
+> **Note:** Valuations are approximate estimates based on Claude's training knowledge and are intended as a guide. For precision, cross-check with auction houses or Wine-Searcher.
+
+### AI cellar analysis
+
+Click **🤖 AI Analysis** for a full assessment of your cellar:
+- Diversification across regions and vintages
+- Which bottles to drink now vs. hold for appreciation
+- Investment highlights and improvement recommendations
+
+### Wine Cellar buttons
+
+| Button | Action |
+|--------|--------|
+| **📷 Take Photo / Upload** | Scan a wine label with camera or file picker |
+| **🎥 Live Camera** | Open webcam for live capture (desktop) |
+| **➕ Add Bottle** | Add a bottle manually (or after a scan) |
+| **💎 Update Valuations** | AI-estimate current market value for all bottles |
+| **💾 Save Snapshot** | Save current cellar value to history |
+| **🤖 AI Analysis** | Full cellar analysis from a master-sommelier perspective |
+| **🔑 API Keys** | Configure Anthropic and Supabase keys |
+
+---
+
+## Stock Portfolio — Investment Perspectives
+
+| Perspective | Inspiration |
+|------------|-------------|
+| Value | Warren Buffett / Benjamin Graham |
+| GARP | Peter Lynch |
+| Quant | Data-driven / systematic |
+| Macro | Top-down macroeconomic |
+| Passive | Index-focused, cost-conscious |
+| Technical | Chart patterns / indicators |
+
+---
+
 ## Data Persistence
 
-The app supports three storage layers:
+| Layer | Stock Tracker | Wine Cellar |
+|-------|--------------|-------------|
+| **localStorage** | API keys, sector cache, history | API keys |
+| **Supabase** | positions, snapshots, assets, price history | wine_bottles, wine_snapshots |
+| **Claude cloud** | Portfolio state (inside claude.ai) | — |
 
-- **localStorage** — API keys, sector cache, portfolio history (works offline, single device)
-- **Supabase** — Positions, snapshots, assets, price history (cloud sync, multi-device, requires account)
-- **Claude cloud storage** — Portfolio state + snapshots (when running inside claude.ai)
+---
 
-## Cloud Sync (Optional)
+## Security
 
-For cross-device sync, you can connect a [Supabase](https://supabase.com/) project:
+- **API keys** are stored only in `localStorage` in your browser. They are never sent to any server other than the relevant API provider directly.
+- **Supabase anon key** is designed for public use — Row Level Security (RLS) is enabled on all tables so each user can only read and write their own data.
+- **HTML output** — all user-supplied and AI-returned content rendered via `innerHTML` is passed through `escapeHTML`, which escapes `&`, `<`, `>`, `"`, and `'`.
+- **Direct browser API calls** — the Anthropic SDK header `anthropic-dangerous-direct-browser-access: true` is the intended mechanism for client-side API calls. Never commit your API key to source control.
 
-1. Create a free Supabase project
-2. Run the schema from `supabase_schema.sql` in the SQL editor
-3. Enter your Supabase URL and anon key in the API Keys dialog
-4. Sign up / log in to sync your data
+---
 
 ## Development
 
@@ -158,15 +222,6 @@ python -m http.server 8000
 # Open http://localhost:8000
 ```
 
-### Making changes
-
-Each concern lives in its own file:
-
-1. **Styles** → `css/styles.css`
-2. **HTML structure** → `index.html` (just layout + init)
-3. **Data** → `data/sectors.js`, `data/perspectives.js`
-4. **Logic** → `services/*.js` (one file per concern)
-
 ### Running tests
 
 ```bash
@@ -174,22 +229,60 @@ npm install
 npx vitest run
 ```
 
-Tests import from `src/portfolio.js` (pure function mirror of `services/portfolio.js`).
+Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors without DOM or state dependencies).
+
+| Test file | What it covers |
+|-----------|---------------|
+| `wine.test.js` | Cellar totals, bottle gain/loss, allocation grouping, validation, label scan parsing, snapshot building |
+| `calculations.test.js` | Portfolio gain/loss, totals |
+| `allocation.test.js` | Portfolio weight calculations, type aggregation |
+| `import-parsing.test.js` | Flexible CSV/TSV import, ISIN detection, column mapping |
+| `position-management.test.js` | Add/buy/sell/remove positions, transactions, realized P&L |
+| `price-fetching.test.js` | 3-tier API fallback, rate limiting |
+| `snapshots.test.js` | Snapshot build and merge |
+| `ticker-resolution.test.js` | International ticker resolution, exchange suffixes |
+| `utils.test.js` | Currency/percent formatting, HTML escaping |
+
+### Making changes
+
+| Concern | File(s) |
+|---------|---------|
+| Shared styles | `css/styles.css` |
+| Wine styles | `css/wine.css` |
+| Hub page | `index.html` |
+| Stock tracker | `portfolio.html`, `services/*.js` |
+| Wine tracker | `wine.html`, `wine/*.js` |
+| Sector data | `data/sectors.js` |
+| Investment perspectives | `data/perspectives.js` |
+| DB schema — stocks | `supabase_schema.sql` |
+| DB schema — wine | `wine_schema.sql` |
+
+---
 
 ## Requirements
 
 - A modern web browser (Chrome, Firefox, Safari, Edge)
-- Python 3 (for local server) or any static file server
-- At least one free API key for live prices
-- Claude API key for AI analysis features (optional)
+- Python 3 or any static file server for local development
+- **Anthropic API key** — required for all AI features in both trackers
+- **Finnhub / FMP / Alpha Vantage** — at least one key for live stock prices
+- **Supabase project** — optional, for cloud sync across devices
+
+---
 
 ## Changelog
 
+### v3.8.0
+- **Wine Cellar Tracker** — new tracker at `wine.html` with AI label recognition (Claude Vision), per-bottle valuations, cellar analysis, allocation charts, and Supabase sync
+- **Hub page** — new `index.html` landing page linking to both trackers
+- **`portfolio.html`** — existing stock tracker moved here; `index.html` is now the hub
+- **`wine_schema.sql`** — Supabase tables `wine_bottles` and `wine_snapshots` with full RLS
+- **`src/wine.js`** — pure function mirror of wine modules for testability
+- **`tests/wine.test.js`** — 48 new tests: cellar totals, bottle gain/loss, allocation grouping, validation, scan-result parsing, snapshot building
+- **Security hardening** — `escapeHTML` in all wine modules updated to also escape `'` → `&#x27;`
+
 ### v3.6.1
-- **ISIN multi-ticker picker** — When an ISIN resolves to multiple exchange listings (e.g., same ETF on London, Frankfurt, Amsterdam), a styled modal dialog lets the user choose which listing to track, showing ticker, exchange name, and asset type for each option
-- Finnhub and FMP resolution tiers now preserve all candidates instead of silently auto-picking one
+- **ISIN multi-ticker picker** — When an ISIN resolves to multiple exchange listings (e.g. same ETF on London, Frankfurt, Amsterdam), a styled modal lets the user choose which listing to track
 
 ### v3.6.0
-- **Import mode: Add or Replace** — Import dialog now lets users choose between merging new positions into the existing portfolio (default) or replacing it entirely
-- **Canonical asset type normalization** — All imported asset types are normalized to a standard set (Stock, ETF, Crypto, REIT, Bond, Commodity, Cash, Other) via a centralized mapping that handles dozens of aliases (Common Stock, ETP, ADR, Mutual Fund, UCITS, SICAV, etc.)
-- Consolidated 6 scattered inline type maps into a single `normalizeAssetType()` utility
+- **Import mode: Add or Replace** — Import dialog now lets users choose between merging new positions or replacing the portfolio entirely
+- **Canonical asset type normalization** — All imported asset types normalized to a standard set via a centralized mapping
