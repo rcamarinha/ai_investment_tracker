@@ -1,0 +1,482 @@
+/* ============================================================================
+   Wine Cellar Tracker — Style Guide & Theme
+   ============================================================================
+
+   Wine Palette (Burgundy-based dark theme)
+   ─────────────────────────────────────────
+   --wine-deep:      #3b0764   (deep purple-wine background)
+   --wine-mid:       #9f1239   (Bordeaux red accent)
+   --wine-light:     #fda4af   (rose / light pink)
+   --wine-gold:      #d97706   (golden / amber for value)
+
+   Inherits all base styles from css/styles.css
+   ============================================================================ */
+
+
+/* ── Wine Header Override ───────────────────────────────────────────────── */
+
+.wine-header {
+    background: linear-gradient(135deg, #9f1239 0%, #3b0764 60%, #1e1b4b 100%);
+}
+
+.wine-header h1 { font-size: 28px; margin-bottom: 8px; }
+.wine-header h1 span { font-size: 12px; font-weight: normal; opacity: 0.6; }
+.wine-header p { color: #fda4af; font-size: 14px; }
+
+.hub-link {
+    color: #fda4af;
+    font-size: 13px;
+    text-decoration: none;
+    opacity: 0.85;
+    margin-bottom: 12px;
+    display: inline-block;
+}
+.hub-link:hover { opacity: 1; }
+
+
+/* ── Label Scanner ──────────────────────────────────────────────────────── */
+
+.scan-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.scan-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+#cameraFeed {
+    width: 100%;
+    max-width: 420px;
+    border-radius: 12px;
+    border: 2px solid #9f1239;
+    display: block;
+}
+
+#previewImage {
+    max-width: 300px;
+    max-height: 400px;
+    border-radius: 12px;
+    border: 2px solid #334155;
+    display: block;
+    margin-bottom: 15px;
+}
+
+.recognition-card {
+    background: #0f172a;
+    border: 1px solid #9f1239;
+    border-radius: 12px;
+    padding: 18px;
+    max-width: 480px;
+}
+
+.recognition-card h3 {
+    color: #fda4af;
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.recognition-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 5px 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: 13px;
+    gap: 10px;
+}
+.recognition-field:last-child { border-bottom: none; }
+.recognition-field .field-label { color: #64748b; flex-shrink: 0; }
+.recognition-field .field-value { color: #e2e8f0; text-align: right; }
+
+.recognition-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.scan-loading {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 480px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+}
+
+.spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #334155;
+    border-top-color: #9f1239;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+
+/* ── Cellar Stats Bar ───────────────────────────────────────────────────── */
+
+.cellar-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.cellar-stat {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 10px 16px;
+    text-align: center;
+    min-width: 80px;
+}
+
+.cellar-stat .stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.cellar-stat .stat-label {
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-top: 2px;
+}
+
+
+/* ── Bottles Grid ───────────────────────────────────────────────────────── */
+
+.bottles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 15px;
+    margin-top: 5px;
+}
+
+.bottle-card {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 18px;
+    transition: border-color 0.15s;
+}
+.bottle-card:hover { border-color: #9f1239; }
+
+.bottle-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.bottle-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.3;
+}
+
+.bottle-meta {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 3px;
+}
+
+.bottle-actions {
+    display: flex;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.bottle-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 12px;
+}
+
+.bottle-tag {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 20px;
+    padding: 2px 9px;
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.bottle-financials {
+    background: #1e293b;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+}
+
+.bottle-fin-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+.bottle-gain {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0 2px;
+    font-size: 13px;
+    font-weight: 600;
+    border-top: 1px solid #334155;
+    margin-top: 4px;
+}
+.bottle-gain.positive { color: #4ade80; }
+.bottle-gain.negative { color: #f87171; }
+.bottle-gain.neutral  { color: #94a3b8; }
+
+.bottle-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+}
+
+.drink-window {
+    font-size: 11px;
+    color: #fda4af;
+    background: #3b0764;
+    border-radius: 20px;
+    padding: 2px 9px;
+}
+
+.valued-at {
+    font-size: 11px;
+    color: #475569;
+}
+
+.bottle-notes {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 8px;
+    font-style: italic;
+    line-height: 1.4;
+    border-top: 1px solid #1e293b;
+    padding-top: 8px;
+}
+
+.unvalued-badge {
+    font-size: 11px;
+    color: #d97706;
+    background: #451a03;
+    border-radius: 20px;
+    padding: 2px 9px;
+}
+
+
+/* ── Allocation Tabs ────────────────────────────────────────────────────── */
+
+.allocation-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.tab-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.tab-btn:hover { border-color: #9f1239; color: #fda4af; }
+.tab-btn.active {
+    background: #9f1239;
+    border-color: #9f1239;
+    color: #fff;
+    font-weight: 600;
+}
+
+
+/* ── Allocation Bar Chart (pure CSS) ────────────────────────────────────── */
+
+.alloc-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    font-size: 13px;
+}
+
+.alloc-label {
+    color: #cbd5e1;
+    min-width: 130px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.alloc-bar-track {
+    flex: 1;
+    background: #1e293b;
+    border-radius: 4px;
+    height: 14px;
+    overflow: hidden;
+}
+
+.alloc-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.alloc-pct {
+    color: #64748b;
+    min-width: 38px;
+    text-align: right;
+    font-size: 12px;
+}
+
+.alloc-value {
+    color: #94a3b8;
+    min-width: 70px;
+    text-align: right;
+    font-size: 12px;
+}
+
+
+/* ── Cellar Analysis ────────────────────────────────────────────────────── */
+
+.wine-analysis-card {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 15px;
+}
+
+.wine-analysis-title {
+    color: #fda4af;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+}
+
+.wine-analysis-body {
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.wine-analysis-list {
+    list-style: none;
+    padding: 0;
+}
+.wine-analysis-list li {
+    color: #cbd5e1;
+    font-size: 14px;
+    padding: 5px 0;
+    border-bottom: 1px solid #1e293b;
+    line-height: 1.5;
+}
+.wine-analysis-list li:last-child { border-bottom: none; }
+.wine-analysis-list li::before { content: '🍷  '; }
+
+
+/* ── History Chart ──────────────────────────────────────────────────────── */
+
+.history-chart-container {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 80px;
+    margin-bottom: 10px;
+}
+
+.history-bar {
+    flex: 1;
+    border-radius: 4px 4px 0 0;
+    background: linear-gradient(180deg, #9f1239, #3b0764);
+    min-height: 4px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    position: relative;
+}
+.history-bar:hover { opacity: 0.8; }
+
+.history-log-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: 13px;
+    color: #94a3b8;
+}
+.history-log-item:last-child { border-bottom: none; }
+
+
+/* ── Dialog Form overrides for wine ────────────────────────────────────── */
+
+#bottleDialog .card,
+#apiKeyDialog .card {
+    max-width: 640px;
+    margin: 20px auto;
+}
+
+.position-form-group label {
+    color: #94a3b8;
+    font-size: 13px;
+    margin-bottom: 6px;
+    display: block;
+}
+
+.position-form-group input,
+.position-form-group textarea,
+.position-form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    background: #334155;
+    color: #fff;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.position-form-group input:focus,
+.position-form-group textarea:focus { border-color: #9f1239; }
+
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+    .bottles-grid { grid-template-columns: 1fr; }
+    .cellar-stats { gap: 8px; }
+    .cellar-stat { min-width: 70px; padding: 8px 12px; }
+    .cellar-stat .stat-value { font-size: 16px; }
+}
