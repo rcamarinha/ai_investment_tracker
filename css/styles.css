@@ -1079,6 +1079,23 @@ body {
 }
 
 
+/* Forgot-password link inside the email section */
+.auth-forgot-link {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+}
+.auth-forgot-link:hover {
+    color: #94a3b8;
+}
+
+
 /* ── Role Badges ────────────────────────────────────────────────────────── */
 
 .role-badge {
