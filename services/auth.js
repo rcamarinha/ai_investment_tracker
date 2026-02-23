@@ -100,6 +100,18 @@ export function updateAuthBar() {
                 <button class="btn-sm" style="background: #475569;" onclick="handleLogout()">Logout</button>
             </div>
         `;
+    } else if (state.passwordRecoveryMode) {
+        authBar.innerHTML = `
+            <div class="auth-login-panel">
+                <div class="auth-email-section">
+                    <span style="color: #94a3b8; font-size: 13px;">Set new password</span>
+                    <input type="password" id="newPassword" placeholder="New password" />
+                    <input type="password" id="confirmPassword" placeholder="Confirm password" onkeydown="if(event.key==='Enter') handlePasswordReset()" />
+                    <button class="btn-sm" style="background: #059669;" onclick="handlePasswordReset()">Set Password</button>
+                    <button class="btn-sm" style="background: #475569;" onclick="cancelPasswordRecovery()">Cancel</button>
+                </div>
+            </div>
+        `;
     } else {
         authBar.innerHTML = `
             <div class="auth-login-panel">
@@ -117,6 +129,7 @@ export function updateAuthBar() {
                     <input type="password" id="authPassword" placeholder="Password" onkeydown="if(event.key==='Enter') handleLogin()" />
                     <button class="btn-sm" style="background: #2563eb;" onclick="handleLogin()">Login</button>
                     <button class="btn-sm" style="background: #7c3aed;" onclick="handleSignup()">Sign Up</button>
+                    <button class="auth-forgot-link" onclick="handleForgotPassword()">Forgot password?</button>
                 </div>
             </div>
         `;
@@ -163,6 +176,65 @@ export async function handleLogin() {
     } catch (err) {
         alert('Login failed: ' + err.message);
     }
+}
+
+export async function handleForgotPassword() {
+    if (!state.supabaseClient) {
+        alert('Cloud sync not configured. Set up Supabase first.');
+        return;
+    }
+
+    const emailInput = document.getElementById('authEmail');
+    const email = emailInput ? emailInput.value.trim() : '';
+
+    if (!email) {
+        alert('Please enter your email address first.');
+        if (emailInput) emailInput.focus();
+        return;
+    }
+
+    try {
+        const { error } = await state.supabaseClient.auth.resetPasswordForEmail(email, {
+            redirectTo: window.location.origin + window.location.pathname,
+        });
+        if (error) throw error;
+        alert(`Password reset email sent to ${email}. Check your inbox and follow the link to set a new password.`);
+    } catch (err) {
+        alert('Failed to send reset email: ' + err.message);
+    }
+}
+
+export async function handlePasswordReset() {
+    const newPassword = document.getElementById('newPassword')?.value;
+    const confirmPassword = document.getElementById('confirmPassword')?.value;
+
+    if (!newPassword || !confirmPassword) {
+        alert('Please fill in both password fields.');
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        alert('Passwords do not match.');
+        return;
+    }
+    if (newPassword.length < 6) {
+        alert('Password must be at least 6 characters.');
+        return;
+    }
+
+    try {
+        const { error } = await state.supabaseClient.auth.updateUser({ password: newPassword });
+        if (error) throw error;
+        state.passwordRecoveryMode = false;
+        alert('Password updated successfully. You are now logged in.');
+        updateAuthBar();
+    } catch (err) {
+        alert('Failed to update password: ' + err.message);
+    }
+}
+
+export function cancelPasswordRecovery() {
+    state.passwordRecoveryMode = false;
+    updateAuthBar();
 }
 
 export async function handleSignup() {

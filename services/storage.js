@@ -4,7 +4,7 @@
 
 import state from './state.js';
 import { buildAssetRecord } from './utils.js';
-import { updateAuthBar, checkUserRole } from './auth.js';
+import { updateAuthBar, checkUserRole, cancelPasswordRecovery } from './auth.js';
 import { renderPortfolio, updateHistoryDisplay } from './portfolio.js';
 import { fetchAssetProfile } from './pricing.js';
 
@@ -20,6 +20,17 @@ export function initSupabase() {
 
         state.supabaseClient.auth.onAuthStateChange((event, session) => {
             state.currentUser = session?.user || null;
+            if (event === 'PASSWORD_RECOVERY') {
+                // User arrived via a password-reset link — show the set-new-password form
+                state.passwordRecoveryMode = true;
+                updateAuthBar();
+                return;
+            }
+            if (event === 'USER_UPDATED' && state.passwordRecoveryMode) {
+                // Password was successfully updated; cancelPasswordRecovery already reset the flag,
+                // but guard here in case the event fires before the local flag is cleared.
+                state.passwordRecoveryMode = false;
+            }
             updateAuthBar();
             if (event === 'SIGNED_IN') {
                 loadFromDatabase();

@@ -316,7 +316,9 @@
         import { fetchMarketPrices, fetchExchangeRates } from './services/pricing.js';
         import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
         import { initSupabase } from './services/storage.js';
-        import { handleLogin, handleSignup, handleLogout, handleGoogleLogin, checkUserRole, updateActionVisibility } from './services/auth.js';
+        import { handleLogin, handleSignup, handleLogout, handleGoogleLogin,
+                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery,
+                 checkUserRole, updateActionVisibility } from './services/auth.js';
 
         // ── Expose functions to onclick handlers ────────────────────────────
         window.showApiKeyDialog    = showApiKeyDialog;
@@ -332,10 +334,13 @@
         window.getTradeIdeas       = getTradeIdeas;
         window.selectPerspective   = selectPerspective;
         window.toggleSectorFilter  = toggleSectorFilter;
-        window.handleLogin         = handleLogin;
-        window.handleSignup        = handleSignup;
-        window.handleLogout        = handleLogout;
-        window.handleGoogleLogin   = handleGoogleLogin;
+        window.handleLogin             = handleLogin;
+        window.handleSignup            = handleSignup;
+        window.handleLogout            = handleLogout;
+        window.handleGoogleLogin       = handleGoogleLogin;
+        window.handleForgotPassword    = handleForgotPassword;
+        window.handlePasswordReset     = handlePasswordReset;
+        window.cancelPasswordRecovery  = cancelPasswordRecovery;
         window.clearHistory        = clearHistory;
         window.deleteSnapshot      = deleteSnapshot;
         window.showAddPositionDialog  = showAddPositionDialog;
