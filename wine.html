@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wine Cellar Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/wine.css">
+</head>
+<body>
+    <div class="container">
+
+        <!-- ── Header ──────────────────────────────────────────────────── -->
+        <div class="header wine-header">
+            <div style="margin-bottom: 10px;">
+                <a href="index.html" class="hub-link">← All Trackers</a>
+            </div>
+            <h1>🍷 Wine Cellar <span>v1.0.0</span></h1>
+            <p>AI-powered wine collection management with label recognition</p>
+        </div>
+
+        <!-- ── Auth Bar ────────────────────────────────────────────────── -->
+        <div id="authBar" class="auth-bar" style="display: none;"></div>
+
+        <!-- ── Label Scanner Card ──────────────────────────────────────── -->
+        <div class="card" id="scannerCard">
+            <h2 style="margin-bottom: 8px;">📸 Scan Wine Label</h2>
+            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 18px;">
+                Photograph the front label — Claude AI will identify the wine and pre-fill the details.
+            </p>
+
+            <div class="scan-controls">
+                <!-- Primary CTA: works as camera on mobile, file picker on desktop -->
+                <label for="photoUpload" class="btn btn-accent scan-btn" style="cursor: pointer;">
+                    📷 Take Photo / Upload Image
+                </label>
+                <input type="file" id="photoUpload" accept="image/*" capture="environment" style="display: none;" />
+
+                <!-- Optional live camera for desktop -->
+                <button class="btn btn-primary" id="liveCameraBtn" onclick="toggleLiveCamera()">
+                    🎥 Live Camera
+                </button>
+            </div>
+
+            <!-- Live camera preview (desktop) -->
+            <div id="liveCameraContainer" style="display: none; margin-top: 18px;">
+                <video id="cameraFeed" autoplay playsinline></video>
+                <canvas id="captureCanvas" style="display: none;"></canvas>
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-success" onclick="captureFromCamera()">✓ Capture &amp; Scan</button>
+                    <button class="btn btn-danger" onclick="stopCamera()">✕ Close Camera</button>
+                </div>
+            </div>
+
+            <!-- Preview image + recognition result -->
+            <div id="scanPreview" style="display: none; margin-top: 20px;">
+                <img id="previewImage" alt="Wine label preview" />
+                <div id="recognitionResult" style="margin-top: 12px;"></div>
+            </div>
+        </div>
+
+        <!-- ── Cellar Overview Card ─────────────────────────────────────── -->
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">
+                <h2>🍾 Your Cellar</h2>
+                <div class="cellar-stats">
+                    <div class="cellar-stat">
+                        <div class="stat-value" id="totalBottlesDisplay">0</div>
+                        <div class="stat-label">Bottles</div>
+                    </div>
+                    <div class="cellar-stat">
+                        <div class="stat-value" id="totalInvestedDisplay">€0</div>
+                        <div class="stat-label">Invested</div>
+                    </div>
+                    <div class="cellar-stat">
+                        <div class="stat-value" id="totalValueDisplay">€0</div>
+                        <div class="stat-label">Est. Value</div>
+                    </div>
+                    <div class="cellar-stat">
+                        <div class="stat-value" id="totalGainDisplay" style="color: #4ade80;">+€0</div>
+                        <div class="stat-label">Gain / Loss</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;">
+                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()">🔑 API Keys</button>
+                <button class="btn btn-success" onclick="showAddBottleDialog()">➕ Add Bottle</button>
+                <button class="btn btn-accent" onclick="valuateAllBottles()" id="valuateBtn">💎 Update Valuations</button>
+                <button class="btn btn-warning" onclick="saveCellarSnapshot()">💾 Save Snapshot</button>
+                <button class="btn btn-accent" onclick="analyzeCellar()" id="analyzeBtn">🤖 AI Analysis</button>
+            </div>
+
+            <div id="bottles" class="bottles-grid">
+                <div style="color: #64748b; text-align: center; padding: 40px; grid-column: 1/-1;">
+                    No bottles in cellar yet.<br>
+                    <span style="font-size: 13px;">Scan a label or click ➕ Add Bottle to get started.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Allocation Charts ────────────────────────────────────────── -->
+        <div class="card" id="allocationSection" style="display: none;">
+            <h2 style="margin-bottom: 15px;">📊 Cellar Allocation</h2>
+            <div class="allocation-tabs">
+                <button class="tab-btn active" id="tab-region"   onclick="showAllocationTab('region')">By Region</button>
+                <button class="tab-btn"         id="tab-varietal" onclick="showAllocationTab('varietal')">By Varietal</button>
+                <button class="tab-btn"         id="tab-country"  onclick="showAllocationTab('country')">By Country</button>
+            </div>
+            <div id="allocationChart" class="allocation-chart"></div>
+        </div>
+
+        <!-- ── AI Analysis ──────────────────────────────────────────────── -->
+        <div id="analysisSection"></div>
+
+        <!-- ── History ──────────────────────────────────────────────────── -->
+        <div id="historySection" style="display: none;">
+            <div class="card">
+                <h2 style="margin-bottom: 15px;">📈 Cellar History</h2>
+                <div id="historyChart" style="margin-bottom: 15px;"></div>
+                <div id="historyLog"></div>
+                <button class="btn btn-danger btn-sm" onclick="clearHistory()" style="margin-top: 15px;">🗑 Clear History</button>
+            </div>
+        </div>
+
+    </div><!-- /container -->
+
+    <!-- ═══ Add / Edit Bottle Dialog ═════════════════════════════════════ -->
+    <div id="bottleDialog" style="display: none;">
+        <div class="card" style="max-width: 680px; margin: 20px auto;">
+            <h2 id="bottleDialogTitle" style="margin-bottom: 20px;">🍾 Add Bottle</h2>
+
+            <div class="position-form-row">
+                <div class="position-form-group">
+                    <label>Wine Name *</label>
+                    <input type="text" id="bottleName" placeholder="e.g. Château Margaux" />
+                </div>
+                <div class="position-form-group">
+                    <label>Winery / Producer</label>
+                    <input type="text" id="bottleWinery" placeholder="e.g. Château Margaux" />
+                </div>
+            </div>
+
+            <div class="position-form-row">
+                <div class="position-form-group">
+                    <label>Vintage</label>
+                    <input type="number" id="bottleVintage" placeholder="e.g. 2018" min="1800" max="2030" />
+                </div>
+                <div class="position-form-group">
+                    <label>Varietal / Grape</label>
+                    <input type="text" id="bottleVarietal" placeholder="e.g. Cabernet Sauvignon" />
+                </div>
+            </div>
+
+            <div class="position-form-row">
+                <div class="position-form-group">
+                    <label>Region</label>
+                    <input type="text" id="bottleRegion" placeholder="e.g. Bordeaux" />
+                </div>
+                <div class="position-form-group">
+                    <label>Appellation</label>
+                    <input type="text" id="bottleAppellation" placeholder="e.g. Margaux AOC" />
+                </div>
+            </div>
+
+            <div class="position-form-row">
+                <div class="position-form-group">
+                    <label>Country</label>
+                    <input type="text" id="bottleCountry" placeholder="e.g. France" />
+                </div>
+                <div class="position-form-group">
+                    <label>Alcohol %</label>
+                    <input type="text" id="bottleAlcohol" placeholder="e.g. 13.5%" />
+                </div>
+            </div>
+
+            <hr style="border: 1px solid #334155; margin: 16px 0;">
+
+            <div class="position-form-row">
+                <div class="position-form-group">
+                    <label>Quantity (bottles) *</label>
+                    <input type="number" id="bottleQty" placeholder="e.g. 6" min="1" step="1" value="1" />
+                </div>
+                <div class="position-form-group">
+                    <label>Purchase Price / bottle (€) *</label>
+                    <input type="number" id="bottlePurchasePrice" placeholder="e.g. 150.00" min="0" step="0.01" />
+                </div>
+            </div>
+
+            <div class="position-form-row">
+                <div class="position-form-group">
+                    <label>Purchase Date</label>
+                    <input type="date" id="bottlePurchaseDate" />
+                </div>
+                <div class="position-form-group">
+                    <label>Storage Location</label>
+                    <input type="text" id="bottleStorage" placeholder="e.g. Home cellar, Cavissima" />
+                </div>
+            </div>
+
+            <div class="position-form-group">
+                <label>Notes</label>
+                <textarea id="bottleNotes" placeholder="Awards, tasting notes, special designations..." style="width: 100%; height: 80px; padding: 10px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+                <button id="bottleDialogSubmit" class="btn btn-success" onclick="submitBottle()">Add Bottle</button>
+                <button class="btn btn-primary" onclick="closeBottleDialog()">Cancel</button>
+                <button id="bottleDeleteBtn" class="btn btn-danger" onclick="deleteCurrentBottle()" style="display: none; margin-left: auto;">🗑 Delete Bottle</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ API Key Dialog ════════════════════════════════════════════════ -->
+    <div id="apiKeyDialog" style="display: none;">
+        <div class="card" style="max-width: 560px; margin: 20px auto;">
+            <h2 style="margin-bottom: 20px;">🔑 API Key Management</h2>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                    🤖 Anthropic API Key (Label Recognition + AI Analysis)
+                </label>
+                <input type="password" id="anthropicKeyInput"
+                       placeholder="sk-ant-api03-..."
+                       style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px;" />
+                <div style="color: #94a3b8; font-size: 12px; margin-top: 6px; line-height: 1.6;">
+                    Required for: wine label scanning (vision AI) and cellar analysis.<br>
+                    Get API key: <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com/settings/keys</a>
+                </div>
+            </div>
+
+            <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                    ☁️ Supabase Project URL (Cloud Sync)
+                </label>
+                <input type="text" id="supabaseUrlInput"
+                       placeholder="https://your-project.supabase.co"
+                       style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px;" />
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                    🔑 Supabase Anon Key (Public)
+                </label>
+                <input type="text" id="supabaseAnonKeyInput"
+                       placeholder="eyJhbGciOiJIUzI1NiIs..."
+                       style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px;" />
+                <div style="color: #94a3b8; font-size: 12px; margin-top: 6px;">
+                    This is the <strong>anon/public</strong> key. Row Level Security protects your data.
+                </div>
+            </div>
+
+            <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                <div style="color: #92400e; font-size: 13px;">
+                    🔒 <strong>Security:</strong> Keys are saved in your browser only (localStorage). Never committed to code.
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-accent" onclick="saveApiKeys()">💾 Save Keys</button>
+                <button class="btn btn-primary" onclick="closeApiKeyDialog()">Cancel</button>
+                <button class="btn btn-danger" onclick="clearApiKeys()" style="margin-left: auto;">🗑️ Clear All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
+    <script type="module">
+        // ── Imports ────────────────────────────────────────────────────────────
+        import state from './wine/state.js';
+        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js';
+        import { initSupabase, updateAuthBar,
+                 handleLogin, handleSignup, handleLogout, handleGoogleLogin,
+                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js';
+        import { renderCellar, showAddBottleDialog, showEditBottleDialog,
+                 closeBottleDialog, submitBottle, deleteCurrentBottle,
+                 saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory } from './wine/cellar.js';
+        import { valuateAllBottles, valuateSingleBottle } from './wine/valuation.js';
+        import { analyzeCellar } from './wine/analysis.js';
+        import { renderAllocationCharts, showAllocationTab,
+                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './wine/ui.js';
+
+        // ── Expose to onclick handlers ─────────────────────────────────────────
+        window.showApiKeyDialog      = showApiKeyDialog;
+        window.closeApiKeyDialog     = closeApiKeyDialog;
+        window.saveApiKeys           = saveApiKeys;
+        window.clearApiKeys          = clearApiKeys;
+        window.showAddBottleDialog   = showAddBottleDialog;
+        window.showEditBottleDialog  = showEditBottleDialog;
+        window.closeBottleDialog     = closeBottleDialog;
+        window.submitBottle          = submitBottle;
+        window.deleteCurrentBottle   = deleteCurrentBottle;
+        window.saveCellarSnapshot    = saveCellarSnapshot;
+        window.valuateAllBottles     = valuateAllBottles;
+        window.valuateSingleBottle   = valuateSingleBottle;
+        window.analyzeCellar         = analyzeCellar;
+        window.showAllocationTab     = showAllocationTab;
+        window.deleteSnapshot        = deleteSnapshot;
+        window.clearHistory          = clearHistory;
+        window.renderCellar          = renderCellar;
+        window.handleLogin           = handleLogin;
+        window.handleSignup          = handleSignup;
+        window.handleLogout          = handleLogout;
+        window.handleGoogleLogin     = handleGoogleLogin;
+        window.handleForgotPassword  = handleForgotPassword;
+        window.handlePasswordReset   = handlePasswordReset;
+        window.cancelPasswordRecovery = cancelPasswordRecovery;
+
+        // ── Camera state ───────────────────────────────────────────────────────
+        let cameraStream = null;
+        let pendingScanBase64  = null;
+        let pendingScanMedia   = null;
+
+        // ── Photo Upload (file input) ──────────────────────────────────────────
+        document.getElementById('photoUpload').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            await handlePhotoSelected(file);
+            e.target.value = ''; // reset so same file can be selected again
+        });
+
+        async function handlePhotoSelected(file) {
+            try {
+                const { base64, mediaType } = await fileToBase64(file);
+                const dataUrl = `data:${mediaType};base64,${base64}`;
+                showPreview(dataUrl);
+                await runLabelScan(base64, mediaType);
+            } catch (err) {
+                console.error('Photo handling error:', err);
+                showRecognitionError(err.message);
+            }
+        }
+
+        // ── Live Camera (desktop) ──────────────────────────────────────────────
+        window.toggleLiveCamera = async function() {
+            const container = document.getElementById('liveCameraContainer');
+            if (cameraStream) {
+                stopCamera();
+            } else {
+                try {
+                    cameraStream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+                    });
+                    const video = document.getElementById('cameraFeed');
+                    video.srcObject = cameraStream;
+                    container.style.display = 'block';
+                    document.getElementById('liveCameraBtn').textContent = '✕ Close Camera';
+                } catch (err) {
+                    alert('Camera not available: ' + err.message + '\n\nUse the "Take Photo / Upload" button instead.');
+                }
+            }
+        };
+
+        window.stopCamera = function() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(t => t.stop());
+                cameraStream = null;
+            }
+            const video = document.getElementById('cameraFeed');
+            if (video) video.srcObject = null;
+            document.getElementById('liveCameraContainer').style.display = 'none';
+            document.getElementById('liveCameraBtn').textContent = '🎥 Live Camera';
+        };
+
+        window.captureFromCamera = async function() {
+            const video  = document.getElementById('cameraFeed');
+            const canvas = document.getElementById('captureCanvas');
+            if (!video || !canvas) return;
+            const { base64, mediaType, dataUrl } = captureVideoFrame(video, canvas);
+            showPreview(dataUrl);
+            stopCamera();
+            await runLabelScan(base64, mediaType);
+        };
+
+        // ── Label Scan ─────────────────────────────────────────────────────────
+        function showPreview(dataUrl) {
+            document.getElementById('previewImage').src = dataUrl;
+            document.getElementById('scanPreview').style.display = 'block';
+            document.getElementById('recognitionResult').innerHTML = `
+                <div class="scan-loading">
+                    <div class="spinner"></div>
+                    Scanning label with Claude Vision AI...
+                </div>`;
+        }
+
+        async function runLabelScan(base64, mediaType) {
+            const resultEl = document.getElementById('recognitionResult');
+
+            if (!state.anthropicKey) {
+                resultEl.innerHTML = `
+                    <div class="recognition-card">
+                        <h3>⚠️ API Key Required</h3>
+                        <p style="color: #94a3b8; font-size: 13px; margin-bottom: 12px;">
+                            Set your Anthropic API key to enable label scanning.
+                        </p>
+                        <div class="recognition-actions">
+                            <button class="btn btn-key" onclick="showApiKeyDialog()">🔑 Add API Key</button>
+                        </div>
+                    </div>`;
+                // Still offer manual add with the captured image
+                pendingScanBase64 = base64;
+                pendingScanMedia  = mediaType;
+                return;
+            }
+
+            try {
+                const wine = await recognizeLabel(base64, mediaType);
+                pendingScanBase64 = null;
+                pendingScanMedia  = null;
+                showRecognitionResult(wine);
+            } catch (err) {
+                showRecognitionError(err.message);
+            }
+        }
+
+        function showRecognitionResult(wine) {
+            const resultEl = document.getElementById('recognitionResult');
+            const fields = [
+                ['Wine',        wine.name],
+                ['Winery',      wine.winery],
+                ['Vintage',     wine.vintage],
+                ['Region',      wine.region],
+                ['Appellation', wine.appellation],
+                ['Varietal',    wine.varietal],
+                ['Country',     wine.country],
+                ['Alcohol',     wine.alcohol],
+            ].filter(([, v]) => v != null);
+
+            resultEl.innerHTML = `
+                <div class="recognition-card">
+                    <h3>✅ Wine Identified</h3>
+                    ${fields.map(([label, value]) => `
+                        <div class="recognition-field">
+                            <span class="field-label">${label}</span>
+                            <span class="field-value">${escapeHTML(String(value))}</span>
+                        </div>`).join('')}
+                    ${wine.notes ? `<div style="margin-top: 10px; font-size: 12px; color: #64748b; font-style: italic;">${escapeHTML(wine.notes)}</div>` : ''}
+                    <div class="recognition-actions">
+                        <button class="btn btn-success" onclick="addScannedToBottleDialog()">➕ Add to Cellar</button>
+                        <button class="btn btn-primary btn-sm" onclick="clearScan()">✕ Dismiss</button>
+                    </div>
+                </div>`;
+
+            // Store wine data for use in the add dialog
+            window._lastScannedWine = wine;
+        }
+
+        function showRecognitionError(message) {
+            const resultEl = document.getElementById('recognitionResult');
+            resultEl.innerHTML = `
+                <div class="recognition-card" style="border-color: #f87171;">
+                    <h3 style="color: #f87171;">❌ Scan Failed</h3>
+                    <p style="color: #94a3b8; font-size: 13px; margin-bottom: 12px;">${escapeHTML(message)}</p>
+                    <div class="recognition-actions">
+                        <button class="btn btn-success" onclick="addManually()">➕ Add Manually</button>
+                        <button class="btn btn-primary btn-sm" onclick="clearScan()">✕ Dismiss</button>
+                    </div>
+                </div>`;
+        }
+
+        window.addScannedToBottleDialog = function() {
+            const wine = window._lastScannedWine || {};
+            clearScan();
+            showAddBottleDialog(wine);
+        };
+
+        window.addManually = function() {
+            clearScan();
+            showAddBottleDialog();
+        };
+
+        window.clearScan = function() {
+            document.getElementById('scanPreview').style.display = 'none';
+            document.getElementById('previewImage').src = '';
+            document.getElementById('recognitionResult').innerHTML = '';
+            window._lastScannedWine = null;
+        };
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ── Initialization ─────────────────────────────────────────────────────
+        console.log('=== WINE CELLAR INITIALIZING ===');
+
+        // Load saved API keys from localStorage
+        const storedAnthropicKey = localStorage.getItem('wine_anthropicKey');
+        if (storedAnthropicKey) state.anthropicKey = storedAnthropicKey;
+
+        // Load Supabase config (wine-specific keys override defaults)
+        const storedSBUrl = localStorage.getItem('wine_supabaseUrl');
+        const storedSBKey = localStorage.getItem('wine_supabaseAnonKey');
+        if (storedSBUrl)  state.supabaseUrl     = storedSBUrl;
+        if (storedSBKey)  state.supabaseAnonKey = storedSBKey;
+
+        // Try to initialize Supabase (callback re-renders cellar after DB load)
+        const supabaseOk = initSupabase(() => renderCellar());
+
+        // Initial render (shows empty state if no data yet)
+        renderCellar();
+
+        // Show the API keys button (wine-only mode, always visible)
+        const apiKeyBtn = document.getElementById('apiKeyBtn');
+        if (apiKeyBtn) apiKeyBtn.style.display = '';
+
+        // Handle password recovery redirect
+        const hash = window.location.hash;
+        if (hash && hash.includes('type=recovery')) {
+            state.passwordRecoveryMode = true;
+            updateAuthBar();
+        }
+
+        console.log('✓ Wine Cellar initialized. Supabase:', supabaseOk ? 'connected' : 'local-only');
+    </script>
+</body>
+</html>

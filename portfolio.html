@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Financial Advisor</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="margin-bottom: 10px;">
+                <a href="index.html" style="color: #bfdbfe; font-size: 13px; text-decoration: none; opacity: 0.8;">← All Trackers</a>
+            </div>
+            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.7.0</span></h1>
+            <p>Market analysis and personalized portfolio insights</p>
+        </div>
+
+        <div id="authBar" class="auth-bar" style="display: none;"></div>
+
+        <!-- Artifact Network Warning (shown only in artifacts) -->
+        <div id="artifactWarning" style="display: none; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+            <div style="display: flex; align-items: start; gap: 10px;">
+                <div style="font-size: 24px;">⚠️</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: bold; color: #92400e; margin-bottom: 5px;">Network Restrictions Detected</div>
+                    <div style="color: #78350f; font-size: 14px; margin-bottom: 10px;">
+                        Claude artifacts cannot fetch live market prices due to network security restrictions.
+                    </div>
+                    <div style="color: #78350f; font-size: 13px; background: white; padding: 10px; border-radius: 5px; line-height: 1.6;">
+                        <strong>💡 Solution: Download & Open Locally</strong><br>
+                        → Right-click anywhere on this page<br>
+                        → Select "Save As" → Save the HTML file<br>
+                        → Open the saved file in your browser<br>
+                        ✓ Full price fetching ✓ Works offline ✓ Cloud sync when back in Claude
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="portfolio-header">
+                <h2>💼 Your Portfolio</h2>
+                <div class="total-value">
+                    <div>Total Value</div>
+                    <div id="totalValue">$0</div>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
+                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()">🔑 API Keys</button>
+                <button class="btn btn-success" onclick="showAddPositionDialog()">➕ Add Position</button>
+                <button class="btn btn-primary" onclick="showImportDialog()">📋 Import from Spreadsheet</button>
+                <button class="btn btn-success" onclick="fetchMarketPrices()" id="refreshBtn">🔄 Update Prices</button>
+                <button class="btn btn-warning" onclick="savePortfolioSnapshot()">💾 Save Snapshot</button>
+                <div class="currency-selector" id="currencySelector">
+                    <button class="currency-option active" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
+                    <button class="currency-option" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
+                </div>
+            </div>
+
+            <div id="moversSection" style="display: none;"></div>
+
+            <div class="positions" id="positions"></div>
+
+            <div id="allocationSection" class="allocation-section" style="display: none;">
+                <h3 style="color: #e2e8f0; margin-bottom: 15px;">📊 Portfolio Allocation</h3>
+                <div class="allocation-charts">
+                    <div class="allocation-chart-container">
+                        <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;">By Asset Type</h4>
+                        <div id="typeAllocationChart" class="allocation-chart"></div>
+                    </div>
+                    <div class="allocation-chart-container">
+                        <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;">By Sector</h4>
+                        <div id="sectorAllocationChart" class="allocation-chart"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="perspective-selector" id="perspectiveSelector">
+                <div class="perspective-header">
+                    <span class="perspective-label">Investment Perspective:</span>
+                </div>
+                <div class="perspective-tabs" id="perspectiveTabs"></div>
+                <div class="perspective-info" id="perspectiveInfo"></div>
+                <div class="perspective-buttons">
+                    <button class="btn btn-accent" onclick="analyzeMarkets()" id="analyzeBtn">Get AI Analysis</button>
+                    <button class="btn btn-trade" onclick="getTradeIdeas()" id="tradeIdeasBtn">💹 Get Trade Ideas</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="apiKeyDialog" style="display: none;">
+            <div class="card">
+                <h2 style="margin-bottom: 15px;">🔑 API Key Management</h2>
+
+                <div style="background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="color: #cbd5e1; margin-bottom: 10px; font-size: 16px;">3-Tier Strategy:</h3>
+                    <div style="color: #94a3b8; font-size: 13px; line-height: 1.8;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span>🚀 <strong>Finnhub:</strong> 60 calls/minute (unlimited daily)</span>
+                            <span style="color: #4ade80;">PRIMARY</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span>⚡ <strong>FMP:</strong> 250 calls/day (no per-min limit)</span>
+                            <span style="color: #60a5fa;">FALLBACK #1</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>🔄 <strong>Alpha Vantage:</strong> 5 calls/min, 25/day</span>
+                            <span style="color: #f59e0b;">FALLBACK #2</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 6px; font-size: 12px; color: #94a3b8;">
+                        💡 <strong>Strategy:</strong> Finnhub primary (fast), FMP for what it misses (generous limit), Alpha Vantage last resort (strict limits)
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">🚀 Finnhub API Key (Primary - Fast & Unlimited)</label>
+                    <input type="text" id="finnhubKeyInput" placeholder="Enter your Finnhub API key" style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
+                    <div style="color: #94a3b8; font-size: 12px;">Get free key: <a href="https://finnhub.io/register" target="_blank" style="color: #60a5fa;">https://finnhub.io/register</a><br>✓ 60 calls/minute • ✓ Unlimited daily • ✓ Best for US stocks</div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">⚡ Financial Modeling Prep API Key (Fallback #1 - Generous Limit)</label>
+                    <input type="text" id="fmpKeyInput" placeholder="Enter your FMP API key" style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
+                    <div style="color: #94a3b8; font-size: 12px;">Get free key: <a href="https://site.financialmodelingprep.com/developer/docs/" target="_blank" style="color: #60a5fa;">https://financialmodelingprep.com</a><br>✓ 250 calls/day • ✓ Using quote-short endpoint (better free tier support)</div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">🔄 Alpha Vantage API Key (Fallback #2 - Last Resort)</label>
+                    <input type="text" id="alphaVantageKeyInput" placeholder="Enter your Alpha Vantage API key" style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
+                    <div style="color: #94a3b8; font-size: 12px;">Get free key: <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color: #60a5fa;">https://www.alphavantage.co/support/#api-key</a><br>✓ 5 calls/minute, 25/day • ✓ Good international coverage • ✓ Use sparingly</div>
+                </div>
+
+                <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">🤖 Anthropic API Key (AI Analysis)</label>
+                    <input type="password" id="anthropicKeyInput" placeholder="Enter your Anthropic API key (sk-ant-...)" style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
+                    <div style="color: #94a3b8; font-size: 12px;">Get API key: <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">https://console.anthropic.com/settings/keys</a><br>Required for "Get AI Analysis" when running outside Claude.ai</div>
+                </div>
+
+                <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">☁️ Supabase Project URL (Cloud Database)</label>
+                    <input type="text" id="supabaseUrlInput" placeholder="https://your-project.supabase.co" style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
+                    <div style="color: #94a3b8; font-size: 12px;">Get from: <a href="https://supabase.com/dashboard" target="_blank" style="color: #60a5fa;">Supabase Dashboard</a> &gt; Settings &gt; API</div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">🔑 Supabase Anon Key (Public)</label>
+                    <input type="text" id="supabaseAnonKeyInput" placeholder="eyJhbGciOiJIUzI1NiIs..." style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
+                    <div style="color: #94a3b8; font-size: 12px;">This is the <strong>anon/public</strong> key (safe for browser use). Row Level Security protects your data.</div>
+                </div>
+
+                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                    <div style="color: #92400e; font-size: 13px;">
+                        <strong>🔒 Security:</strong> API keys saved in your browser only (localStorage). Supabase anon key is safe for public use.
+                        <br><br>
+                        <strong>📊 Coverage:</strong> All 3 price APIs combined = ~98%+ success rate. Finnhub ~85%, FMP ~10%, Alpha Vantage ~5%.
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-accent" onclick="saveApiKeys()">💾 Save Keys</button>
+                    <button class="btn btn-primary" onclick="closeApiKeyDialog()">Cancel</button>
+                    <button class="btn btn-danger" onclick="clearApiKeys()" style="margin-left: auto;">🗑️ Clear All Keys</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="importDialog" style="display: none;">
+            <div class="card">
+                <h2 style="margin-bottom: 15px;">📋 Import Positions</h2>
+                <p style="color: #cbd5e1; margin-bottom: 12px;">
+                    Paste your positions from any spreadsheet or broker export. The app will auto-detect column layout.
+                </p>
+                <div style="color: #94a3b8; font-size: 12px; margin-bottom: 12px; line-height: 1.6;">
+                    <div style="margin-bottom: 6px;"><strong style="color: #60a5fa;">Required columns:</strong> Ticker/Symbol/ISIN + Quantity/Shares</div>
+                    <div style="margin-bottom: 6px;"><strong style="color: #60a5fa;">Optional columns:</strong> Avg Price, Name, Platform, Type, Total Amount</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px;">
+                        <span>✅ Tab, comma, semicolon, or pipe separated</span>
+                        <span>✅ ISINs resolved via AI</span>
+                        <span>✅ European number formats (1.234,56)</span>
+                        <span>✅ Missing price → uses current market price</span>
+                    </div>
+                </div>
+                <textarea id="importText" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10" style="width: 100%; height: 200px; padding: 15px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 12px; margin-bottom: 10px;"></textarea>
+                <div style="display: flex; gap: 16px; margin-bottom: 12px; padding: 10px 14px; background: #0f172a; border-radius: 8px; font-size: 13px;">
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #cbd5e1;">
+                        <input type="radio" name="importMode" value="add" checked style="accent-color: #4ade80;" />
+                        <span><strong>Add</strong> to existing portfolio</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #cbd5e1;">
+                        <input type="radio" name="importMode" value="replace" style="accent-color: #f59e0b;" />
+                        <span><strong>Replace</strong> entire portfolio</span>
+                    </label>
+                </div>
+                <div id="importReportArea"></div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-accent" onclick="importPositions()">Import Positions</button>
+                    <button class="btn btn-primary" onclick="closeImportDialog()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Position Management Dialog (Add / Buy More / Sell) -->
+        <div id="positionDialog" style="display: none;">
+            <div class="card">
+                <h2 id="positionDialogTitle" style="margin-bottom: 15px;">Add New Position</h2>
+
+                <!-- Search section (visible for new positions) -->
+                <div id="positionSearchSection" class="position-form-group">
+                    <label>Search by Ticker or Company Name</label>
+                    <div class="search-container">
+                        <input type="text" id="positionSearchInput" placeholder="Type ticker or company name to search..." autocomplete="off" />
+                        <div id="searchResults" class="search-results"></div>
+                    </div>
+                </div>
+
+                <!-- Sell/buy info banner -->
+                <div id="positionSellInfo" class="position-sell-info" style="display: none;"></div>
+
+                <!-- Symbol & Name (shown for add, hidden for buy/sell) -->
+                <div class="position-form-row">
+                    <div id="positionSymbolGroup" class="position-form-group">
+                        <label>Ticker Symbol *</label>
+                        <input type="text" id="positionSymbol" placeholder="e.g. AAPL" style="text-transform: uppercase;" />
+                    </div>
+                    <div id="positionNameGroup" class="position-form-group">
+                        <label>Asset Name</label>
+                        <input type="text" id="positionName" placeholder="e.g. Apple Inc" />
+                    </div>
+                </div>
+
+                <div class="position-form-row">
+                    <div id="positionTypeGroup" class="position-form-group">
+                        <label>Asset Type</label>
+                        <select id="positionType">
+                            <option value="Stock">Stock</option>
+                            <option value="ETF">ETF</option>
+                            <option value="Crypto">Crypto</option>
+                            <option value="REIT">REIT</option>
+                            <option value="Bond">Bond</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div id="positionPlatformGroup" class="position-form-group">
+                        <label>Platform</label>
+                        <input type="text" id="positionPlatform" placeholder="e.g. Interactive Brokers" />
+                    </div>
+                </div>
+
+                <hr style="border: 1px solid #334155; margin: 16px 0;">
+
+                <!-- Shares and Amount (always visible) -->
+                <div class="position-form-row">
+                    <div class="position-form-group">
+                        <label id="positionSharesLabel">Number of Shares *</label>
+                        <input type="number" id="positionShares" placeholder="e.g. 10" min="0" step="any" />
+                    </div>
+                    <div class="position-form-group">
+                        <label id="positionAmountLabel">Invested Amount *</label>
+                        <input type="number" id="positionAmount" placeholder="e.g. 1500.00" min="0" step="any" />
+                    </div>
+                </div>
+
+                <div class="position-calc-display" id="positionCalcDisplay"></div>
+
+                <div class="position-form-group">
+                    <label>Date *</label>
+                    <input type="date" id="positionDate" />
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button id="positionDialogSubmit" class="btn btn-success" onclick="submitPosition()">Add Position</button>
+                    <button class="btn btn-primary" onclick="closePositionDialog()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="analysisSection"></div>
+
+        <div id="historySection" style="display: none;">
+            <div class="card">
+                <h2 style="margin-bottom: 15px;">📈 Portfolio History</h2>
+                <div id="historyChart" style="margin-bottom: 20px;"></div>
+                <div id="historyLog"></div>
+            </div>
+        </div>
+
+        <div id="salesHistorySection" style="display: none;">
+            <div class="card"></div>
+        </div>
+    </div>
+
+    <!--
+        NOTE: This app uses ES modules. It must be served via HTTP (not file://).
+        Use any local server:  python -m http.server 8000
+        Or deploy to GitHub Pages / any static host.
+    -->
+    <script type="module">
+        // ── Import all modules ──────────────────────────────────────────────
+        import state from './services/state.js';
+        import { isArtifact } from './services/utils.js';
+        import { loadSectorCache } from './data/sectors.js';
+        import { renderPerspectiveTabs, selectPerspective, toggleSectorFilter,
+                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './services/ui.js';
+        import { renderPortfolio, showImportDialog, closeImportDialog,
+                 importPositions, savePortfolioSnapshot, updateHistoryDisplay,
+                 clearHistory, deleteSnapshot, initPositionDialog, showAddPositionDialog,
+                 showEditPositionDialog, closePositionDialog, submitPosition,
+                 deletePosition, toggleInactivePositions,
+                 refreshSinglePrice, setBaseCurrency,
+                 loadTransactionsFromStorage } from './services/portfolio.js';
+        import { fetchMarketPrices, fetchExchangeRates } from './services/pricing.js';
+        import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
+        import { initSupabase } from './services/storage.js';
+        import { handleLogin, handleSignup, handleLogout, handleGoogleLogin,
+                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery,
+                 checkUserRole, updateActionVisibility } from './services/auth.js';
+
+        // ── Expose functions to onclick handlers ────────────────────────────
+        window.showApiKeyDialog    = showApiKeyDialog;
+        window.closeApiKeyDialog   = closeApiKeyDialog;
+        window.saveApiKeys         = saveApiKeys;
+        window.clearApiKeys        = clearApiKeys;
+        window.showImportDialog    = showImportDialog;
+        window.closeImportDialog   = closeImportDialog;
+        window.importPositions     = importPositions;
+        window.fetchMarketPrices   = fetchMarketPrices;
+        window.savePortfolioSnapshot = savePortfolioSnapshot;
+        window.analyzeMarkets      = analyzeMarkets;
+        window.getTradeIdeas       = getTradeIdeas;
+        window.selectPerspective   = selectPerspective;
+        window.toggleSectorFilter  = toggleSectorFilter;
+        window.handleLogin             = handleLogin;
+        window.handleSignup            = handleSignup;
+        window.handleLogout            = handleLogout;
+        window.handleGoogleLogin       = handleGoogleLogin;
+        window.handleForgotPassword    = handleForgotPassword;
+        window.handlePasswordReset     = handlePasswordReset;
+        window.cancelPasswordRecovery  = cancelPasswordRecovery;
+        window.clearHistory        = clearHistory;
+        window.deleteSnapshot      = deleteSnapshot;
+        window.showAddPositionDialog  = showAddPositionDialog;
+        window.showEditPositionDialog = showEditPositionDialog;
+        window.closePositionDialog    = closePositionDialog;
+        window.submitPosition         = submitPosition;
+        window.deletePosition         = deletePosition;
+        window.toggleInactivePositions = toggleInactivePositions;
+        window.refreshSinglePrice     = refreshSinglePrice;
+        window.setBaseCurrency        = setBaseCurrency;
+
+        // ── Initialization ──────────────────────────────────────────────────
+        console.log('=== APP INITIALIZING (modular) ===');
+
+        // Load portfolio history from localStorage
+        const storedHistory = localStorage.getItem('portfolioHistory');
+        if (storedHistory) {
+            try {
+                state.portfolioHistory = JSON.parse(storedHistory);
+                console.log('Loaded portfolio history:', state.portfolioHistory.length, 'snapshots');
+                updateHistoryDisplay();
+            } catch (err) {
+                console.error('Error loading history:', err);
+            }
+        }
+
+        // Load from Claude cloud storage (if available)
+        if (typeof window.storage !== 'undefined') {
+            try {
+                console.log('☁️ Cloud storage available, loading portfolio...');
+                const portfolioData = await window.storage.get('current-portfolio', false);
+                if (portfolioData && portfolioData.value) {
+                    const data = JSON.parse(portfolioData.value);
+                    if (data.portfolio && data.portfolio.length > 0) {
+                        state.portfolio = data.portfolio;
+                        state.marketPrices = data.marketPrices || {};
+                        state.priceMetadata = data.priceMetadata || {};
+                        console.log('✓ Loaded portfolio from cloud:', state.portfolio.length, 'positions');
+                        renderPortfolio();
+                    }
+                }
+
+                const snapshotKeys = await window.storage.list('snapshot:', false);
+                if (snapshotKeys && snapshotKeys.keys && snapshotKeys.keys.length > 0) {
+                    const existingTimestamps = new Set(state.portfolioHistory.map(s => s.timestamp));
+                    for (const key of snapshotKeys.keys) {
+                        try {
+                            const result = await window.storage.get(key, false);
+                            if (result && result.value) {
+                                const snapshot = JSON.parse(result.value);
+                                if (!existingTimestamps.has(snapshot.timestamp)) {
+                                    state.portfolioHistory.push(snapshot);
+                                }
+                            }
+                        } catch (err) {
+                            console.warn('Failed to load snapshot:', key, err);
+                        }
+                    }
+                    state.portfolioHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    updateHistoryDisplay();
+                }
+
+                alert(`☁️ Cloud storage loaded!\n\n${state.portfolio.length} positions\n${state.portfolioHistory.length} historical snapshots`);
+            } catch (err) {
+                console.warn('Cloud storage not available:', err);
+            }
+        }
+
+        // Load API keys from localStorage
+        const storedAVKey = localStorage.getItem('alphaVantageKey');
+        if (storedAVKey) state.alphaVantageKey = storedAVKey;
+        const storedFHKey = localStorage.getItem('finnhubKey');
+        if (storedFHKey) state.finnhubKey = storedFHKey;
+        const storedFMPKey = localStorage.getItem('fmpKey');
+        if (storedFMPKey) state.fmpKey = storedFMPKey;
+        const storedAntKey = localStorage.getItem('anthropicKey');
+        if (storedAntKey) state.anthropicKey = storedAntKey;
+
+        console.log('✓ API keys ready');
+
+        // Load transactions from localStorage
+        loadTransactionsFromStorage();
+
+        // Load base currency preference
+        const storedBaseCurrency = localStorage.getItem('baseCurrency');
+        if (storedBaseCurrency && ['EUR', 'USD'].includes(storedBaseCurrency)) {
+            state.baseCurrency = storedBaseCurrency;
+            document.querySelectorAll('.currency-option').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.currency === storedBaseCurrency);
+            });
+        }
+
+        // Load sector cache
+        loadSectorCache();
+
+        // Load Supabase config overrides
+        const storedSBUrl = localStorage.getItem('supabaseUrl');
+        const storedSBKey = localStorage.getItem('supabaseAnonKey');
+        if (storedSBUrl && storedSBKey) {
+            state.supabaseUrl = storedSBUrl;
+            state.supabaseAnonKey = storedSBKey;
+        }
+        initSupabase();
+
+        // Fetch exchange rates (non-blocking, re-renders when done)
+        fetchExchangeRates().then(() => {
+            renderPortfolio();
+        });
+
+        // Render initial UI
+        renderPortfolio();
+        renderPerspectiveTabs();
+        updateActionVisibility();
+
+        // Initialize position dialog event listeners
+        initPositionDialog();
+
+        // Show artifact warning if detected
+        if (isArtifact) {
+            const warningDiv = document.getElementById('artifactWarning');
+            if (warningDiv) warningDiv.style.display = 'block';
+        }
+
+        // Auto-fetch prices if portfolio exists and API keys available
+        if (state.portfolio.length > 0 && (state.finnhubKey || state.fmpKey || state.alphaVantageKey)) {
+            console.log('Auto-fetching prices on page load...');
+            setTimeout(() => fetchMarketPrices(), 1000);
+        }
+
+        // Global error handlers
+        window.onerror = function(message, source, lineno, colno, error) {
+            console.error('=== GLOBAL ERROR ===', message, source, lineno, colno, error);
+            if (message && message !== 'Script error.') {
+                alert('JavaScript Error:\n\n' + message + '\n\nLine: ' + lineno);
+            }
+            return true;
+        };
+
+        window.onunhandledrejection = function(event) {
+            console.error('=== UNHANDLED REJECTION ===', event.reason);
+            alert('Async Error:\n\n' + (event.reason || 'Unknown error'));
+        };
+
+        console.log('=== APP INITIALIZED ===');
+        console.log('API Keys:', { finnhub: !!state.finnhubKey, fmp: !!state.fmpKey, alphaVantage: !!state.alphaVantageKey, anthropic: !!state.anthropicKey });
+        console.log('Portfolio positions:', state.portfolio.length);
+        console.log('History snapshots:', state.portfolioHistory.length);
+    </script>
+</body>
+</html>
