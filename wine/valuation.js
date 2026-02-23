@@ -6,6 +6,7 @@
  */
 
 import state from './state.js';
+import { callWineAI } from './api.js';
 import { saveBottleToDB } from './storage.js';
 import { renderCellar } from './cellar.js';
 
@@ -17,11 +18,6 @@ import { renderCellar } from './cellar.js';
  * @param {string} bottleId
  */
 export async function valuateSingleBottle(bottleId) {
-    if (!state.anthropicKey) {
-        alert('Anthropic API key required for valuations.\nAdd it in 🔑 API Keys.');
-        return;
-    }
-
     const bottle = state.cellar.find(b => b.id === bottleId);
     if (!bottle) return;
 
@@ -54,11 +50,6 @@ export async function valuateSingleBottle(bottleId) {
  * @param {boolean} forceAll - If true, re-valuate even already-valued bottles
  */
 export async function valuateAllBottles(forceAll = false) {
-    if (!state.anthropicKey) {
-        alert('Anthropic API key required for valuations.\nAdd it in 🔑 API Keys.');
-        return;
-    }
-
     if (state.valuationsLoading) return;
     if (state.cellar.length === 0) {
         alert('No bottles in cellar to valuate.');
@@ -115,28 +106,7 @@ export async function valuateAllBottles(forceAll = false) {
 async function fetchValuation(bottle) {
     const prompt = buildValuationPrompt(bottle);
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'x-api-key': state.anthropicKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-            'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-            model: 'claude-opus-4-6',
-            max_tokens: 512,
-            messages: [{ role: 'user', content: prompt }],
-        }),
-    });
-
-    if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        if (response.status === 401) throw new Error('Invalid Anthropic API key.');
-        throw new Error(`API error ${response.status}: ${body.slice(0, 150)}`);
-    }
-
-    const data = await response.json();
+    const data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 512 });
     const text = data.content?.find(c => c.type === 'text')?.text || '';
     const cleanText = text.replace(/```json\n?|```/g, '').trim();
 

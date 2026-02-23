@@ -3,6 +3,7 @@
  */
 
 import state from './state.js';
+import { callWineAI } from './api.js';
 import { computeTotals } from './cellar.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -25,22 +26,6 @@ function fmt(value) {
 // ── Cellar Analysis ──────────────────────────────────────────────────────────
 
 export async function analyzeCellar() {
-    if (!state.anthropicKey) {
-        const analysisSection = document.getElementById('analysisSection');
-        analysisSection.innerHTML = `
-            <div class="card" style="background: #1e1b4b; border-color: #3730a3;">
-                <h3 style="color: #a5b4fc; margin-bottom: 10px;">🤖 AI Cellar Analysis</h3>
-                <p style="color: #94a3b8; margin-bottom: 15px;">AI analysis requires your Anthropic API key.</p>
-                <ol style="color: #94a3b8; margin-left: 20px; line-height: 1.8;">
-                    <li>Get an API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com</a></li>
-                    <li>Click 🔑 API Keys above</li>
-                    <li>Enter your Anthropic key and save</li>
-                    <li>Click "AI Analysis" again</li>
-                </ol>
-            </div>`;
-        return;
-    }
-
     if (state.cellar.length === 0) {
         alert('No bottles in cellar. Add some bottles first.');
         return;
@@ -61,28 +46,7 @@ export async function analyzeCellar() {
     try {
         const prompt = buildAnalysisPrompt();
 
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'x-api-key': state.anthropicKey,
-                'anthropic-version': '2023-06-01',
-                'content-type': 'application/json',
-                'anthropic-dangerous-direct-browser-access': 'true',
-            },
-            body: JSON.stringify({
-                model: 'claude-opus-4-6',
-                max_tokens: 2000,
-                messages: [{ role: 'user', content: prompt }],
-            }),
-        });
-
-        if (!response.ok) {
-            const body = await response.text().catch(() => '');
-            if (response.status === 401) throw new Error('Invalid Anthropic API key.');
-            throw new Error(`API error ${response.status}: ${body.slice(0, 200)}`);
-        }
-
-        const data = await response.json();
+        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 2000 });
         const text = data.content?.find(c => c.type === 'text')?.text || '';
         const cleanText = text.replace(/```json\n?|```/g, '').trim();
         const analysis = JSON.parse(cleanText);
