@@ -389,23 +389,6 @@
         async function runLabelScan(base64, mediaType) {
             const resultEl = document.getElementById('recognitionResult');
 
-            if (!state.anthropicKey) {
-                resultEl.innerHTML = `
-                    <div class="recognition-card">
-                        <h3>⚠️ API Key Required</h3>
-                        <p style="color: #94a3b8; font-size: 13px; margin-bottom: 12px;">
-                            Set your Anthropic API key to enable label scanning.
-                        </p>
-                        <div class="recognition-actions">
-                            <button class="btn btn-key" onclick="showApiKeyDialog()">🔑 Add API Key</button>
-                        </div>
-                    </div>`;
-                // Still offer manual add with the captured image
-                pendingScanBase64 = base64;
-                pendingScanMedia  = mediaType;
-                return;
-            }
-
             try {
                 const wine = await recognizeLabel(base64, mediaType);
                 pendingScanBase64 = null;
@@ -480,10 +463,13 @@
         };
 
         function escapeHTML(str) {
-            if (!str) return '';
+            if (str === null || str === undefined) return '';
             return String(str)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                .replace(/&/g,  '&amp;')
+                .replace(/</g,  '&lt;')
+                .replace(/>/g,  '&gt;')
+                .replace(/"/g,  '&quot;')
+                .replace(/'/g,  '&#x27;');
         }
 
         // ── Initialization ─────────────────────────────────────────────────────

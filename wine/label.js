@@ -9,7 +9,7 @@
  *   → Caller pre-fills the Add Bottle dialog
  */
 
-import state from './state.js';
+import { callWineAI } from './api.js';
 
 // ── Label Recognition ────────────────────────────────────────────────────────
 
@@ -20,35 +20,7 @@ import state from './state.js';
  * @returns {Promise<Object>}  - Parsed wine data object
  */
 export async function recognizeLabel(imageBase64, mediaType = 'image/jpeg') {
-    if (!state.anthropicKey) {
-        throw new Error('Anthropic API key not set. Add it in API Keys settings.');
-    }
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'x-api-key': state.anthropicKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-            'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-            model: 'claude-opus-4-6',
-            max_tokens: 1024,
-            messages: [{
-                role: 'user',
-                content: [
-                    {
-                        type: 'image',
-                        source: {
-                            type: 'base64',
-                            media_type: mediaType,
-                            data: imageBase64,
-                        },
-                    },
-                    {
-                        type: 'text',
-                        text: `Analyze this wine label image carefully and extract all visible information.
+    const prompt = `Analyze this wine label image carefully and extract all visible information.
 Return ONLY a valid JSON object with exactly these fields (use null for any field not visible or determinable):
 
 {
@@ -63,22 +35,15 @@ Return ONLY a valid JSON object with exactly these fields (use null for any fiel
   "notes": "any other notable text from the label (awards, special designations, classification, producer description)"
 }
 
-Return ONLY the JSON object. No markdown fences, no explanation, no preamble.`,
-                    },
-                ],
-            }],
-        }),
+Return ONLY the JSON object. No markdown fences, no explanation, no preamble.`;
+
+    const data = await callWineAI({
+        requestType: 'label',
+        prompt,
+        image: { base64: imageBase64, mediaType },
+        maxTokens: 1024,
     });
 
-    if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        if (response.status === 401) {
-            throw new Error('Invalid Anthropic API key. Check API Keys settings.');
-        }
-        throw new Error(`Claude API error ${response.status}: ${body.slice(0, 200)}`);
-    }
-
-    const data = await response.json();
     const text = data.content?.find(c => c.type === 'text')?.text || '';
     const cleanText = text.replace(/```json\n?|```/g, '').trim();
 
