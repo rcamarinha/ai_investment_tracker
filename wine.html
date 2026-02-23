@@ -433,11 +433,13 @@
 
         function showRecognitionError(message) {
             const resultEl = document.getElementById('recognitionResult');
+            const needsKey = !state.anthropicKey;
             resultEl.innerHTML = `
                 <div class="recognition-card" style="border-color: #f87171;">
                     <h3 style="color: #f87171;">❌ Scan Failed</h3>
-                    <p style="color: #94a3b8; font-size: 13px; margin-bottom: 12px;">${escapeHTML(message)}</p>
+                    <p style="color: #94a3b8; font-size: 13px; margin-bottom: 12px; white-space: pre-line;">${escapeHTML(message)}</p>
                     <div class="recognition-actions">
+                        ${needsKey ? `<button class="btn btn-key" onclick="showApiKeyDialog()">🔑 Add API Key</button>` : ''}
                         <button class="btn btn-success" onclick="addManually()">➕ Add Manually</button>
                         <button class="btn btn-primary btn-sm" onclick="clearScan()">✕ Dismiss</button>
                     </div>

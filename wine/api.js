@@ -105,6 +105,19 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens }) {
 
     const text = await response.text();
     if (!response.ok) {
+        if (response.status === 404) {
+            throw new Error(
+                'The wine-ai edge function is not deployed on Supabase.\n\n' +
+                'Run: supabase functions deploy wine-ai\n\n' +
+                'Or add your Anthropic API key in 🔑 API Keys to use it directly.'
+            );
+        }
+        if (response.status === 401 || response.status === 403) {
+            throw new Error(
+                'Access denied to the wine-ai edge function.\n\n' +
+                'Add your Anthropic API key in 🔑 API Keys to use it directly instead.'
+            );
+        }
         throw new Error(`Wine AI server error (${response.status}): ${text.slice(0, 200)}`);
     }
 
