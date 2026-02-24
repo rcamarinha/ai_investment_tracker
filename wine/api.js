@@ -100,26 +100,38 @@ async function _callDirect({ requestType, prompt, image, maxTokens }) {
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
 async function _callEdgeFunction({ requestType, prompt, image, maxTokens }) {
-    // Prefer a logged-in session token; fall back to the anon key
-    let authToken = state.supabaseAnonKey;
+    // Prefer a logged-in session JWT; the anon key is only a valid Bearer token
+    // when it is itself a JWT (legacy eyJ... format). Newer Supabase publishable
+    // keys (sb_publishable_*) must NOT be sent as Authorization: Bearer — they
+    // only belong in the apikey header. Without a real JWT, omit Authorization
+    // entirely (the edge function has verify_jwt = false so this is fine).
+    let authToken = null;
     if (state.supabaseClient) {
         try {
             const { data: { session } } = await state.supabaseClient.auth.getSession();
             if (session?.access_token) authToken = session.access_token;
-        } catch { /* ignore — keep anon token */ }
+        } catch { /* ignore */ }
+    }
+    // Fall back to anon key only if it's a proper JWT (starts with eyJ)
+    if (!authToken && state.supabaseAnonKey?.startsWith('eyJ')) {
+        authToken = state.supabaseAnonKey;
     }
 
     const edgeUrl = `${state.supabaseUrl}/functions/v1/wine-ai`;
     console.log('[WineAI] Using Supabase edge function:', edgeUrl);
+    const headers = {
+        'Content-Type': 'application/json',
+        'apikey': state.supabaseAnonKey,
+    };
+    if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
     let response;
     try {
         response = await fetch(edgeUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': state.supabaseAnonKey,
-                'Authorization': `Bearer ${authToken}`,
-            },
+            headers,
             body: JSON.stringify({ requestType, prompt, image, maxTokens }),
         });
     } catch (err) {
