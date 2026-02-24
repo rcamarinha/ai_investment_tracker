@@ -6,7 +6,8 @@ import state from './state.js';
 import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
          deleteSnapshotFromDB, clearSnapshotsFromDB } from './storage.js';
 import { renderAllocationCharts } from './ui.js';
-import { showToast, showConfirm, openModal, closeModal, escapeHTML } from './utils.js';
+import { showToast, showUndoToast, showConfirm, openModal, closeModal, escapeHTML } from './utils.js';
+import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,19 @@ function timeAgo(dateStr) {
     return `${Math.floor(months / 12)}y ago`;
 }
 
+function drinkBadgeHtml(drinkWindow) {
+    const status = getDrinkStatus(drinkWindow);
+    if (status === 'unknown') return '';
+    const map = {
+        'not-ready': { cls: 'drink-badge-not-ready', label: '🔵 Not Ready' },
+        'ready':     { cls: 'drink-badge-ready',     label: '🟢 Ready Now' },
+        'at-peak':   { cls: 'drink-badge-at-peak',   label: '🟡 At Peak'   },
+        'past-peak': { cls: 'drink-badge-past-peak', label: '🔴 Past Peak' },
+    };
+    const { cls, label } = map[status];
+    return `<span class="drink-badge ${cls}">${label}</span>`;
+}
+
 // ── Inline form error helpers ─────────────────────────────────────────────────
 
 function showFieldError(fieldId, message) {
@@ -84,15 +98,79 @@ export function computeTotals() {
     return { totalInvested, totalEstimated, totalBottles, valuedBottles };
 }
 
+// ── Advanced Filter State ─────────────────────────────────────────────────────
+// Module-level Sets, persisted in the DOM (checkboxes); rebuilt on each render.
+
+const _activeCountries = new Set();
+const _activeVarietals  = new Set();
+
+export function onFilterChange(checkbox) {
+    const dim = checkbox.dataset.dim;
+    const val = checkbox.value;
+    if (dim === 'country') {
+        if (checkbox.checked) _activeCountries.add(val); else _activeCountries.delete(val);
+    } else if (dim === 'varietal') {
+        if (checkbox.checked) _activeVarietals.add(val); else _activeVarietals.delete(val);
+    }
+    renderCellar();
+}
+
+function applyAdvancedFilters(bottles) {
+    let result = bottles;
+    if (_activeCountries.size > 0) {
+        result = result.filter(b => _activeCountries.has(b.country || 'Unknown'));
+    }
+    if (_activeVarietals.size > 0) {
+        result = result.filter(b => _activeVarietals.has(b.varietal || 'Unknown'));
+    }
+    return result;
+}
+
+function renderFilterPanel() {
+    const container = document.getElementById('filterGroups');
+    if (!container) return;
+
+    const countries = [...new Set(state.cellar.map(b => b.country).filter(Boolean))].sort();
+    const varietals = [...new Set(state.cellar.map(b => b.varietal).filter(Boolean))].sort();
+
+    if (countries.length === 0 && varietals.length === 0) {
+        container.innerHTML = '<span style="color:#64748b;font-size:13px;">No filters available yet.</span>';
+        return;
+    }
+
+    const chips = (items, dim) => items.map(v => `
+        <label class="filter-chip${(dim === 'country' ? _activeCountries : _activeVarietals).has(v) ? ' active' : ''}">
+            <input type="checkbox" data-dim="${dim}" value="${escapeHTML(v)}"
+                   ${(dim === 'country' ? _activeCountries : _activeVarietals).has(v) ? 'checked' : ''}
+                   onchange="onFilterChange(this)" />
+            ${escapeHTML(v)}
+        </label>`).join('');
+
+    container.innerHTML = `
+        ${countries.length > 0 ? `
+            <div class="filter-group">
+                <div class="filter-group-label">Country</div>
+                <div class="filter-chips">${chips(countries, 'country')}</div>
+            </div>` : ''}
+        ${varietals.length > 0 ? `
+            <div class="filter-group">
+                <div class="filter-group-label">Varietal</div>
+                <div class="filter-chips">${chips(varietals, 'varietal')}</div>
+            </div>` : ''}`;
+}
+
 // ── Portfolio Rendering ───────────────────────────────────────────────────────
 
 export function renderCellar() {
     const bottlesDiv = document.getElementById('bottles');
     if (!bottlesDiv) return;
 
-    // Show/hide search controls
+    // Show/hide search + filter controls
     const controlsEl = document.getElementById('bottleControls');
     if (controlsEl) controlsEl.style.display = state.cellar.length > 0 ? 'flex' : 'none';
+
+    const filterPanel = document.getElementById('filterPanel');
+    if (filterPanel) filterPanel.style.display = state.cellar.length > 0 ? '' : 'none';
 
     if (state.cellar.length === 0) {
         bottlesDiv.innerHTML = `
@@ -111,54 +189,63 @@ export function renderCellar() {
         return;
     }
 
+    // Rebuild the filter panel options (preserves checked state via Sets)
+    renderFilterPanel();
+
     const totals = computeTotals();
     updateStatsBar(totals);
 
-    // Apply search filter
-    const searchTerm = document.getElementById('bottleSearch')?.value.trim().toLowerCase() || '';
-    let filtered = state.cellar;
-    if (searchTerm) {
-        filtered = state.cellar.filter(b =>
-            (b.name        || '').toLowerCase().includes(searchTerm) ||
-            (b.winery      || '').toLowerCase().includes(searchTerm) ||
-            (b.region      || '').toLowerCase().includes(searchTerm) ||
-            (b.varietal    || '').toLowerCase().includes(searchTerm) ||
-            (b.country     || '').toLowerCase().includes(searchTerm) ||
-            (b.appellation || '').toLowerCase().includes(searchTerm) ||
-            String(b.vintage || '').includes(searchTerm)
-        );
-    }
+    // P2: Drink-window summary line
+    updateReadySummary();
+
+    // Apply text search
+    const searchTerm = document.getElementById('bottleSearch')?.value || '';
+    let result = filterBottles(state.cellar, searchTerm);
+
+    // Apply advanced filters (country / varietal chips)
+    result = applyAdvancedFilters(result);
 
     // Apply sort
     const sortMode = document.getElementById('bottleSort')?.value || 'added';
-    const sorted = [...filtered].sort((a, b) => {
-        switch (sortMode) {
-            case 'name':
-                return (a.name || '').localeCompare(b.name || '');
-            case 'vintage-desc':
-                return (b.vintage || 0) - (a.vintage || 0);
-            case 'value-desc':
-                return (b.estimatedValue || b.purchasePrice || 0) - (a.estimatedValue || a.purchasePrice || 0);
-            case 'gain-desc': {
-                const gA = (a.estimatedValue && a.purchasePrice) ? (a.estimatedValue - a.purchasePrice) / a.purchasePrice : 0;
-                const gB = (b.estimatedValue && b.purchasePrice) ? (b.estimatedValue - b.purchasePrice) / b.purchasePrice : 0;
-                return gB - gA;
-            }
-            default: return 0; // 'added' — preserve original order
-        }
-    });
+    result = sortBottles(result, sortMode);
 
-    if (sorted.length === 0) {
+    if (result.length === 0) {
+        const hasFilter = _activeCountries.size > 0 || _activeVarietals.size > 0;
+        const hint = hasFilter
+            ? 'Try clearing some filters above.'
+            : `Try a different search term.`;
         bottlesDiv.innerHTML = `
             <div class="no-results">
-                No wines match "<strong>${escapeHTML(searchTerm)}</strong>" — try a different search.
+                No wines match your current search/filter.<br>
+                <span style="font-size:12px;color:#475569;">${hint}</span>
             </div>`;
     } else {
-        bottlesDiv.innerHTML = sorted.map(b => renderBottleCard(b)).join('');
+        bottlesDiv.innerHTML = result.map(b => renderBottleCard(b)).join('');
     }
 
     updateHistoryDisplay();
     renderAllocationCharts();
+}
+
+function updateReadySummary() {
+    const el = document.getElementById('readySummary');
+    if (!el) return;
+
+    const counts = { 'ready': 0, 'at-peak': 0, 'not-ready': 0, 'past-peak': 0 };
+    state.cellar.forEach(b => {
+        const s = getDrinkStatus(b.drinkWindow);
+        if (s in counts) counts[s]++;
+    });
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    if (total === 0) { el.style.display = 'none'; return; }
+
+    const parts = [];
+    if (counts['ready']     > 0) parts.push(`<span style="color:#4ade80;">🟢 ${counts['ready']} ready</span>`);
+    if (counts['at-peak']   > 0) parts.push(`<span style="color:#fbbf24;">🟡 ${counts['at-peak']} at peak</span>`);
+    if (counts['not-ready'] > 0) parts.push(`<span style="color:#60a5fa;">🔵 ${counts['not-ready']} not ready</span>`);
+    if (counts['past-peak'] > 0) parts.push(`<span style="color:#f87171;">🔴 ${counts['past-peak']} past peak</span>`);
+    el.style.display = 'block';
+    el.innerHTML = parts.join('<span style="color:#334155;"> · </span>');
 }
 
 function renderBottleCard(b) {
@@ -178,15 +265,16 @@ function renderBottleCard(b) {
         b.alcohol     ? `${escapeHTML(b.alcohol)} alc` : null,
     ].filter(Boolean);
 
-    // Valuation range line (shown when available)
     const rangeHtml = (hasValuation && b.valueLow && b.valueHigh)
         ? `<div class="valuation-range">Range: ${fmt(b.valueLow)} – ${fmt(b.valueHigh)}</div>`
         : '';
 
-    // Valuation note (shown when available)
     const noteHtml = (hasValuation && b.valuationNote)
         ? `<div class="valuation-note">${escapeHTML(b.valuationNote)}</div>`
         : '';
+
+    const badge  = drinkBadgeHtml(b.drinkWindow);
+    const hasWindow = !!b.drinkWindow;
 
     return `
     <div class="bottle-card" id="bottle-${escapeHTML(b.id)}">
@@ -235,7 +323,10 @@ function renderBottleCard(b) {
         ${noteHtml}
 
         <div class="bottle-footer">
-            ${b.drinkWindow ? `<span class="drink-window">🍷 Drink: ${escapeHTML(b.drinkWindow)}</span>` : '<span></span>'}
+            <div>
+                ${badge}
+                ${hasWindow ? `<div class="drink-window-sub">Drink: ${escapeHTML(b.drinkWindow)}</div>` : ''}
+            </div>
             ${b.lastValuedAt
                 ? `<span class="valued-at">Valued ${timeAgo(b.lastValuedAt)}</span>`
                 : (b.purchaseDate ? `<span class="valued-at">Bought ${fmtDate(b.purchaseDate)}</span>` : '<span></span>')}
@@ -272,7 +363,6 @@ export function showAddBottleDialog(prefilled = {}) {
     const deleteBtn = document.getElementById('bottleDeleteBtn');
     if (deleteBtn) deleteBtn.style.display = 'none';
 
-    // Pre-fill from scan result or clear
     setField('bottleName',          prefilled.name || '');
     setField('bottleWinery',        prefilled.winery || '');
     setField('bottleVintage',       prefilled.vintage || '');
@@ -371,7 +461,6 @@ export async function submitBottle() {
         purchaseDate:  getField('bottlePurchaseDate') || null,
         storage:       getField('bottleStorage').trim() || null,
         notes:         getField('bottleNotes').trim() || null,
-        // Preserve existing valuation fields when editing
         estimatedValue: existingBottle?.estimatedValue ?? null,
         drinkWindow:    existingBottle?.drinkWindow    ?? null,
         lastValuedAt:   existingBottle?.lastValuedAt   ?? null,
@@ -409,20 +498,78 @@ export async function deleteCurrentBottle() {
     if (!bottle) return;
 
     const confirmed = await showConfirm(
-        `Delete "${bottle.name}"? This cannot be undone.`,
+        `Delete "${bottle.name}"? You'll have a few seconds to undo.`,
         { confirmLabel: 'Delete', danger: true }
     );
     if (!confirmed) return;
 
-    try {
-        await deleteBottleFromDB(state.editingBottleId);
-        state.cellar = state.cellar.filter(b => b.id !== state.editingBottleId);
-        closeBottleDialog();
-        renderCellar();
-        showToast('Bottle deleted.');
-    } catch (err) {
-        showToast('Failed to delete bottle: ' + err.message, 'error');
+    const bottleId    = state.editingBottleId;
+    const bottleIndex = state.cellar.indexOf(bottle);
+
+    // Optimistic UI removal
+    state.cellar = state.cellar.filter(b => b.id !== bottleId);
+    closeBottleDialog();
+    renderCellar();
+
+    // Undo grace period: commit to DB only after 5s
+    showUndoToast(
+        `"${bottle.name}" deleted.`,
+        () => {
+            // Undo clicked → restore
+            state.cellar.splice(bottleIndex, 0, bottle);
+            renderCellar();
+            showToast(`"${bottle.name}" restored.`);
+        },
+        async () => {
+            // Grace period expired → actually delete from DB
+            try {
+                await deleteBottleFromDB(bottleId);
+            } catch (err) {
+                console.error('Failed to delete from DB after undo window:', err);
+                showToast('Warning: cloud sync of deletion failed.', 'warning');
+            }
+        }
+    );
+}
+
+// ── CSV Export ────────────────────────────────────────────────────────────────
+
+export function exportCellarCSV() {
+    if (state.cellar.length === 0) {
+        showToast('No bottles to export.', 'warning');
+        return;
     }
+
+    const headers = [
+        'Name', 'Winery', 'Vintage', 'Region', 'Appellation', 'Varietal',
+        'Country', 'Alcohol', 'Qty', 'Purchase Price (€)', 'Purchase Date',
+        'Storage', 'Est. Value (€)', 'Drink Window', 'Notes'
+    ];
+
+    const csvVal = v => {
+        if (v == null) return '';
+        const s = String(v).replace(/"/g, '""');
+        return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s}"` : s;
+    };
+
+    const rows = state.cellar.map(b => [
+        b.name, b.winery, b.vintage, b.region, b.appellation, b.varietal,
+        b.country, b.alcohol, b.qty, b.purchasePrice, b.purchaseDate,
+        b.storage, b.estimatedValue, b.drinkWindow, b.notes
+    ].map(csvVal).join(','));
+
+    const csv  = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `wine-cellar-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`Exported ${state.cellar.length} bottle${state.cellar.length !== 1 ? 's' : ''} to CSV.`);
 }
 
 // ── Snapshots & History ───────────────────────────────────────────────────────
@@ -482,8 +629,9 @@ export function updateHistoryDisplay() {
     const rows = [...state.cellarHistory].reverse().slice(0, 10).map(s => {
         const gain    = (s.totalEstimatedValue || 0) - (s.totalInvested || 0);
         const gainPct = s.totalInvested > 0 ? ((gain / s.totalInvested) * 100).toFixed(1) : '—';
-        const gainStr = gain >= 0 ? `<span style="color:#4ade80;">+${fmt(gain)} (+${gainPct}%)</span>`
-                                  : `<span style="color:#f87171;">${fmt(gain)} (${gainPct}%)</span>`;
+        const gainStr = gain >= 0
+            ? `<span style="color:#4ade80;">+${fmt(gain)} (+${gainPct}%)</span>`
+            : `<span style="color:#f87171;">${fmt(gain)} (${gainPct}%)</span>`;
         const deleteBtn = s.id
             ? `<button class="btn btn-sm btn-danger" style="padding: 2px 8px; font-size: 11px;" onclick="deleteSnapshot('${escapeHTML(String(s.id))}')">✕</button>`
             : '';

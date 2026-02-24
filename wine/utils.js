@@ -53,6 +53,58 @@ export function showToast(message, type = 'success', duration = 4000) {
     toast.addEventListener('click', () => { clearTimeout(timer); dismiss(); });
 }
 
+// ── Undo Toast ────────────────────────────────────────────────────────────────
+
+/**
+ * Show a toast with an "Undo" action button.
+ *
+ * The `onCommit` callback fires after `duration` ms if the user did not click Undo.
+ * The `onUndo` callback fires immediately if the user clicks Undo.
+ *
+ * @param {string}   message
+ * @param {Function} onUndo   — called synchronously when Undo is clicked
+ * @param {Function} onCommit — called asynchronously after the grace period
+ * @param {number}   duration — grace period in ms (default 5000)
+ */
+export function showUndoToast(message, onUndo, onCommit, duration = 5000) {
+    let container = document.getElementById('toastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-warning';
+    toast.innerHTML = `
+        <span class="toast-icon">⏪</span>
+        <span class="toast-msg">${escapeHTML(message)}</span>
+        <button class="toast-undo-btn">Undo</button>`;
+
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('toast-visible'));
+
+    let undone = false;
+
+    const dismiss = () => {
+        toast.classList.remove('toast-visible');
+        toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+    };
+
+    const timer = setTimeout(() => {
+        if (!undone) { dismiss(); onCommit && onCommit(); }
+    }, duration);
+
+    toast.querySelector('.toast-undo-btn').addEventListener('click', () => {
+        if (undone) return;
+        undone = true;
+        clearTimeout(timer);
+        dismiss();
+        onUndo && onUndo();
+    });
+}
+
 // ── Confirm Modal ─────────────────────────────────────────────────────────────
 
 /**

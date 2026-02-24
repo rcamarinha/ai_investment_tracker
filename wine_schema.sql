@@ -38,6 +38,11 @@ CREATE TABLE wine_bottles (
     drink_window    TEXT DEFAULT NULL,    -- e.g. "2025-2035"
     last_valued_at  TIMESTAMPTZ DEFAULT NULL,
 
+    -- Valuation detail columns (added in v1.2.0 — run the migration below if upgrading)
+    value_low       NUMERIC DEFAULT NULL, -- Claude's low-end estimate per bottle
+    value_high      NUMERIC DEFAULT NULL, -- Claude's high-end estimate per bottle
+    valuation_note  TEXT DEFAULT NULL,    -- 1-2 sentence explanation from Claude
+
     created_at      TIMESTAMPTZ DEFAULT now(),
     updated_at      TIMESTAMPTZ DEFAULT now()
 );
@@ -100,3 +105,28 @@ CREATE POLICY "Users can delete own wine snapshots"
 -- Indexes
 CREATE INDEX idx_wine_snapshots_user_id        ON wine_snapshots(user_id);
 CREATE INDEX idx_wine_snapshots_user_timestamp ON wine_snapshots(user_id, timestamp DESC);
+
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Migration v1.2.0 — Valuation detail columns
+-- Run this block ONLY if you deployed the original schema (before 2026-02-24).
+-- Safe to run multiple times — wraps each ALTER in an exception handler.
+-- ════════════════════════════════════════════════════════════════════════════
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE wine_bottles ADD COLUMN value_low      NUMERIC DEFAULT NULL;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END;
+
+    BEGIN
+        ALTER TABLE wine_bottles ADD COLUMN value_high     NUMERIC DEFAULT NULL;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END;
+
+    BEGIN
+        ALTER TABLE wine_bottles ADD COLUMN valuation_note TEXT    DEFAULT NULL;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END;
+END $$;

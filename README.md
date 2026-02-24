@@ -23,12 +23,18 @@ A modular browser-based investment tracking suite — **Stock Portfolio** and **
 - **Label Scanning** — Take a photo of any wine label; Claude Vision AI identifies the wine and pre-fills all details
   - Mobile: standard OS picker — choose "Take Photo" or "Photo Library" (iOS & Android)
   - Desktop: file picker OR live camera via `getUserMedia`
-- **AI Valuations** — Claude estimates current market value (per bottle, in EUR) plus optimal drinking window
+- **AI Valuations** — Claude estimates current market value per bottle, including a low–high range and a short explanation note; optimal drinking window also returned
+- **Drink-Window Status** — Each bottle shows a live status badge: 🔵 Not Ready / 🟢 Ready Now / 🟡 At Peak / 🔴 Past Peak; cellar summary line counts bottles in each state
 - **Cellar Management** — Add, edit, and delete bottles with full metadata (vintage, region, varietal, appellation, etc.)
+  - Inline form validation — errors appear beside the relevant field, no blocking alerts
+  - Undo delete — 5-second grace period with an Undo button before the record is removed from the database
+- **Search, Sort & Filter** — Live search bar; sort by name, vintage, value, or gain %; collapsible advanced filter chips by country and varietal; sort preference saved across sessions
+- **CSV Export** — Download the full cellar as a `.csv` file
 - **Value Tracking** — Total estimated collection value always shown; Gain / Loss shown per bottle only when a purchase price is provided (purchase price is optional)
 - **Allocation Charts** — Breakdown by region, varietal, or country
 - **Cellar History** — Save value snapshots over time
-- **AI Cellar Analysis** — Drink-window recommendations, portfolio highlights, diversification assessment, and buying suggestions
+- **AI Cellar Analysis** — Drink-window recommendations, portfolio highlights, diversification assessment, and buying suggestions; auto-scrolls to results after render
+- **Keyboard shortcuts** — `n` = new bottle · `Ctrl+Shift+S` = save snapshot · `Escape` = close any dialog
 
 ---
 

@@ -16,7 +16,7 @@
             <div style="margin-bottom: 10px;">
                 <a href="index.html" class="hub-link">← All Trackers</a>
             </div>
-            <h1>🍷 Wine Cellar <span>v1.0.0</span></h1>
+            <h1>🍷 Wine Cellar <span>v1.2.0</span></h1>
             <p>AI-powered wine collection management with label recognition</p>
         </div>
 
@@ -93,11 +93,15 @@
 
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;">
                 <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()">🔑 API Keys</button>
-                <button class="btn btn-success" onclick="showAddBottleDialog()">➕ Add Bottle</button>
+                <button class="btn btn-success" onclick="showAddBottleDialog()" title="Add bottle  (n)">➕ Add Bottle</button>
                 <button class="btn btn-accent" onclick="valuateAllBottles()" id="valuateBtn">💎 Update Valuations</button>
-                <button class="btn btn-warning" onclick="saveCellarSnapshot()">💾 Save Snapshot</button>
+                <button class="btn btn-warning" onclick="saveCellarSnapshot()" title="Save snapshot  (Ctrl+Shift+S)">💾 Save Snapshot</button>
                 <button class="btn btn-accent" onclick="analyzeCellar()" id="analyzeBtn">🤖 AI Analysis</button>
+                <button class="btn btn-primary" onclick="exportCellarCSV()" id="exportBtn">⬇ Export CSV</button>
             </div>
+
+            <!-- Drink-window ready summary (P2) -->
+            <div id="readySummary"></div>
 
             <!-- Search + Sort (shown only when cellar has bottles) -->
             <div class="bottle-controls" id="bottleControls" style="display: none;">
@@ -112,6 +116,14 @@
                     <option value="gain-desc">Gain % (highest)</option>
                 </select>
             </div>
+
+            <!-- Advanced Filter Panel (P3) -->
+            <details class="filter-panel" id="filterPanel" style="display: none;">
+                <summary>Filters</summary>
+                <div class="filter-panel-body">
+                    <div id="filterGroups"></div>
+                </div>
+            </details>
 
             <div id="bottles" class="bottles-grid"></div>
         </div>
@@ -313,7 +325,8 @@
                  handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js';
         import { renderCellar, showAddBottleDialog, showEditBottleDialog,
                  closeBottleDialog, submitBottle, deleteCurrentBottle,
-                 saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory } from './wine/cellar.js';
+                 saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory,
+                 exportCellarCSV, onFilterChange } from './wine/cellar.js';
         import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js';
         import { analyzeCellar } from './wine/analysis.js';
         import { renderAllocationCharts, showAllocationTab,
@@ -338,6 +351,8 @@
         window.deleteSnapshot        = deleteSnapshot;
         window.clearHistory          = clearHistory;
         window.renderCellar          = renderCellar;
+        window.exportCellarCSV       = exportCellarCSV;
+        window.onFilterChange        = onFilterChange;
         window.handleLogin           = handleLogin;
         window.handleSignup          = handleSignup;
         window.handleLogout          = handleLogout;
@@ -349,14 +364,41 @@
         // ── Camera state ───────────────────────────────────────────────────────
         let cameraStream = null;
 
-        // ── Escape key: close any open modal ──────────────────────────────────
+        // ── Keyboard shortcuts (P3) ────────────────────────────────────────────
         document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') closeActiveModal();
+            // Escape: close active modal
+            if (e.key === 'Escape') { closeActiveModal(); return; }
+
+            // Don't trigger shortcuts when a text input is focused
+            const tag = document.activeElement?.tagName;
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+
+            // n / N → New bottle
+            if (e.key === 'n' || e.key === 'N') {
+                e.preventDefault();
+                showAddBottleDialog();
+                return;
+            }
+
+            // Ctrl+Shift+S (or Cmd+Shift+S on Mac) → Save snapshot
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                saveCellarSnapshot();
+                return;
+            }
         });
 
-        // ── Search / Sort live filtering ───────────────────────────────────────
+        // ── Search: live filtering ─────────────────────────────────────────────
         document.getElementById('bottleSearch').addEventListener('input', () => renderCellar());
-        document.getElementById('bottleSort').addEventListener('change', () => renderCellar());
+
+        // ── Sort: persist preference to localStorage (P2) ─────────────────────
+        const sortEl = document.getElementById('bottleSort');
+        const savedSort = localStorage.getItem('wine_sortMode');
+        if (savedSort) sortEl.value = savedSort;
+        sortEl.addEventListener('change', () => {
+            localStorage.setItem('wine_sortMode', sortEl.value);
+            renderCellar();
+        });
 
         // ── Photo Upload (file input) ──────────────────────────────────────────
         document.getElementById('photoUpload').addEventListener('change', async (e) => {
