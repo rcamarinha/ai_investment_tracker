@@ -68,7 +68,7 @@ export async function analyzeMarkets() {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
+                    model: 'claude-sonnet-4-6',
                     max_tokens: 2500,
                     messages: [{
                         role: 'user',
@@ -272,7 +272,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
+                    model: 'claude-sonnet-4-6',
                     max_tokens: 4000,
                     messages: [{ role: 'user', content: tradeIdeasPrompt }]
                 })
@@ -431,7 +431,7 @@ Reply with plain text only — no markdown, no bullet points, no JSON.`;
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
+                    model: 'claude-sonnet-4-6',
                     max_tokens: 350,
                     messages: [{ role: 'user', content: prompt }]
                 })
@@ -445,21 +445,37 @@ Reply with plain text only — no markdown, no bullet points, no JSON.`;
         } else {
             // Use Supabase Edge Function (server-side Anthropic key)
             const { data: { session } } = await state.supabaseClient.auth.getSession();
-            const response = await fetch(`${state.supabaseUrl}/functions/v1/analyze-portfolio`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'apikey': state.supabaseAnonKey,
-                    'Authorization': `Bearer ${session?.access_token || state.supabaseAnonKey}`
-                },
-                body: JSON.stringify({
-                    prompt,
-                    requestType: 'movers'
-                })
-            });
+
+            // Include portfolio for compatibility with older deployed edge function
+            // versions that require it; newer versions prefer the pre-built prompt.
+            const portfolioWithPrices = (state.portfolio || []).map(p => ({
+                ...p,
+                currentPrice: state.marketPrices[p.symbol],
+            }));
+
+            let response;
+            try {
+                response = await fetch(`${state.supabaseUrl}/functions/v1/analyze-portfolio`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': state.supabaseAnonKey,
+                        'Authorization': `Bearer ${session?.access_token || state.supabaseAnonKey}`
+                    },
+                    body: JSON.stringify({
+                        prompt,
+                        portfolio: portfolioWithPrices,
+                        requestType: 'movers',
+                    })
+                });
+            } catch (err) {
+                console.error('[analyzeMovers] Edge function fetch threw:', err);
+                throw new Error(`Network error reaching analysis server: ${err.message}`);
+            }
 
             if (!response.ok) {
                 const errBody = await response.text().catch(() => '');
+                console.error(`[analyzeMovers] Edge function HTTP ${response.status}:`, errBody.slice(0, 300));
                 throw new Error(`Edge function ${response.status}: ${errBody}`);
             }
             data = await response.json();

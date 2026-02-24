@@ -90,7 +90,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: maxTokens,
         messages: [{ role: "user", content: promptContent }],
       }),

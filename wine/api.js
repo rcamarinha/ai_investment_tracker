@@ -55,23 +55,39 @@ async function _callDirect({ requestType, prompt, image, maxTokens }) {
           ]
         : prompt;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'x-api-key': state.anthropicKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-            'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-            model: 'claude-opus-4-6',
-            max_tokens: maxTokens,
-            messages: [{ role: 'user', content }],
-        }),
-    });
+    console.log('[WineAI] Using direct Anthropic API path');
+    let response;
+    try {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'x-api-key': state.anthropicKey,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+                'anthropic-dangerous-direct-browser-access': 'true',
+            },
+            body: JSON.stringify({
+                model: 'claude-opus-4-6',
+                max_tokens: maxTokens,
+                messages: [{ role: 'user', content }],
+            }),
+        });
+    } catch (err) {
+        console.error('[WineAI] Direct Anthropic fetch threw:', err);
+        if (err instanceof TypeError) {
+            throw new Error(
+                'Network error contacting Anthropic API (CORS or connectivity issue).\n\n' +
+                'Make sure you are serving the app over HTTP (not file://) and that ' +
+                'your Anthropic API key is valid. Open DevTools → Network tab for details.\n\n' +
+                `Original error: ${err.message}`
+            );
+        }
+        throw err;
+    }
 
     if (!response.ok) {
         const body = await response.text().catch(() => '');
+        console.error(`[WineAI] Direct API HTTP ${response.status}:`, body.slice(0, 300));
         if (response.status === 401) {
             throw new Error('Invalid Anthropic API key. Check 🔑 API Keys settings.');
         }
@@ -93,18 +109,36 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens }) {
         } catch { /* ignore — keep anon token */ }
     }
 
-    const response = await fetch(`${state.supabaseUrl}/functions/v1/wine-ai`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'apikey': state.supabaseAnonKey,
-            'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ requestType, prompt, image, maxTokens }),
-    });
+    const edgeUrl = `${state.supabaseUrl}/functions/v1/wine-ai`;
+    console.log('[WineAI] Using Supabase edge function:', edgeUrl);
+    let response;
+    try {
+        response = await fetch(edgeUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': state.supabaseAnonKey,
+                'Authorization': `Bearer ${authToken}`,
+            },
+            body: JSON.stringify({ requestType, prompt, image, maxTokens }),
+        });
+    } catch (err) {
+        console.error('[WineAI] Edge function fetch threw:', err);
+        if (err instanceof TypeError) {
+            throw new Error(
+                'Network error contacting the Wine AI server (CORS or connectivity issue).\n\n' +
+                'Verify your Supabase URL in 🔑 API Keys and that the wine-ai edge function ' +
+                'is deployed and responding to OPTIONS preflight requests. ' +
+                'Open DevTools → Network tab and look for a failed OPTIONS request.\n\n' +
+                `Original error: ${err.message}`
+            );
+        }
+        throw err;
+    }
 
     const text = await response.text();
     if (!response.ok) {
+        console.error(`[WineAI] Edge function HTTP ${response.status}:`, text.slice(0, 300));
         throw new Error(`Wine AI server error (${response.status}): ${text.slice(0, 200)}`);
     }
 
