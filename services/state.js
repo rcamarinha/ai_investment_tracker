@@ -15,8 +15,8 @@ const state = {
     fmpKey: '',
     anthropicKey: '',
     portfolioHistory: [],
-    supabaseUrl: '',
-    supabaseAnonKey: '',
+    supabaseUrl: 'https://dybetrrhshqezokcxiid.supabase.co',
+    supabaseAnonKey: 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz',
     supabaseClient: null,
     currentUser: null,
     userRole: 'user',              // 'admin' or 'user' — determines API key visibility
