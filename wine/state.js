@@ -9,8 +9,8 @@ const state = {
     cellar: [],              // Array of bottle objects
     valuationsLoading: false,
     anthropicKey: '',
-    supabaseUrl: 'https://dybetrrhshqezokcxiid.supabase.co',
-    supabaseAnonKey: 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz',
+    supabaseUrl: '',
+    supabaseAnonKey: '',
     supabaseClient: null,
     currentUser: null,
     cellarHistory: [],       // Array of snapshot objects

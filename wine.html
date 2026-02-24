@@ -389,6 +389,11 @@
         async function runLabelScan(base64, mediaType) {
             const resultEl = document.getElementById('recognitionResult');
 
+            if (state.supabaseClient && !state.currentUser) {
+                resultEl.innerHTML = `<div class="scan-error">🔒 Please log in to use label scanning.</div>`;
+                return;
+            }
+
             try {
                 const wine = await recognizeLabel(base64, mediaType);
                 pendingScanBase64 = null;

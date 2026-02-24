@@ -39,6 +39,13 @@ export async function callWineAI({ requestType, prompt, image, maxTokens = 1024 
     if (hasDirectKey) {
         return _callDirect({ requestType, prompt, image, maxTokens });
     }
+    // Edge function path requires an authenticated session to prevent quota abuse.
+    if (!state.currentUser) {
+        throw new Error(
+            'Please log in to use the shared AI service.\n\n' +
+            'Alternatively, add your own Anthropic API key in 🔑 API Keys.'
+        );
+    }
     return _callEdgeFunction({ requestType, prompt, image, maxTokens });
 }
 
