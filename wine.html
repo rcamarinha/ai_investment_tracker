@@ -395,6 +395,7 @@
                 pendingScanMedia  = null;
                 showRecognitionResult(wine);
             } catch (err) {
+                console.error('=== LABEL SCAN FAILED ===', err);
                 showRecognitionError(err.message);
             }
         }
