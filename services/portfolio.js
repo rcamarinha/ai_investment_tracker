@@ -324,6 +324,7 @@ export function renderMoversSection(movers, updatedAt) {
 // ── Import Dialog ───────────────────────────────────────────────────────────
 
 export function showImportDialog() {
+    if (!requireAuth('import positions')) return;
     try {
         console.log('=== IMPORT DIALOG OPENED ===');
         const dialog = document.getElementById('importDialog');

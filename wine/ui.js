@@ -5,6 +5,15 @@
 import state from './state.js';
 import { initSupabase } from './storage.js';
 
+// ── Auth Guard ───────────────────────────────────────────────────────────────
+
+function requireAuth(actionName) {
+    if (!state.supabaseClient) return true; // local-only mode
+    if (state.currentUser) return true;
+    alert(`🔒 Please log in to ${actionName}.\n\nSign in with your email or Google account above.`);
+    return false;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(value) {
@@ -94,6 +103,7 @@ export function showAllocationTab(tab) {
 // ── API Key Dialog ───────────────────────────────────────────────────────────
 
 export function showApiKeyDialog() {
+    if (!requireAuth('manage API keys')) return;
     // Pre-fill inputs with current values
     const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
     setVal('anthropicKeyInput',  state.anthropicKey);

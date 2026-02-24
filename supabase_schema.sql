@@ -88,10 +88,12 @@ CREATE POLICY "Authenticated users can read config"
     USING (auth.role() = 'authenticated');
 
 -- Insert the shared API keys
+-- IMPORTANT: Replace the placeholder values below with your actual API keys
+-- before running this schema. Never commit real keys to version control.
 INSERT INTO app_config (key, value) VALUES
-    ('finnhubKey', 'd5u9b19r01qtjet2flngd5u9b19r01qtjet2flo0'),
-    ('fmpKey', 'driWloMwwLkFzzcl4Gvgv1CXhXa7jy2l'),
-    ('alphaVantageKey', 'ABF4HZSG0I50VGLP');
+    ('finnhubKey', 'YOUR_FINNHUB_KEY_HERE'),
+    ('fmpKey', 'YOUR_FMP_KEY_HERE'),
+    ('alphaVantageKey', 'YOUR_ALPHA_VANTAGE_KEY_HERE');
 
 -- ============================================
 -- Assets table: stores asset metadata (sector, exchange, ISIN mappings)

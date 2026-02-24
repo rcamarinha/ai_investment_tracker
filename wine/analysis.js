@@ -23,9 +23,17 @@ function fmt(value) {
     return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }).format(value);
 }
 
+function requireAuth(actionName) {
+    if (!state.supabaseClient) return true; // local-only mode
+    if (state.currentUser) return true;
+    alert(`🔒 Please log in to ${actionName}.\n\nSign in with your email or Google account above.`);
+    return false;
+}
+
 // ── Cellar Analysis ──────────────────────────────────────────────────────────
 
 export async function analyzeCellar() {
+    if (!requireAuth('use AI analysis')) return;
     if (state.cellar.length === 0) {
         alert('No bottles in cellar. Add some bottles first.');
         return;
