@@ -15,8 +15,10 @@ import { renderPortfolio, updateHistoryDisplay } from './portfolio.js';
 
 /** Returns true when the current session has admin privileges. */
 export function isAdmin() {
-    // When no Supabase / not logged in → single-user mode, treat as admin
-    if (!state.supabaseClient || !state.currentUser) return true;
+    // No Supabase configured → local-only mode, treat as admin
+    if (!state.supabaseClient) return true;
+    // Supabase configured but not logged in → no privileges
+    if (!state.currentUser) return false;
     return state.userRole === 'admin';
 }
 

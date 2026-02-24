@@ -10,6 +10,15 @@ import { callWineAI } from './api.js';
 import { saveBottleToDB } from './storage.js';
 import { renderCellar } from './cellar.js';
 
+// ── Auth Guard ───────────────────────────────────────────────────────────────
+
+function requireAuth(actionName) {
+    if (!state.supabaseClient) return true; // local-only mode
+    if (state.currentUser) return true;
+    alert(`🔒 Please log in to ${actionName}.\n\nSign in with your email or Google account above.`);
+    return false;
+}
+
 // ── Single Bottle Valuation ──────────────────────────────────────────────────
 
 /**
@@ -18,6 +27,7 @@ import { renderCellar } from './cellar.js';
  * @param {string} bottleId
  */
 export async function valuateSingleBottle(bottleId) {
+    if (!requireAuth('valuate bottles')) return;
     const bottle = state.cellar.find(b => b.id === bottleId);
     if (!bottle) return;
 
@@ -50,6 +60,7 @@ export async function valuateSingleBottle(bottleId) {
  * @param {boolean} forceAll - If true, re-valuate even already-valued bottles
  */
 export async function valuateAllBottles(forceAll = false) {
+    if (!requireAuth('valuate bottles')) return;
     if (state.valuationsLoading) return;
     if (state.cellar.length === 0) {
         alert('No bottles in cellar to valuate.');

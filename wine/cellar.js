@@ -7,6 +7,16 @@ import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
          deleteSnapshotFromDB, clearSnapshotsFromDB } from './storage.js';
 import { renderAllocationCharts } from './ui.js';
 
+// ── Auth Guard ───────────────────────────────────────────────────────────────
+
+/** Returns true if the user may proceed; shows an alert and returns false otherwise. */
+function requireAuth(actionName) {
+    if (!state.supabaseClient) return true; // local-only mode
+    if (state.currentUser) return true;
+    alert(`🔒 Please log in to ${actionName}.\n\nSign in with your email or Google account above.`);
+    return false;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function escapeHTML(str) {
@@ -178,6 +188,7 @@ function updateStatsBar(totals) {
 // ── Add / Edit Bottle ────────────────────────────────────────────────────────
 
 export function showAddBottleDialog(prefilled = {}) {
+    if (!requireAuth('add bottles')) return;
     state.editingBottleId = null;
 
     document.getElementById('bottleDialogTitle').textContent = '🍾 Add Bottle';
@@ -237,6 +248,7 @@ export function closeBottleDialog() {
 }
 
 export async function submitBottle() {
+    if (!requireAuth('save bottles')) return;
     const name          = getField('bottleName').trim();
     const qty           = parseInt(getField('bottleQty'), 10);
     const purchasePrice = parseFloat(getField('bottlePurchasePrice'));
@@ -319,6 +331,7 @@ export async function deleteCurrentBottle() {
 // ── Snapshots & History ──────────────────────────────────────────────────────
 
 export async function saveCellarSnapshot() {
+    if (!requireAuth('save snapshots')) return;
     if (state.cellar.length === 0) {
         alert('No bottles in cellar. Add some bottles first.');
         return;
