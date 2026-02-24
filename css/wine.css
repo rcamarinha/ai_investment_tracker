@@ -479,4 +479,282 @@
     .cellar-stats { gap: 8px; }
     .cellar-stat { min-width: 70px; padding: 8px 12px; }
     .cellar-stat .stat-value { font-size: 16px; }
+    .live-camera-btn { display: none; } /* native file picker opens camera on mobile */
+}
+
+
+/* ── Toast Notifications ────────────────────────────────────────────────── */
+
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    max-width: 340px;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-left-width: 4px;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: #e2e8f0;
+    pointer-events: all;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    transform: translateX(120%);
+    transition: transform 0.25s ease, opacity 0.25s ease;
+    opacity: 0;
+}
+.toast.toast-visible {
+    transform: translateX(0);
+    opacity: 1;
+}
+.toast-success { border-left-color: #4ade80; }
+.toast-error   { border-left-color: #f87171; }
+.toast-warning { border-left-color: #fbbf24; }
+.toast-info    { border-left-color: #60a5fa; }
+
+.toast-icon {
+    font-size: 15px;
+    flex-shrink: 0;
+}
+.toast-success .toast-icon { color: #4ade80; }
+.toast-error   .toast-icon { color: #f87171; }
+.toast-warning .toast-icon { color: #fbbf24; }
+.toast-info    .toast-icon { color: #60a5fa; }
+
+.toast-msg { line-height: 1.4; }
+
+
+/* ── Confirm Modal ──────────────────────────────────────────────────────── */
+
+.confirm-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5000;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.confirm-dialog {
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 16px;
+    padding: 28px 28px 24px;
+    max-width: 400px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+
+.confirm-dialog p {
+    color: #e2e8f0;
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0 0 22px;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+
+/* ── Dialog Modals (bottle dialog, API key dialog) ─────────────────────── */
+
+#bottleDialog,
+#apiKeyDialog {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 1000;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 16px 40px;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+#bottleDialog .card,
+#apiKeyDialog .card {
+    max-width: 680px;
+    width: 100%;
+    margin: 0;
+    align-self: flex-start;
+}
+
+
+/* ── Inline Form Validation Errors ──────────────────────────────────────── */
+
+.form-error {
+    color: #f87171;
+    font-size: 12px;
+    margin-top: 4px;
+    min-height: 16px;
+    line-height: 1.3;
+}
+
+.position-form-group input.field-invalid,
+.position-form-group textarea.field-invalid {
+    border-color: #f87171 !important;
+}
+
+
+/* ── Empty State ────────────────────────────────────────────────────────── */
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 52px 20px 40px;
+}
+
+.empty-state-icon {
+    font-size: 52px;
+    margin-bottom: 16px;
+    opacity: 0.7;
+}
+
+.empty-state h3 {
+    color: #cbd5e1;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 8px;
+}
+
+.empty-state p {
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0 0 24px;
+    max-width: 320px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.empty-state-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+
+/* ── Search / Sort Controls ─────────────────────────────────────────────── */
+
+.bottle-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.bottle-search-wrap {
+    flex: 1;
+    min-width: 160px;
+    position: relative;
+}
+
+.bottle-search-wrap::before {
+    content: '🔍';
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    pointer-events: none;
+}
+
+#bottleSearch {
+    width: 100%;
+    padding: 9px 12px 9px 32px;
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+#bottleSearch:focus { border-color: #9f1239; }
+#bottleSearch::placeholder { color: #475569; }
+
+#bottleSort {
+    padding: 9px 12px;
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+#bottleSort:focus { border-color: #9f1239; }
+
+.no-results {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 32px 20px;
+    color: #64748b;
+    font-size: 14px;
+}
+
+
+/* ── Scanner Collapsed State ────────────────────────────────────────────── */
+
+.scanner-scanned .scan-controls,
+.scanner-scanned #liveCameraContainer {
+    display: none !important;
+}
+
+.scanner-summary {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    color: #4ade80;
+    font-size: 14px;
+    margin-bottom: 14px;
+}
+
+.scanner-scanned .scanner-summary {
+    display: flex;
+}
+
+
+/* ── Valuation Range & Note ─────────────────────────────────────────────── */
+
+.valuation-range {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 1px;
+}
+
+.valuation-note {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 8px;
+    font-style: italic;
+    line-height: 1.4;
+    border-top: 1px solid #1e293b;
+    padding-top: 6px;
 }

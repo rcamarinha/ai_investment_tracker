@@ -4,13 +4,14 @@
 
 import state from './state.js';
 import { initSupabase } from './storage.js';
+import { showToast, showConfirm, openModal, closeModal } from './utils.js';
 
-// ── Auth Guard ───────────────────────────────────────────────────────────────
+// ── Auth Guard ────────────────────────────────────────────────────────────────
 
 function requireAuth(actionName) {
     if (!state.supabaseClient) return true; // local-only mode
     if (state.currentUser) return true;
-    alert(`🔒 Please log in to ${actionName}.\n\nSign in with your email or Google account above.`);
+    showToast(`Please log in to ${actionName}.`, 'warning');
     return false;
 }
 
@@ -104,16 +105,15 @@ export function showAllocationTab(tab) {
 
 export function showApiKeyDialog() {
     if (!requireAuth('manage API keys')) return;
-    // Pre-fill inputs with current values
     const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
-    setVal('anthropicKeyInput',  state.anthropicKey);
-    setVal('supabaseUrlInput',   state.supabaseUrl);
+    setVal('anthropicKeyInput',    state.anthropicKey);
+    setVal('supabaseUrlInput',     state.supabaseUrl);
     setVal('supabaseAnonKeyInput', state.supabaseAnonKey);
-    document.getElementById('apiKeyDialog').style.display = 'block';
+    openModal('apiKeyDialog');
 }
 
 export function closeApiKeyDialog() {
-    document.getElementById('apiKeyDialog').style.display = 'none';
+    closeModal('apiKeyDialog');
 }
 
 export function saveApiKeys() {
@@ -142,11 +142,13 @@ export function saveApiKeys() {
     }
 
     closeApiKeyDialog();
-    console.log('✓ Wine API keys saved');
+    showToast('API keys saved.');
 }
 
-export function clearApiKeys() {
-    if (!confirm('Clear all API keys and disconnect from Supabase?')) return;
+export async function clearApiKeys() {
+    const confirmed = await showConfirm('Clear all API keys and disconnect from Supabase?',
+        { confirmLabel: 'Clear All', danger: true });
+    if (!confirmed) return;
 
     state.anthropicKey    = '';
     state.supabaseUrl     = '';
@@ -162,5 +164,5 @@ export function clearApiKeys() {
     const authBar = document.getElementById('authBar');
     if (authBar) authBar.style.display = 'none';
 
-    console.log('✓ Wine API keys cleared');
+    showToast('API keys cleared.');
 }
