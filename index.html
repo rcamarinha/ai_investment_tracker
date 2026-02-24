@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Investment Hub</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.97.0/dist/umd/supabase.min.js"
+            integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb"
+            crossorigin="anonymous"></script>
     <link rel="stylesheet" href="css/styles.css">
     <style>
         .hub-grid {
@@ -96,6 +99,34 @@
             <p>Track all your investments — stocks and wine — in one place</p>
         </div>
 
+        <!-- Auth bar: login/logout — hidden until Supabase is configured -->
+        <div id="authBar" class="auth-bar" style="display: none;"></div>
+
+        <!-- Supabase setup: shown when credentials are not yet saved -->
+        <div id="supabaseSetup" style="display: none; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <span style="color: #e2e8f0; font-weight: 600;">☁️ Connect to Supabase (Cloud Sync + Login)</span>
+                <button onclick="document.getElementById('supabaseSetup').style.display='none'"
+                        style="background: none; border: none; color: #64748b; font-size: 18px; cursor: pointer; line-height: 1;">✕</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <input type="text" id="hubSupabaseUrl" placeholder="https://your-project.supabase.co"
+                       style="width: 100%; padding: 10px 12px; background: #0f172a; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; box-sizing: border-box;" />
+                <input type="text" id="hubSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIs… (anon key)"
+                       style="width: 100%; padding: 10px 12px; background: #0f172a; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; box-sizing: border-box;" />
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="saveHubSupabaseConfig()"
+                            style="padding: 9px 20px; background: #2563eb; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">Save &amp; Connect</button>
+                    <button onclick="clearHubSupabaseConfig()"
+                            style="padding: 9px 16px; background: #475569; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer;">Clear</button>
+                </div>
+                <div style="color: #64748b; font-size: 12px;">
+                    Find these in <a href="https://supabase.com/dashboard" target="_blank" style="color: #60a5fa;">Supabase Dashboard</a> → Settings → API.
+                    The anon key is safe for browser use.
+                </div>
+            </div>
+        </div>
+
         <div class="hub-grid">
             <!-- Stock Portfolio -->
             <a href="portfolio.html" class="hub-card stocks" style="text-decoration: none;">
@@ -132,6 +163,234 @@
                 <span class="hub-cta wine">Open Wine Cellar →</span>
             </a>
         </div>
+
+        <!-- Show setup panel button when Supabase is not yet configured -->
+        <div id="connectBtn" style="margin-top: 18px; text-align: center; display: none;">
+            <button onclick="document.getElementById('supabaseSetup').style.display='block'; document.getElementById('connectBtn').style.display='none';"
+                    style="padding: 9px 22px; background: #1e293b; color: #94a3b8; border: 1px dashed #475569; border-radius: 10px; font-size: 13px; cursor: pointer;">
+                ☁️ Set up Supabase cloud sync &amp; login
+            </button>
+        </div>
     </div>
+
+    <script type="module">
+        // ── State ──────────────────────────────────────────────────────────────
+        let sbClient = null;
+        let currentUser = null;
+        let passwordRecoveryMode = false;
+
+        // ── Helpers ────────────────────────────────────────────────────────────
+        function esc(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#x27;');
+        }
+
+        // ── Auth bar renderer ──────────────────────────────────────────────────
+        function renderAuthBar() {
+            const authBar = document.getElementById('authBar');
+            const connectBtn = document.getElementById('connectBtn');
+
+            if (!sbClient) {
+                authBar.style.display = 'none';
+                if (connectBtn) connectBtn.style.display = 'block';
+                return;
+            }
+
+            authBar.style.display = 'block';
+            if (connectBtn) connectBtn.style.display = 'none';
+
+            if (passwordRecoveryMode) {
+                authBar.innerHTML = `
+                    <div class="auth-login-panel">
+                        <div class="auth-email-section">
+                            <span style="color: #94a3b8; font-size: 13px;">Set new password</span>
+                            <input type="password" id="newPassword" placeholder="New password" />
+                            <input type="password" id="confirmPassword" placeholder="Confirm password"
+                                   onkeydown="if(event.key==='Enter') handlePasswordReset()" />
+                            <button class="btn-sm" style="background: #059669;" onclick="handlePasswordReset()">Set Password</button>
+                            <button class="btn-sm" style="background: #475569;" onclick="cancelPasswordRecovery()">Cancel</button>
+                        </div>
+                    </div>`;
+                return;
+            }
+
+            if (currentUser) {
+                authBar.innerHTML = `
+                    <div class="auth-logged-in">
+                        <span style="color: #4ade80; font-weight: 600;">☁️ Connected</span>
+                        <span style="color: #94a3b8;">${esc(currentUser.email)}</span>
+                        <span style="flex: 1;"></span>
+                        <button class="btn-sm" style="background: #475569;" onclick="handleLogout()">Logout</button>
+                    </div>`;
+            } else {
+                authBar.innerHTML = `
+                    <div class="auth-login-panel">
+                        <div class="auth-sso-section">
+                            <button class="btn-sso btn-google" onclick="handleGoogleLogin()">
+                                <svg width="18" height="18" viewBox="0 0 48 48">
+                                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                                </svg>
+                                Sign in with Google
+                            </button>
+                        </div>
+                        <div class="auth-divider"><span>or sign in with email</span></div>
+                        <div class="auth-email-section">
+                            <input type="email"    id="authEmail"    placeholder="Email" />
+                            <input type="password" id="authPassword" placeholder="Password"
+                                   onkeydown="if(event.key==='Enter') handleLogin()" />
+                            <button class="btn-sm" style="background: #2563eb;" onclick="handleLogin()">Login</button>
+                            <button class="btn-sm" style="background: #7c3aed;" onclick="handleSignup()">Sign Up</button>
+                            <button class="auth-forgot-link" onclick="handleForgotPassword()">Forgot password?</button>
+                        </div>
+                    </div>`;
+            }
+        }
+
+        // ── Supabase init ──────────────────────────────────────────────────────
+        function initHub() {
+            const url = localStorage.getItem('supabaseUrl') || '';
+            const key = localStorage.getItem('supabaseAnonKey') || '';
+            if (!url || !key) { renderAuthBar(); return; }
+
+            try {
+                sbClient = supabase.createClient(url, key);
+                sbClient.auth.onAuthStateChange((event, session) => {
+                    currentUser = session?.user || null;
+                    if (event === 'PASSWORD_RECOVERY') {
+                        passwordRecoveryMode = true;
+                    } else if (event === 'USER_UPDATED' && passwordRecoveryMode) {
+                        passwordRecoveryMode = false;
+                    }
+                    renderAuthBar();
+                });
+                sbClient.auth.getSession().then(({ data: { session } }) => {
+                    currentUser = session?.user || null;
+                    renderAuthBar();
+                }).catch(err => {
+                    console.error('getSession failed:', err);
+                    renderAuthBar();
+                });
+            } catch (err) {
+                console.error('Supabase init failed:', err);
+                sbClient = null;
+                renderAuthBar();
+            }
+        }
+
+        // ── Auth handlers (exposed to onclick) ────────────────────────────────
+        window.handleLogin = async function () {
+            const email = (document.getElementById('authEmail')?.value ?? '').trim();
+            const password = document.getElementById('authPassword')?.value ?? '';
+            if (!email || !password) { alert('Please enter email and password.'); return; }
+            try {
+                const { error } = await sbClient.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+            } catch (err) { alert('Login failed: ' + err.message); }
+        };
+
+        window.handleSignup = async function () {
+            const email = (document.getElementById('authEmail')?.value ?? '').trim();
+            const password = document.getElementById('authPassword')?.value ?? '';
+            if (!email || !password) { alert('Please enter email and password.'); return; }
+            if (password.length < 6) { alert('Password must be at least 6 characters.'); return; }
+            try {
+                const { error } = await sbClient.auth.signUp({ email, password });
+                if (error) throw error;
+                alert('Account created! Check your email to confirm your account, then log in.');
+            } catch (err) { alert('Sign up failed: ' + err.message); }
+        };
+
+        window.handleLogout = async function () {
+            try {
+                await sbClient.auth.signOut();
+                currentUser = null;
+                renderAuthBar();
+            } catch (err) { alert('Logout failed: ' + err.message); }
+        };
+
+        window.handleGoogleLogin = async function () {
+            try {
+                const { error } = await sbClient.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: window.location.origin + window.location.pathname }
+                });
+                if (error) throw error;
+            } catch (err) { alert('Google sign-in failed: ' + err.message); }
+        };
+
+        window.handleForgotPassword = async function () {
+            const emailInput = document.getElementById('authEmail');
+            const email = emailInput ? emailInput.value.trim() : '';
+            if (!email) { alert('Please enter your email address first.'); if (emailInput) emailInput.focus(); return; }
+            try {
+                const { error } = await sbClient.auth.resetPasswordForEmail(email, {
+                    redirectTo: window.location.origin + window.location.pathname,
+                });
+                if (error) throw error;
+                alert(`Password reset email sent to ${email}. Follow the link to set a new password.`);
+            } catch (err) { alert('Failed to send reset email: ' + err.message); }
+        };
+
+        window.handlePasswordReset = async function () {
+            const newPassword = document.getElementById('newPassword')?.value;
+            const confirmPassword = document.getElementById('confirmPassword')?.value;
+            if (!newPassword || !confirmPassword) { alert('Please fill in both password fields.'); return; }
+            if (newPassword !== confirmPassword) { alert('Passwords do not match.'); return; }
+            if (newPassword.length < 6) { alert('Password must be at least 6 characters.'); return; }
+            try {
+                const { error } = await sbClient.auth.updateUser({ password: newPassword });
+                if (error) throw error;
+                passwordRecoveryMode = false;
+                alert('Password updated successfully. You are now logged in.');
+                renderAuthBar();
+            } catch (err) { alert('Failed to update password: ' + err.message); }
+        };
+
+        window.cancelPasswordRecovery = function () {
+            passwordRecoveryMode = false;
+            renderAuthBar();
+        };
+
+        // ── Supabase config management ─────────────────────────────────────────
+        window.saveHubSupabaseConfig = function () {
+            const url = document.getElementById('hubSupabaseUrl')?.value.trim();
+            const key = document.getElementById('hubSupabaseKey')?.value.trim();
+            if (!url || !key) { alert('Please enter both Supabase URL and anon key.'); return; }
+            localStorage.setItem('supabaseUrl', url);
+            localStorage.setItem('supabaseAnonKey', key);
+            document.getElementById('supabaseSetup').style.display = 'none';
+            // Re-initialize with the new credentials
+            sbClient = null;
+            currentUser = null;
+            initHub();
+        };
+
+        window.clearHubSupabaseConfig = function () {
+            localStorage.removeItem('supabaseUrl');
+            localStorage.removeItem('supabaseAnonKey');
+            sbClient = null;
+            currentUser = null;
+            document.getElementById('hubSupabaseUrl').value = '';
+            document.getElementById('hubSupabaseKey').value = '';
+            renderAuthBar();
+        };
+
+        // ── Boot ───────────────────────────────────────────────────────────────
+        // Pre-fill the setup form if credentials are already saved
+        const savedUrl = localStorage.getItem('supabaseUrl') || '';
+        const savedKey = localStorage.getItem('supabaseAnonKey') || '';
+        if (savedUrl) document.getElementById('hubSupabaseUrl').value = savedUrl;
+        if (savedKey) document.getElementById('hubSupabaseKey').value = savedKey;
+
+        initHub();
+    </script>
 </body>
 </html>
