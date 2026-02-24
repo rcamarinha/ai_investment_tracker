@@ -8,8 +8,9 @@ import { getSector } from '../data/sectors.js';
 // ── HTML / Formatting ───────────────────────────────────────────────────────
 
 export function escapeHTML(str) {
+    if (str == null) return '';
     const div = document.createElement('div');
-    div.textContent = str;
+    div.textContent = String(str);
     return div.innerHTML;
 }
 
@@ -20,6 +21,7 @@ const CURRENCY_SYMBOLS = {
 
 export function formatCurrency(num, currency) {
     const symbol = currency ? (CURRENCY_SYMBOLS[currency] || currency + ' ') : '\u20ac';
+    if (num == null || isNaN(num)) return symbol + '—';
     return symbol + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -75,6 +77,10 @@ export function detectCurrency(stockExchange) {
 // ── Asset Record Builder ────────────────────────────────────────────────────
 
 export function buildAssetRecord(position) {
+    if (!position || !position.symbol) {
+        console.warn('buildAssetRecord: invalid position', position);
+        return null;
+    }
     const ticker = position.symbol.toUpperCase();
     const stockExchange = detectStockExchange(ticker);
     const currency = detectCurrency(stockExchange);
@@ -93,6 +99,7 @@ export function buildAssetRecord(position) {
 
 /** Get native currency for a ticker (from DB, else detect from suffix). */
 export function getAssetCurrency(symbol) {
+    if (!symbol) return detectCurrency(detectStockExchange(''));
     const dbAsset = state.assetDatabase[symbol.toUpperCase()];
     if (dbAsset && dbAsset.currency) return dbAsset.currency;
     return detectCurrency(detectStockExchange(symbol));

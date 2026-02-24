@@ -27,6 +27,10 @@ function requireAuth(actionName) {
 
 export function renderPortfolio() {
     const positionsDiv = document.getElementById('positions');
+    if (!positionsDiv) {
+        console.warn('renderPortfolio: #positions element not found');
+        return;
+    }
 
     // Separate active and inactive positions
     const activePositions = state.portfolio.filter(p => p.shares > 0);
@@ -79,6 +83,10 @@ export function renderPortfolio() {
 
     // Update header
     const portfolioHeader = document.querySelector('.portfolio-header');
+    if (!portfolioHeader) {
+        console.warn('renderPortfolio: .portfolio-header element not found');
+        return;
+    }
     const totalGainLoss = totalMarketValueBase - totalInvestedBase;
     const totalGainLossPct = totalInvestedBase > 0 ? (totalGainLoss / totalInvestedBase) * 100 : 0;
     const gainLossColor = totalGainLoss >= 0 ? '#4ade80' : '#f87171';
@@ -1268,6 +1276,7 @@ export async function importPositions() {
         // Populate local assetDatabase
         newPositions.forEach(p => {
             const assetRecord = buildAssetRecord(p);
+            if (!assetRecord) return; // skip if symbol was invalid
             state.assetDatabase[assetRecord.ticker] = {
                 name: assetRecord.name,
                 ticker: assetRecord.ticker,
@@ -1385,7 +1394,11 @@ export async function savePortfolioSnapshot() {
     };
 
     state.portfolioHistory.push(snapshot);
-    localStorage.setItem('portfolioHistory', JSON.stringify(state.portfolioHistory));
+    try {
+        localStorage.setItem('portfolioHistory', JSON.stringify(state.portfolioHistory));
+    } catch (err) {
+        console.warn('Failed to save portfolio history to localStorage:', err);
+    }
 
     let cloudSaved = false;
     let dbSaved = false;
@@ -1425,12 +1438,15 @@ export async function savePortfolioSnapshot() {
 
 export function updateHistoryDisplay() {
     try {
+        const historySection = document.getElementById('historySection');
+        if (!historySection) return;
+
         if (state.portfolioHistory.length === 0) {
-            document.getElementById('historySection').style.display = 'none';
+            historySection.style.display = 'none';
             return;
         }
 
-        document.getElementById('historySection').style.display = 'block';
+        historySection.style.display = 'block';
         updateChart();
 
         const historyLog = document.getElementById('historyLog');
@@ -1544,7 +1560,8 @@ export function clearHistory() {
         state.portfolioHistory = [];
         localStorage.removeItem('portfolioHistory');
         clearHistoryFromDB();
-        document.getElementById('historySection').style.display = 'none';
+        const histSection = document.getElementById('historySection');
+        if (histSection) histSection.style.display = 'none';
         alert('\u2713 History cleared');
     }
 }

@@ -46,7 +46,7 @@ export async function checkUserRole() {
             return;
         }
 
-        const adminList = data.value.split(',').map(e => e.trim().toLowerCase());
+        const adminList = (data.value || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
         const userEmail = state.currentUser.email.toLowerCase();
 
         state.userRole = adminList.includes(userEmail) ? 'admin' : 'user';
@@ -160,8 +160,8 @@ export async function handleGoogleLogin() {
 // ── Email / Password ────────────────────────────────────────────────────────
 
 export async function handleLogin() {
-    const email = document.getElementById('authEmail').value.trim();
-    const password = document.getElementById('authPassword').value;
+    const email = (document.getElementById('authEmail')?.value ?? '').trim();
+    const password = document.getElementById('authPassword')?.value ?? '';
 
     if (!email || !password) {
         alert('Please enter email and password.');
@@ -171,7 +171,7 @@ export async function handleLogin() {
     try {
         const { data, error } = await state.supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        console.log('\u2713 Logged in:', data.user.email);
+        console.log('\u2713 Logged in:', data.user?.email);
         // Role is checked in the onAuthStateChange handler after loadFromDatabase
     } catch (err) {
         alert('Login failed: ' + err.message);
@@ -238,8 +238,8 @@ export function cancelPasswordRecovery() {
 }
 
 export async function handleSignup() {
-    const email = document.getElementById('authEmail').value.trim();
-    const password = document.getElementById('authPassword').value;
+    const email = (document.getElementById('authEmail')?.value ?? '').trim();
+    const password = document.getElementById('authPassword')?.value ?? '';
 
     if (!email || !password) {
         alert('Please enter email and password.');
@@ -306,5 +306,6 @@ export async function handleLogout() {
         console.log('\u2713 Logged out — UI cleared');
     } catch (err) {
         console.error('Logout error:', err);
+        alert('Logout failed: ' + err.message);
     }
 }

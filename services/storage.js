@@ -55,6 +55,9 @@ export function initSupabase() {
             if (state.currentUser) {
                 loadFromDatabase();
             }
+        }).catch(err => {
+            console.error('Failed to get initial session:', err);
+            updateAuthBar();
         });
 
         console.log('\u2713 Supabase initialized');
@@ -199,6 +202,7 @@ export async function saveAssetsToDB(assets) {
 
     try {
         for (const asset of assets) {
+            if (!asset || !asset.ticker) continue; // skip nulls from buildAssetRecord
             const upsertData = {
                 ticker: asset.ticker,
                 name: asset.name,
@@ -241,6 +245,7 @@ export async function loadAssetsFromDB() {
 
         if (data && data.length > 0) {
             data.forEach(a => {
+                if (!a.ticker) return; // skip rows with missing ticker
                 state.assetDatabase[a.ticker.toUpperCase()] = {
                     name: a.name,
                     ticker: a.ticker,

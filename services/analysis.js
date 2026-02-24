@@ -16,7 +16,11 @@ export async function analyzeMarkets() {
     const analyzeBtn = document.getElementById('analyzeBtn');
     const analysisSection = document.getElementById('analysisSection');
 
-    const perspective = INVESTMENT_PERSPECTIVES[state.selectedPerspective];
+    const perspective = INVESTMENT_PERSPECTIVES[state.selectedPerspective] || INVESTMENT_PERSPECTIVES['value'];
+    if (!perspective) {
+        alert('\u274C Unknown investment perspective selected. Please refresh the page.');
+        return;
+    }
     console.log('=== ANALYZE MARKETS ===');
     console.log('Perspective:', state.selectedPerspective, perspective.name);
 
@@ -126,9 +130,17 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
             data = JSON.parse(responseBody);
         }
 
+        if (!data || !Array.isArray(data.content)) {
+            throw new Error('Unexpected API response format');
+        }
         const text = data.content.find(c => c.type === 'text')?.text || '';
         const cleanText = text.replace(/```json|```/g, '').trim();
-        const analysis = JSON.parse(cleanText);
+        let analysis;
+        try {
+            analysis = JSON.parse(cleanText);
+        } catch {
+            throw new Error('Could not parse AI response as JSON. Raw: ' + cleanText.slice(0, 200));
+        }
 
         analysisSection.innerHTML = `
             <div class="card analysis-section">
@@ -162,7 +174,6 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                 <div class="analysis-content" style="color: #f87171;">\u274C Unable to generate analysis: ${escapeHTML(err.message)}<br><br>Check the browser console (F12) for detailed error information.</div>
             </div>
         `;
-        alert(`\u274C Error generating analysis:\n\n${err.message}`);
     }
 
     analyzeBtn.disabled = false;
@@ -178,7 +189,11 @@ export async function getTradeIdeas() {
     }
     const tradeIdeasBtn = document.getElementById('tradeIdeasBtn');
     const analysisSection = document.getElementById('analysisSection');
-    const perspective = INVESTMENT_PERSPECTIVES[state.selectedPerspective];
+    const perspective = INVESTMENT_PERSPECTIVES[state.selectedPerspective] || INVESTMENT_PERSPECTIVES['value'];
+    if (!perspective) {
+        alert('\u274C Unknown investment perspective selected. Please refresh the page.');
+        return;
+    }
 
     if (state.portfolio.length === 0) {
         alert('\u274C No positions in portfolio. Import your portfolio first.');
@@ -314,9 +329,17 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
             data = await response.json();
         }
 
+        if (!data || !Array.isArray(data.content)) {
+            throw new Error('Unexpected API response format');
+        }
         const text = data.content.find(c => c.type === 'text')?.text || '';
         const cleanText = text.replace(/```json|```/g, '').trim();
-        const ideas = JSON.parse(cleanText);
+        let ideas;
+        try {
+            ideas = JSON.parse(cleanText);
+        } catch {
+            throw new Error('Could not parse trade ideas response as JSON. Raw: ' + cleanText.slice(0, 200));
+        }
 
         const actionColors = { 'BUY': '#10b981', 'SELL': '#ef4444', 'TRIM': '#f59e0b', 'ADD': '#3b82f6', 'REBALANCE': '#f59e0b', 'WATCH': '#8b5cf6', 'HOLD': '#6366f1' };
         const actionIcons = { 'BUY': '\uD83D\uDFE2', 'SELL': '\uD83D\uDD34', 'TRIM': '\uD83D\uDFE1', 'ADD': '\uD83D\uDD35', 'REBALANCE': '\uD83D\uDCCA', 'WATCH': '\uD83D\uDC41\uFE0F', 'HOLD': '\u23F8\uFE0F' };
@@ -484,7 +507,9 @@ Reply with plain text only — no markdown, no bullet points, no JSON.`;
             data = await response.json();
         }
 
-        const text = data.content.find(c => c.type === 'text')?.text?.trim() || '';
+        const text = (data && Array.isArray(data.content))
+            ? (data.content.find(c => c.type === 'text')?.text?.trim() || '')
+            : '';
 
         const el = document.getElementById('moversAiText');
         if (el) {
