@@ -99,33 +99,7 @@
             <p>Track all your investments — stocks and wine — in one place</p>
         </div>
 
-        <!-- Auth bar: login/logout — hidden until Supabase is configured -->
         <div id="authBar" class="auth-bar" style="display: none;"></div>
-
-        <!-- Supabase setup: shown when credentials are not yet saved -->
-        <div id="supabaseSetup" style="display: none; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-                <span style="color: #e2e8f0; font-weight: 600;">☁️ Connect to Supabase (Cloud Sync + Login)</span>
-                <button onclick="document.getElementById('supabaseSetup').style.display='none'"
-                        style="background: none; border: none; color: #64748b; font-size: 18px; cursor: pointer; line-height: 1;">✕</button>
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <input type="text" id="hubSupabaseUrl" placeholder="https://your-project.supabase.co"
-                       style="width: 100%; padding: 10px 12px; background: #0f172a; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; box-sizing: border-box;" />
-                <input type="text" id="hubSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIs… (anon key)"
-                       style="width: 100%; padding: 10px 12px; background: #0f172a; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; box-sizing: border-box;" />
-                <div style="display: flex; gap: 8px;">
-                    <button onclick="saveHubSupabaseConfig()"
-                            style="padding: 9px 20px; background: #2563eb; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">Save &amp; Connect</button>
-                    <button onclick="clearHubSupabaseConfig()"
-                            style="padding: 9px 16px; background: #475569; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer;">Clear</button>
-                </div>
-                <div style="color: #64748b; font-size: 12px;">
-                    Find these in <a href="https://supabase.com/dashboard" target="_blank" style="color: #60a5fa;">Supabase Dashboard</a> → Settings → API.
-                    The anon key is safe for browser use.
-                </div>
-            </div>
-        </div>
 
         <div class="hub-grid">
             <!-- Stock Portfolio -->
@@ -163,23 +137,17 @@
                 <span class="hub-cta wine">Open Wine Cellar →</span>
             </a>
         </div>
-
-        <!-- Show setup panel button when Supabase is not yet configured -->
-        <div id="connectBtn" style="margin-top: 18px; text-align: center; display: none;">
-            <button onclick="document.getElementById('supabaseSetup').style.display='block'; document.getElementById('connectBtn').style.display='none';"
-                    style="padding: 9px 22px; background: #1e293b; color: #94a3b8; border: 1px dashed #475569; border-radius: 10px; font-size: 13px; cursor: pointer;">
-                ☁️ Set up Supabase cloud sync &amp; login
-            </button>
-        </div>
     </div>
 
     <script type="module">
-        // ── State ──────────────────────────────────────────────────────────────
+        // Baked-in Supabase credentials (anon key is public by design — RLS protects data)
+        const SUPABASE_URL = 'https://dybetrrhshqezokcxiid.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
+
         let sbClient = null;
         let currentUser = null;
         let passwordRecoveryMode = false;
 
-        // ── Helpers ────────────────────────────────────────────────────────────
         function esc(str) {
             if (str == null) return '';
             return String(str)
@@ -190,19 +158,11 @@
                 .replace(/'/g, '&#x27;');
         }
 
-        // ── Auth bar renderer ──────────────────────────────────────────────────
         function renderAuthBar() {
             const authBar = document.getElementById('authBar');
-            const connectBtn = document.getElementById('connectBtn');
-
-            if (!sbClient) {
-                authBar.style.display = 'none';
-                if (connectBtn) connectBtn.style.display = 'block';
-                return;
-            }
+            if (!sbClient) { authBar.style.display = 'none'; return; }
 
             authBar.style.display = 'block';
-            if (connectBtn) connectBtn.style.display = 'none';
 
             if (passwordRecoveryMode) {
                 authBar.innerHTML = `
@@ -254,38 +214,7 @@
             }
         }
 
-        // ── Supabase init ──────────────────────────────────────────────────────
-        function initHub() {
-            const url = localStorage.getItem('supabaseUrl') || '';
-            const key = localStorage.getItem('supabaseAnonKey') || '';
-            if (!url || !key) { renderAuthBar(); return; }
-
-            try {
-                sbClient = supabase.createClient(url, key);
-                sbClient.auth.onAuthStateChange((event, session) => {
-                    currentUser = session?.user || null;
-                    if (event === 'PASSWORD_RECOVERY') {
-                        passwordRecoveryMode = true;
-                    } else if (event === 'USER_UPDATED' && passwordRecoveryMode) {
-                        passwordRecoveryMode = false;
-                    }
-                    renderAuthBar();
-                });
-                sbClient.auth.getSession().then(({ data: { session } }) => {
-                    currentUser = session?.user || null;
-                    renderAuthBar();
-                }).catch(err => {
-                    console.error('getSession failed:', err);
-                    renderAuthBar();
-                });
-            } catch (err) {
-                console.error('Supabase init failed:', err);
-                sbClient = null;
-                renderAuthBar();
-            }
-        }
-
-        // ── Auth handlers (exposed to onclick) ────────────────────────────────
+        // ── Auth handlers ──────────────────────────────────────────────────────
         window.handleLogin = async function () {
             const email = (document.getElementById('authEmail')?.value ?? '').trim();
             const password = document.getElementById('authPassword')?.value ?? '';
@@ -359,38 +288,29 @@
             renderAuthBar();
         };
 
-        // ── Supabase config management ─────────────────────────────────────────
-        window.saveHubSupabaseConfig = function () {
-            const url = document.getElementById('hubSupabaseUrl')?.value.trim();
-            const key = document.getElementById('hubSupabaseKey')?.value.trim();
-            if (!url || !key) { alert('Please enter both Supabase URL and anon key.'); return; }
-            localStorage.setItem('supabaseUrl', url);
-            localStorage.setItem('supabaseAnonKey', key);
-            document.getElementById('supabaseSetup').style.display = 'none';
-            // Re-initialize with the new credentials
-            sbClient = null;
-            currentUser = null;
-            initHub();
-        };
-
-        window.clearHubSupabaseConfig = function () {
-            localStorage.removeItem('supabaseUrl');
-            localStorage.removeItem('supabaseAnonKey');
-            sbClient = null;
-            currentUser = null;
-            document.getElementById('hubSupabaseUrl').value = '';
-            document.getElementById('hubSupabaseKey').value = '';
-            renderAuthBar();
-        };
-
         // ── Boot ───────────────────────────────────────────────────────────────
-        // Pre-fill the setup form if credentials are already saved
-        const savedUrl = localStorage.getItem('supabaseUrl') || '';
-        const savedKey = localStorage.getItem('supabaseAnonKey') || '';
-        if (savedUrl) document.getElementById('hubSupabaseUrl').value = savedUrl;
-        if (savedKey) document.getElementById('hubSupabaseKey').value = savedKey;
-
-        initHub();
+        try {
+            sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            sbClient.auth.onAuthStateChange((event, session) => {
+                currentUser = session?.user || null;
+                if (event === 'PASSWORD_RECOVERY') {
+                    passwordRecoveryMode = true;
+                } else if (event === 'USER_UPDATED' && passwordRecoveryMode) {
+                    passwordRecoveryMode = false;
+                }
+                renderAuthBar();
+            });
+            sbClient.auth.getSession().then(({ data: { session } }) => {
+                currentUser = session?.user || null;
+                renderAuthBar();
+            }).catch(err => {
+                console.error('getSession failed:', err);
+                renderAuthBar();
+            });
+        } catch (err) {
+            console.error('Supabase init failed:', err);
+            renderAuthBar();
+        }
     </script>
 </body>
 </html>
