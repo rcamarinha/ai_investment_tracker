@@ -21,7 +21,7 @@ A modular browser-based investment tracking suite — **Stock Portfolio** and **
 ### 🍷 Wine Cellar Tracker (`wine.html`)
 
 - **Label Scanning** — Take a photo of any wine label; Claude Vision AI identifies the wine and pre-fills all details
-  - Mobile: opens device camera directly (`capture="environment"`)
+  - Mobile: standard OS picker — choose "Take Photo" or "Photo Library" (iOS & Android)
   - Desktop: file picker OR live camera via `getUserMedia`
 - **AI Valuations** — Claude estimates current market value (per bottle, in EUR) plus optimal drinking window
 - **Cellar Management** — Add, edit, and delete bottles with full metadata (vintage, region, varietal, appellation, etc.)
