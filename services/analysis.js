@@ -101,7 +101,10 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                 headers: {
                     'Content-Type': 'application/json',
                     'apikey': state.supabaseAnonKey,
-                    'Authorization': `Bearer ${session?.access_token || state.supabaseAnonKey}`
+                    // Only include Authorization when we have a real session JWT.
+                    // The sb_publishable_* anon key is not a JWT and must not be
+                    // used as a Bearer token (edge function has verify_jwt = false).
+                    ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
                 },
                 body: JSON.stringify({
                     portfolio: state.portfolio.map(p => ({
@@ -292,7 +295,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
                 headers: {
                     'Content-Type': 'application/json',
                     'apikey': state.supabaseAnonKey,
-                    'Authorization': `Bearer ${session?.access_token || state.supabaseAnonKey}`
+                    ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
                 },
                 body: JSON.stringify({
                     portfolio: state.portfolio.map(p => ({
@@ -460,7 +463,7 @@ Reply with plain text only — no markdown, no bullet points, no JSON.`;
                     headers: {
                         'Content-Type': 'application/json',
                         'apikey': state.supabaseAnonKey,
-                        'Authorization': `Bearer ${session?.access_token || state.supabaseAnonKey}`
+                        ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
                     },
                     body: JSON.stringify({
                         prompt,
