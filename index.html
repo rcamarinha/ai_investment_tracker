@@ -95,7 +95,7 @@
 <body>
     <div class="container" style="max-width: 760px;">
         <div class="header" style="text-align: center;">
-            <h1 style="font-size: 32px;">Investment Hub</h1>
+            <h1 style="font-size: 32px;">Investment Hub <span style="font-size: 13px; font-weight: normal; opacity: 0.5;">v1.3</span></h1>
             <p>Track all your investments — stocks and wine — in one place</p>
         </div>
 
@@ -291,6 +291,8 @@
         // ── Boot ───────────────────────────────────────────────────────────────
         try {
             sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            // Show login form immediately — don't wait for async session check
+            renderAuthBar();
             sbClient.auth.onAuthStateChange((event, session) => {
                 currentUser = session?.user || null;
                 if (event === 'PASSWORD_RECOVERY') {
