@@ -108,7 +108,8 @@ export function renderCellar() {
 }
 
 function renderBottleCard(b) {
-    const totalInvested  = (b.qty || 0) * (b.purchasePrice || 0);
+    const hasPurchasePrice = b.purchasePrice != null && b.purchasePrice > 0;
+    const totalInvested  = hasPurchasePrice ? (b.qty || 0) * b.purchasePrice : 0;
     const hasValuation   = b.estimatedValue != null;
     const totalEstimated = hasValuation ? (b.qty || 0) * b.estimatedValue : totalInvested;
     const gain           = totalEstimated - totalInvested;
@@ -139,19 +140,25 @@ function renderBottleCard(b) {
         ${tags.length > 0 ? `<div class="bottle-tags">${tags.map(t => `<span class="bottle-tag">${t}</span>`).join('')}</div>` : ''}
 
         <div class="bottle-financials">
+            ${hasPurchasePrice ? `
             <div class="bottle-fin-row">
                 <span>${b.qty} bottle${b.qty !== 1 ? 's' : ''} × ${fmt(b.purchasePrice)}</span>
                 <span style="color: #cbd5e1;">${fmt(totalInvested)} invested</span>
-            </div>
+            </div>` : `
+            <div class="bottle-fin-row">
+                <span>${b.qty} bottle${b.qty !== 1 ? 's' : ''}</span>
+                <span style="color: #64748b; font-size: 12px;">No purchase price</span>
+            </div>`}
             ${hasValuation ? `
             <div class="bottle-fin-row">
                 <span>Est. value</span>
                 <span style="color: #d97706;">${fmt(b.estimatedValue)}/bottle · ${fmt(totalEstimated)}</span>
             </div>
+            ${hasPurchasePrice ? `
             <div class="bottle-gain ${gainClass}">
                 <span>Gain / Loss</span>
                 <span>${gainSign}${fmt(gain)} (${gainSign}${gainPct.toFixed(1)}%)</span>
-            </div>` : `
+            </div>` : ''}` : `
             <div class="bottle-fin-row">
                 <span style="color: #64748b; font-size: 12px;">Valuation not yet fetched</span>
                 <span><button class="btn btn-sm" style="background: #451a03; color: #d97706; padding: 2px 8px; font-size: 11px;" onclick="valuateSingleBottle('${escapeHTML(b.id)}')">Get estimate →</button></span>
@@ -251,11 +258,12 @@ export async function submitBottle() {
     if (!requireAuth('save bottles')) return;
     const name          = getField('bottleName').trim();
     const qty           = parseInt(getField('bottleQty'), 10);
-    const purchasePrice = parseFloat(getField('bottlePurchasePrice'));
+    const purchasePriceRaw = getField('bottlePurchasePrice');
+    const purchasePrice = purchasePriceRaw !== '' ? parseFloat(purchasePriceRaw) : null;
 
     if (!name) { alert('Wine name is required.'); return; }
     if (!qty || qty < 1) { alert('Quantity must be at least 1.'); return; }
-    if (!purchasePrice || purchasePrice < 0) { alert('Purchase price is required.'); return; }
+    if (purchasePrice !== null && purchasePrice < 0) { alert('Purchase price cannot be negative.'); return; }
 
     const submitBtn = document.getElementById('bottleDialogSubmit');
     submitBtn.disabled = true;

@@ -25,7 +25,7 @@ A modular browser-based investment tracking suite — **Stock Portfolio** and **
   - Desktop: file picker OR live camera via `getUserMedia`
 - **AI Valuations** — Claude estimates current market value (per bottle, in EUR) plus optimal drinking window
 - **Cellar Management** — Add, edit, and delete bottles with full metadata (vintage, region, varietal, appellation, etc.)
-- **Gain / Loss Tracking** — Compare purchase price vs. estimated value per bottle and for the whole cellar
+- **Value Tracking** — Total estimated collection value always shown; Gain / Loss shown per bottle only when a purchase price is provided (purchase price is optional)
 - **Allocation Charts** — Breakdown by region, varietal, or country
 - **Cellar History** — Save value snapshots over time
 - **AI Cellar Analysis** — Drink-window recommendations, portfolio highlights, diversification assessment, and buying suggestions
@@ -270,6 +270,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.8.1
+- **Wine Cellar — optional acquisition price** — Purchase price is no longer required when adding a bottle. Bottle cards show estimated value only when no cost basis is provided; Gain / Loss row is hidden. Focus is on total collection value rather than P&L.
 
 ### v3.8.0
 - **Wine Cellar Tracker** — new tracker at `wine.html` with AI label recognition (Claude Vision), per-bottle valuations, cellar analysis, allocation charts, and Supabase sync
