@@ -164,26 +164,36 @@ export function showApiKeyDialog() {
         alert('Only administrators can manage API keys.');
         return;
     }
-    document.getElementById('finnhubKeyInput').value = state.finnhubKey || '';
-    document.getElementById('fmpKeyInput').value = state.fmpKey || '';
-    document.getElementById('alphaVantageKeyInput').value = state.alphaVantageKey || '';
-    document.getElementById('anthropicKeyInput').value = state.anthropicKey || '';
-    document.getElementById('supabaseUrlInput').value = state.supabaseUrl || '';
-    document.getElementById('supabaseAnonKeyInput').value = state.supabaseAnonKey || '';
-    document.getElementById('apiKeyDialog').style.display = 'block';
+    const dialog = document.getElementById('apiKeyDialog');
+    if (!dialog) { console.error('apiKeyDialog element not found'); return; }
+    const inputs = {
+        finnhubKeyInput: state.finnhubKey,
+        fmpKeyInput: state.fmpKey,
+        alphaVantageKeyInput: state.alphaVantageKey,
+        anthropicKeyInput: state.anthropicKey,
+        supabaseUrlInput: state.supabaseUrl,
+        supabaseAnonKeyInput: state.supabaseAnonKey
+    };
+    for (const [id, value] of Object.entries(inputs)) {
+        const el = document.getElementById(id);
+        if (el) el.value = value || '';
+    }
+    dialog.style.display = 'block';
 }
 
 export function closeApiKeyDialog() {
-    document.getElementById('apiKeyDialog').style.display = 'none';
+    const dialog = document.getElementById('apiKeyDialog');
+    if (dialog) dialog.style.display = 'none';
 }
 
 export function saveApiKeys() {
-    const fhKey = document.getElementById('finnhubKeyInput').value.trim();
-    const fmpKeyInput = document.getElementById('fmpKeyInput').value.trim();
-    const avKey = document.getElementById('alphaVantageKeyInput').value.trim();
-    const antKey = document.getElementById('anthropicKeyInput').value.trim();
-    const sbUrl = document.getElementById('supabaseUrlInput').value.trim();
-    const sbKey = document.getElementById('supabaseAnonKeyInput').value.trim();
+    const getValue = id => document.getElementById(id)?.value.trim() ?? '';
+    const fhKey = getValue('finnhubKeyInput');
+    const fmpKeyInput = getValue('fmpKeyInput');
+    const avKey = getValue('alphaVantageKeyInput');
+    const antKey = getValue('anthropicKeyInput');
+    const sbUrl = getValue('supabaseUrlInput');
+    const sbKey = getValue('supabaseAnonKeyInput');
 
     state.finnhubKey = fhKey;
     state.fmpKey = fmpKeyInput;
@@ -194,9 +204,13 @@ export function saveApiKeys() {
 
     // Persist to localStorage
     const keys = { finnhubKey: fhKey, fmpKey: fmpKeyInput, alphaVantageKey: avKey, anthropicKey: antKey, supabaseUrl: sbUrl, supabaseAnonKey: sbKey };
-    for (const [k, v] of Object.entries(keys)) {
-        if (v) localStorage.setItem(k, v);
-        else localStorage.removeItem(k);
+    try {
+        for (const [k, v] of Object.entries(keys)) {
+            if (v) localStorage.setItem(k, v);
+            else localStorage.removeItem(k);
+        }
+    } catch (err) {
+        console.warn('Failed to persist settings to localStorage:', err);
     }
 
     // Re-init Supabase if config changed
@@ -239,12 +253,11 @@ export function clearApiKeys() {
         localStorage.removeItem('anthropicKey');
         localStorage.removeItem('supabaseUrl');
         localStorage.removeItem('supabaseAnonKey');
-        document.getElementById('finnhubKeyInput').value = '';
-        document.getElementById('fmpKeyInput').value = '';
-        document.getElementById('alphaVantageKeyInput').value = '';
-        document.getElementById('anthropicKeyInput').value = '';
-        document.getElementById('supabaseUrlInput').value = '';
-        document.getElementById('supabaseAnonKeyInput').value = '';
+        ['finnhubKeyInput', 'fmpKeyInput', 'alphaVantageKeyInput', 'anthropicKeyInput',
+            'supabaseUrlInput', 'supabaseAnonKeyInput'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
         updateAuthBar();
         alert('\u2713 All keys and settings cleared.');
     }

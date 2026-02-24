@@ -89,8 +89,12 @@ export async function fetchStockPrice(symbol) {
                 const quote = data['Global Quote'];
                 if (quote && quote['05. price']) {
                     const price = parseFloat(quote['05. price']);
-                    console.log(`\u2713 ${symbol}: $${price} (Alpha Vantage)`);
-                    return { price, source: 'Alpha Vantage', tier: 3, success: true };
+                    if (isNaN(price) || price <= 0) {
+                        console.log(`Alpha Vantage returned invalid price "${quote['05. price']}" for ${symbol}`);
+                    } else {
+                        console.log(`\u2713 ${symbol}: $${price} (Alpha Vantage)`);
+                        return { price, source: 'Alpha Vantage', tier: 3, success: true };
+                    }
                 } else {
                     console.log(`Alpha Vantage returned no price for ${symbol}`);
                 }
@@ -298,6 +302,10 @@ export async function fetchMarketPrices() {
     }
 
     const refreshBtn = document.getElementById('refreshBtn');
+    if (!refreshBtn) {
+        console.warn('fetchMarketPrices: #refreshBtn element not found');
+        return;
+    }
     const originalText = refreshBtn.textContent;
     refreshBtn.disabled = true;
     refreshBtn.textContent = '\u23F3 Fetching...';
@@ -540,9 +548,12 @@ export async function fetchExchangeRates() {
     try {
         const cached = localStorage.getItem('exchangeRates');
         if (cached) {
-            const { rates, timestamp } = JSON.parse(cached);
-            state.exchangeRates = rates;
-            state.exchangeRatesTimestamp = timestamp;
+            const parsed = JSON.parse(cached);
+            if (!parsed || typeof parsed.rates !== 'object') {
+                throw new Error('Invalid cached exchange rates format');
+            }
+            state.exchangeRates = parsed.rates;
+            state.exchangeRatesTimestamp = parsed.timestamp || null;
             console.log('\u2713 Loaded cached exchange rates from localStorage');
             return true;
         }
