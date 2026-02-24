@@ -478,7 +478,17 @@ Reply with plain text only — no markdown, no bullet points, no JSON.`;
 
             if (!response.ok) {
                 const errBody = await response.text().catch(() => '');
-                console.error(`[analyzeMovers] Edge function HTTP ${response.status}:`, errBody.slice(0, 300));
+                if (response.status === 529) {
+                    // Anthropic overloaded — not an error, just transient
+                    console.warn('[analyzeMovers] Anthropic API overloaded (529), skipping AI insight.');
+                    const el = document.getElementById('moversAiText');
+                    if (el) {
+                        el.textContent = 'AI insight unavailable — Anthropic API is busy. It will retry on the next price update.';
+                        el.classList.remove('movers-ai-loading');
+                    }
+                    return;
+                }
+                console.warn(`[analyzeMovers] Edge function HTTP ${response.status}:`, errBody.slice(0, 300));
                 throw new Error(`Edge function ${response.status}: ${errBody}`);
             }
             data = await response.json();
