@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wine Cellar Tracker</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.97.0/dist/umd/supabase.min.js"
+            integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb"
+            crossorigin="anonymous"></script>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/wine.css">
 </head>
@@ -227,6 +229,9 @@
                 <div style="color: #94a3b8; font-size: 12px; margin-top: 6px; line-height: 1.6;">
                     Required for: wine label scanning (vision AI) and cellar analysis.<br>
                     Get API key: <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com/settings/keys</a>
+                </div>
+                <div style="color: #fbbf24; font-size: 12px; margin-top: 6px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; padding: 8px; line-height: 1.5;">
+                    ⚠️ <strong>Security notice:</strong> This key is sent directly from your browser and is visible in DevTools → Network tab. Only use a key you're comfortable exposing client-side, or connect Supabase to use server-side AI calls instead.
                 </div>
             </div>
 

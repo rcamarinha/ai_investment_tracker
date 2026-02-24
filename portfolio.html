@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Financial Advisor</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.97.0/dist/umd/supabase.min.js"
+            integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb"
+            crossorigin="anonymous"></script>
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -140,6 +142,9 @@
                     <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">🤖 Anthropic API Key (AI Analysis)</label>
                     <input type="password" id="anthropicKeyInput" placeholder="Enter your Anthropic API key (sk-ant-...)" style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
                     <div style="color: #94a3b8; font-size: 12px;">Get API key: <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">https://console.anthropic.com/settings/keys</a><br>Required for "Get AI Analysis" when running outside Claude.ai</div>
+                    <div style="color: #fbbf24; font-size: 12px; margin-top: 6px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; padding: 8px; line-height: 1.5;">
+                        ⚠️ <strong>Security notice:</strong> This key is sent directly from your browser and is visible in DevTools → Network tab. Only use a key you're comfortable exposing client-side, or connect Supabase to use server-side AI calls instead.
+                    </div>
                 </div>
 
                 <hr style="border: 1px solid #334155; margin: 20px 0;">

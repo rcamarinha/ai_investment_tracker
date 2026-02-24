@@ -69,10 +69,26 @@ CREATE INDEX idx_snapshots_user_id ON snapshots(user_id);
 CREATE INDEX idx_snapshots_user_timestamp ON snapshots(user_id, timestamp DESC);
 
 -- ============================================
+-- Admin users: controls access to shared API keys
+-- ============================================
+-- Add rows here (via Supabase Dashboard) for each user who should be
+-- able to read app_config. No RLS policies means this table is only
+-- accessible via the service role key (server-side), not the anon key.
+
+CREATE TABLE admin_users (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
+-- No SELECT policy: admin_users is not readable via the anon/authenticated role.
+-- Only the Postgres service role (used by edge functions) can query it.
+
+-- ============================================
 -- App Config: shared API keys (admin-managed)
 -- ============================================
--- Only authenticated users can read. No frontend writes allowed.
--- Manage keys via Supabase Dashboard > Table Editor only.
+-- Only users listed in admin_users can read. No frontend writes allowed.
+-- Add admin users via Supabase Dashboard > Table Editor > admin_users.
 
 CREATE TABLE app_config (
     key TEXT PRIMARY KEY,
@@ -83,9 +99,11 @@ CREATE TABLE app_config (
 
 ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Authenticated users can read config"
+CREATE POLICY "Admin users can read config"
     ON app_config FOR SELECT
-    USING (auth.role() = 'authenticated');
+    USING (EXISTS (
+        SELECT 1 FROM admin_users WHERE user_id = auth.uid()
+    ));
 
 -- Insert the shared API keys
 -- IMPORTANT: Replace the placeholder values below with your actual API keys
