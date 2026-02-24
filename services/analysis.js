@@ -68,7 +68,7 @@ export async function analyzeMarkets() {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
+                    model: 'claude-sonnet-4-6',
                     max_tokens: 2500,
                     messages: [{
                         role: 'user',
@@ -272,7 +272,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
+                    model: 'claude-sonnet-4-6',
                     max_tokens: 4000,
                     messages: [{ role: 'user', content: tradeIdeasPrompt }]
                 })
@@ -431,7 +431,7 @@ Reply with plain text only — no markdown, no bullet points, no JSON.`;
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
+                    model: 'claude-sonnet-4-6',
                     max_tokens: 350,
                     messages: [{ role: 'user', content: prompt }]
                 })
