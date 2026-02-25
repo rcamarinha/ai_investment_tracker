@@ -154,7 +154,104 @@ export function buildBottleFromScan(scanResult) {
     };
 }
 
-// ── Snapshot Builder ──────────────────────────────────────────────────────────
+// ── Drink Window Status ───────────────────────────────────────────────────────
+
+/**
+ * Determine the drinking-readiness status of a wine from its drink window string.
+ *
+ * Strategy: split the window into two halves.
+ *   - Before window start  → 'not-ready'
+ *   - First half of window → 'ready'
+ *   - Second half          → 'at-peak'
+ *   - After window end     → 'past-peak'
+ *
+ * @param {string|null} drinkWindow  - e.g. "2024-2030" or "2028"
+ * @param {number}      [currentYear] - defaults to current calendar year
+ * @returns {'not-ready'|'ready'|'at-peak'|'past-peak'|'unknown'}
+ */
+export function getDrinkStatus(drinkWindow, currentYear) {
+    if (!drinkWindow || typeof drinkWindow !== 'string') return 'unknown';
+    const year = currentYear !== undefined ? currentYear : new Date().getFullYear();
+
+    // Accept "YYYY-YYYY", "YYYY – YYYY", or bare "YYYY"
+    const match = drinkWindow.match(/(\d{4})(?:\s*[-–]\s*(\d{4}))?/);
+    if (!match) return 'unknown';
+
+    const start = parseInt(match[1], 10);
+    const end   = match[2] ? parseInt(match[2], 10) : start;
+
+    if (year < start) return 'not-ready';
+    if (year > end)   return 'past-peak';
+
+    const mid = start + Math.floor((end - start) / 2);
+    return year <= mid ? 'ready' : 'at-peak';
+}
+
+// ── Search Filter ─────────────────────────────────────────────────────────────
+
+/**
+ * Return only the bottles whose text fields contain the search term.
+ * A blank/null term returns the full array unchanged.
+ *
+ * Searched fields: name, winery, region, varietal, country, appellation, vintage.
+ *
+ * @param {Array}       cellar
+ * @param {string|null} searchTerm
+ * @returns {Array}
+ */
+export function filterBottles(cellar, searchTerm) {
+    const arr  = cellar || [];
+    const term = (searchTerm || '').trim().toLowerCase();
+    if (!term) return arr;
+
+    return arr.filter(b =>
+        (b.name        || '').toLowerCase().includes(term) ||
+        (b.winery      || '').toLowerCase().includes(term) ||
+        (b.region      || '').toLowerCase().includes(term) ||
+        (b.varietal    || '').toLowerCase().includes(term) ||
+        (b.country     || '').toLowerCase().includes(term) ||
+        (b.appellation || '').toLowerCase().includes(term) ||
+        String(b.vintage || '').includes(term)
+    );
+}
+
+// ── Sort ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Return a new sorted copy of a bottles array.
+ *
+ * @param {Array}  bottles
+ * @param {'added'|'name'|'vintage-desc'|'value-desc'|'gain-desc'} sortMode
+ * @returns {Array}
+ */
+export function sortBottles(bottles, sortMode) {
+    const arr = [...(bottles || [])];
+
+    switch (sortMode) {
+        case 'name':
+            return arr.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        case 'vintage-desc':
+            return arr.sort((a, b) => (b.vintage || 0) - (a.vintage || 0));
+
+        case 'value-desc':
+            return arr.sort((a, b) =>
+                (b.estimatedValue || b.purchasePrice || 0) -
+                (a.estimatedValue || a.purchasePrice || 0));
+
+        case 'gain-desc': {
+            const pct = bottle =>
+                (bottle.estimatedValue && bottle.purchasePrice)
+                    ? (bottle.estimatedValue - bottle.purchasePrice) / bottle.purchasePrice
+                    : 0;
+            return arr.sort((a, b) => pct(b) - pct(a));
+        }
+
+        default: // 'added' — preserve insertion order
+            return arr;
+    }
+}
+
 
 /**
  * Build a snapshot record from the current cellar state.

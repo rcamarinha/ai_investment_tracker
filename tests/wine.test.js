@@ -6,6 +6,9 @@ import {
     validateBottle,
     buildBottleFromScan,
     buildCellarSnapshot,
+    getDrinkStatus,
+    filterBottles,
+    sortBottles,
 } from '../src/wine.js';
 
 // ── computeCellarTotals ───────────────────────────────────────────────────────
@@ -349,5 +352,202 @@ describe('buildCellarSnapshot', () => {
         expect(snap.totalInvested).toBe(0);
         expect(snap.totalEstimatedValue).toBe(0);
         expect(snap.bottleCount).toBe(0);
+    });
+});
+
+// ── getDrinkStatus ────────────────────────────────────────────────────────────
+
+describe('getDrinkStatus', () => {
+    // Window "2024-2030" (start=2024, end=2030, mid=2027)
+
+    it('returns not-ready when before the window', () => {
+        expect(getDrinkStatus('2028-2035', 2025)).toBe('not-ready');
+    });
+
+    it('returns ready in the first half of the window', () => {
+        // Window 2024-2030, mid=2027; year 2025 ≤ 2027 → ready
+        expect(getDrinkStatus('2024-2030', 2025)).toBe('ready');
+    });
+
+    it('returns ready exactly at the midpoint', () => {
+        // mid of 2024-2030 = floor((2030-2024)/2)+2024 = 3+2024 = 2027
+        expect(getDrinkStatus('2024-2030', 2027)).toBe('ready');
+    });
+
+    it('returns at-peak in the second half of the window', () => {
+        expect(getDrinkStatus('2024-2030', 2029)).toBe('at-peak');
+    });
+
+    it('returns past-peak after the window', () => {
+        expect(getDrinkStatus('2020-2024', 2026)).toBe('past-peak');
+    });
+
+    it('handles a single-year window', () => {
+        expect(getDrinkStatus('2026', 2025)).toBe('not-ready');
+        expect(getDrinkStatus('2026', 2026)).toBe('ready');
+        expect(getDrinkStatus('2026', 2027)).toBe('past-peak');
+    });
+
+    it('returns unknown for null input', () => {
+        expect(getDrinkStatus(null)).toBe('unknown');
+    });
+
+    it('returns unknown for empty string', () => {
+        expect(getDrinkStatus('')).toBe('unknown');
+    });
+
+    it('returns unknown for non-date strings', () => {
+        expect(getDrinkStatus('Now onwards')).toBe('unknown');
+    });
+
+    it('handles en-dash separator', () => {
+        expect(getDrinkStatus('2024–2030', 2029)).toBe('at-peak');
+    });
+
+    it('uses current year when no override provided', () => {
+        // Use a window guaranteed to be in the future (≥ current year + 10)
+        const far = (new Date().getFullYear() + 10).toString();
+        expect(getDrinkStatus(`${far}-${Number(far) + 5}`)).toBe('not-ready');
+    });
+});
+
+// ── filterBottles ─────────────────────────────────────────────────────────────
+
+describe('filterBottles', () => {
+    const cellar = [
+        { name: 'Château Margaux', winery: 'Château Margaux', region: 'Bordeaux',
+          varietal: 'Cabernet Sauvignon', country: 'France', appellation: 'Margaux AOC', vintage: 2018 },
+        { name: 'Penfolds Grange', winery: 'Penfolds', region: 'Barossa Valley',
+          varietal: 'Shiraz', country: 'Australia', appellation: null, vintage: 2017 },
+        { name: 'Opus One', winery: 'Opus One Winery', region: 'Napa Valley',
+          varietal: 'Cabernet Sauvignon', country: 'USA', appellation: null, vintage: 2019 },
+    ];
+
+    it('returns all bottles when term is empty', () => {
+        expect(filterBottles(cellar, '')).toHaveLength(3);
+    });
+
+    it('returns all bottles when term is null', () => {
+        expect(filterBottles(cellar, null)).toHaveLength(3);
+    });
+
+    it('returns empty array for empty cellar', () => {
+        expect(filterBottles([], 'bordeaux')).toHaveLength(0);
+    });
+
+    it('returns empty array for null cellar', () => {
+        expect(filterBottles(null, 'bordeaux')).toHaveLength(0);
+    });
+
+    it('matches by wine name (case-insensitive)', () => {
+        const result = filterBottles(cellar, 'margaux');
+        expect(result).toHaveLength(1);
+        expect(result[0].name).toBe('Château Margaux');
+    });
+
+    it('matches by region', () => {
+        const result = filterBottles(cellar, 'napa');
+        expect(result).toHaveLength(1);
+        expect(result[0].name).toBe('Opus One');
+    });
+
+    it('matches by varietal across multiple bottles', () => {
+        const result = filterBottles(cellar, 'cabernet sauvignon');
+        expect(result).toHaveLength(2);
+    });
+
+    it('matches by country', () => {
+        const result = filterBottles(cellar, 'australia');
+        expect(result).toHaveLength(1);
+        expect(result[0].name).toBe('Penfolds Grange');
+    });
+
+    it('matches by vintage string', () => {
+        const result = filterBottles(cellar, '2019');
+        expect(result).toHaveLength(1);
+        expect(result[0].name).toBe('Opus One');
+    });
+
+    it('returns no results for non-matching term', () => {
+        expect(filterBottles(cellar, 'burgundy')).toHaveLength(0);
+    });
+
+    it('trims whitespace from search term', () => {
+        const result = filterBottles(cellar, '  grange  ');
+        expect(result).toHaveLength(1);
+    });
+});
+
+// ── sortBottles ───────────────────────────────────────────────────────────────
+
+describe('sortBottles', () => {
+    const bottles = [
+        { name: 'Zinfandel Reserve', vintage: 2015, estimatedValue: 80,  purchasePrice: 60 },
+        { name: 'Château Petrus',    vintage: 2019, estimatedValue: 500, purchasePrice: 400 },
+        { name: 'Barossa Shiraz',    vintage: 2012, estimatedValue: 120, purchasePrice: 90 },
+    ];
+
+    it('does not mutate the input array', () => {
+        const copy = [...bottles];
+        sortBottles(bottles, 'name');
+        expect(bottles[0].name).toBe(copy[0].name); // original order preserved
+    });
+
+    it('sorts by name A-Z', () => {
+        const result = sortBottles(bottles, 'name');
+        expect(result[0].name).toBe('Barossa Shiraz');
+        expect(result[1].name).toBe('Château Petrus');
+        expect(result[2].name).toBe('Zinfandel Reserve');
+    });
+
+    it('sorts by vintage newest first', () => {
+        const result = sortBottles(bottles, 'vintage-desc');
+        expect(result[0].vintage).toBe(2019);
+        expect(result[1].vintage).toBe(2015);
+        expect(result[2].vintage).toBe(2012);
+    });
+
+    it('sorts by estimated value highest first', () => {
+        const result = sortBottles(bottles, 'value-desc');
+        expect(result[0].estimatedValue).toBe(500);
+        expect(result[1].estimatedValue).toBe(120);
+        expect(result[2].estimatedValue).toBe(80);
+    });
+
+    it('sorts by gain percentage highest first', () => {
+        // Petrus: (500-400)/400 = 25%
+        // Barossa: (120-90)/90  ≈ 33.3%
+        // Zinfandel: (80-60)/60 ≈ 33.3%
+        const result = sortBottles(bottles, 'gain-desc');
+        expect(result[0].name).not.toBe('Château Petrus'); // Petrus lowest gain pct
+    });
+
+    it('preserves original order for "added" mode', () => {
+        const result = sortBottles(bottles, 'added');
+        expect(result[0].name).toBe(bottles[0].name);
+        expect(result[1].name).toBe(bottles[1].name);
+        expect(result[2].name).toBe(bottles[2].name);
+    });
+
+    it('preserves original order for unknown sort mode', () => {
+        const result = sortBottles(bottles, 'unknown');
+        expect(result[0].name).toBe(bottles[0].name);
+    });
+
+    it('returns empty array for empty input', () => {
+        expect(sortBottles([], 'name')).toHaveLength(0);
+    });
+
+    it('returns empty array for null input', () => {
+        expect(sortBottles(null, 'name')).toHaveLength(0);
+    });
+
+    it('handles missing estimatedValue gracefully (falls back to purchasePrice)', () => {
+        const withNull = [
+            { name: 'A', purchasePrice: 100, estimatedValue: null },
+            { name: 'B', purchasePrice: 200, estimatedValue: null },
+        ];
+        const result = sortBottles(withNull, 'value-desc');
+        expect(result[0].name).toBe('B');
     });
 });

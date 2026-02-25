@@ -5,18 +5,9 @@
 import state from './state.js';
 import { callWineAI } from './api.js';
 import { computeTotals } from './cellar.js';
+import { showToast, escapeHTML } from './utils.js';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function escapeHTML(str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-        .replace(/&/g,  '&amp;')
-        .replace(/</g,  '&lt;')
-        .replace(/>/g,  '&gt;')
-        .replace(/"/g,  '&quot;')
-        .replace(/'/g,  '&#x27;');
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(value) {
     if (value == null || isNaN(value)) return '—';
@@ -26,7 +17,7 @@ function fmt(value) {
 function requireAuth(actionName) {
     if (!state.supabaseClient) return true; // local-only mode
     if (state.currentUser) return true;
-    alert(`🔒 Please log in to ${actionName}.\n\nSign in with your email or Google account above.`);
+    showToast(`Please log in to ${actionName}.`, 'warning');
     return false;
 }
 
@@ -35,7 +26,7 @@ function requireAuth(actionName) {
 export async function analyzeCellar() {
     if (!requireAuth('use AI analysis')) return;
     if (state.cellar.length === 0) {
-        alert('No bottles in cellar. Add some bottles first.');
+        showToast('Add some bottles before running analysis.', 'warning');
         return;
     }
 
@@ -60,11 +51,14 @@ export async function analyzeCellar() {
         const analysis = JSON.parse(cleanText);
 
         renderAnalysis(analysis);
+        // Auto-scroll to results
+        setTimeout(() => analysisSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
     } catch (err) {
         console.error('=== WINE ANALYSIS ERROR ===', err);
+        showToast('Analysis failed: ' + err.message, 'error', 6000);
         analysisSection.innerHTML = `
             <div class="card">
-                <div style="color: #f87171;">❌ Analysis failed: ${escapeHTML(err.message)}</div>
+                <div style="color: #f87171; font-size: 14px;">❌ Analysis failed: ${escapeHTML(err.message)}</div>
             </div>`;
     } finally {
         if (analyzeBtn) { analyzeBtn.disabled = false; analyzeBtn.textContent = '🤖 AI Analysis'; }

@@ -6,18 +6,7 @@
  */
 
 import state from './state.js';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function escapeHTML(str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-        .replace(/&/g,  '&amp;')
-        .replace(/</g,  '&lt;')
-        .replace(/>/g,  '&gt;')
-        .replace(/"/g,  '&quot;')
-        .replace(/'/g,  '&#x27;');
-}
+import { showToast, escapeHTML } from './utils.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
 
@@ -127,64 +116,64 @@ export function updateAuthBar() {
 // ── Auth Actions ─────────────────────────────────────────────────────────────
 
 export async function handleGoogleLogin() {
-    if (!state.supabaseClient) { alert('Supabase not configured.'); return; }
+    if (!state.supabaseClient) { showToast('Supabase not configured.', 'warning'); return; }
     try {
         const { error } = await state.supabaseClient.auth.signInWithOAuth({
             provider: 'google',
             options: { redirectTo: window.location.origin + window.location.pathname }
         });
         if (error) throw error;
-    } catch (err) { alert('Google sign-in failed: ' + err.message); }
+    } catch (err) { showToast('Google sign-in failed: ' + err.message, 'error'); }
 }
 
 export async function handleLogin() {
     const email    = document.getElementById('authEmail')?.value.trim();
     const password = document.getElementById('authPassword')?.value;
-    if (!email || !password) { alert('Please enter email and password.'); return; }
+    if (!email || !password) { showToast('Please enter email and password.', 'warning'); return; }
     try {
         const { error } = await state.supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
-    } catch (err) { alert('Login failed: ' + err.message); }
+    } catch (err) { showToast('Login failed: ' + err.message, 'error'); }
 }
 
 export async function handleSignup() {
     const email    = document.getElementById('authEmail')?.value.trim();
     const password = document.getElementById('authPassword')?.value;
-    if (!email || !password) { alert('Please enter email and password.'); return; }
-    if (password.length < 6) { alert('Password must be at least 6 characters.'); return; }
+    if (!email || !password) { showToast('Please enter email and password.', 'warning'); return; }
+    if (password.length < 6) { showToast('Password must be at least 6 characters.', 'warning'); return; }
     try {
         const { error } = await state.supabaseClient.auth.signUp({ email, password });
         if (error) throw error;
-        alert('Account created! Check your email to confirm, then log in.');
-    } catch (err) { alert('Sign up failed: ' + err.message); }
+        showToast('Account created! Check your email to confirm, then log in.', 'success', 7000);
+    } catch (err) { showToast('Sign up failed: ' + err.message, 'error'); }
 }
 
 export async function handleForgotPassword() {
-    if (!state.supabaseClient) { alert('Supabase not configured.'); return; }
+    if (!state.supabaseClient) { showToast('Supabase not configured.', 'warning'); return; }
     const email = document.getElementById('authEmail')?.value.trim();
-    if (!email) { alert('Please enter your email address first.'); return; }
+    if (!email) { showToast('Please enter your email address first.', 'warning'); return; }
     try {
         const { error } = await state.supabaseClient.auth.resetPasswordForEmail(email, {
             redirectTo: window.location.origin + window.location.pathname,
         });
         if (error) throw error;
-        alert(`Password reset email sent to ${email}.`);
-    } catch (err) { alert('Failed to send reset email: ' + err.message); }
+        showToast(`Password reset email sent to ${email}.`, 'success', 7000);
+    } catch (err) { showToast('Failed to send reset email: ' + err.message, 'error'); }
 }
 
 export async function handlePasswordReset() {
     const newPass     = document.getElementById('newPassword')?.value;
     const confirmPass = document.getElementById('confirmPassword')?.value;
-    if (!newPass || !confirmPass) { alert('Please fill in both fields.'); return; }
-    if (newPass !== confirmPass)  { alert('Passwords do not match.'); return; }
-    if (newPass.length < 6)       { alert('Password must be at least 6 characters.'); return; }
+    if (!newPass || !confirmPass) { showToast('Please fill in both fields.', 'warning'); return; }
+    if (newPass !== confirmPass)  { showToast('Passwords do not match.', 'warning'); return; }
+    if (newPass.length < 6)       { showToast('Password must be at least 6 characters.', 'warning'); return; }
     try {
         const { error } = await state.supabaseClient.auth.updateUser({ password: newPass });
         if (error) throw error;
         state.passwordRecoveryMode = false;
-        alert('Password updated. You are now logged in.');
+        showToast('Password updated. You are now logged in.');
         updateAuthBar();
-    } catch (err) { alert('Failed to update password: ' + err.message); }
+    } catch (err) { showToast('Failed to update password: ' + err.message, 'error'); }
 }
 
 export function cancelPasswordRecovery() {

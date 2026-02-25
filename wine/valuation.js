@@ -3,67 +3,98 @@
  *
  * Sends wine details to Claude and asks for current market value estimate.
  * Results are stored back on each bottle object and persisted to Supabase.
+ * valueLow / valueHigh / valuationNote are kept in a localStorage cache
+ * (not in the DB schema) and applied to in-memory bottle state on load.
  */
 
 import state from './state.js';
 import { callWineAI } from './api.js';
 import { saveBottleToDB } from './storage.js';
 import { renderCellar } from './cellar.js';
+import { showToast } from './utils.js';
 
-// ── Auth Guard ───────────────────────────────────────────────────────────────
+// ── Auth Guard ────────────────────────────────────────────────────────────────
 
 function requireAuth(actionName) {
     if (!state.supabaseClient) return true; // local-only mode
     if (state.currentUser) return true;
-    alert(`🔒 Please log in to ${actionName}.\n\nSign in with your email or Google account above.`);
+    showToast(`Please log in to ${actionName}.`, 'warning');
     return false;
 }
 
-// ── Single Bottle Valuation ──────────────────────────────────────────────────
+// ── Valuation Detail Cache (localStorage) ────────────────────────────────────
+// The DB schema stores only estimatedValue/drinkWindow. Range and note live here.
+
+const VAL_CACHE_KEY = 'wine_val_details';
+
+function loadValCache() {
+    try { return JSON.parse(localStorage.getItem(VAL_CACHE_KEY) || '{}'); }
+    catch { return {}; }
+}
+
+function persistValCache(bottleId, details) {
+    const cache = loadValCache();
+    cache[bottleId] = details;
+    localStorage.setItem(VAL_CACHE_KEY, JSON.stringify(cache));
+}
+
+/**
+ * Merge cached valuation details (range, note) into in-memory cellar state.
+ * Call this after bottles are loaded from DB.
+ */
+export function applyValuationCache() {
+    const cache = loadValCache();
+    state.cellar.forEach(b => {
+        if (b.id && cache[b.id]) {
+            b.valueLow      = cache[b.id].valueLow;
+            b.valueHigh     = cache[b.id].valueHigh;
+            b.valuationNote = cache[b.id].valuationNote;
+        }
+    });
+}
+
+// ── Single Bottle Valuation ───────────────────────────────────────────────────
 
 /**
  * Ask Claude to estimate the current market value of a single bottle.
  * Updates the bottle in state and persists the new value to DB.
- * @param {string} bottleId
  */
 export async function valuateSingleBottle(bottleId) {
     if (!requireAuth('valuate bottles')) return;
     const bottle = state.cellar.find(b => b.id === bottleId);
     if (!bottle) return;
 
-    // Briefly show loading state on the card
+    // Show loading state on the card
     const cardEl = document.getElementById(`bottle-${bottleId}`);
     if (cardEl) {
         const actionsEl = cardEl.querySelector('.bottle-actions');
         if (actionsEl) {
-            actionsEl.innerHTML = '<span style="color: #94a3b8; font-size: 12px;">Valuing...</span>';
+            actionsEl.innerHTML = '<span style="color: #94a3b8; font-size: 12px; padding: 4px 6px;">Valuing...</span>';
         }
     }
 
     try {
         const result = await fetchValuation(bottle);
-        bottle.estimatedValue = result.estimatedValue;
-        bottle.drinkWindow    = result.drinkWindow || bottle.drinkWindow;
-        bottle.lastValuedAt   = new Date().toISOString();
+        applyValuationResult(bottle, result);
 
         await saveBottleToDB(bottle);
         renderCellar();
+        showToast(`Valuation updated: ${bottle.name}`);
     } catch (err) {
         console.error('Valuation error:', err);
-        alert(`Valuation failed: ${err.message}`);
-        renderCellar(); // re-render to restore button state
+        showToast(`Valuation failed: ${err.message}`, 'error');
+        renderCellar(); // restore button state
     }
 }
 
 /**
- * Valuate all bottles that don't yet have an estimated value (or force-refresh all).
- * @param {boolean} forceAll - If true, re-valuate even already-valued bottles
+ * Valuate all bottles that don't yet have an estimated value.
  */
 export async function valuateAllBottles(forceAll = false) {
     if (!requireAuth('valuate bottles')) return;
     if (state.valuationsLoading) return;
     if (state.cellar.length === 0) {
-        alert('No bottles in cellar to valuate.');
+        showToast('No bottles in cellar to valuate.', 'warning');
         return;
     }
 
@@ -72,7 +103,7 @@ export async function valuateAllBottles(forceAll = false) {
         : state.cellar.filter(b => !b.estimatedValue);
 
     if (toValueate.length === 0) {
-        alert('All bottles already have valuations.\nUse the 💎 button on individual bottles to refresh them.');
+        showToast('All bottles already have valuations. Use the 💎 button to refresh individual ones.', 'info');
         return;
     }
 
@@ -86,9 +117,7 @@ export async function valuateAllBottles(forceAll = false) {
     for (const bottle of toValueate) {
         try {
             const result = await fetchValuation(bottle);
-            bottle.estimatedValue = result.estimatedValue;
-            bottle.drinkWindow    = result.drinkWindow || bottle.drinkWindow;
-            bottle.lastValuedAt   = new Date().toISOString();
+            applyValuationResult(bottle, result);
             await saveBottleToDB(bottle);
             done++;
             if (btn) btn.textContent = `💎 Valuing ${done}/${toValueate.length}...`;
@@ -106,13 +135,32 @@ export async function valuateAllBottles(forceAll = false) {
     renderCellar();
 
     if (errors.length > 0) {
-        alert(`Valuations complete with ${errors.length} error(s):\n\n${errors.join('\n')}`);
+        showToast(`Valuations done with ${errors.length} error(s). Check console for details.`, 'warning', 6000);
     } else {
-        alert(`✓ Valuated ${done} bottle${done !== 1 ? 's' : ''} successfully.`);
+        showToast(`Valuated ${done} bottle${done !== 1 ? 's' : ''} successfully.`);
     }
 }
 
-// ── Claude API Call ──────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function applyValuationResult(bottle, result) {
+    bottle.estimatedValue = result.estimatedValue;
+    bottle.drinkWindow    = result.drinkWindow    || bottle.drinkWindow;
+    bottle.valueLow       = result.valueLow       ?? null;
+    bottle.valueHigh      = result.valueHigh      ?? null;
+    bottle.valuationNote  = result.valuationNote  ?? null;
+    bottle.lastValuedAt   = new Date().toISOString();
+
+    if (bottle.id) {
+        persistValCache(bottle.id, {
+            valueLow:      result.valueLow,
+            valueHigh:     result.valueHigh,
+            valuationNote: result.valuationNote,
+        });
+    }
+}
+
+// ── Claude API Call ───────────────────────────────────────────────────────────
 
 async function fetchValuation(bottle) {
     const prompt = buildValuationPrompt(bottle);
@@ -134,16 +182,16 @@ async function fetchValuation(bottle) {
 
 function buildValuationPrompt(bottle) {
     const details = [
-        bottle.name     && `Wine name: ${bottle.name}`,
-        bottle.winery   && `Winery/Producer: ${bottle.winery}`,
-        bottle.vintage  && `Vintage: ${bottle.vintage}`,
-        bottle.region   && `Region: ${bottle.region}`,
+        bottle.name        && `Wine name: ${bottle.name}`,
+        bottle.winery      && `Winery/Producer: ${bottle.winery}`,
+        bottle.vintage     && `Vintage: ${bottle.vintage}`,
+        bottle.region      && `Region: ${bottle.region}`,
         bottle.appellation && `Appellation: ${bottle.appellation}`,
-        bottle.varietal && `Grape variety: ${bottle.varietal}`,
-        bottle.country  && `Country: ${bottle.country}`,
+        bottle.varietal    && `Grape variety: ${bottle.varietal}`,
+        bottle.country     && `Country: ${bottle.country}`,
         bottle.purchasePrice && `Purchase price: €${bottle.purchasePrice}/bottle`,
         bottle.purchaseDate  && `Purchase date: ${bottle.purchaseDate}`,
-        bottle.notes    && `Label notes: ${bottle.notes}`,
+        bottle.notes       && `Label notes: ${bottle.notes}`,
     ].filter(Boolean).join('\n');
 
     return `You are a wine investment expert with deep knowledge of fine wine valuations.
@@ -173,6 +221,6 @@ Guidelines:
 Return ONLY the JSON. No markdown, no preamble.`;
 }
 
-// ── Utility ──────────────────────────────────────────────────────────────────
+// ── Utility ───────────────────────────────────────────────────────────────────
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
