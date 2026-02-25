@@ -4,6 +4,9 @@
 -- Run this in your Supabase SQL Editor:
 --   Dashboard > SQL Editor > New Query > Paste & Run
 --
+-- SAFE TO RUN MULTIPLE TIMES — all statements use IF NOT EXISTS /
+-- exception handlers so re-running on an existing database is harmless.
+--
 -- This ADDS wine tables to your existing AI Investment Tracker project.
 -- It does NOT modify any existing tables (positions, snapshots, assets, etc.)
 --
@@ -11,11 +14,12 @@
 --   wines             — shared genetic catalog        (like assets for stocks)
 --   user_wines        — per-user holdings              (like positions for stocks)
 --   wine_price_history— AI valuation history per wine  (like price_history for stocks)
---   wine_snapshots    — cellar value history snapshots
+--   wine_snapshots    — cellar value history snapshots  (unchanged from v1)
 --   asset_movements   — unified backlog of all asset movements (wine + stock)
 --
--- UPGRADING from v1? Run supabase/migrations/20260225_wine_restructure.sql
--- instead of this file — it migrates existing wine_bottles data.
+-- UPGRADING from v1 (wine_bottles)? Also run:
+--   supabase/migrations/20260225_wine_restructure.sql
+-- That script migrates existing wine_bottles data into the new tables.
 -- ============================================
 
 
@@ -24,7 +28,7 @@
 -- One row per unique wine. All users who own the same wine
 -- share one catalog entry, eliminating data duplication.
 -- ────────────────────────────────────────────
-CREATE TABLE wines (
+CREATE TABLE IF NOT EXISTS wines (
     id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
 
     -- Identity (genetic details — shared across all users)
@@ -48,20 +52,29 @@ CREATE TABLE wines (
 -- user can add/update (corrections benefit everyone, like the assets table)
 ALTER TABLE wines ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Authenticated users can view wines"
-    ON wines FOR SELECT USING (auth.role() = 'authenticated');
+DO $$ BEGIN
+    CREATE POLICY "Authenticated users can view wines"
+        ON wines FOR SELECT USING (auth.role() = 'authenticated');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Authenticated users can insert wines"
-    ON wines FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DO $$ BEGIN
+    CREATE POLICY "Authenticated users can insert wines"
+        ON wines FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Authenticated users can update wines"
-    ON wines FOR UPDATE USING (auth.role() = 'authenticated');
+DO $$ BEGIN
+    CREATE POLICY "Authenticated users can update wines"
+        ON wines FOR UPDATE USING (auth.role() = 'authenticated');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Indexes
-CREATE INDEX idx_wines_name_vintage ON wines(LOWER(name), vintage);
-CREATE INDEX idx_wines_vintage      ON wines(vintage);
-CREATE INDEX idx_wines_region       ON wines(region);
-CREATE INDEX idx_wines_varietal     ON wines(varietal);
+CREATE INDEX IF NOT EXISTS idx_wines_name_vintage ON wines(LOWER(name), vintage);
+CREATE INDEX IF NOT EXISTS idx_wines_vintage      ON wines(vintage);
+CREATE INDEX IF NOT EXISTS idx_wines_region       ON wines(region);
+CREATE INDEX IF NOT EXISTS idx_wines_varietal     ON wines(varietal);
 
 
 -- ────────────────────────────────────────────
@@ -70,7 +83,7 @@ CREATE INDEX idx_wines_varietal     ON wines(varietal);
 -- Multiple lots of the same wine (different purchase dates/prices)
 -- are separate rows, all pointing to the same wines row.
 -- ────────────────────────────────────────────
-CREATE TABLE user_wines (
+CREATE TABLE IF NOT EXISTS user_wines (
     id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     wine_id         UUID REFERENCES wines(id) ON DELETE CASCADE NOT NULL,
@@ -96,22 +109,34 @@ CREATE TABLE user_wines (
 -- RLS
 ALTER TABLE user_wines ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own user_wines"
-    ON user_wines FOR SELECT USING (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can view own user_wines"
+        ON user_wines FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Users can insert own user_wines"
-    ON user_wines FOR INSERT WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can insert own user_wines"
+        ON user_wines FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Users can update own user_wines"
-    ON user_wines FOR UPDATE USING (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can update own user_wines"
+        ON user_wines FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Users can delete own user_wines"
-    ON user_wines FOR DELETE USING (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can delete own user_wines"
+        ON user_wines FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Indexes
-CREATE INDEX idx_user_wines_user_id   ON user_wines(user_id);
-CREATE INDEX idx_user_wines_wine_id   ON user_wines(wine_id);
-CREATE INDEX idx_user_wines_user_wine ON user_wines(user_id, wine_id);
+CREATE INDEX IF NOT EXISTS idx_user_wines_user_id   ON user_wines(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_wines_wine_id   ON user_wines(wine_id);
+CREATE INDEX IF NOT EXISTS idx_user_wines_user_wine ON user_wines(user_id, wine_id);
 
 
 -- ────────────────────────────────────────────
@@ -119,7 +144,7 @@ CREATE INDEX idx_user_wines_user_wine ON user_wines(user_id, wine_id);
 -- Every time a valuation runs, a row is appended here.
 -- Enables tracking a wine's estimated value over time.
 -- ────────────────────────────────────────────
-CREATE TABLE wine_price_history (
+CREATE TABLE IF NOT EXISTS wine_price_history (
     id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     wine_id         UUID REFERENCES wines(id) ON DELETE CASCADE NOT NULL,
     user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
@@ -137,16 +162,22 @@ CREATE TABLE wine_price_history (
 -- RLS: shared price data (same approach as stock price_history)
 ALTER TABLE wine_price_history ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Authenticated users can view wine price history"
-    ON wine_price_history FOR SELECT USING (auth.role() = 'authenticated');
+DO $$ BEGIN
+    CREATE POLICY "Authenticated users can view wine price history"
+        ON wine_price_history FOR SELECT USING (auth.role() = 'authenticated');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Users can insert own wine price history"
-    ON wine_price_history FOR INSERT WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can insert own wine price history"
+        ON wine_price_history FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Indexes
-CREATE INDEX idx_wine_price_history_wine_id      ON wine_price_history(wine_id);
-CREATE INDEX idx_wine_price_history_wine_fetched ON wine_price_history(wine_id, fetched_at DESC);
-CREATE INDEX idx_wine_price_history_user_id      ON wine_price_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_wine_price_history_wine_id      ON wine_price_history(wine_id);
+CREATE INDEX IF NOT EXISTS idx_wine_price_history_wine_fetched ON wine_price_history(wine_id, fetched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wine_price_history_user_id      ON wine_price_history(user_id);
 
 
 -- ────────────────────────────────────────────
@@ -154,7 +185,7 @@ CREATE INDEX idx_wine_price_history_user_id      ON wine_price_history(user_id);
 -- Point-in-time aggregate snapshot of the whole cellar.
 -- Used for the history chart. Unchanged from v1.
 -- ────────────────────────────────────────────
-CREATE TABLE wine_snapshots (
+CREATE TABLE IF NOT EXISTS wine_snapshots (
     id                    UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id               UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
 
@@ -169,18 +200,27 @@ CREATE TABLE wine_snapshots (
 -- RLS
 ALTER TABLE wine_snapshots ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own wine snapshots"
-    ON wine_snapshots FOR SELECT USING (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can view own wine snapshots"
+        ON wine_snapshots FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Users can insert own wine snapshots"
-    ON wine_snapshots FOR INSERT WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can insert own wine snapshots"
+        ON wine_snapshots FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Users can delete own wine snapshots"
-    ON wine_snapshots FOR DELETE USING (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can delete own wine snapshots"
+        ON wine_snapshots FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Indexes
-CREATE INDEX idx_wine_snapshots_user_id        ON wine_snapshots(user_id);
-CREATE INDEX idx_wine_snapshots_user_timestamp ON wine_snapshots(user_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_wine_snapshots_user_id        ON wine_snapshots(user_id);
+CREATE INDEX IF NOT EXISTS idx_wine_snapshots_user_timestamp ON wine_snapshots(user_id, timestamp DESC);
 
 
 -- ────────────────────────────────────────────
@@ -189,7 +229,7 @@ CREATE INDEX idx_wine_snapshots_user_timestamp ON wine_snapshots(user_id, timest
 -- Records every buy, sell, valuation update, transfer, and adjustment.
 -- Provides a full audit trail and enables movement-level analysis.
 -- ────────────────────────────────────────────
-CREATE TABLE asset_movements (
+CREATE TABLE IF NOT EXISTS asset_movements (
     id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
 
@@ -222,15 +262,21 @@ CREATE TABLE asset_movements (
 -- RLS
 ALTER TABLE asset_movements ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own movements"
-    ON asset_movements FOR SELECT USING (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can view own movements"
+        ON asset_movements FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "Users can insert own movements"
-    ON asset_movements FOR INSERT WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+    CREATE POLICY "Users can insert own movements"
+        ON asset_movements FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Indexes
-CREATE INDEX idx_asset_movements_user_id  ON asset_movements(user_id);
-CREATE INDEX idx_asset_movements_wine_id  ON asset_movements(wine_id);
-CREATE INDEX idx_asset_movements_stock    ON asset_movements(stock_ticker);
-CREATE INDEX idx_asset_movements_type     ON asset_movements(user_id, asset_type);
-CREATE INDEX idx_asset_movements_moved_at ON asset_movements(moved_at DESC);
+CREATE INDEX IF NOT EXISTS idx_asset_movements_user_id  ON asset_movements(user_id);
+CREATE INDEX IF NOT EXISTS idx_asset_movements_wine_id  ON asset_movements(wine_id);
+CREATE INDEX IF NOT EXISTS idx_asset_movements_stock    ON asset_movements(stock_ticker);
+CREATE INDEX IF NOT EXISTS idx_asset_movements_type     ON asset_movements(user_id, asset_type);
+CREATE INDEX IF NOT EXISTS idx_asset_movements_moved_at ON asset_movements(moved_at DESC);
