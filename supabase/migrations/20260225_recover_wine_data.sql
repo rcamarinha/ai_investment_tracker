@@ -14,6 +14,18 @@
 --   Dashboard > SQL Editor > New Query > Paste & Run
 -- ============================================
 
+-- ── Backfill v1.2.0 columns that may be missing from the backup table ────────
+-- These columns were added in a later migration. If the original wine_bottles
+-- table never had them, the backup table won't either — add them as nullable
+-- so the migration loop can reference them safely. Already-existing columns
+-- are left untouched by IF NOT EXISTS.
+ALTER TABLE wine_bottles_backup_v1
+    ADD COLUMN IF NOT EXISTS value_low      NUMERIC DEFAULT NULL;
+ALTER TABLE wine_bottles_backup_v1
+    ADD COLUMN IF NOT EXISTS value_high     NUMERIC DEFAULT NULL;
+ALTER TABLE wine_bottles_backup_v1
+    ADD COLUMN IF NOT EXISTS valuation_note TEXT    DEFAULT NULL;
+
 DO $$
 DECLARE
     bottle_rec  RECORD;
