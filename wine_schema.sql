@@ -1,22 +1,33 @@
 -- ============================================
--- Supabase Schema — Wine Cellar Tracker
+-- Supabase Schema — Wine Cellar Tracker v2
 -- ============================================
 -- Run this in your Supabase SQL Editor:
 --   Dashboard > SQL Editor > New Query > Paste & Run
 --
 -- This ADDS wine tables to your existing AI Investment Tracker project.
 -- It does NOT modify any existing tables (positions, snapshots, assets, etc.)
+--
+-- Schema overview (mirrors the investment tracker pattern):
+--   wines             — shared genetic catalog        (like assets for stocks)
+--   user_wines        — per-user holdings              (like positions for stocks)
+--   wine_price_history— AI valuation history per wine  (like price_history for stocks)
+--   wine_snapshots    — cellar value history snapshots
+--   asset_movements   — unified backlog of all asset movements (wine + stock)
+--
+-- UPGRADING from v1? Run supabase/migrations/20260225_wine_restructure.sql
+-- instead of this file — it migrates existing wine_bottles data.
 -- ============================================
 
 
 -- ────────────────────────────────────────────
--- wine_bottles: individual bottles in the cellar
+-- wines: genetic identity catalog (shared, no user_id)
+-- One row per unique wine. All users who own the same wine
+-- share one catalog entry, eliminating data duplication.
 -- ────────────────────────────────────────────
-CREATE TABLE wine_bottles (
+CREATE TABLE wines (
     id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
 
-    -- Identity
+    -- Identity (genetic details — shared across all users)
     name            TEXT NOT NULL,
     winery          TEXT DEFAULT NULL,
     vintage         INTEGER DEFAULT NULL,
@@ -24,64 +35,132 @@ CREATE TABLE wine_bottles (
     appellation     TEXT DEFAULT NULL,
     varietal        TEXT DEFAULT NULL,
     country         TEXT DEFAULT NULL,
-    alcohol         TEXT DEFAULT NULL,    -- stored as string, e.g. "13.5%"
+    alcohol         TEXT DEFAULT NULL,  -- stored as string, e.g. "13.5%"
 
-    -- Investment data
+    -- Drink window — updated by any valuation, shared best estimate
+    drink_window    TEXT DEFAULT NULL,  -- e.g. "2025-2040"
+
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS: shared catalog — all authenticated users can read; any authenticated
+-- user can add/update (corrections benefit everyone, like the assets table)
+ALTER TABLE wines ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can view wines"
+    ON wines FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can insert wines"
+    ON wines FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can update wines"
+    ON wines FOR UPDATE USING (auth.role() = 'authenticated');
+
+-- Indexes
+CREATE INDEX idx_wines_name_vintage ON wines(LOWER(name), vintage);
+CREATE INDEX idx_wines_vintage      ON wines(vintage);
+CREATE INDEX idx_wines_region       ON wines(region);
+CREATE INDEX idx_wines_varietal     ON wines(varietal);
+
+
+-- ────────────────────────────────────────────
+-- user_wines: per-user holdings
+-- Each row = one purchase lot for one user.
+-- Multiple lots of the same wine (different purchase dates/prices)
+-- are separate rows, all pointing to the same wines row.
+-- ────────────────────────────────────────────
+CREATE TABLE user_wines (
+    id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    wine_id         UUID REFERENCES wines(id) ON DELETE CASCADE NOT NULL,
+
+    -- Investment data (user-specific per lot)
     qty             INTEGER NOT NULL DEFAULT 1,
-    purchase_price  NUMERIC NOT NULL,     -- per bottle, in EUR
+    purchase_price  NUMERIC DEFAULT NULL,        -- per bottle, EUR
     purchase_date   DATE DEFAULT NULL,
-    storage         TEXT DEFAULT NULL,    -- e.g. "Home cellar", "Cavissima"
+    storage         TEXT DEFAULT NULL,           -- e.g. "Home cellar", "Cavissima"
     notes           TEXT DEFAULT NULL,
 
-    -- AI valuation (updated when user clicks "Update Valuations")
-    estimated_value NUMERIC DEFAULT NULL, -- per bottle, in EUR
-    drink_window    TEXT DEFAULT NULL,    -- e.g. "2025-2035"
+    -- AI valuation — latest estimate for this user's lot
+    estimated_value NUMERIC DEFAULT NULL,        -- per bottle, EUR
+    value_low       NUMERIC DEFAULT NULL,        -- Claude's low-end estimate
+    value_high      NUMERIC DEFAULT NULL,        -- Claude's high-end estimate
+    valuation_note  TEXT DEFAULT NULL,           -- 1-2 sentence explanation
     last_valued_at  TIMESTAMPTZ DEFAULT NULL,
-
-    -- Valuation detail columns (added in v1.2.0 — run the migration below if upgrading)
-    value_low       NUMERIC DEFAULT NULL, -- Claude's low-end estimate per bottle
-    value_high      NUMERIC DEFAULT NULL, -- Claude's high-end estimate per bottle
-    valuation_note  TEXT DEFAULT NULL,    -- 1-2 sentence explanation from Claude
 
     created_at      TIMESTAMPTZ DEFAULT now(),
     updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- RLS
-ALTER TABLE wine_bottles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_wines ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own wine bottles"
-    ON wine_bottles FOR SELECT
-    USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own user_wines"
+    ON user_wines FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can insert own wine bottles"
-    ON wine_bottles FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can insert own user_wines"
+    ON user_wines FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can update own wine bottles"
-    ON wine_bottles FOR UPDATE
-    USING (auth.uid() = user_id);
+CREATE POLICY "Users can update own user_wines"
+    ON user_wines FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can delete own wine bottles"
-    ON wine_bottles FOR DELETE
-    USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own user_wines"
+    ON user_wines FOR DELETE USING (auth.uid() = user_id);
 
 -- Indexes
-CREATE INDEX idx_wine_bottles_user_id ON wine_bottles(user_id);
-CREATE INDEX idx_wine_bottles_vintage ON wine_bottles(vintage);
-CREATE INDEX idx_wine_bottles_region  ON wine_bottles(region);
+CREATE INDEX idx_user_wines_user_id   ON user_wines(user_id);
+CREATE INDEX idx_user_wines_wine_id   ON user_wines(wine_id);
+CREATE INDEX idx_user_wines_user_wine ON user_wines(user_id, wine_id);
+
+
+-- ────────────────────────────────────────────
+-- wine_price_history: AI valuation history per wine
+-- Every time a valuation runs, a row is appended here.
+-- Enables tracking a wine's estimated value over time.
+-- ────────────────────────────────────────────
+CREATE TABLE wine_price_history (
+    id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    wine_id         UUID REFERENCES wines(id) ON DELETE CASCADE NOT NULL,
+    user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+
+    price           NUMERIC NOT NULL,            -- estimated value per bottle, EUR
+    value_low       NUMERIC DEFAULT NULL,
+    value_high      NUMERIC DEFAULT NULL,
+    valuation_note  TEXT DEFAULT NULL,
+    drink_window    TEXT DEFAULT NULL,           -- drink window from this valuation run
+    source          TEXT DEFAULT 'claude_ai',
+
+    fetched_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS: shared price data (same approach as stock price_history)
+ALTER TABLE wine_price_history ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can view wine price history"
+    ON wine_price_history FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Users can insert own wine price history"
+    ON wine_price_history FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Indexes
+CREATE INDEX idx_wine_price_history_wine_id      ON wine_price_history(wine_id);
+CREATE INDEX idx_wine_price_history_wine_fetched ON wine_price_history(wine_id, fetched_at DESC);
+CREATE INDEX idx_wine_price_history_user_id      ON wine_price_history(user_id);
 
 
 -- ────────────────────────────────────────────
 -- wine_snapshots: cellar value history
+-- Point-in-time aggregate snapshot of the whole cellar.
+-- Used for the history chart. Unchanged from v1.
 -- ────────────────────────────────────────────
 CREATE TABLE wine_snapshots (
     id                    UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id               UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
 
     timestamp             TIMESTAMPTZ NOT NULL,
-    total_invested        NUMERIC NOT NULL,       -- total cost basis (qty × purchase_price)
-    total_estimated_value NUMERIC NOT NULL,       -- total estimated market value
+    total_invested        NUMERIC NOT NULL,
+    total_estimated_value NUMERIC NOT NULL,
     bottle_count          INTEGER NOT NULL DEFAULT 0,
 
     created_at            TIMESTAMPTZ DEFAULT now()
@@ -91,42 +170,67 @@ CREATE TABLE wine_snapshots (
 ALTER TABLE wine_snapshots ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can view own wine snapshots"
-    ON wine_snapshots FOR SELECT
-    USING (auth.uid() = user_id);
+    ON wine_snapshots FOR SELECT USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can insert own wine snapshots"
-    ON wine_snapshots FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
+    ON wine_snapshots FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own wine snapshots"
-    ON wine_snapshots FOR DELETE
-    USING (auth.uid() = user_id);
+    ON wine_snapshots FOR DELETE USING (auth.uid() = user_id);
 
 -- Indexes
 CREATE INDEX idx_wine_snapshots_user_id        ON wine_snapshots(user_id);
 CREATE INDEX idx_wine_snapshots_user_timestamp ON wine_snapshots(user_id, timestamp DESC);
 
 
--- ════════════════════════════════════════════════════════════════════════════
--- Migration v1.2.0 — Valuation detail columns
--- Run this block ONLY if you deployed the original schema (before 2026-02-24).
--- Safe to run multiple times — wraps each ALTER in an exception handler.
--- ════════════════════════════════════════════════════════════════════════════
+-- ────────────────────────────────────────────
+-- asset_movements: unified backlog for ALL asset movements
+-- Covers both wine and stock assets.
+-- Records every buy, sell, valuation update, transfer, and adjustment.
+-- Provides a full audit trail and enables movement-level analysis.
+-- ────────────────────────────────────────────
+CREATE TABLE asset_movements (
+    id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
 
-DO $$
-BEGIN
-    BEGIN
-        ALTER TABLE wine_bottles ADD COLUMN value_low      NUMERIC DEFAULT NULL;
-    EXCEPTION WHEN duplicate_column THEN NULL;
-    END;
+    -- Asset reference: asset_type determines which FK is relevant
+    asset_type      TEXT NOT NULL CHECK (asset_type IN ('wine', 'stock')),
+    wine_id         UUID REFERENCES wines(id) ON DELETE SET NULL,
+    stock_ticker    TEXT DEFAULT NULL,           -- symbol from the positions table
 
-    BEGIN
-        ALTER TABLE wine_bottles ADD COLUMN value_high     NUMERIC DEFAULT NULL;
-    EXCEPTION WHEN duplicate_column THEN NULL;
-    END;
+    -- Movement classification
+    movement_type   TEXT NOT NULL CHECK (movement_type IN (
+        'buy',              -- asset purchased
+        'sell',             -- asset sold or removed from portfolio
+        'transfer_in',      -- received without a purchase (no cost basis change)
+        'transfer_out',     -- sent out without a sale
+        'valuation_update', -- AI re-valuation (wine) or price fetch (stock)
+        'snapshot',         -- portfolio snapshot saved
+        'adjustment'        -- manual quantity or cost correction
+    )),
 
-    BEGIN
-        ALTER TABLE wine_bottles ADD COLUMN valuation_note TEXT    DEFAULT NULL;
-    EXCEPTION WHEN duplicate_column THEN NULL;
-    END;
-END $$;
+    -- Quantities and values (all optional — some movements are non-monetary)
+    qty             NUMERIC DEFAULT NULL,        -- positive = in, negative = out
+    price           NUMERIC DEFAULT NULL,        -- per-unit price at movement time
+    total_value     NUMERIC DEFAULT NULL,        -- qty × price or total snapshot value
+
+    notes           TEXT DEFAULT NULL,
+    moved_at        TIMESTAMPTZ NOT NULL DEFAULT now(),  -- when the real-world event occurred
+    created_at      TIMESTAMPTZ DEFAULT now()            -- when the DB row was written
+);
+
+-- RLS
+ALTER TABLE asset_movements ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own movements"
+    ON asset_movements FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own movements"
+    ON asset_movements FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Indexes
+CREATE INDEX idx_asset_movements_user_id  ON asset_movements(user_id);
+CREATE INDEX idx_asset_movements_wine_id  ON asset_movements(wine_id);
+CREATE INDEX idx_asset_movements_stock    ON asset_movements(stock_ticker);
+CREATE INDEX idx_asset_movements_type     ON asset_movements(user_id, asset_type);
+CREATE INDEX idx_asset_movements_moved_at ON asset_movements(moved_at DESC);

@@ -9,7 +9,7 @@
 
 import state from './state.js';
 import { callWineAI } from './api.js';
-import { saveBottleToDB } from './storage.js';
+import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';
 
@@ -23,7 +23,10 @@ function requireAuth(actionName) {
 }
 
 // ── Valuation Detail Cache (localStorage) ────────────────────────────────────
-// The DB schema stores only estimatedValue/drinkWindow. Range and note live here.
+// valueLow/valueHigh/valuationNote are now persisted in user_wines (DB) AND
+// loaded directly by loadBottles() via the JOIN. The localStorage cache below
+// is kept as a fast warm-load path so the UI shows ranges immediately on page
+// load before the DB round-trip completes.
 
 const VAL_CACHE_KEY = 'wine_val_details';
 
@@ -78,6 +81,18 @@ export async function valuateSingleBottle(bottleId) {
         applyValuationResult(bottle, result);
 
         await saveBottleToDB(bottle);
+        // Log price history and valuation movement (non-critical, run in parallel)
+        await Promise.all([
+            saveWinePriceHistory(bottle),
+            logAssetMovement({
+                assetType:    'wine',
+                wineId:       bottle.wineId,
+                movementType: 'valuation_update',
+                price:        bottle.estimatedValue,
+                totalValue:   (bottle.qty || 0) * (bottle.estimatedValue || 0),
+                notes:        bottle.valuationNote || null,
+            }),
+        ]);
         renderCellar();
         showToast(`Valuation updated: ${bottle.name}`);
     } catch (err) {
@@ -119,6 +134,18 @@ export async function valuateAllBottles(forceAll = false) {
             const result = await fetchValuation(bottle);
             applyValuationResult(bottle, result);
             await saveBottleToDB(bottle);
+            // Log price history and valuation movement (non-critical)
+            await Promise.all([
+                saveWinePriceHistory(bottle),
+                logAssetMovement({
+                    assetType:    'wine',
+                    wineId:       bottle.wineId,
+                    movementType: 'valuation_update',
+                    price:        bottle.estimatedValue,
+                    totalValue:   (bottle.qty || 0) * (bottle.estimatedValue || 0),
+                    notes:        bottle.valuationNote || null,
+                }),
+            ]);
             done++;
             if (btn) btn.textContent = `💎 Valuing ${done}/${toValueate.length}...`;
         } catch (err) {
