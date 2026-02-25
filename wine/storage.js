@@ -206,9 +206,18 @@ export async function loadFromDatabase() {
 }
 
 async function loadBottles() {
+    // Join user_wines with the shared wines catalog so the in-memory bottle
+    // object carries both identity fields (from wines) and investment fields
+    // (from user_wines), matching the flat shape expected by cellar.js.
     const { data, error } = await state.supabaseClient
-        .from('wine_bottles')
-        .select('*')
+        .from('user_wines')
+        .select(`
+            *,
+            wines (
+                name, winery, vintage, region, appellation,
+                varietal, country, alcohol, drink_window
+            )
+        `)
         .eq('user_id', state.currentUser.id)
         .order('created_at', { ascending: true });
 
@@ -216,21 +225,27 @@ async function loadBottles() {
 
     state.cellar = (data || []).map(row => ({
         id:             row.id,
-        name:           row.name,
-        winery:         row.winery,
-        vintage:        row.vintage,
-        region:         row.region,
-        appellation:    row.appellation,
-        varietal:       row.varietal,
-        country:        row.country,
-        alcohol:        row.alcohol,
+        wineId:         row.wine_id,          // FK to wines table
+        // Identity from shared wines catalog
+        name:           row.wines?.name,
+        winery:         row.wines?.winery,
+        vintage:        row.wines?.vintage,
+        region:         row.wines?.region,
+        appellation:    row.wines?.appellation,
+        varietal:       row.wines?.varietal,
+        country:        row.wines?.country,
+        alcohol:        row.wines?.alcohol,
+        drinkWindow:    row.wines?.drink_window,
+        // Investment data from user_wines
         qty:            row.qty,
         purchasePrice:  row.purchase_price,
         purchaseDate:   row.purchase_date,
         storage:        row.storage,
         notes:          row.notes,
         estimatedValue: row.estimated_value,
-        drinkWindow:    row.drink_window,
+        valueLow:       row.value_low,
+        valueHigh:      row.value_high,
+        valuationNote:  row.valuation_note,
         lastValuedAt:   row.last_valued_at,
     }));
 }
@@ -255,61 +270,156 @@ async function loadSnapshots() {
 
 // ── Bottle CRUD ──────────────────────────────────────────────────────────────
 
+/**
+ * Save a bottle to the DB using the normalised schema:
+ *   1. Find or create the shared wines catalog entry (deduped by name+winery+vintage).
+ *   2. Insert or update the user_wines holding row.
+ *
+ * Returns the user_wines row id (used as bottle.id throughout the app).
+ * Also sets bottle.wineId so callers can reference the wines FK.
+ */
 export async function saveBottleToDB(bottle) {
     if (!state.supabaseClient || !state.currentUser) return null;
 
-    const row = {
-        user_id:          state.currentUser.id,
-        name:             bottle.name,
-        winery:           bottle.winery || null,
-        vintage:          bottle.vintage || null,
-        region:           bottle.region || null,
-        appellation:      bottle.appellation || null,
-        varietal:         bottle.varietal || null,
-        country:          bottle.country || null,
-        alcohol:          bottle.alcohol || null,
-        qty:              bottle.qty,
-        purchase_price:   bottle.purchasePrice,
-        purchase_date:    bottle.purchaseDate || null,
-        storage:          bottle.storage || null,
-        notes:            bottle.notes || null,
-        estimated_value:  bottle.estimatedValue || null,
-        drink_window:     bottle.drinkWindow || null,
-        last_valued_at:   bottle.lastValuedAt || null,
-        updated_at:       new Date().toISOString(),
+    // ── Step 1: Resolve the shared wines catalog entry ──────────────────────
+    let wineId = bottle.wineId || null;
+
+    if (!wineId) {
+        // Look for an existing catalog entry by identity (name + winery + vintage).
+        // Uses ilike for case-insensitive name match; NULL-safe winery/vintage match.
+        let query = state.supabaseClient
+            .from('wines')
+            .select('id')
+            .ilike('name', bottle.name);
+
+        if (bottle.vintage) {
+            query = query.eq('vintage', bottle.vintage);
+        } else {
+            query = query.is('vintage', null);
+        }
+        if (bottle.winery) {
+            query = query.ilike('winery', bottle.winery);
+        } else {
+            query = query.is('winery', null);
+        }
+
+        const { data: existing } = await query.maybeSingle();
+        if (existing) wineId = existing.id;
+    }
+
+    const wineRow = {
+        name:        bottle.name,
+        winery:      bottle.winery      || null,
+        vintage:     bottle.vintage     || null,
+        region:      bottle.region      || null,
+        appellation: bottle.appellation || null,
+        varietal:    bottle.varietal    || null,
+        country:     bottle.country     || null,
+        alcohol:     bottle.alcohol     || null,
+        drink_window: bottle.drinkWindow || null,
+        updated_at:  new Date().toISOString(),
+    };
+
+    if (wineId) {
+        // Update identity fields in the shared catalog
+        await state.supabaseClient
+            .from('wines')
+            .update(wineRow)
+            .eq('id', wineId);
+    } else {
+        // Create new catalog entry
+        const { data, error } = await state.supabaseClient
+            .from('wines')
+            .insert(wineRow)
+            .select('id')
+            .single();
+        if (error) throw error;
+        wineId = data.id;
+    }
+
+    // Propagate wineId back to the in-memory bottle object
+    bottle.wineId = wineId;
+
+    // ── Step 2: Insert or update the user_wines holding ─────────────────────
+    const userWineRow = {
+        user_id:         state.currentUser.id,
+        wine_id:         wineId,
+        qty:             bottle.qty,
+        purchase_price:  bottle.purchasePrice  ?? null,
+        purchase_date:   bottle.purchaseDate   || null,
+        storage:         bottle.storage        || null,
+        notes:           bottle.notes          || null,
+        estimated_value: bottle.estimatedValue ?? null,
+        value_low:       bottle.valueLow       ?? null,
+        value_high:      bottle.valueHigh      ?? null,
+        valuation_note:  bottle.valuationNote  || null,
+        last_valued_at:  bottle.lastValuedAt   || null,
+        updated_at:      new Date().toISOString(),
     };
 
     if (bottle.id) {
-        // Update existing
+        // Update existing holding
         const { data, error } = await state.supabaseClient
-            .from('wine_bottles')
-            .update(row)
+            .from('user_wines')
+            .update(userWineRow)
             .eq('id', bottle.id)
             .eq('user_id', state.currentUser.id)
-            .select()
+            .select('id')
             .single();
         if (error) throw error;
         return data.id;
     } else {
-        // Insert new
+        // Insert new holding
         const { data, error } = await state.supabaseClient
-            .from('wine_bottles')
-            .insert(row)
-            .select()
+            .from('user_wines')
+            .insert(userWineRow)
+            .select('id')
             .single();
         if (error) throw error;
+
+        // Log the buy movement for the new holding
+        await logAssetMovement({
+            assetType:    'wine',
+            wineId,
+            movementType: 'buy',
+            qty:          bottle.qty,
+            price:        bottle.purchasePrice,
+            totalValue:   (bottle.qty || 0) * (bottle.purchasePrice || 0),
+        });
+
         return data.id;
     }
 }
 
 export async function deleteBottleFromDB(id) {
     if (!state.supabaseClient || !state.currentUser) return;
+
+    // Fetch details before deletion so we can log the movement
+    const { data: holding } = await state.supabaseClient
+        .from('user_wines')
+        .select('wine_id, qty, purchase_price')
+        .eq('id', id)
+        .eq('user_id', state.currentUser.id)
+        .maybeSingle();
+
     const { error } = await state.supabaseClient
-        .from('wine_bottles')
+        .from('user_wines')
         .delete()
         .eq('id', id)
         .eq('user_id', state.currentUser.id);
     if (error) throw error;
+
+    if (holding) {
+        await logAssetMovement({
+            assetType:    'wine',
+            wineId:       holding.wine_id,
+            movementType: 'sell',
+            qty:          holding.qty,
+            price:        holding.purchase_price,
+            totalValue:   (holding.qty || 0) * (holding.purchase_price || 0),
+            notes:        'Bottle removed from cellar',
+        });
+    }
 }
 
 // ── Snapshot CRUD ────────────────────────────────────────────────────────────
@@ -350,4 +460,81 @@ export async function clearSnapshotsFromDB() {
         .delete()
         .eq('user_id', state.currentUser.id);
     if (error) throw error;
+}
+
+// ── Asset Movements (backlog) ─────────────────────────────────────────────────
+
+/**
+ * Append a row to the asset_movements backlog table.
+ * Silently swallows errors — movement logging is non-critical.
+ *
+ * @param {object} opts
+ * @param {'wine'|'stock'} opts.assetType
+ * @param {string}  [opts.wineId]        - UUID from the wines table
+ * @param {string}  [opts.stockTicker]   - symbol from the positions table
+ * @param {string}  opts.movementType    - one of the allowed movement_type values
+ * @param {number}  [opts.qty]
+ * @param {number}  [opts.price]
+ * @param {number}  [opts.totalValue]
+ * @param {string}  [opts.notes]
+ * @param {string}  [opts.movedAt]       - ISO timestamp; defaults to now
+ */
+export async function logAssetMovement({
+    assetType, wineId, stockTicker, movementType,
+    qty, price, totalValue, notes, movedAt,
+}) {
+    if (!state.supabaseClient || !state.currentUser) return;
+    try {
+        await state.supabaseClient.from('asset_movements').insert({
+            user_id:      state.currentUser.id,
+            asset_type:   assetType,
+            wine_id:      wineId       || null,
+            stock_ticker: stockTicker  || null,
+            movement_type: movementType,
+            qty:          qty          ?? null,
+            price:        price        ?? null,
+            total_value:  totalValue   ?? null,
+            notes:        notes        || null,
+            moved_at:     movedAt      || new Date().toISOString(),
+        });
+    } catch (err) {
+        console.warn('logAssetMovement failed (non-critical):', err.message);
+    }
+}
+
+// ── Wine Price History ────────────────────────────────────────────────────────
+
+/**
+ * Append an AI valuation result to wine_price_history.
+ * Called by valuation.js after each successful Claude API call.
+ * Also updates wines.drink_window if the valuation returned one.
+ *
+ * @param {object} bottle - in-memory bottle object (must have wineId)
+ */
+export async function saveWinePriceHistory(bottle) {
+    if (!state.supabaseClient || !state.currentUser) return;
+    if (!bottle.wineId || !bottle.estimatedValue) return;
+    try {
+        await state.supabaseClient.from('wine_price_history').insert({
+            wine_id:       bottle.wineId,
+            user_id:       state.currentUser.id,
+            price:         bottle.estimatedValue,
+            value_low:     bottle.valueLow     ?? null,
+            value_high:    bottle.valueHigh    ?? null,
+            valuation_note: bottle.valuationNote || null,
+            drink_window:  bottle.drinkWindow  || null,
+            source:        'claude_ai',
+            fetched_at:    bottle.lastValuedAt || new Date().toISOString(),
+        });
+
+        // Keep the shared wines.drink_window up to date
+        if (bottle.drinkWindow) {
+            await state.supabaseClient
+                .from('wines')
+                .update({ drink_window: bottle.drinkWindow, updated_at: new Date().toISOString() })
+                .eq('id', bottle.wineId);
+        }
+    } catch (err) {
+        console.warn('saveWinePriceHistory failed (non-critical):', err.message);
+    }
 }
