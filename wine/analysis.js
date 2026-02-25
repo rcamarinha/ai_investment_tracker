@@ -9,6 +9,36 @@ import { showToast, escapeHTML } from './utils.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Attempt to repair JSON truncated at max_tokens by closing unclosed
+ * strings, arrays, and objects. Not perfect, but handles the common case
+ * of a response cut off mid-string or mid-object.
+ */
+function repairTruncatedJSON(str) {
+    const opens = [];
+    let inString = false;
+    let escape = false;
+
+    for (const ch of str) {
+        if (escape) { escape = false; continue; }
+        if (ch === '\\' && inString) { escape = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (!inString) {
+            if (ch === '{' || ch === '[') opens.push(ch);
+            else if (ch === '}' || ch === ']') opens.pop();
+        }
+    }
+
+    let repaired = str;
+    // Close an unterminated string value
+    if (inString) repaired += '"';
+    // Close unclosed arrays/objects in reverse order
+    for (let i = opens.length - 1; i >= 0; i--) {
+        repaired += opens[i] === '{' ? '}' : ']';
+    }
+    return repaired;
+}
+
 function fmt(value) {
     if (value == null || isNaN(value)) return '—';
     return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }).format(value);
@@ -45,10 +75,22 @@ export async function analyzeCellar() {
     try {
         const prompt = buildAnalysisPrompt();
 
-        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 2000 });
+        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 3500 });
         const text = data.content?.find(c => c.type === 'text')?.text || '';
         const cleanText = text.replace(/```json\n?|```/g, '').trim();
-        const analysis = JSON.parse(cleanText);
+        let analysis;
+        try {
+            analysis = JSON.parse(cleanText);
+        } catch {
+            // Response may have been truncated at max_tokens — attempt structural repair
+            const repaired = repairTruncatedJSON(cleanText);
+            try {
+                analysis = JSON.parse(repaired);
+                console.warn('[WineAI] JSON was truncated and repaired — response may be incomplete');
+            } catch {
+                throw new Error('Could not parse AI response as JSON (response may have been cut off). Raw: ' + cleanText.slice(0, 200));
+            }
+        }
 
         renderAnalysis(analysis);
         // Auto-scroll to results
