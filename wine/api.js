@@ -118,11 +118,12 @@ async function _callDirect({ requestType, prompt, image, maxTokens, enableWebSea
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
 async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }) {
-    // Use the Supabase SDK's functions.invoke() so the SDK handles auth headers
-    // correctly for all key formats — both legacy JWT anon keys (eyJ...) and the
-    // newer publishable keys (sb_publishable_*). Raw fetch() calls with a
-    // manually-set apikey header fail when the key is not JWT-shaped, producing
-    // the "Invalid JWT" 401 that this fix resolves.
+    if (!state.supabaseUrl || !state.supabaseAnonKey) {
+        throw new Error(
+            'Supabase not configured.\n\n' +
+            'Make sure your Supabase URL and anon key are configured in 🔑 API Keys.'
+        );
+    }
     if (!state.supabaseClient) {
         throw new Error(
             'Supabase client not initialized.\n\n' +
@@ -132,8 +133,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
 
     console.log('[WineAI] Using Supabase edge function: wine-ai');
 
-    // Always fetch a fresh session token so the Authorization header carries a
-    // valid, non-expired JWT. The SDK refreshes silently if needed.
+    // Get a fresh session token (SDK refreshes silently if expired).
     const { data: { session } } = await state.supabaseClient.auth.getSession();
     if (!session?.access_token) {
         throw new Error(
@@ -142,15 +142,25 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         );
     }
 
-    let data, error;
+    // Use raw fetch so we have full, explicit control over the request headers.
+    // The SDK's functions.invoke() can send unexpected headers with newer publishable
+    // key formats; a plain fetch with the user JWT + anon apikey is unambiguous.
+    const functionUrl = `${state.supabaseUrl}/functions/v1/wine-ai`;
+    console.log('[WineAI] Calling:', functionUrl);
+
+    let response;
     try {
-        ({ data, error } = await state.supabaseClient.functions.invoke('wine-ai', {
-            body: { requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch },
-            headers: { Authorization: `Bearer ${session.access_token}` },
-        }));
+        response = await fetch(functionUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'apikey': state.supabaseAnonKey,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }),
+        });
     } catch (err) {
-        // FunctionsFetchError — network / CORS failure before the function was reached
-        console.error('[WineAI] Edge function invoke threw:', err);
+        console.error('[WineAI] Edge function fetch threw:', err);
         throw new Error(
             'Network error contacting the Wine AI server (CORS or connectivity issue).\n\n' +
             'Verify your Supabase URL in 🔑 API Keys and that the wine-ai edge function ' +
@@ -159,19 +169,11 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         );
     }
 
-    if (error) {
-        // FunctionsHttpError — function returned a non-2xx status
-        let statusCode = '';
-        let detail = error.message ?? String(error);
-        try {
-            const ctx = error.context;
-            if (ctx?.status) statusCode = ` (${ctx.status})`;
-            const body = await ctx?.text?.();
-            if (body) detail = body.slice(0, 200);
-        } catch { /* ignore — context may not be readable */ }
-        console.error(`[WineAI] Edge function HTTP error${statusCode}:`, detail);
-        throw new Error(`Wine AI server error${statusCode}: ${detail}`);
+    if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        console.error(`[WineAI] Edge function HTTP error (${response.status}):`, body.slice(0, 300));
+        throw new Error(`Wine AI server error (${response.status}): ${body.slice(0, 200)}`);
     }
 
-    return data;
+    return response.json();
 }
