@@ -16,7 +16,7 @@
             <div style="margin-bottom: 10px;">
                 <a href="index.html" class="hub-link">← All Trackers</a>
             </div>
-            <h1>🍷 Wine Cellar <span>v1.2.1</span></h1>
+            <h1>🍷 Wine Cellar <span>v1.2.2</span></h1>
             <p>AI-powered wine collection management with label recognition</p>
         </div>
 
@@ -94,7 +94,7 @@
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;">
                 <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()">🔑 API Keys</button>
                 <button class="btn btn-success" onclick="showAddBottleDialog()" title="Add bottle  (n)">➕ Add Bottle</button>
-                <button class="btn btn-accent" onclick="valuateAllBottles()" id="valuateBtn">💎 Update Valuations</button>
+                <button class="btn btn-accent" onclick="valuateAllBottles(true)" id="valuateBtn">💎 Update Valuations</button>
                 <button class="btn btn-warning" onclick="saveCellarSnapshot()" title="Save snapshot  (Ctrl+Shift+S)">💾 Save Snapshot</button>
                 <button class="btn btn-accent" onclick="analyzeCellar()" id="analyzeBtn">🤖 AI Analysis</button>
                 <button class="btn btn-primary" onclick="exportCellarCSV()" id="exportBtn">⬇ Export CSV</button>
@@ -318,20 +318,20 @@
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
         // ── Imports ────────────────────────────────────────────────────────────
-        import state from './wine/state.js?v=1.2.1';
-        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.2.1';
+        import state from './wine/state.js?v=1.2.2';
+        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.2.2';
         import { initSupabase, updateAuthBar,
                  handleLogin, handleSignup, handleLogout, handleGoogleLogin,
-                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.2.1';
+                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.2.2';
         import { renderCellar, showAddBottleDialog, showEditBottleDialog,
                  closeBottleDialog, submitBottle, deleteCurrentBottle,
                  saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory,
-                 exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.2.1';
-        import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js?v=1.2.1';
-        import { analyzeCellar } from './wine/analysis.js?v=1.2.1';
+                 exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.2.2';
+        import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js?v=1.2.2';
+        import { analyzeCellar } from './wine/analysis.js?v=1.2.2';
         import { renderAllocationCharts, showAllocationTab,
-                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './wine/ui.js?v=1.2.1';
-        import { showToast, closeActiveModal } from './wine/utils.js?v=1.2.1';
+                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './wine/ui.js?v=1.2.2';
+        import { showToast, closeActiveModal } from './wine/utils.js?v=1.2.2';
 
         // ── Expose to onclick handlers ─────────────────────────────────────────
         window.showApiKeyDialog      = showApiKeyDialog;

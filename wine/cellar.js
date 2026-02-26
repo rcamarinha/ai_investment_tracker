@@ -476,6 +476,7 @@ export async function submitBottle() {
 
     const bottleData = {
         id:            state.editingBottleId || undefined,
+        wineId:        existingBottle?.wineId          ?? null,
         name,
         winery:        getField('bottleWinery').trim() || null,
         vintage:       parseInt(getField('bottleVintage'), 10) || null,
@@ -489,12 +490,15 @@ export async function submitBottle() {
         purchaseDate:  getField('bottlePurchaseDate') || null,
         storage:       getField('bottleStorage').trim() || null,
         notes:         getField('bottleNotes').trim() || null,
-        estimatedValue: existingBottle?.estimatedValue ?? null,
-        drinkWindow:    existingBottle?.drinkWindow    ?? null,
-        lastValuedAt:   existingBottle?.lastValuedAt   ?? null,
-        valueLow:       existingBottle?.valueLow       ?? null,
-        valueHigh:      existingBottle?.valueHigh      ?? null,
-        valuationNote:  existingBottle?.valuationNote  ?? null,
+        estimatedValue:    existingBottle?.estimatedValue    ?? null,
+        estimatedValueUSD: existingBottle?.estimatedValueUSD ?? null,
+        drinkWindow:       existingBottle?.drinkWindow       ?? null,
+        lastValuedAt:      existingBottle?.lastValuedAt      ?? null,
+        valueLow:          existingBottle?.valueLow          ?? null,
+        valueHigh:         existingBottle?.valueHigh         ?? null,
+        confidence:        existingBottle?.confidence        ?? null,
+        valuationNote:     existingBottle?.valuationNote     ?? null,
+        valuationSources:  existingBottle?.valuationSources  ?? null,
     };
 
     try {
