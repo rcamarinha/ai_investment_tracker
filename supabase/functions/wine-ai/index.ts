@@ -4,17 +4,19 @@
  * Proxies requests to the Anthropic API using the server-side secret
  * ANTHROPIC_API_KEY_Wine, so users don't need to supply their own key.
  *
- * Supports three request types:
- *   "label"    — vision request: base64 image + text prompt → wine JSON
- *   "valuation"— text prompt → estimated bottle value JSON
- *   "analysis" — text prompt → cellar analysis JSON
+ * For valuation requests, the function also calls OpenAI gpt-4o-search-preview
+ * (using OPENAI_API_KEY_Wine) to fetch live market prices before handing the
+ * enriched prompt to Claude. If the OpenAI key is absent or the search fails,
+ * it falls back to Claude alone.
  *
  * Request body:
  *   {
  *     requestType: "label" | "valuation" | "analysis",
  *     prompt: string,
  *     image?: { base64: string, mediaType: string },   // label only
- *     maxTokens?: number
+ *     maxTokens?: number,
+ *     enableWebSearch?: boolean,
+ *     bottleSearch?: string   // valuation only: compact bottle identity for OpenAI search
  *   }
  *
  * The response body is the raw Anthropic API response (same shape as a
@@ -22,6 +24,7 @@
  */
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
+const OPENAI_API_KEY    = Deno.env.get("OPENAI_API_KEY_Wine");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,6 +39,53 @@ function jsonResponse(data: unknown, status = 200) {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
+
+// ── OpenAI market-price search ───────────────────────────────────────────────
+
+/**
+ * Use gpt-4o-search-preview to fetch live retail / auction prices for a wine.
+ * Returns the model's text response (price summary) or '' on failure.
+ */
+async function fetchOpenAIMarketPrices(bottleSearch: string): Promise<string> {
+  if (!OPENAI_API_KEY) return "";
+
+  const query =
+    `Find current retail and auction market prices (in EUR and USD) for this specific wine bottle: ${bottleSearch}. ` +
+    `Search Wine-Searcher, Vivino, Chateau Online, and recent auction results (Sotheby's, Christie's, Acker Merrall, Zachys). ` +
+    `Report the price range per 750ml bottle, average market price, currency, and any available drink-window guidance. ` +
+    `Be concise and cite specific prices found.`;
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-search-preview",
+        web_search_options: { search_context_size: "high" },
+        messages: [{ role: "user", content: query }],
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[wine-ai] OpenAI search HTTP ${res.status}: ${errText.slice(0, 120)}`);
+      return "";
+    }
+
+    const data = await res.json();
+    const content: string = data.choices?.[0]?.message?.content ?? "";
+    console.log(`[wine-ai] OpenAI market data (${content.length} chars) for: ${bottleSearch.slice(0, 60)}`);
+    return content;
+  } catch (err) {
+    console.warn("[wine-ai] OpenAI search threw:", err instanceof Error ? err.message : err);
+    return "";
+  }
+}
+
+// ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   // ── CORS preflight ──────────────────────────────────────────────────────
@@ -62,6 +112,7 @@ Deno.serve(async (req) => {
     image?: { base64: string; mediaType: string };
     maxTokens?: number;
     enableWebSearch?: boolean;
+    bottleSearch?: string;
   };
 
   try {
@@ -70,10 +121,33 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
-  const { requestType, prompt, image, maxTokens = 1024, enableWebSearch = false } = body;
+  const {
+    requestType,
+    prompt,
+    image,
+    maxTokens = 1024,
+    enableWebSearch = false,
+    bottleSearch,
+  } = body;
 
   if (!requestType || !prompt) {
     return jsonResponse({ error: "requestType and prompt are required" }, 400);
+  }
+
+  // ── OpenAI market research (valuation requests only) ────────────────────
+  // When OPENAI_API_KEY_Wine is set and a bottleSearch string is provided,
+  // fetch live prices and inject them into the prompt before calling Claude.
+  let finalPrompt = prompt;
+
+  if (requestType === "valuation" && bottleSearch) {
+    const marketData = await fetchOpenAIMarketPrices(bottleSearch);
+    if (marketData) {
+      finalPrompt =
+        prompt +
+        `\n\n=== LIVE MARKET DATA (fetched just now via web search) ===\n` +
+        marketData +
+        `\n\nBase your JSON values on the prices found above — prefer this data over your training knowledge.`;
+    }
   }
 
   // ── Build Anthropic messages ─────────────────────────────────────────────
@@ -100,11 +174,11 @@ Deno.serve(async (req) => {
           data: image.base64,
         },
       },
-      { type: "text", text: prompt },
+      { type: "text", text: finalPrompt },
     ];
   } else {
     // Text-only request
-    content = prompt;
+    content = finalPrompt;
   }
 
   // ── Call Anthropic ───────────────────────────────────────────────────────

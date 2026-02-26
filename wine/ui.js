@@ -107,7 +107,7 @@ export function showApiKeyDialog() {
     if (!requireAuth('manage API keys')) return;
     const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
     setVal('anthropicKeyInput',    state.anthropicKey);
-    setVal('supabaseUrlInput',     state.supabaseUrl);
+setVal('supabaseUrlInput',     state.supabaseUrl);
     setVal('supabaseAnonKeyInput', state.supabaseAnonKey);
     openModal('apiKeyDialog');
 }

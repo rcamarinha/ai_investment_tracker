@@ -201,52 +201,55 @@ function applyValuationResult(bottle, result) {
 async function fetchValuation(bottle) {
     const prompt = buildValuationPrompt(bottle);
 
-    // Attempt 1: web search enabled with generous token budget.
-    // Web search responses include tool_use + tool_result blocks before the
-    // final text, easily consuming 1500-2000 tokens before Claude writes JSON.
+    // Compact bottle identity string sent to the edge function so it can run
+    // the OpenAI market-price search server-side (OPENAI_API_KEY_Wine secret).
+    const bottleSearch = [bottle.name, bottle.vintage, bottle.winery, bottle.region]
+        .filter(Boolean).join(' ');
+
+    // Determine whether we're hitting the edge function or the direct Anthropic path.
+    // Edge function handles OpenAI search server-side, so Claude web search is off.
+    // Direct path has no OpenAI, so we let Claude try its own web search as fallback.
+    const usingEdge = !state.anthropicKey && !!(state.supabaseUrl && state.supabaseAnonKey);
+
     let data;
     try {
         data = await callWineAI({
             requestType: 'valuation',
             prompt,
-            maxTokens: 4096,
-            enableWebSearch: true,
+            maxTokens: usingEdge ? 2048 : 4096,
+            enableWebSearch: !usingEdge,   // direct path only: Claude web search
+            bottleSearch,                  // edge function uses this for OpenAI search
         });
     } catch (err) {
-        console.warn('[Valuation] Web-search attempt failed:', err.message, '— retrying without web search');
-        data = null;
+        if (!usingEdge) {
+            // Direct path: Claude web search failed → retry without it
+            console.warn('[Valuation] Claude web-search threw, retrying plain:', err.message);
+            data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
+        } else {
+            throw err;
+        }
     }
 
-    // Attempt 2: fall back to plain text call if web search failed, produced
-    // stop_reason: "tool_use" (multi-turn not yet supported), or was truncated.
-    const needsFallback = !data
-        || data.stop_reason === 'tool_use'
-        || data.stop_reason === 'max_tokens';
-
-    if (needsFallback) {
-        console.warn('[Valuation] Web-search response unusable (stop_reason:', data?.stop_reason ?? 'N/A', ') — falling back to plain call');
-        data = await callWineAI({
-            requestType: 'valuation',
-            prompt,
-            maxTokens: 2048,
-            enableWebSearch: false,
-        });
+    // Direct path: handle incomplete web search responses (tool_use / max_tokens)
+    if (!usingEdge && (data.stop_reason === 'tool_use' || data.stop_reason === 'max_tokens')) {
+        console.warn('[Valuation] Claude response incomplete (stop_reason:', data.stop_reason, ') — retrying plain');
+        data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
     }
 
-    // Use the last text block — web search responses may contain tool_use/tool_result
-    // blocks before Claude's final synthesised answer.
+    // Parse Claude's JSON from the last text block.
+    // Web search responses may have tool_use/tool_result blocks before the text.
     const textBlocks = (data.content || []).filter(c => c.type === 'text');
     const text = textBlocks[textBlocks.length - 1]?.text || '';
 
     if (!text) {
-        console.error('[Valuation] No text block in response. stop_reason:', data.stop_reason, 'content:', JSON.stringify(data.content || []).slice(0, 400));
+        console.error('[Valuation] No text block. stop_reason:', data.stop_reason,
+            'content:', JSON.stringify(data.content || []).slice(0, 400));
         throw new Error(`No text in Claude response (stop_reason: ${data.stop_reason ?? 'unknown'}).`);
     }
 
-    // Extract the first JSON object from the response (handles surrounding prose)
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-        console.error('[Valuation] No JSON object in text block. text:', text.slice(0, 300));
+        console.error('[Valuation] No JSON in text block:', text.slice(0, 300));
         throw new Error('Could not parse valuation response from Claude.');
     }
 
@@ -319,7 +322,6 @@ Guidelines:
 - valuationNote: 1-2 sentences explaining the estimate with reference to what was found
 - drinkWindow: optimal drinking window as "YYYY-YYYY" string, or null if unknown
 - Be vintage-specific and conservative — cite real data points where possible
-- If this is a well-known fine wine, search for current listings before estimating
 
 Return ONLY the JSON object. No markdown fences, no preamble.`;
 }

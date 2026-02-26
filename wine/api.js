@@ -25,7 +25,7 @@ import state from './state.js';
  * @param {boolean} [opts.enableWebSearch] - Enable Anthropic web search tool (valuation)
  * @returns {Promise<object>}             - Raw Anthropic API response
  */
-export async function callWineAI({ requestType, prompt, image, maxTokens = 1024, enableWebSearch = false }) {
+export async function callWineAI({ requestType, prompt, image, maxTokens = 1024, enableWebSearch = false, bottleSearch = null }) {
     const hasDirectKey    = !!state.anthropicKey;
     const hasEdgeFunction = !!(state.supabaseUrl && state.supabaseAnonKey);
 
@@ -47,7 +47,7 @@ export async function callWineAI({ requestType, prompt, image, maxTokens = 1024,
             'Alternatively, add your own Anthropic API key in 🔑 API Keys.'
         );
     }
-    return _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch });
+    return _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch });
 }
 
 // ── Direct Anthropic API call ─────────────────────────────────────────────────
@@ -117,7 +117,7 @@ async function _callDirect({ requestType, prompt, image, maxTokens, enableWebSea
 
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
-async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch }) {
+async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }) {
     // Prefer a logged-in session JWT; the anon key is only a valid Bearer token
     // when it is itself a JWT (legacy eyJ... format). Newer Supabase publishable
     // keys (sb_publishable_*) must NOT be sent as Authorization: Bearer — they
@@ -150,7 +150,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         response = await fetch(edgeUrl, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch }),
+            body: JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }),
         });
     } catch (err) {
         console.error('[WineAI] Edge function fetch threw:', err);
