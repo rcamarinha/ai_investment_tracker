@@ -201,21 +201,54 @@ function applyValuationResult(bottle, result) {
 async function fetchValuation(bottle) {
     const prompt = buildValuationPrompt(bottle);
 
-    const data = await callWineAI({
-        requestType: 'valuation',
-        prompt,
-        maxTokens: 2048,
-        enableWebSearch: true,
-    });
+    // Attempt 1: web search enabled with generous token budget.
+    // Web search responses include tool_use + tool_result blocks before the
+    // final text, easily consuming 1500-2000 tokens before Claude writes JSON.
+    let data;
+    try {
+        data = await callWineAI({
+            requestType: 'valuation',
+            prompt,
+            maxTokens: 4096,
+            enableWebSearch: true,
+        });
+    } catch (err) {
+        console.warn('[Valuation] Web-search attempt failed:', err.message, '— retrying without web search');
+        data = null;
+    }
+
+    // Attempt 2: fall back to plain text call if web search failed, produced
+    // stop_reason: "tool_use" (multi-turn not yet supported), or was truncated.
+    const needsFallback = !data
+        || data.stop_reason === 'tool_use'
+        || data.stop_reason === 'max_tokens';
+
+    if (needsFallback) {
+        console.warn('[Valuation] Web-search response unusable (stop_reason:', data?.stop_reason ?? 'N/A', ') — falling back to plain call');
+        data = await callWineAI({
+            requestType: 'valuation',
+            prompt,
+            maxTokens: 2048,
+            enableWebSearch: false,
+        });
+    }
 
     // Use the last text block — web search responses may contain tool_use/tool_result
     // blocks before Claude's final synthesised answer.
     const textBlocks = (data.content || []).filter(c => c.type === 'text');
     const text = textBlocks[textBlocks.length - 1]?.text || '';
 
+    if (!text) {
+        console.error('[Valuation] No text block in response. stop_reason:', data.stop_reason, 'content:', JSON.stringify(data.content || []).slice(0, 400));
+        throw new Error(`No text in Claude response (stop_reason: ${data.stop_reason ?? 'unknown'}).`);
+    }
+
     // Extract the first JSON object from the response (handles surrounding prose)
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Could not parse valuation response from Claude.');
+    if (!jsonMatch) {
+        console.error('[Valuation] No JSON object in text block. text:', text.slice(0, 300));
+        throw new Error('Could not parse valuation response from Claude.');
+    }
 
     try {
         const parsed = JSON.parse(jsonMatch[0]);
