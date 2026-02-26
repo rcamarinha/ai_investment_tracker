@@ -113,8 +113,9 @@ export function validateBottle(data) {
         errors.push('Quantity must be a positive integer');
     }
 
+    // purchase_price is nullable in user_wines (bottle may have no cost basis)
     const price = data ? data.purchasePrice : undefined;
-    if (price == null || isNaN(price) || price < 0) {
+    if (price != null && (isNaN(price) || price < 0)) {
         errors.push('Purchase price must be a non-negative number');
     }
 
