@@ -318,20 +318,20 @@
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
         // ── Imports ────────────────────────────────────────────────────────────
-        import state from './wine/state.js?v=1.2.5';
-        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.2.5';
+        import state from './wine/state.js?v=1.2.6';
+        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.2.6';
         import { initSupabase, updateAuthBar,
                  handleLogin, handleSignup, handleLogout, handleGoogleLogin,
-                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.2.5';
+                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.2.6';
         import { renderCellar, showAddBottleDialog, showEditBottleDialog,
                  closeBottleDialog, submitBottle, deleteCurrentBottle,
                  saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory,
-                 exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.2.5';
-        import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js?v=1.2.5';
-        import { analyzeCellar } from './wine/analysis.js?v=1.2.5';
+                 exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.2.6';
+        import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js?v=1.2.6';
+        import { analyzeCellar } from './wine/analysis.js?v=1.2.6';
         import { renderAllocationCharts, showAllocationTab,
-                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './wine/ui.js?v=1.2.5';
-        import { showToast, closeActiveModal } from './wine/utils.js?v=1.2.5';
+                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './wine/ui.js?v=1.2.6';
+        import { showToast, closeActiveModal } from './wine/utils.js?v=1.2.6';
 
         // ── Expose to onclick handlers ─────────────────────────────────────────
         window.showApiKeyDialog      = showApiKeyDialog;
