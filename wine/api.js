@@ -145,8 +145,23 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
 
     console.log('[WineAI] Using Supabase edge function: wine-ai');
 
-    // Get a fresh session token (SDK refreshes silently if expired).
-    const { data: { session } } = await state.supabaseClient.auth.getSession();
+    // Force a full token refresh so the access_token is freshly signed with the
+    // project's current JWT_SECRET. getSession() returns whatever is cached in
+    // memory and only refreshes lazily; if the token is near expiry or the
+    // project's JWT_SECRET was rotated, the cached token fails gateway validation
+    // even though it looks non-expired on the client.
+    let session;
+    {
+        const { data, error } = await state.supabaseClient.auth.refreshSession();
+        if (!error && data?.session?.access_token) {
+            session = data.session;
+        } else {
+            // refreshSession() failed (offline, revoked refresh token, etc.)
+            // Fall back to whatever the SDK has cached.
+            const { data: fallback } = await state.supabaseClient.auth.getSession();
+            session = fallback?.session;
+        }
+    }
     if (!session?.access_token) {
         throw new Error(
             'Session expired. Please log in again to use the shared AI service.\n\n' +
@@ -220,9 +235,11 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         if (response.status === 401) {
             throw new Error(
                 'Wine AI authentication failed (401 Invalid JWT).\n\n' +
-                'The edge function has JWT verification enabled but the token was rejected. ' +
-                'Redeploy the function with: supabase functions deploy wine-ai --no-verify-jwt\n\n' +
-                'Or check the browser console for a JWT issuer mismatch warning.'
+                'The wine-ai edge function has JWT verification enabled. Disable it via:\n' +
+                '• Dashboard: Supabase project → Edge Functions → wine-ai → toggle off "Verify JWT"\n' +
+                '• CLI: supabase functions deploy wine-ai --no-verify-jwt\n\n' +
+                'Check the browser console for a JWT issuer mismatch warning if the ' +
+                'issue persists after disabling verification.'
             );
         }
         throw new Error(`Wine AI server error (${response.status}): ${body.slice(0, 200)}`);
