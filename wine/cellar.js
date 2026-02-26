@@ -269,8 +269,34 @@ function renderBottleCard(b) {
         ? `<div class="valuation-range">Range: ${fmt(b.valueLow)} – ${fmt(b.valueHigh)}</div>`
         : '';
 
-    const noteHtml = (hasValuation && b.valuationNote)
-        ? `<div class="valuation-note">${escapeHTML(b.valuationNote)}</div>`
+    const usdHtml = (hasValuation && b.estimatedValueUSD)
+        ? `<div class="valuation-usd">≈ ${fmt(b.estimatedValueUSD, 'USD')} USD</div>`
+        : '';
+
+    const confidenceMap = {
+        high:   { cls: 'confidence-high',   label: '● High confidence' },
+        medium: { cls: 'confidence-medium', label: '● Medium confidence' },
+        low:    { cls: 'confidence-low',    label: '● Low confidence' },
+    };
+    const confEntry = b.confidence && confidenceMap[b.confidence];
+    const confidenceHtml = confEntry
+        ? `<span class="confidence-badge ${confEntry.cls}">${confEntry.label}</span>`
+        : '';
+
+    // Staleness warning: valuation older than 60 days
+    const staleHtml = (() => {
+        if (!b.lastValuedAt) return '';
+        const ageDays = Math.floor((Date.now() - new Date(b.lastValuedAt).getTime()) / 86400000);
+        return ageDays > 60
+            ? `<div class="valuation-stale">⚠ Valuation is ${ageDays} days old — consider refreshing</div>`
+            : '';
+    })();
+
+    const noteHtml = (hasValuation && (b.valuationNote || b.valuationSources))
+        ? `<div class="valuation-note">
+            ${b.valuationNote ? escapeHTML(b.valuationNote) : ''}
+            ${b.valuationSources ? `<div class="valuation-sources">📊 ${escapeHTML(b.valuationSources)}</div>` : ''}
+           </div>`
         : '';
 
     const badge  = drinkBadgeHtml(b.drinkWindow);
@@ -304,8 +330,9 @@ function renderBottleCard(b) {
             ${hasValuation ? `
             <div class="bottle-fin-row">
                 <div>
-                    <div>Est. value</div>
+                    <div>Est. value ${confidenceHtml}</div>
                     ${rangeHtml}
+                    ${usdHtml}
                 </div>
                 <span style="color: #d97706;">${fmt(b.estimatedValue)}/bottle · ${fmt(totalEstimated)}</span>
             </div>
@@ -321,6 +348,7 @@ function renderBottleCard(b) {
         </div>
 
         ${noteHtml}
+        ${staleHtml}
 
         <div class="bottle-footer">
             <div>

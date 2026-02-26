@@ -759,6 +759,43 @@
     padding-top: 6px;
 }
 
+.valuation-usd {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+.confidence-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 10px;
+    margin-left: 6px;
+    vertical-align: middle;
+    letter-spacing: 0.02em;
+}
+.confidence-high   { background: rgba(74, 222, 128, 0.12); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.25); }
+.confidence-medium { background: rgba(251, 191, 36, 0.12); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.25); }
+.confidence-low    { background: rgba(248, 113, 113, 0.12); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.25); }
+
+.valuation-stale {
+    font-size: 11px;
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 6px;
+    padding: 4px 10px;
+    margin-top: 6px;
+}
+
+.valuation-sources {
+    font-size: 11px;
+    color: #475569;
+    font-style: normal;
+    margin-top: 4px;
+}
+
 
 /* ── Drink-Window Status Badges (P2) ────────────────────────────────────── */
 

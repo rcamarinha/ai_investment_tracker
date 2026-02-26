@@ -49,9 +49,12 @@ export function applyValuationCache() {
     const cache = loadValCache();
     state.cellar.forEach(b => {
         if (b.id && cache[b.id]) {
-            b.valueLow      = cache[b.id].valueLow;
-            b.valueHigh     = cache[b.id].valueHigh;
-            b.valuationNote = cache[b.id].valuationNote;
+            b.valueLow           = cache[b.id].valueLow;
+            b.valueHigh          = cache[b.id].valueHigh;
+            b.valuationNote      = cache[b.id].valuationNote;
+            b.estimatedValueUSD  = cache[b.id].estimatedValueUSD  ?? null;
+            b.confidence         = cache[b.id].confidence         ?? null;
+            b.valuationSources   = cache[b.id].valuationSources   ?? null;
         }
     });
 }
@@ -171,18 +174,24 @@ export async function valuateAllBottles(forceAll = false) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function applyValuationResult(bottle, result) {
-    bottle.estimatedValue = result.estimatedValue;
-    bottle.drinkWindow    = result.drinkWindow    || bottle.drinkWindow;
-    bottle.valueLow       = result.valueLow       ?? null;
-    bottle.valueHigh      = result.valueHigh      ?? null;
-    bottle.valuationNote  = result.valuationNote  ?? null;
-    bottle.lastValuedAt   = new Date().toISOString();
+    bottle.estimatedValue    = result.estimatedValue;
+    bottle.estimatedValueUSD = result.estimatedValueUSD ?? null;
+    bottle.drinkWindow       = result.drinkWindow       || bottle.drinkWindow;
+    bottle.valueLow          = result.valueLow          ?? null;
+    bottle.valueHigh         = result.valueHigh         ?? null;
+    bottle.valuationNote     = result.valuationNote     ?? null;
+    bottle.confidence        = result.confidence        ?? null;
+    bottle.valuationSources  = result.sources           ?? null;
+    bottle.lastValuedAt      = new Date().toISOString();
 
     if (bottle.id) {
         persistValCache(bottle.id, {
-            valueLow:      result.valueLow,
-            valueHigh:     result.valueHigh,
-            valuationNote: result.valuationNote,
+            valueLow:        result.valueLow,
+            valueHigh:       result.valueHigh,
+            valuationNote:   result.valuationNote,
+            estimatedValueUSD: result.estimatedValueUSD ?? null,
+            confidence:      result.confidence ?? null,
+            valuationSources: result.sources   ?? null,
         });
     }
 }
@@ -192,12 +201,24 @@ function applyValuationResult(bottle, result) {
 async function fetchValuation(bottle) {
     const prompt = buildValuationPrompt(bottle);
 
-    const data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 512 });
-    const text = data.content?.find(c => c.type === 'text')?.text || '';
-    const cleanText = text.replace(/```json\n?|```/g, '').trim();
+    const data = await callWineAI({
+        requestType: 'valuation',
+        prompt,
+        maxTokens: 1024,
+        enableWebSearch: true,
+    });
+
+    // Use the last text block — web search responses may contain tool_use/tool_result
+    // blocks before Claude's final synthesised answer.
+    const textBlocks = (data.content || []).filter(c => c.type === 'text');
+    const text = textBlocks[textBlocks.length - 1]?.text || '';
+
+    // Extract the first JSON object from the response (handles surrounding prose)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Could not parse valuation response from Claude.');
 
     try {
-        const parsed = JSON.parse(cleanText);
+        const parsed = JSON.parse(jsonMatch[0]);
         if (!parsed.estimatedValue || isNaN(parsed.estimatedValue)) {
             throw new Error('Invalid valuation response');
         }
@@ -208,6 +229,14 @@ async function fetchValuation(bottle) {
 }
 
 function buildValuationPrompt(bottle) {
+    // Extract critic score from notes if present (e.g. "96/100", "94 points")
+    const criticMatch = bottle.notes
+        ? bottle.notes.match(/(\d{2,3})\s*(?:\/\s*100|points?)/i)
+        : null;
+    const criticLine = criticMatch
+        ? `Critic score: ${criticMatch[1]}/100`
+        : '';
+
     const details = [
         bottle.name        && `Wine name: ${bottle.name}`,
         bottle.winery      && `Winery/Producer: ${bottle.winery}`,
@@ -216,36 +245,50 @@ function buildValuationPrompt(bottle) {
         bottle.appellation && `Appellation: ${bottle.appellation}`,
         bottle.varietal    && `Grape variety: ${bottle.varietal}`,
         bottle.country     && `Country: ${bottle.country}`,
+        criticLine,
         bottle.purchasePrice && `Purchase price: €${bottle.purchasePrice}/bottle`,
         bottle.purchaseDate  && `Purchase date: ${bottle.purchaseDate}`,
         bottle.notes       && `Label notes: ${bottle.notes}`,
     ].filter(Boolean).join('\n');
 
+    const vintageInstruction = bottle.vintage
+        ? `IMPORTANT: Price specifically for the ${bottle.vintage} vintage — do NOT average across years or use a generic producer price.`
+        : '';
+
     return `You are a wine investment expert with deep knowledge of fine wine valuations.
-Estimate the current market value of the following wine bottle based on your knowledge of wine markets, auction results, and collector demand.
+Search for and estimate the current retail market value of the following wine bottle.
+Use Wine-Searcher, recent auction results (Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart), and retailer listings to ground your estimate.
 
 Wine details:
 ${details}
 
 Today's date: ${new Date().toISOString().slice(0, 10)}
+${vintageInstruction}
 
-Return ONLY a valid JSON object with exactly these fields:
+Return a valid JSON object with exactly these fields:
 {
-  "estimatedValue": 150.00,
-  "valueLow": 120.00,
-  "valueHigh": 180.00,
+  "estimatedValue": 105.00,
+  "estimatedValueUSD": 113.00,
+  "valueLow": 90.00,
+  "valueHigh": 125.00,
   "drinkWindow": "2025-2035",
-  "valuationNote": "1-2 sentence explanation of the estimate"
+  "confidence": "high",
+  "sources": "Wine-Searcher avg €105 for 2019 vintage; Garrafeira Nacional listing €115",
+  "valuationNote": "1-2 sentence explanation referencing specific data points found"
 }
 
 Guidelines:
-- estimatedValue: single best estimate per bottle in EUR
-- valueLow / valueHigh: realistic range
+- estimatedValue: best estimate per 750ml bottle in EUR
+- estimatedValueUSD: same estimate converted to USD at current exchange rate
+- valueLow / valueHigh: realistic market range in EUR
+- confidence: "high" if you found direct price data, "medium" if using comparables, "low" if largely estimated
+- sources: brief citation of specific sources, retailers, or auction results used (max 1-2 lines)
+- valuationNote: 1-2 sentences explaining the estimate with reference to what was found
 - drinkWindow: optimal drinking window as "YYYY-YYYY" string, or null if unknown
-- Be conservative and realistic — use auction comps and market knowledge
-- For unknown or obscure wines, base on similar quality wines from the same region/vintage
+- Be vintage-specific and conservative — cite real data points where possible
+- If this is a well-known fine wine, search for current listings before estimating
 
-Return ONLY the JSON. No markdown, no preamble.`;
+Return ONLY the JSON object. No markdown fences, no preamble.`;
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
