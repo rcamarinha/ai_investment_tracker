@@ -8,7 +8,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.1';
+import { callWineAI } from './api.js?v=1.3.2';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';
@@ -81,10 +81,16 @@ export async function valuateSingleBottle(bottleId) {
 
     try {
         const result = await fetchValuation(bottle);
+        console.log('[Valuation] Parsed result:', result);
         applyValuationResult(bottle, result);
+        console.log('[Valuation] Bottle after apply:', {
+            id: bottle.id, name: bottle.name,
+            estimatedValue: bottle.estimatedValue,
+            valueLow: bottle.valueLow, valueHigh: bottle.valueHigh,
+        });
 
         await saveBottleToDB(bottle);
-        // Log price history and valuation movement (non-critical, run in parallel)
+        console.log('[Valuation] DB save done, calling renderCellar');
         await Promise.all([
             saveWinePriceHistory(bottle),
             logAssetMovement({
@@ -220,6 +226,8 @@ async function fetchValuation(bottle) {
             enableWebSearch: !usingEdge,   // direct path only: Claude web search
             bottleSearch,                  // edge function uses this for OpenAI search
         });
+        console.log('[Valuation] Raw API data stop_reason:', data?.stop_reason,
+            '| content blocks:', (data?.content || []).map(c => c.type).join(', '));
     } catch (err) {
         if (!usingEdge) {
             // Direct path: Claude web search failed → retry without it
