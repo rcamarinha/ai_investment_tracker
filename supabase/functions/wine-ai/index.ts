@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
     prompt: string;
     image?: { base64: string; mediaType: string };
     maxTokens?: number;
+    enableWebSearch?: boolean;
   };
 
   try {
@@ -69,7 +70,7 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
-  const { requestType, prompt, image, maxTokens = 1024 } = body;
+  const { requestType, prompt, image, maxTokens = 1024, enableWebSearch = false } = body;
 
   if (!requestType || !prompt) {
     return jsonResponse({ error: "requestType and prompt are required" }, 400);
@@ -108,18 +109,28 @@ Deno.serve(async (req) => {
 
   // ── Call Anthropic ───────────────────────────────────────────────────────
   try {
+    const anthropicHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "x-api-key": ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    };
+    if (enableWebSearch) {
+      anthropicHeaders["anthropic-beta"] = "web-search-2025-03-05";
+    }
+
+    const anthropicBody: Record<string, unknown> = {
+      model: "claude-opus-4-6",
+      max_tokens: maxTokens,
+      messages: [{ role: "user", content }],
+    };
+    if (enableWebSearch) {
+      anthropicBody.tools = [{ type: "web_search_20250305", name: "web_search" }];
+    }
+
     const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-opus-4-6",
-        max_tokens: maxTokens,
-        messages: [{ role: "user", content }],
-      }),
+      headers: anthropicHeaders,
+      body: JSON.stringify(anthropicBody),
     });
 
     if (!anthropicRes.ok) {

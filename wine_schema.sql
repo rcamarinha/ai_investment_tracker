@@ -96,11 +96,14 @@ CREATE TABLE IF NOT EXISTS user_wines (
     notes           TEXT DEFAULT NULL,
 
     -- AI valuation — latest estimate for this user's lot
-    estimated_value NUMERIC DEFAULT NULL,        -- per bottle, EUR
-    value_low       NUMERIC DEFAULT NULL,        -- Claude's low-end estimate
-    value_high      NUMERIC DEFAULT NULL,        -- Claude's high-end estimate
-    valuation_note  TEXT DEFAULT NULL,           -- 1-2 sentence explanation
-    last_valued_at  TIMESTAMPTZ DEFAULT NULL,
+    estimated_value     NUMERIC DEFAULT NULL,    -- per bottle, EUR
+    estimated_value_usd NUMERIC DEFAULT NULL,    -- per bottle, USD (from AI)
+    value_low           NUMERIC DEFAULT NULL,    -- Claude's low-end estimate (EUR)
+    value_high          NUMERIC DEFAULT NULL,    -- Claude's high-end estimate (EUR)
+    confidence          TEXT DEFAULT NULL,       -- "high" | "medium" | "low"
+    valuation_note      TEXT DEFAULT NULL,       -- 1-2 sentence explanation
+    valuation_sources   TEXT DEFAULT NULL,       -- brief citation of sources used
+    last_valued_at      TIMESTAMPTZ DEFAULT NULL,
 
     created_at      TIMESTAMPTZ DEFAULT now(),
     updated_at      TIMESTAMPTZ DEFAULT now()
