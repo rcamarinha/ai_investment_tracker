@@ -118,59 +118,49 @@ async function _callDirect({ requestType, prompt, image, maxTokens, enableWebSea
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
 async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }) {
-    // Prefer a logged-in session JWT; the anon key is only a valid Bearer token
-    // when it is itself a JWT (legacy eyJ... format). Newer Supabase publishable
-    // keys (sb_publishable_*) must NOT be sent as Authorization: Bearer — they
-    // only belong in the apikey header. Without a real JWT, omit Authorization
-    // entirely (the edge function has verify_jwt = false so this is fine).
-    let authToken = null;
-    if (state.supabaseClient) {
-        try {
-            const { data: { session } } = await state.supabaseClient.auth.getSession();
-            if (session?.access_token) authToken = session.access_token;
-        } catch { /* ignore */ }
-    }
-    // Fall back to anon key only if it's a proper JWT (starts with eyJ)
-    if (!authToken && state.supabaseAnonKey?.startsWith('eyJ')) {
-        authToken = state.supabaseAnonKey;
+    // Use the Supabase SDK's functions.invoke() so the SDK handles auth headers
+    // correctly for all key formats — both legacy JWT anon keys (eyJ...) and the
+    // newer publishable keys (sb_publishable_*). Raw fetch() calls with a
+    // manually-set apikey header fail when the key is not JWT-shaped, producing
+    // the "Invalid JWT" 401 that this fix resolves.
+    if (!state.supabaseClient) {
+        throw new Error(
+            'Supabase client not initialized.\n\n' +
+            'Make sure your Supabase URL and anon key are configured in 🔑 API Keys.'
+        );
     }
 
-    const edgeUrl = `${state.supabaseUrl}/functions/v1/wine-ai`;
-    console.log('[WineAI] Using Supabase edge function:', edgeUrl);
-    const headers = {
-        'Content-Type': 'application/json',
-        'apikey': state.supabaseAnonKey,
-    };
-    if (authToken) {
-        headers['Authorization'] = `Bearer ${authToken}`;
-    }
+    console.log('[WineAI] Using Supabase edge function: wine-ai');
 
-    let response;
+    let data, error;
     try {
-        response = await fetch(edgeUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }),
-        });
+        ({ data, error } = await state.supabaseClient.functions.invoke('wine-ai', {
+            body: { requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch },
+        }));
     } catch (err) {
-        console.error('[WineAI] Edge function fetch threw:', err);
-        if (err instanceof TypeError) {
-            throw new Error(
-                'Network error contacting the Wine AI server (CORS or connectivity issue).\n\n' +
-                'Verify your Supabase URL in 🔑 API Keys and that the wine-ai edge function ' +
-                'is deployed and responding to OPTIONS preflight requests. ' +
-                'Open DevTools → Network tab and look for a failed OPTIONS request.\n\n' +
-                `Original error: ${err.message}`
-            );
-        }
-        throw err;
+        // FunctionsFetchError — network / CORS failure before the function was reached
+        console.error('[WineAI] Edge function invoke threw:', err);
+        throw new Error(
+            'Network error contacting the Wine AI server (CORS or connectivity issue).\n\n' +
+            'Verify your Supabase URL in 🔑 API Keys and that the wine-ai edge function ' +
+            'is deployed. Open DevTools → Network tab for details.\n\n' +
+            `Original error: ${err.message}`
+        );
     }
 
-    const text = await response.text();
-    if (!response.ok) {
-        console.error(`[WineAI] Edge function HTTP ${response.status}:`, text.slice(0, 300));
-        throw new Error(`Wine AI server error (${response.status}): ${text.slice(0, 200)}`);
+    if (error) {
+        // FunctionsHttpError — function returned a non-2xx status
+        let statusCode = '';
+        let detail = error.message ?? String(error);
+        try {
+            const ctx = error.context;
+            if (ctx?.status) statusCode = ` (${ctx.status})`;
+            const body = await ctx?.text?.();
+            if (body) detail = body.slice(0, 200);
+        } catch { /* ignore — context may not be readable */ }
+        console.error(`[WineAI] Edge function HTTP error${statusCode}:`, detail);
+        throw new Error(`Wine AI server error${statusCode}: ${detail}`);
     }
 
-    return JSON.parse(text);
+    return data;
 }
