@@ -132,10 +132,21 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
 
     console.log('[WineAI] Using Supabase edge function: wine-ai');
 
+    // Always fetch a fresh session token so the Authorization header carries a
+    // valid, non-expired JWT. The SDK refreshes silently if needed.
+    const { data: { session } } = await state.supabaseClient.auth.getSession();
+    if (!session?.access_token) {
+        throw new Error(
+            'Session expired. Please log in again to use the shared AI service.\n\n' +
+            'Alternatively, add your own Anthropic API key in 🔑 API Keys.'
+        );
+    }
+
     let data, error;
     try {
         ({ data, error } = await state.supabaseClient.functions.invoke('wine-ai', {
             body: { requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch },
+            headers: { Authorization: `Bearer ${session.access_token}` },
         }));
     } catch (err) {
         // FunctionsFetchError — network / CORS failure before the function was reached
