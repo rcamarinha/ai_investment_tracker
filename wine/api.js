@@ -19,12 +19,13 @@ import state from './state.js';
  *
  * @param {object} opts
  * @param {'label'|'valuation'|'analysis'} opts.requestType
- * @param {string}  opts.prompt      - Text prompt (required for all types)
+ * @param {string}  opts.prompt           - Text prompt (required for all types)
  * @param {{base64: string, mediaType: string}} [opts.image] - Vision image (label only)
- * @param {number}  [opts.maxTokens] - Defaults to 1024
- * @returns {Promise<object>}        - Raw Anthropic API response
+ * @param {number}  [opts.maxTokens]      - Defaults to 1024
+ * @param {boolean} [opts.enableWebSearch] - Enable Anthropic web search tool (valuation)
+ * @returns {Promise<object>}             - Raw Anthropic API response
  */
-export async function callWineAI({ requestType, prompt, image, maxTokens = 1024 }) {
+export async function callWineAI({ requestType, prompt, image, maxTokens = 1024, enableWebSearch = false }) {
     const hasDirectKey    = !!state.anthropicKey;
     const hasEdgeFunction = !!(state.supabaseUrl && state.supabaseAnonKey);
 
@@ -37,7 +38,7 @@ export async function callWineAI({ requestType, prompt, image, maxTokens = 1024 
     }
 
     if (hasDirectKey) {
-        return _callDirect({ requestType, prompt, image, maxTokens });
+        return _callDirect({ requestType, prompt, image, maxTokens, enableWebSearch });
     }
     // Edge function path requires an authenticated session to prevent quota abuse.
     if (!state.currentUser) {
@@ -46,12 +47,12 @@ export async function callWineAI({ requestType, prompt, image, maxTokens = 1024 
             'Alternatively, add your own Anthropic API key in 🔑 API Keys.'
         );
     }
-    return _callEdgeFunction({ requestType, prompt, image, maxTokens });
+    return _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch });
 }
 
 // ── Direct Anthropic API call ─────────────────────────────────────────────────
 
-async function _callDirect({ requestType, prompt, image, maxTokens }) {
+async function _callDirect({ requestType, prompt, image, maxTokens, enableWebSearch }) {
     const content = (requestType === 'label' && image)
         ? [
             {
@@ -62,22 +63,32 @@ async function _callDirect({ requestType, prompt, image, maxTokens }) {
           ]
         : prompt;
 
-    console.log('[WineAI] Using direct Anthropic API path');
+    const headers = {
+        'x-api-key': state.anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true',
+    };
+    if (enableWebSearch) {
+        headers['anthropic-beta'] = 'web-search-2025-03-05';
+    }
+
+    const body = {
+        model: 'claude-opus-4-6',
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content }],
+    };
+    if (enableWebSearch) {
+        body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+    }
+
+    console.log('[WineAI] Using direct Anthropic API path', enableWebSearch ? '(+web search)' : '');
     let response;
     try {
         response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
-            headers: {
-                'x-api-key': state.anthropicKey,
-                'anthropic-version': '2023-06-01',
-                'content-type': 'application/json',
-                'anthropic-dangerous-direct-browser-access': 'true',
-            },
-            body: JSON.stringify({
-                model: 'claude-opus-4-6',
-                max_tokens: maxTokens,
-                messages: [{ role: 'user', content }],
-            }),
+            headers,
+            body: JSON.stringify(body),
         });
     } catch (err) {
         console.error('[WineAI] Direct Anthropic fetch threw:', err);
@@ -106,7 +117,7 @@ async function _callDirect({ requestType, prompt, image, maxTokens }) {
 
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
-async function _callEdgeFunction({ requestType, prompt, image, maxTokens }) {
+async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch }) {
     // Prefer a logged-in session JWT; the anon key is only a valid Bearer token
     // when it is itself a JWT (legacy eyJ... format). Newer Supabase publishable
     // keys (sb_publishable_*) must NOT be sent as Authorization: Bearer — they
@@ -139,7 +150,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens }) {
         response = await fetch(edgeUrl, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ requestType, prompt, image, maxTokens }),
+            body: JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch }),
         });
     } catch (err) {
         console.error('[WineAI] Edge function fetch threw:', err);
