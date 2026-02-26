@@ -23,7 +23,7 @@ A modular browser-based investment tracking suite — **Stock Portfolio** and **
 - **Label Scanning** — Take a photo of any wine label; Claude Vision AI identifies the wine and pre-fills all details
   - Mobile: standard OS picker — choose "Take Photo" or "Photo Library" (iOS & Android)
   - Desktop: file picker OR live camera via `getUserMedia`
-- **AI Valuations** — Claude estimates current market value per bottle, including a low–high range and a short explanation note; optimal drinking window also returned
+- **AI Valuations** — Claude searches Wine-Searcher, recent auction results (Sotheby's, Acker, Zachys, Hart Davis Hart), and retailer listings to estimate current market value per bottle. Returns: EUR + USD estimate, low–high range, confidence level (High / Medium / Low), cited sources, and an explanation note. Vintage-specific pricing — never averaged across years. Critic scores from label notes (e.g. "96/100") are passed to the prompt as anchors. A staleness warning appears when a valuation is over 60 days old
 - **Drink-Window Status** — Each bottle shows a live status badge: 🔵 Not Ready / 🟢 Ready Now / 🟡 At Peak / 🔴 Past Peak; cellar summary line counts bottles in each state
 - **Cellar Management** — Add, edit, and delete bottles with full metadata (vintage, region, varietal, appellation, etc.)
   - Inline form validation — errors appear beside the relevant field, no blocking alerts
@@ -164,7 +164,13 @@ On desktop you can also use **🎥 Live Camera** for a live-preview capture.
 
 Click **💎 Update Valuations** to ask Claude to estimate current market value for all unvalued bottles. Individual bottles can also be valuated with the 💎 button on their card.
 
-> **Note:** Valuations are approximate estimates based on Claude's training knowledge and are intended as a guide. For precision, cross-check with auction houses or Wine-Searcher.
+Each valuation card shows:
+- **EUR price** with low–high range, plus a **USD equivalent**
+- A **confidence badge** (🟢 High / 🟡 Medium / 🔴 Low) based on whether Claude found direct listings, comparable data, or had to estimate
+- **Sources** — a brief citation of the specific retailer or auction result used
+- A **staleness warning** if the valuation is over 60 days old
+
+> **Note:** Valuations use Anthropic's live web search feature when available; results are grounded in real listings but should still be cross-checked with auction houses or Wine-Searcher for precision.
 
 ### AI cellar analysis
 
@@ -276,6 +282,16 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.9.0
+- **Wine Cellar — live web-search valuations** — Valuation API calls now use Anthropic's `web_search_20250305` tool so Claude fetches real Wine-Searcher listings and recent auction data (Sotheby's, Acker, Zachys, Hart Davis Hart) instead of relying solely on training knowledge
+- **Dual currency** — each valuation now returns both a EUR estimate and a USD equivalent
+- **Confidence level** — `"high"` / `"medium"` / `"low"` badge on every bottle card, coloured green / amber / red
+- **Source citation** — brief reference to the specific retailer or auction result used (shown on bottle card)
+- **Staleness warning** — amber banner on any valuation older than 60 days, prompting a refresh
+- **Critic score pass-through** — critic scores detected in label notes (e.g. "96/100", "94 points") are forwarded to the valuation prompt as quality anchors
+- **Vintage-specific guard** — prompt now explicitly instructs Claude to price the exact vintage, never an averaged producer price
+- **Robust JSON extraction** — response parser now finds the last text block (handling web-search `tool_use`/`tool_result` interleaving) and extracts the JSON object via regex rather than whole-string parse
 
 ### v3.8.1
 - **Wine Cellar — optional acquisition price** — Purchase price is no longer required when adding a bottle. Bottle cards show estimated value only when no cost basis is provided; Gain / Loss row is hidden. Focus is on total collection value rather than P&L.

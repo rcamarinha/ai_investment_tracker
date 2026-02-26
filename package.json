@@ -1,6 +1,6 @@
 {
   "name": "ai-investment-tracker",
-  "version": "3.8.1",
+  "version": "3.9.0",
   "private": true,
   "type": "module",
   "scripts": {
