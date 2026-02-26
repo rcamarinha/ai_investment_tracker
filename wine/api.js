@@ -191,32 +191,47 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         );
     }
 
-    // Prefer the user session JWT; if that fails (401) the function likely has
-    // verify_jwt = true and the project JWT doesn't match — fall back to the
-    // anon key when it's a legacy JWT-format key (eyJ…) for that project.
     const bearerToken = session.access_token;
     const anonIsJwt   = state.supabaseAnonKey.startsWith('eyJ');
+    const payload     = JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch });
 
-    const _doFetch = async (token) => fetch(functionUrl, {
+    // Build a fetch attempt with specific auth headers.
+    const _doFetch = (authHeaders) => fetch(functionUrl, {
         method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'apikey': state.supabaseAnonKey,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }),
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: payload,
     });
 
     let response;
     try {
-        response = await _doFetch(bearerToken);
+        // Attempt 1: user session JWT + apikey header (standard authenticated call).
+        console.log('[WineAI] Attempt 1: session JWT + apikey');
+        response = await _doFetch({
+            'Authorization': `Bearer ${bearerToken}`,
+            'apikey': state.supabaseAnonKey,
+        });
 
-        // If the user JWT is rejected and we have a legacy anon JWT, retry with it.
-        // Legacy anon keys are JWTs signed with the project's own JWT_SECRET and are
-        // accepted unconditionally by the Supabase gateway (role = anon).
+        // Attempt 2: anon key as Bearer (legacy eyJ… anon keys are signed with the
+        // project JWT_SECRET and accepted by the gateway regardless of user state).
         if (response.status === 401 && anonIsJwt && state.supabaseAnonKey !== bearerToken) {
-            console.warn('[WineAI] Session JWT rejected (401); retrying with anon key JWT…');
-            response = await _doFetch(state.supabaseAnonKey);
+            console.warn('[WineAI] Attempt 2: anon key JWT as Bearer');
+            response = await _doFetch({
+                'Authorization': `Bearer ${state.supabaseAnonKey}`,
+                'apikey': state.supabaseAnonKey,
+            });
+        }
+
+        // Attempt 3: no Authorization header at all — only apikey.
+        // When verify_jwt is disabled on the function this should always work.
+        if (response.status === 401) {
+            console.warn('[WineAI] Attempt 3: apikey only (no Authorization header)');
+            response = await _doFetch({ 'apikey': state.supabaseAnonKey });
+        }
+
+        // Attempt 4: no headers at all (handles cases where apikey itself is invalid).
+        if (response.status === 401) {
+            console.warn('[WineAI] Attempt 4: no auth headers');
+            response = await _doFetch({});
         }
     } catch (err) {
         console.error('[WineAI] Edge function fetch threw:', err);
