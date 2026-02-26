@@ -9,7 +9,7 @@
  *   → Caller pre-fills the Add Bottle dialog
  */
 
-import { callWineAI } from './api.js?v=1.2.8';
+import { callWineAI } from './api.js?v=1.2.9';
 
 // ── Label Recognition ────────────────────────────────────────────────────────
 

@@ -115,6 +115,18 @@ async function _callDirect({ requestType, prompt, image, maxTokens, enableWebSea
     return response.json();
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Decode JWT payload claims without signature verification (diagnostics only). */
+function _decodeJwtClaims(token) {
+    try {
+        const payload = token.split('.')[1];
+        return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    } catch {
+        return null;
+    }
+}
+
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
 async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }) {
@@ -142,23 +154,55 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         );
     }
 
-    // Use raw fetch so we have full, explicit control over the request headers.
-    // The SDK's functions.invoke() can send unexpected headers with newer publishable
-    // key formats; a plain fetch with the user JWT + anon apikey is unambiguous.
-    const functionUrl = `${state.supabaseUrl}/functions/v1/wine-ai`;
+    // Decode JWT claims for diagnostics (no verification — just base64 decode).
+    const _jwtClaims = _decodeJwtClaims(session.access_token);
+    console.log('[WineAI] JWT claims:', _jwtClaims
+        ? { iss: _jwtClaims.iss, role: _jwtClaims.role, exp: new Date(_jwtClaims.exp * 1000).toISOString() }
+        : 'decode failed');
+
+    // Normalise URL (remove trailing slash) and build function endpoint.
+    const baseUrl = state.supabaseUrl.replace(/\/+$/, '');
+    const functionUrl = `${baseUrl}/functions/v1/wine-ai`;
     console.log('[WineAI] Calling:', functionUrl);
+
+    // Warn if the JWT issuer doesn't look like it belongs to this project.
+    if (_jwtClaims?.iss && !functionUrl.startsWith(_jwtClaims.iss.replace(/\/auth\/v1$/, ''))) {
+        console.warn(
+            '[WineAI] JWT issuer mismatch!\n' +
+            `  JWT iss : ${_jwtClaims.iss}\n` +
+            `  Function: ${functionUrl}\n` +
+            'The session belongs to a different Supabase project than the function URL. ' +
+            'Check your Supabase URL in 🔑 API Keys.'
+        );
+    }
+
+    // Prefer the user session JWT; if that fails (401) the function likely has
+    // verify_jwt = true and the project JWT doesn't match — fall back to the
+    // anon key when it's a legacy JWT-format key (eyJ…) for that project.
+    const bearerToken = session.access_token;
+    const anonIsJwt   = state.supabaseAnonKey.startsWith('eyJ');
+
+    const _doFetch = async (token) => fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'apikey': state.supabaseAnonKey,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }),
+    });
 
     let response;
     try {
-        response = await fetch(functionUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-                'apikey': state.supabaseAnonKey,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }),
-        });
+        response = await _doFetch(bearerToken);
+
+        // If the user JWT is rejected and we have a legacy anon JWT, retry with it.
+        // Legacy anon keys are JWTs signed with the project's own JWT_SECRET and are
+        // accepted unconditionally by the Supabase gateway (role = anon).
+        if (response.status === 401 && anonIsJwt && state.supabaseAnonKey !== bearerToken) {
+            console.warn('[WineAI] Session JWT rejected (401); retrying with anon key JWT…');
+            response = await _doFetch(state.supabaseAnonKey);
+        }
     } catch (err) {
         console.error('[WineAI] Edge function fetch threw:', err);
         throw new Error(
@@ -172,6 +216,15 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     if (!response.ok) {
         const body = await response.text().catch(() => '');
         console.error(`[WineAI] Edge function HTTP error (${response.status}):`, body.slice(0, 300));
+
+        if (response.status === 401) {
+            throw new Error(
+                'Wine AI authentication failed (401 Invalid JWT).\n\n' +
+                'The edge function has JWT verification enabled but the token was rejected. ' +
+                'Redeploy the function with: supabase functions deploy wine-ai --no-verify-jwt\n\n' +
+                'Or check the browser console for a JWT issuer mismatch warning.'
+            );
+        }
         throw new Error(`Wine AI server error (${response.status}): ${body.slice(0, 200)}`);
     }
 
