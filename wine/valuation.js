@@ -204,7 +204,7 @@ async function fetchValuation(bottle) {
     const data = await callWineAI({
         requestType: 'valuation',
         prompt,
-        maxTokens: 1024,
+        maxTokens: 2048,
         enableWebSearch: true,
     });
 
