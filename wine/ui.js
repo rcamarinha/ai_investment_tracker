@@ -107,8 +107,7 @@ export function showApiKeyDialog() {
     if (!requireAuth('manage API keys')) return;
     const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
     setVal('anthropicKeyInput',    state.anthropicKey);
-    setVal('openaiKeyInput',       state.openaiKey);
-    setVal('supabaseUrlInput',     state.supabaseUrl);
+setVal('supabaseUrlInput',     state.supabaseUrl);
     setVal('supabaseAnonKeyInput', state.supabaseAnonKey);
     openModal('apiKeyDialog');
 }
@@ -121,21 +120,12 @@ export function saveApiKeys() {
     const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
     const anthropicKey  = getVal('anthropicKeyInput');
-    const openaiKey     = getVal('openaiKeyInput');
     const supabaseUrl   = getVal('supabaseUrlInput');
     const supabaseKey   = getVal('supabaseAnonKeyInput');
 
     if (anthropicKey) {
         state.anthropicKey = anthropicKey;
         localStorage.setItem('wine_anthropicKey', anthropicKey);
-    }
-
-    // OpenAI key is optional — clear it if the field is blanked out
-    state.openaiKey = openaiKey;
-    if (openaiKey) {
-        localStorage.setItem('wine_openaiKey', openaiKey);
-    } else {
-        localStorage.removeItem('wine_openaiKey');
     }
 
     if (supabaseUrl && supabaseKey) {
@@ -161,13 +151,12 @@ export async function clearApiKeys() {
     if (!confirmed) return;
 
     state.anthropicKey    = '';
-    state.openaiKey       = '';
     state.supabaseUrl     = '';
     state.supabaseAnonKey = '';
     state.supabaseClient  = null;
     state.currentUser     = null;
 
-    ['wine_anthropicKey', 'wine_openaiKey', 'wine_supabaseUrl', 'wine_supabaseAnonKey'].forEach(k =>
+    ['wine_anthropicKey', 'wine_supabaseUrl', 'wine_supabaseAnonKey'].forEach(k =>
         localStorage.removeItem(k));
 
     closeApiKeyDialog();

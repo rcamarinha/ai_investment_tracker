@@ -196,80 +196,33 @@ function applyValuationResult(bottle, result) {
     }
 }
 
-// ── OpenAI Market Research ────────────────────────────────────────────────────
-
-/**
- * Use OpenAI gpt-4o-search-preview to search current wine market prices.
- * Returns a text summary of live prices found, or '' on failure.
- *
- * This is intentionally separate from Claude: OpenAI's web search is used
- * purely for data retrieval; Claude synthesises the data into structured JSON.
- */
-async function searchOpenAIMarketPrices(bottle) {
-    const bottleId = [bottle.name, bottle.vintage, bottle.winery].filter(Boolean).join(' ');
-    const query = `Find current retail and auction market prices (in EUR and USD) for this specific wine bottle: ${bottleId}. ` +
-        `Search Wine-Searcher, Vivino, Chateau Online, and recent auction results (Sotheby's, Christie's, Acker Merrall, Zachys). ` +
-        `Report the price range per 750ml bottle, average market price, currency, and any available drink-window guidance. ` +
-        `Be concise and cite specific prices found.`;
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${state.openaiKey}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            model: 'gpt-4o-search-preview',
-            web_search_options: { search_context_size: 'high' },
-            messages: [{ role: 'user', content: query }],
-        }),
-    });
-
-    if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        throw new Error(`OpenAI API ${response.status}: ${errText.slice(0, 120)}`);
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
-}
-
 // ── Claude API Call ───────────────────────────────────────────────────────────
 
 async function fetchValuation(bottle) {
-    // Step 1: Use OpenAI to search for live market prices (if key configured).
-    // This gives Claude real current data instead of relying on training knowledge.
-    let marketResearch = '';
-    if (state.openaiKey) {
-        try {
-            console.log('[Valuation] Fetching live prices via OpenAI for:', bottle.name);
-            marketResearch = await searchOpenAIMarketPrices(bottle);
-            console.log('[Valuation] OpenAI market data received (',
-                marketResearch.length, 'chars):', marketResearch.slice(0, 150));
-        } catch (err) {
-            console.warn('[Valuation] OpenAI search failed — continuing with Claude only:', err.message);
-        }
-    }
+    const prompt = buildValuationPrompt(bottle);
 
-    // Step 2: Build Claude prompt, enriched with live market data when available.
-    const prompt = buildValuationPrompt(bottle, marketResearch);
+    // Compact bottle identity string sent to the edge function so it can run
+    // the OpenAI market-price search server-side (OPENAI_API_KEY_Wine secret).
+    const bottleSearch = [bottle.name, bottle.vintage, bottle.winery, bottle.region]
+        .filter(Boolean).join(' ');
 
-    // Step 3: Call Claude for structured JSON output.
-    // When OpenAI already provided market data, skip Claude's own web search
-    // (saves tokens and avoids tool_use multi-turn issues).
-    const useWebSearch = !marketResearch;
+    // Determine whether we're hitting the edge function or the direct Anthropic path.
+    // Edge function handles OpenAI search server-side, so Claude web search is off.
+    // Direct path has no OpenAI, so we let Claude try its own web search as fallback.
+    const usingEdge = !state.anthropicKey && !!(state.supabaseUrl && state.supabaseAnonKey);
 
     let data;
     try {
         data = await callWineAI({
             requestType: 'valuation',
             prompt,
-            maxTokens: useWebSearch ? 4096 : 2048,
-            enableWebSearch: useWebSearch,
+            maxTokens: usingEdge ? 2048 : 4096,
+            enableWebSearch: !usingEdge,   // direct path only: Claude web search
+            bottleSearch,                  // edge function uses this for OpenAI search
         });
     } catch (err) {
-        if (useWebSearch) {
-            // Claude's web search threw — retry as a plain call
+        if (!usingEdge) {
+            // Direct path: Claude web search failed → retry without it
             console.warn('[Valuation] Claude web-search threw, retrying plain:', err.message);
             data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
         } else {
@@ -277,13 +230,13 @@ async function fetchValuation(bottle) {
         }
     }
 
-    // If Claude's web search produced an incomplete response, fall back to plain
-    if (data.stop_reason === 'tool_use' || data.stop_reason === 'max_tokens') {
-        console.warn('[Valuation] Claude response not final (stop_reason:', data.stop_reason, ') — retrying plain');
+    // Direct path: handle incomplete web search responses (tool_use / max_tokens)
+    if (!usingEdge && (data.stop_reason === 'tool_use' || data.stop_reason === 'max_tokens')) {
+        console.warn('[Valuation] Claude response incomplete (stop_reason:', data.stop_reason, ') — retrying plain');
         data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
     }
 
-    // Step 4: Parse Claude's JSON from the last text block.
+    // Parse Claude's JSON from the last text block.
     // Web search responses may have tool_use/tool_result blocks before the text.
     const textBlocks = (data.content || []).filter(c => c.type === 'text');
     const text = textBlocks[textBlocks.length - 1]?.text || '';
@@ -311,7 +264,7 @@ async function fetchValuation(bottle) {
     }
 }
 
-function buildValuationPrompt(bottle, marketResearch = '') {
+function buildValuationPrompt(bottle) {
     // Extract critic score from notes if present (e.g. "96/100", "94 points")
     const criticMatch = bottle.notes
         ? bottle.notes.match(/(\d{2,3})\s*(?:\/\s*100|points?)/i)
@@ -338,22 +291,15 @@ function buildValuationPrompt(bottle, marketResearch = '') {
         ? `IMPORTANT: Price specifically for the ${bottle.vintage} vintage — do NOT average across years or use a generic producer price.`
         : '';
 
-    const searchInstruction = marketResearch
-        ? `Analyse the live market data provided below and synthesise a precise valuation.`
-        : `Search for and estimate the current retail market value of the following wine bottle.\nUse Wine-Searcher, recent auction results (Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart), and retailer listings to ground your estimate.`;
-
-    const marketSection = marketResearch
-        ? `\n\n=== LIVE MARKET DATA (fetched just now via web search) ===\n${marketResearch}\n\nBase your JSON values on the prices found above — prefer this data over your training knowledge.`
-        : '';
-
     return `You are a wine investment expert with deep knowledge of fine wine valuations.
-${searchInstruction}
+Search for and estimate the current retail market value of the following wine bottle.
+Use Wine-Searcher, recent auction results (Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart), and retailer listings to ground your estimate.
 
 Wine details:
 ${details}
 
 Today's date: ${new Date().toISOString().slice(0, 10)}
-${vintageInstruction}${marketSection}
+${vintageInstruction}
 
 Return a valid JSON object with exactly these fields:
 {
