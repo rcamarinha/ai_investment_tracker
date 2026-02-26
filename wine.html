@@ -16,7 +16,7 @@
             <div style="margin-bottom: 10px;">
                 <a href="index.html" class="hub-link">← All Trackers</a>
             </div>
-            <h1>🍷 Wine Cellar <span>v1.2.3</span></h1>
+            <h1>🍷 Wine Cellar <span>v1.2.4</span></h1>
             <p>AI-powered wine collection management with label recognition</p>
         </div>
 
@@ -268,6 +268,23 @@
 
             <div style="margin-bottom: 20px;">
                 <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
+                    🔍 OpenAI API Key (Live Price Search — optional)
+                </label>
+                <input type="password" id="openaiKeyInput"
+                       placeholder="sk-proj-..."
+                       style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px;" />
+                <div style="color: #94a3b8; font-size: 12px; margin-top: 6px; line-height: 1.6;">
+                    When set, <strong>Update Valuations</strong> first calls <code>gpt-4o-search-preview</code> to fetch live prices
+                    from Wine-Searcher and auction results, then passes those prices to Claude for structured output.
+                    This gives much more accurate, current market values.<br>
+                    Get API key: <a href="https://platform.openai.com/api-keys" target="_blank" style="color: #60a5fa;">platform.openai.com/api-keys</a>
+                </div>
+            </div>
+
+            <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
                     ☁️ Supabase Project URL (Cloud Sync)
                 </label>
                 <input type="text" id="supabaseUrlInput"
@@ -318,20 +335,20 @@
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
         // ── Imports ────────────────────────────────────────────────────────────
-        import state from './wine/state.js?v=1.2.3';
-        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.2.3';
+        import state from './wine/state.js?v=1.2.4';
+        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.2.4';
         import { initSupabase, updateAuthBar,
                  handleLogin, handleSignup, handleLogout, handleGoogleLogin,
-                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.2.3';
+                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.2.4';
         import { renderCellar, showAddBottleDialog, showEditBottleDialog,
                  closeBottleDialog, submitBottle, deleteCurrentBottle,
                  saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory,
-                 exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.2.3';
-        import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js?v=1.2.3';
-        import { analyzeCellar } from './wine/analysis.js?v=1.2.3';
+                 exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.2.4';
+        import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js?v=1.2.4';
+        import { analyzeCellar } from './wine/analysis.js?v=1.2.4';
         import { renderAllocationCharts, showAllocationTab,
-                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './wine/ui.js?v=1.2.3';
-        import { showToast, closeActiveModal } from './wine/utils.js?v=1.2.3';
+                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './wine/ui.js?v=1.2.4';
+        import { showToast, closeActiveModal } from './wine/utils.js?v=1.2.4';
 
         // ── Expose to onclick handlers ─────────────────────────────────────────
         window.showApiKeyDialog      = showApiKeyDialog;
@@ -581,6 +598,8 @@
         // Load saved API keys from localStorage
         const storedAnthropicKey = localStorage.getItem('wine_anthropicKey');
         if (storedAnthropicKey) state.anthropicKey = storedAnthropicKey;
+        const storedOpenaiKey = localStorage.getItem('wine_openaiKey');
+        if (storedOpenaiKey) state.openaiKey = storedOpenaiKey;
 
         // Load Supabase config (wine-specific keys override defaults)
         const storedSBUrl = localStorage.getItem('wine_supabaseUrl');
