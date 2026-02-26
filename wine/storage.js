@@ -242,11 +242,14 @@ async function loadBottles() {
         purchaseDate:   row.purchase_date,
         storage:        row.storage,
         notes:          row.notes,
-        estimatedValue: row.estimated_value,
-        valueLow:       row.value_low,
-        valueHigh:      row.value_high,
-        valuationNote:  row.valuation_note,
-        lastValuedAt:   row.last_valued_at,
+        estimatedValue:    row.estimated_value,
+        estimatedValueUSD: row.estimated_value_usd ?? null,
+        valueLow:          row.value_low,
+        valueHigh:         row.value_high,
+        confidence:        row.confidence        ?? null,
+        valuationNote:     row.valuation_note,
+        valuationSources:  row.valuation_sources ?? null,
+        lastValuedAt:      row.last_valued_at,
     }));
 }
 
@@ -342,19 +345,22 @@ export async function saveBottleToDB(bottle) {
 
     // ── Step 2: Insert or update the user_wines holding ─────────────────────
     const userWineRow = {
-        user_id:         state.currentUser.id,
-        wine_id:         wineId,
-        qty:             bottle.qty,
-        purchase_price:  bottle.purchasePrice  ?? null,
-        purchase_date:   bottle.purchaseDate   || null,
-        storage:         bottle.storage        || null,
-        notes:           bottle.notes          || null,
-        estimated_value: bottle.estimatedValue ?? null,
-        value_low:       bottle.valueLow       ?? null,
-        value_high:      bottle.valueHigh      ?? null,
-        valuation_note:  bottle.valuationNote  || null,
-        last_valued_at:  bottle.lastValuedAt   || null,
-        updated_at:      new Date().toISOString(),
+        user_id:             state.currentUser.id,
+        wine_id:             wineId,
+        qty:                 bottle.qty,
+        purchase_price:      bottle.purchasePrice    ?? null,
+        purchase_date:       bottle.purchaseDate     || null,
+        storage:             bottle.storage          || null,
+        notes:               bottle.notes            || null,
+        estimated_value:     bottle.estimatedValue   ?? null,
+        estimated_value_usd: bottle.estimatedValueUSD ?? null,
+        value_low:           bottle.valueLow         ?? null,
+        value_high:          bottle.valueHigh        ?? null,
+        confidence:          bottle.confidence       || null,
+        valuation_note:      bottle.valuationNote    || null,
+        valuation_sources:   bottle.valuationSources || null,
+        last_valued_at:      bottle.lastValuedAt     || null,
+        updated_at:          new Date().toISOString(),
     };
 
     if (bottle.id) {
