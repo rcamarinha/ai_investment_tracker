@@ -286,8 +286,11 @@ function _logOpenAIDiagnostic(data) {
     if (!data || typeof data._openaiChars !== 'number') return;
     if (data._openaiChars > 0) {
         console.log(`[WineAI] OpenAI market search: ${data._openaiChars} chars injected into prompt ✓`);
+    } else if (!data._openaiCalled) {
+        console.warn('[WineAI] OpenAI market search skipped — bottleSearch was empty (bottle has no name/vintage/winery/region?)');
+    } else if (data._openaiError) {
+        console.warn(`[WineAI] OpenAI market search failed: ${data._openaiError}`);
     } else {
-        const reason = data._openaiError || 'unknown error';
-        console.warn(`[WineAI] OpenAI market search failed: ${reason}`);
+        console.warn('[WineAI] OpenAI market search: API returned empty content (gpt-4o-search-preview returned no text)');
     }
 }
