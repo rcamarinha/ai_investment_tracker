@@ -8,7 +8,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.2';
+import { callWineAI } from './api.js?v=1.3.3';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';
@@ -213,8 +213,9 @@ async function fetchValuation(bottle) {
         .filter(Boolean).join(' ');
 
     // Determine whether we're hitting the edge function or the direct Anthropic path.
-    // Edge function handles OpenAI search server-side, so Claude web search is off.
-    // Direct path has no OpenAI, so we let Claude try its own web search as fallback.
+    // Both paths now use Claude's built-in web search so we get live market prices.
+    // The edge function also tries OpenAI search server-side when OPENAI_API_KEY_Wine
+    // is set — that takes priority over Claude web search via the enriched prompt.
     const usingEdge = !state.anthropicKey && !!(state.supabaseUrl && state.supabaseAnonKey);
 
     let data;
@@ -222,24 +223,20 @@ async function fetchValuation(bottle) {
         data = await callWineAI({
             requestType: 'valuation',
             prompt,
-            maxTokens: usingEdge ? 2048 : 4096,
-            enableWebSearch: !usingEdge,   // direct path only: Claude web search
-            bottleSearch,                  // edge function uses this for OpenAI search
+            maxTokens: 4096,
+            enableWebSearch: true,   // always: live market prices via Claude web search
+            bottleSearch,            // edge function uses this for OpenAI search first
         });
         console.log('[Valuation] Raw API data stop_reason:', data?.stop_reason,
             '| content blocks:', (data?.content || []).map(c => c.type).join(', '));
     } catch (err) {
-        if (!usingEdge) {
-            // Direct path: Claude web search failed → retry without it
-            console.warn('[Valuation] Claude web-search threw, retrying plain:', err.message);
-            data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
-        } else {
-            throw err;
-        }
+        // Web search threw — retry without it
+        console.warn('[Valuation] Web-search threw, retrying plain:', err.message);
+        data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
     }
 
-    // Direct path: handle incomplete web search responses (tool_use / max_tokens)
-    if (!usingEdge && (data.stop_reason === 'tool_use' || data.stop_reason === 'max_tokens')) {
+    // Handle incomplete web search responses (tool_use / max_tokens) on either path
+    if (data.stop_reason === 'tool_use' || data.stop_reason === 'max_tokens') {
         console.warn('[Valuation] Claude response incomplete (stop_reason:', data.stop_reason, ') — retrying plain');
         data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
     }
