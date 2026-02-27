@@ -8,7 +8,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.10';
+import { callWineAI } from './api.js?v=1.3.11';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';
@@ -237,7 +237,9 @@ async function fetchValuation(bottle) {
         console.log('[Valuation] Raw API data stop_reason:', data?.stop_reason,
             '| content blocks:', (data?.content || []).map(c => c.type).join(', '));
     } catch (err) {
-        // Web search threw — retry without it
+        // 529 = Anthropic overloaded — retrying without web search won't help.
+        if (err.message?.includes('overloaded') || err.message?.includes('529')) throw err;
+        // Any other failure (e.g. web-search tool error) — retry without web search.
         console.warn('[Valuation] Web-search threw, retrying plain:', err.message);
         data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false, bottleSearch });
     }
