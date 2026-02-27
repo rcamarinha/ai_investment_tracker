@@ -260,5 +260,16 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         throw new Error(`Wine AI server error (${response.status}): ${body.slice(0, 200)}`);
     }
 
+    // Log whether OpenAI market-price search ran on the server.
+    const openaiChars = response.headers.get('x-wine-ai-openai-chars');
+    if (openaiChars !== null) {
+        const n = parseInt(openaiChars, 10);
+        if (n > 0) {
+            console.log(`[WineAI] OpenAI market search: ${n} chars injected into prompt ✓`);
+        } else {
+            console.warn('[WineAI] OpenAI market search: 0 chars — key missing, model error, or function not redeployed');
+        }
+    }
+
     return response.json();
 }
