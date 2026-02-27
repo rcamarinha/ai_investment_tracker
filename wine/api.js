@@ -256,7 +256,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         console.error(`[WineAI] Edge function HTTP error (${response.status}):`, body.slice(0, 300));
 
         // Log OpenAI search result even though Anthropic failed.
-        _logOpenAIDiagnostic(errData);
+        _logOpenAIDiagnostic(errData, requestType);
 
         if (response.status === 401) {
             throw new Error(
@@ -272,7 +272,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     }
 
     const result = await response.json();
-    _logOpenAIDiagnostic(result);
+    _logOpenAIDiagnostic(result, requestType);
     return result;
 }
 
@@ -282,12 +282,15 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
  * gateway strips custom response headers before they reach the browser.
  * Called from both the success path and the Anthropic-error path.
  */
-function _logOpenAIDiagnostic(data) {
+function _logOpenAIDiagnostic(data, requestType) {
     if (!data || typeof data._openaiChars !== 'number') return;
     if (data._openaiChars > 0) {
         console.log(`[WineAI] OpenAI market search: ${data._openaiChars} chars injected into prompt ✓`);
     } else if (!data._openaiCalled) {
-        console.warn('[WineAI] OpenAI market search skipped — bottleSearch was empty (bottle has no name/vintage/winery/region?)');
+        // OpenAI is only called for valuation requests — don't warn for label/analysis.
+        if (requestType === 'valuation') {
+            console.warn('[WineAI] OpenAI market search skipped — bottleSearch was empty (bottle has no name/vintage/winery/region?)');
+        }
     } else if (data._openaiError) {
         console.warn(`[WineAI] OpenAI market search failed: ${data._openaiError}`);
     } else {
