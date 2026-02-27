@@ -8,7 +8,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.9';
+import { callWineAI } from './api.js?v=1.3.10';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';
@@ -209,11 +209,15 @@ async function fetchValuation(bottle) {
 
     // Compact bottle identity string sent to the edge function so it can run
     // the OpenAI market-price search server-side (OPENAI_API_KEY_Wine secret).
+    // Fall back to the first 200 chars of notes when all structured fields are
+    // missing (e.g. bottles whose wines JOIN returned null due to old data).
     const bottleSearch = [bottle.name, bottle.vintage, bottle.winery, bottle.region]
-        .filter(Boolean).join(' ');
-    console.log('[Valuation] bottleSearch:', JSON.stringify(bottleSearch),
-        '| name:', bottle.name, '| vintage:', bottle.vintage,
-        '| winery:', bottle.winery, '| region:', bottle.region);
+        .filter(Boolean).join(' ') || bottle.notes?.slice(0, 200) || '';
+    if (!bottleSearch) {
+        console.warn('[Valuation] bottleSearch empty — all identity fields null.',
+            { name: bottle.name, vintage: bottle.vintage, winery: bottle.winery,
+              region: bottle.region, wineId: bottle.wineId });
+    }
 
     // Determine whether we're hitting the edge function or the direct Anthropic path.
     // Both paths now use Claude's built-in web search so we get live market prices.
@@ -235,13 +239,13 @@ async function fetchValuation(bottle) {
     } catch (err) {
         // Web search threw — retry without it
         console.warn('[Valuation] Web-search threw, retrying plain:', err.message);
-        data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
+        data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false, bottleSearch });
     }
 
     // Handle incomplete web search responses (tool_use / max_tokens) on either path
     if (data.stop_reason === 'tool_use' || data.stop_reason === 'max_tokens') {
         console.warn('[Valuation] Claude response incomplete (stop_reason:', data.stop_reason, ') — retrying plain');
-        data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false });
+        data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false, bottleSearch });
     }
 
     // Parse Claude's JSON from the last text block.
