@@ -8,7 +8,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.8';
+import { callWineAI } from './api.js?v=1.3.9';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';
@@ -211,6 +211,9 @@ async function fetchValuation(bottle) {
     // the OpenAI market-price search server-side (OPENAI_API_KEY_Wine secret).
     const bottleSearch = [bottle.name, bottle.vintage, bottle.winery, bottle.region]
         .filter(Boolean).join(' ');
+    console.log('[Valuation] bottleSearch:', JSON.stringify(bottleSearch),
+        '| name:', bottle.name, '| vintage:', bottle.vintage,
+        '| winery:', bottle.winery, '| region:', bottle.region);
 
     // Determine whether we're hitting the edge function or the direct Anthropic path.
     // Both paths now use Claude's built-in web search so we get live market prices.
