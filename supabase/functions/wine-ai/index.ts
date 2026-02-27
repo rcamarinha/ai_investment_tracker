@@ -145,8 +145,11 @@ Deno.serve(async (req) => {
   let finalPrompt = prompt;
   let openaiChars = 0;
   let openaiError = "";
+  let openaiCalled = false;
 
   if (requestType === "valuation" && bottleSearch) {
+    openaiCalled = true;
+    console.log(`[wine-ai] bottleSearch: "${bottleSearch.slice(0, 80)}"`);
     const { content: marketData, error } = await fetchOpenAIMarketPrices(bottleSearch);
     openaiChars = marketData.length;
     openaiError = error;
@@ -224,6 +227,7 @@ Deno.serve(async (req) => {
         {
           error: `Anthropic API error: ${anthropicRes.status}`,
           details: errBody.slice(0, 300),
+          _openaiCalled: openaiCalled,
           _openaiChars: openaiChars,
           _openaiError: openaiError,
         },
@@ -236,7 +240,7 @@ Deno.serve(async (req) => {
     // custom response headers before they reach the browser, so the header
     // alone isn't readable via response.headers.get() in JavaScript.
     return jsonResponse(
-      { ...data, _openaiChars: openaiChars, _openaiError: openaiError },
+      { ...data, _openaiCalled: openaiCalled, _openaiChars: openaiChars, _openaiError: openaiError },
       200,
       { "x-wine-ai-openai-chars": String(openaiChars) }
     );
