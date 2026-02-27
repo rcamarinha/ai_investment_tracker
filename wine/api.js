@@ -263,14 +263,15 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     const result = await response.json();
 
     // Log whether OpenAI market-price search ran on the server.
-    // _openaiChars is embedded in the body because Supabase's gateway strips
-    // custom response headers before they reach the browser.
+    // _openaiChars/_openaiError are in the body because Supabase's gateway
+    // strips custom response headers before they reach the browser.
     const n = result._openaiChars;
     if (typeof n === 'number') {
         if (n > 0) {
             console.log(`[WineAI] OpenAI market search: ${n} chars injected into prompt ✓`);
         } else {
-            console.warn('[WineAI] OpenAI market search: 0 chars — check Supabase Edge Function logs for the OpenAI HTTP error');
+            const reason = result._openaiError || 'unknown error';
+            console.warn(`[WineAI] OpenAI market search failed: ${reason}`);
         }
     }
 
