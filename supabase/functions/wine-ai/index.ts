@@ -218,10 +218,14 @@ Deno.serve(async (req) => {
 
     if (!anthropicRes.ok) {
       const errBody = await anthropicRes.text().catch(() => "");
+      // Include OpenAI diagnostic even on Anthropic failure so the client
+      // can log it — otherwise the throw in api.js swallows the info.
       return jsonResponse(
         {
           error: `Anthropic API error: ${anthropicRes.status}`,
           details: errBody.slice(0, 300),
+          _openaiChars: openaiChars,
+          _openaiError: openaiError,
         },
         anthropicRes.status
       );

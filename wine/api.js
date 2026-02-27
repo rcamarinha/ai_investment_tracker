@@ -244,8 +244,19 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     }
 
     if (!response.ok) {
-        const body = await response.text().catch(() => '');
+        // Parse as JSON so we can surface the OpenAI diagnostic even on error.
+        let errData = null;
+        let body = '';
+        try {
+            errData = await response.json();
+            body = JSON.stringify(errData);
+        } catch {
+            body = await response.text().catch(() => '');
+        }
         console.error(`[WineAI] Edge function HTTP error (${response.status}):`, body.slice(0, 300));
+
+        // Log OpenAI search result even though Anthropic failed.
+        _logOpenAIDiagnostic(errData);
 
         if (response.status === 401) {
             throw new Error(
@@ -257,23 +268,26 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
                 'issue persists after disabling verification.'
             );
         }
-        throw new Error(`Wine AI server error (${response.status}): ${body.slice(0, 200)}`);
+        throw new Error(`Wine AI server error (${response.status}): ${errData?.error || body.slice(0, 200)}`);
     }
 
     const result = await response.json();
-
-    // Log whether OpenAI market-price search ran on the server.
-    // _openaiChars/_openaiError are in the body because Supabase's gateway
-    // strips custom response headers before they reach the browser.
-    const n = result._openaiChars;
-    if (typeof n === 'number') {
-        if (n > 0) {
-            console.log(`[WineAI] OpenAI market search: ${n} chars injected into prompt ✓`);
-        } else {
-            const reason = result._openaiError || 'unknown error';
-            console.warn(`[WineAI] OpenAI market search failed: ${reason}`);
-        }
-    }
-
+    _logOpenAIDiagnostic(result);
     return result;
+}
+
+/**
+ * Log the OpenAI market-search diagnostic embedded in any response body.
+ * _openaiChars/_openaiError are in the body (not headers) because Supabase's
+ * gateway strips custom response headers before they reach the browser.
+ * Called from both the success path and the Anthropic-error path.
+ */
+function _logOpenAIDiagnostic(data) {
+    if (!data || typeof data._openaiChars !== 'number') return;
+    if (data._openaiChars > 0) {
+        console.log(`[WineAI] OpenAI market search: ${data._openaiChars} chars injected into prompt ✓`);
+    } else {
+        const reason = data._openaiError || 'unknown error';
+        console.warn(`[WineAI] OpenAI market search failed: ${reason}`);
+    }
 }
