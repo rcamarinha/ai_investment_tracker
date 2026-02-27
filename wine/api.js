@@ -275,6 +275,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     }
 
     if (!response.ok) {
+        // Parse as JSON so we can surface the OpenAI diagnostic even on error.
         let errData = null;
         let body = '';
         try {
@@ -284,6 +285,9 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
             body = await response.text().catch(() => '');
         }
         console.error(`[WineAI] Edge function HTTP error (${response.status}):`, body.slice(0, 300));
+
+        // Log OpenAI search result even though Anthropic failed.
+        _logOpenAIDiagnostic(errData, requestType);
 
         if (response.status === 401) {
             throw new Error(
@@ -301,5 +305,29 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         throw new Error(`Wine AI server error (${response.status}): ${errData?.error || body.slice(0, 200)}`);
     }
 
-    return response.json();
+    const result = await response.json();
+    _logOpenAIDiagnostic(result, requestType);
+    return result;
+}
+
+/**
+ * Log the OpenAI market-search diagnostic embedded in any response body.
+ * _openaiChars/_openaiError are in the body (not headers) because Supabase's
+ * gateway strips custom response headers before they reach the browser.
+ * Called from both the success path and the Anthropic-error path.
+ */
+function _logOpenAIDiagnostic(data, requestType) {
+    if (!data || typeof data._openaiChars !== 'number') return;
+    if (data._openaiChars > 0) {
+        console.log(`[WineAI] OpenAI market search: ${data._openaiChars} chars injected into prompt ✓`);
+    } else if (!data._openaiCalled) {
+        // OpenAI is only called for valuation requests — don't warn for label/analysis.
+        if (requestType === 'valuation') {
+            console.warn('[WineAI] OpenAI market search skipped — bottleSearch was empty (bottle has no name/vintage/winery/region?)');
+        }
+    } else if (data._openaiError) {
+        console.warn(`[WineAI] OpenAI market search failed: ${data._openaiError}`);
+    } else {
+        console.warn('[WineAI] OpenAI market search: API returned empty content (gpt-4o-search-preview returned no text)');
+    }
 }
