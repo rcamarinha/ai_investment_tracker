@@ -222,7 +222,14 @@ Deno.serve(async (req) => {
     }
 
     const data = await anthropicRes.json();
-    return jsonResponse(data, 200, { "x-wine-ai-openai-chars": String(openaiChars) });
+    // Embed openaiChars in the body — custom response headers are stripped by
+    // Supabase's gateway before they reach the browser (CORS rewrite), so the
+    // header alone is not readable via response.headers.get() in JavaScript.
+    return jsonResponse(
+      { ...data, _openaiChars: openaiChars },
+      200,
+      { "x-wine-ai-openai-chars": String(openaiChars) }
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
     return jsonResponse({ error: message }, 500);
