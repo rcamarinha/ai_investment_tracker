@@ -83,39 +83,56 @@ async function _callDirect({ requestType, prompt, image, maxTokens, enableWebSea
     }
 
     console.log('[WineAI] Using direct Anthropic API path', enableWebSearch ? '(+web search)' : '');
-    let response;
-    try {
-        response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-        });
-    } catch (err) {
-        console.error('[WineAI] Direct Anthropic fetch threw:', err);
-        if (err instanceof TypeError) {
-            throw new Error(
-                'Network error contacting Anthropic API (CORS or connectivity issue).\n\n' +
-                'Make sure you are serving the app over HTTP (not file://) and that ' +
-                'your Anthropic API key is valid. Open DevTools → Network tab for details.\n\n' +
-                `Original error: ${err.message}`
-            );
-        }
-        throw err;
-    }
 
-    if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        console.error(`[WineAI] Direct API HTTP ${response.status}:`, body.slice(0, 300));
+    // Retry up to 2 extra times on 529 (Anthropic overloaded) with backoff.
+    const BACKOFF_529 = [3000, 8000];
+    for (let attempt = 0; attempt <= BACKOFF_529.length; attempt++) {
+        if (attempt > 0) {
+            const delay = BACKOFF_529[attempt - 1];
+            console.warn(`[WineAI] Anthropic overloaded (529), retrying in ${delay / 1000}s… (attempt ${attempt + 1}/${BACKOFF_529.length + 1})`);
+            await _sleep(delay);
+        }
+
+        let response;
+        try {
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+            });
+        } catch (err) {
+            console.error('[WineAI] Direct Anthropic fetch threw:', err);
+            if (err instanceof TypeError) {
+                throw new Error(
+                    'Network error contacting Anthropic API (CORS or connectivity issue).\n\n' +
+                    'Make sure you are serving the app over HTTP (not file://) and that ' +
+                    'your Anthropic API key is valid. Open DevTools → Network tab for details.\n\n' +
+                    `Original error: ${err.message}`
+                );
+            }
+            throw err;
+        }
+
+        if (response.ok) return response.json();
+
+        const errBody = await response.text().catch(() => '');
+        console.error(`[WineAI] Direct API HTTP ${response.status}:`, errBody.slice(0, 300));
+
+        if (response.status === 529 && attempt < BACKOFF_529.length) continue; // will retry
+
         if (response.status === 401) {
             throw new Error('Invalid Anthropic API key. Check 🔑 API Keys settings.');
         }
-        throw new Error(`Claude API error ${response.status}: ${body.slice(0, 200)}`);
+        if (response.status === 529) {
+            throw new Error('Anthropic API is temporarily overloaded. Please wait a few seconds and try again.');
+        }
+        throw new Error(`Claude API error ${response.status}: ${errBody.slice(0, 200)}`);
     }
-
-    return response.json();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 /** Decode JWT payload claims without signature verification (diagnostics only). */
 function _decodeJwtClaims(token) {
@@ -233,6 +250,20 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
             console.warn('[WineAI] Attempt 4: no auth headers');
             response = await _doFetch({});
         }
+
+        // Retry 529 (Anthropic overloaded) using the same headers that got past auth.
+        // We track which headers produced the last non-401 response implicitly —
+        // by this point `response` is the most-recent non-401 attempt.
+        for (const delay of [3000, 8000]) {
+            if (response.status !== 529) break;
+            console.warn(`[WineAI] Anthropic overloaded (529) via edge fn, retrying in ${delay / 1000}s…`);
+            await _sleep(delay);
+            // Re-send with same payload; auth attempt order doesn't matter now.
+            response = await _doFetch({
+                'Authorization': `Bearer ${bearerToken}`,
+                'apikey': state.supabaseAnonKey,
+            });
+        }
     } catch (err) {
         console.error('[WineAI] Edge function fetch threw:', err);
         throw new Error(
@@ -267,6 +298,9 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
                 'Check the browser console for a JWT issuer mismatch warning if the ' +
                 'issue persists after disabling verification.'
             );
+        }
+        if (response.status === 529) {
+            throw new Error('Anthropic API is temporarily overloaded. Please wait a few seconds and try again.');
         }
         throw new Error(`Wine AI server error (${response.status}): ${errData?.error || body.slice(0, 200)}`);
     }

@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.10';
+import { callWineAI } from './api.js?v=1.3.12';
 import { computeTotals } from './cellar.js';
 import { showToast, escapeHTML } from './utils.js';
 
