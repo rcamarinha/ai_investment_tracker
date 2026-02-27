@@ -45,10 +45,12 @@ function jsonResponse(data: unknown, status = 200, extra: Record<string, string>
 
 /**
  * Use gpt-4o-search-preview to fetch live retail / auction prices for a wine.
- * Returns the model's text response (price summary) or '' on failure.
+ * Returns { content, error } — error is a human-readable string on failure, "" on success.
  */
-async function fetchOpenAIMarketPrices(bottleSearch: string): Promise<string> {
-  if (!OPENAI_API_KEY) return "";
+async function fetchOpenAIMarketPrices(
+  bottleSearch: string
+): Promise<{ content: string; error: string }> {
+  if (!OPENAI_API_KEY) return { content: "", error: "OPENAI_API_KEY_Wine secret not set" };
 
   const query =
     `Find current retail and auction market prices (in EUR and USD) for this specific wine bottle: ${bottleSearch}. ` +
@@ -72,17 +74,19 @@ async function fetchOpenAIMarketPrices(bottleSearch: string): Promise<string> {
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      console.warn(`[wine-ai] OpenAI search HTTP ${res.status}: ${errText.slice(0, 120)}`);
-      return "";
+      const errMsg = `HTTP ${res.status}: ${errText.slice(0, 200)}`;
+      console.warn(`[wine-ai] OpenAI search ${errMsg}`);
+      return { content: "", error: errMsg };
     }
 
     const data = await res.json();
     const content: string = data.choices?.[0]?.message?.content ?? "";
     console.log(`[wine-ai] OpenAI market data (${content.length} chars) for: ${bottleSearch.slice(0, 60)}`);
-    return content;
+    return { content, error: "" };
   } catch (err) {
-    console.warn("[wine-ai] OpenAI search threw:", err instanceof Error ? err.message : err);
-    return "";
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.warn("[wine-ai] OpenAI search threw:", errMsg);
+    return { content: "", error: errMsg };
   }
 }
 
@@ -140,10 +144,12 @@ Deno.serve(async (req) => {
   // fetch live prices and inject them into the prompt before calling Claude.
   let finalPrompt = prompt;
   let openaiChars = 0;
+  let openaiError = "";
 
   if (requestType === "valuation" && bottleSearch) {
-    const marketData = await fetchOpenAIMarketPrices(bottleSearch);
+    const { content: marketData, error } = await fetchOpenAIMarketPrices(bottleSearch);
     openaiChars = marketData.length;
+    openaiError = error;
     if (marketData) {
       finalPrompt =
         prompt +
@@ -222,11 +228,11 @@ Deno.serve(async (req) => {
     }
 
     const data = await anthropicRes.json();
-    // Embed openaiChars in the body — custom response headers are stripped by
-    // Supabase's gateway before they reach the browser (CORS rewrite), so the
-    // header alone is not readable via response.headers.get() in JavaScript.
+    // Embed openaiChars/_openaiError in the body — Supabase's gateway strips
+    // custom response headers before they reach the browser, so the header
+    // alone isn't readable via response.headers.get() in JavaScript.
     return jsonResponse(
-      { ...data, _openaiChars: openaiChars },
+      { ...data, _openaiChars: openaiChars, _openaiError: openaiError },
       200,
       { "x-wine-ai-openai-chars": String(openaiChars) }
     );
