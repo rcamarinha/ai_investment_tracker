@@ -31,12 +31,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Expose-Headers": "x-wine-ai-openai-chars",
 };
 
-function jsonResponse(data: unknown, status = 200) {
+function jsonResponse(data: unknown, status = 200, extra: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extra },
   });
 }
 
@@ -138,9 +139,11 @@ Deno.serve(async (req) => {
   // When OPENAI_API_KEY_Wine is set and a bottleSearch string is provided,
   // fetch live prices and inject them into the prompt before calling Claude.
   let finalPrompt = prompt;
+  let openaiChars = 0;
 
   if (requestType === "valuation" && bottleSearch) {
     const marketData = await fetchOpenAIMarketPrices(bottleSearch);
+    openaiChars = marketData.length;
     if (marketData) {
       finalPrompt =
         prompt +
@@ -219,7 +222,7 @@ Deno.serve(async (req) => {
     }
 
     const data = await anthropicRes.json();
-    return jsonResponse(data);
+    return jsonResponse(data, 200, { "x-wine-ai-openai-chars": String(openaiChars) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
     return jsonResponse({ error: message }, 500);
