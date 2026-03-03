@@ -251,6 +251,13 @@ async function fetchValuation(bottle) {
         maxTokens: 4096,
     });
 
+    // Debug: surface Gemini fallback so it's visible in the UI until Gemini is stable.
+    if (data._fallback === 'claude' && data._geminiError) {
+        const snippet = data._geminiError.slice(0, 120);
+        console.warn('[Valuation] Gemini failed, used Claude fallback. Gemini error:', data._geminiError);
+        showToast(`[Debug] Gemini failed → Claude used. ${snippet}`, 'warning', 10000);
+    }
+
     const text = data.text ?? '';
 
     if (!text) {
