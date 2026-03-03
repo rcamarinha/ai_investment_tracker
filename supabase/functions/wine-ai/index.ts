@@ -140,7 +140,8 @@ async function handleValuation(prompt: string): Promise<Response> {
     return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null });
   } catch (err) {
     geminiError = err instanceof Error ? err.message : String(err);
-    console.warn("[wine-ai] Gemini valuation failed, falling back to Claude:", geminiError);
+    const is429 = geminiError.includes("429");
+    console.warn(`[wine-ai] Gemini valuation ${is429 ? "quota exceeded (429)" : "failed"}, falling back to Claude:`, geminiError);
   }
 
   // 2. Fallback: Claude with web search
@@ -274,7 +275,8 @@ async function handleBatchValuation(bottles: BottleInfo[]): Promise<Response> {
       }
     } catch (err) {
       geminiError = err instanceof Error ? err.message : String(err);
-      console.warn(`[wine-ai] Chunk ${chunkIdx}: Gemini failed:`, geminiError);
+      const is429 = geminiError.includes("429");
+      console.warn(`[wine-ai] Chunk ${chunkIdx}: Gemini ${is429 ? "quota exceeded (429)" : "failed"}:`, geminiError);
     }
 
     // 2. Fallback: Claude
