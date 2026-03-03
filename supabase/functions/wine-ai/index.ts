@@ -1,99 +1,236 @@
 /**
  * Supabase Edge Function — Wine AI
  *
- * Proxies requests to the Anthropic API using the server-side secret
- * ANTHROPIC_API_KEY_Wine, so users don't need to supply their own key.
+ * Routes AI requests for the Wine Cellar Tracker:
  *
- * For valuation requests, the function also calls OpenAI gpt-4o-search-preview
- * (using OPENAI_API_KEY_Wine) to fetch live market prices before handing the
- * enriched prompt to Claude. If the OpenAI key is absent or the search fails,
- * it falls back to Claude alone.
+ *   label       → Claude (vision + text) for label recognition
+ *   valuation   → Gemini 1.5 Pro with Google Search grounding for single-bottle pricing
+ *   batch-valuation → Gemini 1.5 Pro, bottles chunked 8 at a time in parallel
+ *   analysis    → Claude for cellar insights
+ *
+ * Secrets required:
+ *   ANTHROPIC_API_KEY_Wine  — used for label + analysis requests
+ *   GEMINI_WINE             — used for valuation requests (single + batch)
  *
  * Request body:
  *   {
- *     requestType: "label" | "valuation" | "analysis",
- *     prompt: string,
- *     image?: { base64: string, mediaType: string },   // label only
+ *     requestType: "label" | "valuation" | "batch-valuation" | "analysis",
+ *     prompt?: string,           // required for label / valuation / analysis
+ *     image?: { base64, mediaType }, // label only
  *     maxTokens?: number,
- *     enableWebSearch?: boolean,
- *     bottleSearch?: string   // valuation only: compact bottle identity for OpenAI search
+ *     enableWebSearch?: boolean, // Claude web search (label/analysis)
+ *     bottles?: BottleInfo[],    // batch-valuation only
  *   }
  *
- * The response body is the raw Anthropic API response (same shape as a
- * direct call), so callers can use the same parsing logic either way.
+ * Response shape:
+ *   label / analysis → raw Anthropic response
+ *   valuation        → { text: string, _geminiGrounding?: [...] }
+ *   batch-valuation  → { results: ValuationResult[] }
  */
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
-const OPENAI_API_KEY    = Deno.env.get("OPENAI_API_KEY_Wine");
+const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
+
+const GEMINI_MODEL = "gemini-1.5-pro";
+const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+const BATCH_CHUNK_SIZE = 8; // bottles per Gemini request in batch mode
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Expose-Headers": "x-wine-ai-openai-chars",
 };
 
-function jsonResponse(data: unknown, status = 200, extra: Record<string, string> = {}) {
+function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json", ...extra },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
-// ── OpenAI market-price search ───────────────────────────────────────────────
+// ── Gemini helpers ────────────────────────────────────────────────────────────
+
+interface GeminiResult {
+  text: string;
+  groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
+}
 
 /**
- * Use gpt-4o-search-preview to fetch live retail / auction prices for a wine.
- * Returns { content, error } — error is a human-readable string on failure, "" on success.
+ * Call Gemini 1.5 Pro with optional Google Search grounding.
+ * Returns { text, groundingChunks }.
  */
-async function fetchOpenAIMarketPrices(
-  bottleSearch: string
-): Promise<{ content: string; error: string }> {
-  if (!OPENAI_API_KEY) return { content: "", error: "OPENAI_API_KEY_Wine secret not set" };
+async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResult> {
+  if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
-  const query =
-    `Find current retail and auction market prices (in EUR and USD) for this specific wine bottle: ${bottleSearch}. ` +
-    `Search Wine-Searcher, Vivino, Chateau Online, and recent auction results (Sotheby's, Christie's, Acker Merrall, Zachys). ` +
-    `Report the price range per 750ml bottle, average market price, currency, and any available drink-window guidance. ` +
-    `Be concise and cite specific prices found.`;
+  const body = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools: [{ google_search: {} }],
+    generationConfig: { maxOutputTokens: maxTokens },
+  };
 
-  try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-search-preview",
-        web_search_options: { search_context_size: "high" },
-        messages: [{ role: "user", content: query }],
-      }),
-    });
+  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      const errMsg = `HTTP ${res.status}: ${errText.slice(0, 200)}`;
-      console.warn(`[wine-ai] OpenAI search ${errMsg}`);
-      return { content: "", error: errMsg };
-    }
-
-    const data = await res.json();
-    const content: string = data.choices?.[0]?.message?.content ?? "";
-    console.log(`[wine-ai] OpenAI market data (${content.length} chars) for: ${bottleSearch.slice(0, 60)}`);
-    return { content, error: "" };
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.warn("[wine-ai] OpenAI search threw:", errMsg);
-    return { content: "", error: errMsg };
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
   }
+
+  const data = await res.json();
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
+  const groundingChunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? undefined;
+
+  return { text, groundingChunks };
+}
+
+// ── Single-bottle valuation via Gemini ────────────────────────────────────────
+
+async function handleGeminiValuation(prompt: string): Promise<Response> {
+  try {
+    const { text, groundingChunks } = await callGemini(prompt, 4096);
+    return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[wine-ai] Gemini valuation error:", message);
+    return jsonResponse({ error: message }, 502);
+  }
+}
+
+// ── Batch valuation via Gemini ────────────────────────────────────────────────
+
+interface BottleInfo {
+  id?: string;
+  name?: string;
+  winery?: string;
+  vintage?: number | string;
+  region?: string;
+  appellation?: string;
+  varietal?: string;
+  country?: string;
+  purchasePrice?: number;
+  notes?: string;
+}
+
+interface ValuationResult {
+  id?: string;
+  estimatedValue?: number;
+  estimatedValueUSD?: number;
+  valueLow?: number;
+  valueHigh?: number;
+  drinkWindow?: string | null;
+  confidence?: string;
+  sources?: string;
+  valuationNote?: string;
+  error?: string;
+}
+
+/**
+ * Build a prompt that asks Gemini to value multiple bottles at once.
+ * Returns a JSON array of ValuationResult objects in the same order.
+ */
+function buildBatchPrompt(bottles: BottleInfo[]): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const lines = bottles.map((b, i) => {
+    const fields = [
+      b.name        && `Wine name: ${b.name}`,
+      b.winery      && `Winery/Producer: ${b.winery}`,
+      b.vintage     && `Vintage: ${b.vintage}`,
+      b.region      && `Region: ${b.region}`,
+      b.appellation && `Appellation: ${b.appellation}`,
+      b.varietal    && `Grape variety: ${b.varietal}`,
+      b.country     && `Country: ${b.country}`,
+      b.purchasePrice && `Purchase price: €${b.purchasePrice}/bottle`,
+    ].filter(Boolean).join(", ");
+    return `${i + 1}. ${fields || "(unknown wine)"}`;
+  }).join("\n");
+
+  return `You are a wine investment expert. Use Google Search to find current retail and auction market prices for each wine below, then return valuations.
+
+Today's date: ${today}
+
+Wines to value:
+${lines}
+
+Return a JSON array with exactly ${bottles.length} objects, one per wine, in the same order. Each object must have:
+{
+  "estimatedValue": <EUR per 750ml, number>,
+  "estimatedValueUSD": <USD per 750ml, number>,
+  "valueLow": <low end EUR, number>,
+  "valueHigh": <high end EUR, number>,
+  "drinkWindow": <"YYYY-YYYY" or null>,
+  "confidence": <"high"|"medium"|"low">,
+  "sources": <brief citation string>,
+  "valuationNote": <1-2 sentence explanation>
+}
+
+Rules:
+- Be vintage-specific (do NOT average across years).
+- If you cannot find data for a wine, use low confidence and estimate conservatively.
+- Return ONLY the JSON array. No markdown fences, no preamble.`;
+}
+
+/**
+ * Process an array of bottles in parallel chunks via Gemini.
+ * Returns a flat array of ValuationResult matching the input order.
+ */
+async function handleGeminiBatchValuation(bottles: BottleInfo[]): Promise<Response> {
+  if (!bottles || bottles.length === 0) {
+    return jsonResponse({ error: "bottles array is empty" }, 400);
+  }
+
+  // Split into chunks
+  const chunks: BottleInfo[][] = [];
+  for (let i = 0; i < bottles.length; i += BATCH_CHUNK_SIZE) {
+    chunks.push(bottles.slice(i, i + BATCH_CHUNK_SIZE));
+  }
+
+  console.log(`[wine-ai] Batch: ${bottles.length} bottle(s) → ${chunks.length} Gemini chunk(s)`);
+
+  // Run all chunks in parallel
+  const chunkPromises = chunks.map(async (chunk, chunkIdx) => {
+    const prompt = buildBatchPrompt(chunk);
+    try {
+      const { text } = await callGemini(prompt, 4096);
+
+      // Parse JSON array from response
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        console.warn(`[wine-ai] Chunk ${chunkIdx}: no JSON array in response. text snippet:`, text.slice(0, 200));
+        return chunk.map(b => ({ id: b.id, error: "Could not parse Gemini response" } as ValuationResult));
+      }
+
+      let parsed: ValuationResult[];
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch {
+        return chunk.map(b => ({ id: b.id, error: "Invalid JSON from Gemini" } as ValuationResult));
+      }
+
+      // Attach original IDs
+      return parsed.map((r, i) => ({ ...r, id: chunk[i]?.id }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[wine-ai] Chunk ${chunkIdx} failed:`, msg);
+      return chunk.map(b => ({ id: b.id, error: msg } as ValuationResult));
+    }
+  });
+
+  const chunkResults = await Promise.all(chunkPromises);
+  const results: ValuationResult[] = chunkResults.flat();
+
+  console.log(`[wine-ai] Batch complete: ${results.filter(r => !r.error).length}/${results.length} succeeded`);
+  return jsonResponse({ results });
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
-  // ── CORS preflight ──────────────────────────────────────────────────────
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -102,22 +239,14 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  // ── Key check ───────────────────────────────────────────────────────────
-  if (!ANTHROPIC_API_KEY) {
-    return jsonResponse(
-      { error: "ANTHROPIC_API_KEY_Wine is not set on the server." },
-      500
-    );
-  }
-
-  // ── Parse request body ──────────────────────────────────────────────────
+  // Parse body
   let body: {
     requestType: string;
-    prompt: string;
+    prompt?: string;
     image?: { base64: string; mediaType: string };
     maxTokens?: number;
     enableWebSearch?: boolean;
-    bottleSearch?: string;
+    bottles?: BottleInfo[];
   };
 
   try {
@@ -126,74 +255,52 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
-  const {
-    requestType,
-    prompt,
-    image,
-    maxTokens = 1024,
-    enableWebSearch = false,
-    bottleSearch,
-  } = body;
+  const { requestType, prompt, image, maxTokens = 1024, enableWebSearch = false, bottles } = body;
 
-  if (!requestType || !prompt) {
-    return jsonResponse({ error: "requestType and prompt are required" }, 400);
+  if (!requestType) {
+    return jsonResponse({ error: "requestType is required" }, 400);
   }
 
-  // ── OpenAI market research (valuation requests only) ────────────────────
-  // When OPENAI_API_KEY_Wine is set and a bottleSearch string is provided,
-  // fetch live prices and inject them into the prompt before calling Claude.
-  let finalPrompt = prompt;
-  let openaiChars = 0;
-  let openaiError = "";
-  let openaiCalled = false;
+  // ── Gemini routes (valuation + batch-valuation) ──────────────────────────
+  if (requestType === "valuation") {
+    if (!prompt) return jsonResponse({ error: "prompt is required for valuation" }, 400);
+    return handleGeminiValuation(prompt);
+  }
 
-  if (requestType === "valuation" && bottleSearch) {
-    openaiCalled = true;
-    console.log(`[wine-ai] bottleSearch: "${bottleSearch.slice(0, 80)}"`);
-    const { content: marketData, error } = await fetchOpenAIMarketPrices(bottleSearch);
-    openaiChars = marketData.length;
-    openaiError = error;
-    if (marketData) {
-      finalPrompt =
-        prompt +
-        `\n\n=== LIVE MARKET DATA (fetched just now via web search) ===\n` +
-        marketData +
-        `\n\nBase your JSON values on the prices found above — prefer this data over your training knowledge.`;
+  if (requestType === "batch-valuation") {
+    if (!Array.isArray(bottles) || bottles.length === 0) {
+      return jsonResponse({ error: "bottles array is required for batch-valuation" }, 400);
     }
+    return handleGeminiBatchValuation(bottles);
   }
 
-  // ── Build Anthropic messages ─────────────────────────────────────────────
+  // ── Claude routes (label + analysis) ────────────────────────────────────
+  if (!ANTHROPIC_API_KEY) {
+    return jsonResponse({ error: "ANTHROPIC_API_KEY_Wine is not set on the server." }, 500);
+  }
+
+  if (!prompt) {
+    return jsonResponse({ error: "prompt is required" }, 400);
+  }
+
   type MessageContent =
     | string
     | Array<
         | { type: "text"; text: string }
-        | {
-            type: "image";
-            source: { type: "base64"; media_type: string; data: string };
-          }
+        | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
       >;
 
   let content: MessageContent;
 
   if (requestType === "label" && image?.base64) {
-    // Vision request: image + text
     content = [
-      {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: image.mediaType || "image/jpeg",
-          data: image.base64,
-        },
-      },
-      { type: "text", text: finalPrompt },
+      { type: "image", source: { type: "base64", media_type: image.mediaType || "image/jpeg", data: image.base64 } },
+      { type: "text", text: prompt },
     ];
   } else {
-    // Text-only request
-    content = finalPrompt;
+    content = prompt;
   }
 
-  // ── Call Anthropic ───────────────────────────────────────────────────────
   try {
     const anthropicHeaders: Record<string, string> = {
       "Content-Type": "application/json",
@@ -221,29 +328,14 @@ Deno.serve(async (req) => {
 
     if (!anthropicRes.ok) {
       const errBody = await anthropicRes.text().catch(() => "");
-      // Include OpenAI diagnostic even on Anthropic failure so the client
-      // can log it — otherwise the throw in api.js swallows the info.
       return jsonResponse(
-        {
-          error: `Anthropic API error: ${anthropicRes.status}`,
-          details: errBody.slice(0, 300),
-          _openaiCalled: openaiCalled,
-          _openaiChars: openaiChars,
-          _openaiError: openaiError,
-        },
+        { error: `Anthropic API error: ${anthropicRes.status}`, details: errBody.slice(0, 300) },
         anthropicRes.status
       );
     }
 
     const data = await anthropicRes.json();
-    // Embed openaiChars/_openaiError in the body — Supabase's gateway strips
-    // custom response headers before they reach the browser, so the header
-    // alone isn't readable via response.headers.get() in JavaScript.
-    return jsonResponse(
-      { ...data, _openaiCalled: openaiCalled, _openaiChars: openaiChars, _openaiError: openaiError },
-      200,
-      { "x-wine-ai-openai-chars": String(openaiChars) }
-    );
+    return jsonResponse(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
     return jsonResponse({ error: message }, 500);

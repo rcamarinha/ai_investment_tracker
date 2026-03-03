@@ -1,8 +1,8 @@
 /**
- * Wine AI routing helper — centralises all Claude API calls for the wine tracker.
+ * Wine AI routing helper — centralises all AI calls for the wine tracker.
  *
  * All requests go through the Supabase Edge Function (wine-ai), which holds the
- * ANTHROPIC_API_KEY_Wine and OPENAI_API_KEY_Wine server-side secrets.
+ * ANTHROPIC_API_KEY_Wine and GEMINI_WINE server-side secrets.
  * Users must be logged in to use AI features.
  */
 
@@ -11,29 +11,20 @@ import state from './state.js';
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Route a Claude request through the Supabase edge function.
+ * Route an AI request through the Supabase edge function.
  *
  * @param {object} opts
- * @param {'label'|'valuation'|'analysis'} opts.requestType
- * @param {string}  opts.prompt           - Text prompt (required for all types)
+ * @param {'label'|'valuation'|'batch-valuation'|'analysis'} opts.requestType
+ * @param {string}  [opts.prompt]         - Text prompt (required except batch-valuation)
  * @param {{base64: string, mediaType: string}} [opts.image] - Vision image (label only)
  * @param {number}  [opts.maxTokens]      - Defaults to 1024
- * @param {boolean} [opts.enableWebSearch] - Enable Anthropic web search tool (valuation)
- * @param {string}  [opts.bottleSearch]   - Compact bottle identity for OpenAI search (valuation)
- * @returns {Promise<object>}             - Raw Anthropic API response
+ * @param {boolean} [opts.enableWebSearch] - Enable Anthropic web search tool (label/analysis)
+ * @param {Array}   [opts.bottles]        - Array of bottle objects (batch-valuation only)
+ * @returns {Promise<object>}             - { text } for single, { results } for batch
  */
-export async function callWineAI({ requestType, prompt, image, maxTokens = 1024, enableWebSearch = false, bottleSearch = null }) {
-    if (!state.supabaseUrl || !state.supabaseAnonKey) {
-        throw new Error(
-            'Supabase not configured.\n\n' +
-            'Make sure your Supabase URL and anon key are configured in 🔑 API Keys.'
-        );
-    }
+export async function callWineAI({ requestType, prompt, image, maxTokens = 1024, enableWebSearch = false, bottles = null }) {
     if (!state.supabaseClient) {
-        throw new Error(
-            'Supabase client not initialized.\n\n' +
-            'Make sure your Supabase URL and anon key are configured in 🔑 API Keys.'
-        );
+        throw new Error('Supabase client not initialized. Please refresh the page.');
     }
     if (!state.currentUser) {
         throw new Error(
@@ -42,7 +33,7 @@ export async function callWineAI({ requestType, prompt, image, maxTokens = 1024,
         );
     }
 
-    return _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch });
+    return _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottles });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -61,7 +52,7 @@ function _decodeJwtClaims(token) {
 
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
-async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }) {
+async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottles }) {
     console.log('[WineAI] Using Supabase edge function: wine-ai');
 
     // Force a full token refresh so the access_token is freshly signed with the
@@ -106,7 +97,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
 
     const bearerToken = session.access_token;
     const anonIsJwt   = state.supabaseAnonKey.startsWith('eyJ');
-    const payload     = JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch });
+    const payload     = JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottles });
 
     // Build a fetch attempt with specific auth headers.
     const _doFetch = (authHeaders) => fetch(functionUrl, {
@@ -196,24 +187,25 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     }
 
     const result = await response.json();
-    _logOpenAIDiagnostic(result, requestType);
+    _logGeminiDiagnostic(result, requestType);
     return result;
 }
 
 /**
- * Log the OpenAI market-search diagnostic embedded in any response body.
+ * Log Gemini grounding / diagnostic info embedded in any response body.
  */
-function _logOpenAIDiagnostic(data, requestType) {
-    if (!data || typeof data._openaiChars !== 'number') return;
-    if (data._openaiChars > 0) {
-        console.log(`[WineAI] OpenAI market search: ${data._openaiChars} chars injected into prompt ✓`);
-    } else if (!data._openaiCalled) {
-        if (requestType === 'valuation') {
-            console.warn('[WineAI] OpenAI market search skipped — bottleSearch was empty (bottle has no name/vintage/winery/region?)');
-        }
-    } else if (data._openaiError) {
-        console.warn(`[WineAI] OpenAI market search failed: ${data._openaiError}`);
-    } else {
-        console.warn('[WineAI] OpenAI market search: API returned empty content (gpt-4o-search-preview returned no text)');
+function _logGeminiDiagnostic(data, requestType) {
+    if (!data) return;
+    if (data._geminiGrounding) {
+        const src = Array.isArray(data._geminiGrounding)
+            ? data._geminiGrounding.slice(0, 3).map(s => s.web?.uri || s.uri || '').filter(Boolean).join(', ')
+            : '';
+        console.log(`[WineAI] Gemini grounding sources: ${src || '(available)'}`);
+    }
+    if (data._geminiError) {
+        console.warn(`[WineAI] Gemini error (${requestType}): ${data._geminiError}`);
+    }
+    if (requestType === 'batch-valuation' && Array.isArray(data.results)) {
+        console.log(`[WineAI] Batch valuation returned ${data.results.length} result(s).`);
     }
 }

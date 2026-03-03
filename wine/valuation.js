@@ -1,7 +1,10 @@
 /**
- * Valuation service — AI-powered wine bottle value estimation via Claude API.
+ * Valuation service — AI-powered wine bottle value estimation.
  *
- * Sends wine details to Claude and asks for current market value estimate.
+ * Single bottle: one Gemini request via the edge function (requestType: 'valuation').
+ * Batch: one edge-function call with all bottles (requestType: 'batch-valuation');
+ *        the server chunks them into groups of 8 and runs them in parallel via Gemini.
+ *
  * Results are stored back on each bottle object and persisted to Supabase.
  * valueLow / valueHigh / valuationNote are kept in a localStorage cache
  * (not in the DB schema) and applied to in-memory bottle state on load.
@@ -23,10 +26,6 @@ function requireAuth(actionName) {
 }
 
 // ── Valuation Detail Cache (localStorage) ────────────────────────────────────
-// valueLow/valueHigh/valuationNote are now persisted in user_wines (DB) AND
-// loaded directly by loadBottles() via the JOIN. The localStorage cache below
-// is kept as a fast warm-load path so the UI shows ranges immediately on page
-// load before the DB round-trip completes.
 
 const VAL_CACHE_KEY = 'wine_val_details';
 
@@ -62,7 +61,7 @@ export function applyValuationCache() {
 // ── Single Bottle Valuation ───────────────────────────────────────────────────
 
 /**
- * Ask Claude to estimate the current market value of a single bottle.
+ * Ask Gemini to estimate the current market value of a single bottle.
  * Updates the bottle in state and persists the new value to DB.
  */
 export async function valuateSingleBottle(bottleId) {
@@ -83,14 +82,7 @@ export async function valuateSingleBottle(bottleId) {
         const result = await fetchValuation(bottle);
         console.log('[Valuation] Parsed result:', result);
         applyValuationResult(bottle, result);
-        console.log('[Valuation] Bottle after apply:', {
-            id: bottle.id, name: bottle.name,
-            estimatedValue: bottle.estimatedValue,
-            valueLow: bottle.valueLow, valueHigh: bottle.valueHigh,
-        });
-
         await saveBottleToDB(bottle);
-        console.log('[Valuation] DB save done, calling renderCellar');
         await Promise.all([
             saveWinePriceHistory(bottle),
             logAssetMovement({
@@ -111,8 +103,13 @@ export async function valuateSingleBottle(bottleId) {
     }
 }
 
+// ── Batch Valuation ───────────────────────────────────────────────────────────
+
 /**
- * Valuate all bottles that don't yet have an estimated value.
+ * Valuate all bottles (or only unvalued ones) in a single batched request.
+ * The edge function chunks them into groups of 8 and runs each chunk as one
+ * Gemini call in parallel, so the total time is roughly one Gemini round-trip
+ * instead of N sequential calls.
  */
 export async function valuateAllBottles(forceAll = false) {
     if (!requireAuth('valuate bottles')) return;
@@ -133,47 +130,87 @@ export async function valuateAllBottles(forceAll = false) {
 
     state.valuationsLoading = true;
     const btn = document.getElementById('valuateBtn');
-    if (btn) { btn.disabled = true; btn.textContent = `💎 Valuing 0/${toValueate.length}...`; }
+    if (btn) { btn.disabled = true; btn.textContent = `💎 Sending ${toValueate.length} bottle(s) for valuation...`; }
 
-    let done = 0;
-    const errors = [];
+    try {
+        // Send all bottles to the edge function in one request.
+        // The server handles chunking and parallel Gemini calls internally.
+        const bottleInfos = toValueate.map(b => ({
+            id:            b.id,
+            name:          b.name,
+            winery:        b.winery,
+            vintage:       b.vintage,
+            region:        b.region,
+            appellation:   b.appellation,
+            varietal:      b.varietal,
+            country:       b.country,
+            purchasePrice: b.purchasePrice,
+            notes:         b.notes,
+        }));
 
-    for (const bottle of toValueate) {
-        try {
-            const result = await fetchValuation(bottle);
-            applyValuationResult(bottle, result);
-            await saveBottleToDB(bottle);
-            // Log price history and valuation movement (non-critical)
-            await Promise.all([
-                saveWinePriceHistory(bottle),
-                logAssetMovement({
-                    assetType:    'wine',
-                    wineId:       bottle.wineId,
-                    movementType: 'valuation_update',
-                    price:        bottle.estimatedValue,
-                    totalValue:   (bottle.qty || 0) * (bottle.estimatedValue || 0),
-                    notes:        bottle.valuationNote || null,
-                }),
-            ]);
-            done++;
-            if (btn) btn.textContent = `💎 Valuing ${done}/${toValueate.length}...`;
-        } catch (err) {
-            errors.push(`${bottle.name}: ${err.message}`);
-            console.warn('Valuation failed for', bottle.name, err);
+        if (btn) btn.textContent = `💎 Valuing ${toValueate.length} bottle(s) via Gemini...`;
+
+        const data = await callWineAI({ requestType: 'batch-valuation', bottles: bottleInfos });
+
+        if (!data.results || !Array.isArray(data.results)) {
+            throw new Error('Unexpected response from batch valuation endpoint.');
         }
-        // Small delay to avoid hammering the API
-        if (done < toValueate.length) await sleep(500);
-    }
 
-    state.valuationsLoading = false;
-    if (btn) { btn.disabled = false; btn.textContent = '💎 Update Valuations'; }
+        if (btn) btn.textContent = `💎 Saving results...`;
 
-    renderCellar();
+        // Apply results and persist — run DB saves in parallel
+        const errors = [];
+        const savePromises = [];
 
-    if (errors.length > 0) {
-        showToast(`Valuations done with ${errors.length} error(s). Check console for details.`, 'warning', 6000);
-    } else {
-        showToast(`Valuated ${done} bottle${done !== 1 ? 's' : ''} successfully.`);
+        data.results.forEach((result, idx) => {
+            const bottle = toValueate[idx];
+            if (!bottle) return;
+
+            if (result.error) {
+                errors.push(`${bottle.name || bottle.id}: ${result.error}`);
+                console.warn('[Valuation] Batch item failed:', bottle.name, result.error);
+                return;
+            }
+
+            applyValuationResult(bottle, result);
+
+            savePromises.push(
+                saveBottleToDB(bottle).then(() =>
+                    Promise.all([
+                        saveWinePriceHistory(bottle),
+                        logAssetMovement({
+                            assetType:    'wine',
+                            wineId:       bottle.wineId,
+                            movementType: 'valuation_update',
+                            price:        bottle.estimatedValue,
+                            totalValue:   (bottle.qty || 0) * (bottle.estimatedValue || 0),
+                            notes:        bottle.valuationNote || null,
+                        }),
+                    ])
+                ).catch(err => {
+                    console.warn('[Valuation] DB save failed for', bottle.name, err);
+                    errors.push(`${bottle.name}: DB save failed`);
+                })
+            );
+        });
+
+        await Promise.all(savePromises);
+
+        const done = toValueate.length - errors.length;
+        renderCellar();
+
+        if (errors.length > 0) {
+            showToast(`Valuations done: ${done} succeeded, ${errors.length} failed. Check console.`, 'warning', 6000);
+        } else {
+            showToast(`Valued ${done} bottle${done !== 1 ? 's' : ''} successfully.`);
+        }
+    } catch (err) {
+        console.error('[Valuation] Batch error:', err);
+        showToast(`Batch valuation failed: ${err.message}`, 'error');
+    } finally {
+        state.valuationsLoading = false;
+        if (btn) { btn.disabled = false; btn.textContent = '💎 Update Valuations'; }
+        renderCellar();
     }
 }
 
@@ -192,100 +229,57 @@ function applyValuationResult(bottle, result) {
 
     if (bottle.id) {
         persistValCache(bottle.id, {
-            valueLow:        result.valueLow,
-            valueHigh:       result.valueHigh,
-            valuationNote:   result.valuationNote,
+            valueLow:         result.valueLow,
+            valueHigh:        result.valueHigh,
+            valuationNote:    result.valuationNote,
             estimatedValueUSD: result.estimatedValueUSD ?? null,
-            confidence:      result.confidence ?? null,
-            valuationSources: result.sources   ?? null,
+            confidence:       result.confidence ?? null,
+            valuationSources: result.sources    ?? null,
         });
     }
 }
 
-// ── Claude API Call ───────────────────────────────────────────────────────────
+// ── Single-bottle Claude→Gemini API call ──────────────────────────────────────
 
 async function fetchValuation(bottle) {
     const prompt = buildValuationPrompt(bottle);
 
-    // Compact bottle identity string sent to the edge function so it can run
-    // the OpenAI market-price search server-side (OPENAI_API_KEY_Wine secret).
-    // Fall back to the first 200 chars of notes when all structured fields are
-    // missing (e.g. bottles whose wines JOIN returned null due to old data).
-    const bottleSearch = [bottle.name, bottle.vintage, bottle.winery, bottle.region]
-        .filter(Boolean).join(' ') || bottle.notes?.slice(0, 200) || '';
-    if (!bottleSearch) {
-        console.warn('[Valuation] bottleSearch empty — all identity fields null.',
-            { name: bottle.name, vintage: bottle.vintage, winery: bottle.winery,
-              region: bottle.region, wineId: bottle.wineId });
-    }
+    // The edge function returns { text, _geminiGrounding } for valuation requests.
+    const data = await callWineAI({
+        requestType: 'valuation',
+        prompt,
+        maxTokens: 4096,
+    });
 
-    // Determine whether we're hitting the edge function or the direct Anthropic path.
-    // Both paths now use Claude's built-in web search so we get live market prices.
-    // The edge function also tries OpenAI search server-side when OPENAI_API_KEY_Wine
-    // is set — that takes priority over Claude web search via the enriched prompt.
-    const usingEdge = !state.anthropicKey && !!(state.supabaseUrl && state.supabaseAnonKey);
-
-    let data;
-    try {
-        data = await callWineAI({
-            requestType: 'valuation',
-            prompt,
-            maxTokens: 4096,
-            enableWebSearch: true,   // always: live market prices via Claude web search
-            bottleSearch,            // edge function uses this for OpenAI search first
-        });
-        console.log('[Valuation] Raw API data stop_reason:', data?.stop_reason,
-            '| content blocks:', (data?.content || []).map(c => c.type).join(', '));
-    } catch (err) {
-        // 529 = Anthropic overloaded — retrying without web search won't help.
-        if (err.message?.includes('overloaded') || err.message?.includes('529')) throw err;
-        // Any other failure (e.g. web-search tool error) — retry without web search.
-        console.warn('[Valuation] Web-search threw, retrying plain:', err.message);
-        data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false, bottleSearch });
-    }
-
-    // Handle incomplete web search responses (tool_use / max_tokens) on either path
-    if (data.stop_reason === 'tool_use' || data.stop_reason === 'max_tokens') {
-        console.warn('[Valuation] Claude response incomplete (stop_reason:', data.stop_reason, ') — retrying plain');
-        data = await callWineAI({ requestType: 'valuation', prompt, maxTokens: 2048, enableWebSearch: false, bottleSearch });
-    }
-
-    // Parse Claude's JSON from the last text block.
-    // Web search responses may have tool_use/tool_result blocks before the text.
-    const textBlocks = (data.content || []).filter(c => c.type === 'text');
-    const text = textBlocks[textBlocks.length - 1]?.text || '';
+    const text = data.text ?? '';
 
     if (!text) {
-        console.error('[Valuation] No text block. stop_reason:', data.stop_reason,
-            'content:', JSON.stringify(data.content || []).slice(0, 400));
-        throw new Error(`No text in Claude response (stop_reason: ${data.stop_reason ?? 'unknown'}).`);
+        console.error('[Valuation] No text in Gemini response:', JSON.stringify(data).slice(0, 300));
+        throw new Error('No text in Gemini valuation response.');
     }
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-        console.error('[Valuation] No JSON in text block:', text.slice(0, 300));
-        throw new Error('Could not parse valuation response from Claude.');
+        console.error('[Valuation] No JSON in Gemini text:', text.slice(0, 300));
+        throw new Error('Could not parse valuation response from Gemini.');
     }
 
     try {
         const parsed = JSON.parse(jsonMatch[0]);
         if (!parsed.estimatedValue || isNaN(parsed.estimatedValue)) {
-            throw new Error('Invalid valuation response');
+            throw new Error('Invalid valuation response — estimatedValue missing or NaN');
         }
         return parsed;
     } catch {
-        throw new Error('Could not parse valuation response from Claude.');
+        throw new Error('Could not parse valuation JSON from Gemini.');
     }
 }
 
 function buildValuationPrompt(bottle) {
-    // Extract critic score from notes if present (e.g. "96/100", "94 points")
     const criticMatch = bottle.notes
         ? bottle.notes.match(/(\d{2,3})\s*(?:\/\s*100|points?)/i)
         : null;
-    const criticLine = criticMatch
-        ? `Critic score: ${criticMatch[1]}/100`
-        : '';
+    const criticLine = criticMatch ? `Critic score: ${criticMatch[1]}/100` : '';
 
     const details = [
         bottle.name        && `Wine name: ${bottle.name}`,
@@ -306,8 +300,8 @@ function buildValuationPrompt(bottle) {
         : '';
 
     return `You are a wine investment expert with deep knowledge of fine wine valuations.
-Search for and estimate the current retail market value of the following wine bottle.
-Use Wine-Searcher, recent auction results (Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart), and retailer listings to ground your estimate.
+Use Google Search to find current retail and auction market prices for this specific wine bottle.
+Search Wine-Searcher, recent auction results (Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart), and retailer listings.
 
 Wine details:
 ${details}
@@ -339,7 +333,3 @@ Guidelines:
 
 Return ONLY the JSON object. No markdown fences, no preamble.`;
 }
-
-// ── Utility ───────────────────────────────────────────────────────────────────
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

@@ -1,19 +1,9 @@
 /**
- * Wine UI service — allocation charts, API key dialog.
+ * Wine UI service — allocation charts.
  */
 
 import state from './state.js';
-import { initSupabase } from './storage.js';
-import { showToast, showConfirm, openModal, closeModal } from './utils.js';
-
-// ── Auth Guard ────────────────────────────────────────────────────────────────
-
-function requireAuth(actionName) {
-    if (!state.supabaseClient) return true; // local-only mode
-    if (state.currentUser) return true;
-    showToast(`Please log in to ${actionName}.`, 'warning');
-    return false;
-}
+import { showToast } from './utils.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,60 +91,3 @@ export function showAllocationTab(tab) {
     }).join('');
 }
 
-// ── API Key Dialog ───────────────────────────────────────────────────────────
-
-export function showApiKeyDialog() {
-    if (!requireAuth('manage API keys')) return;
-    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
-    setVal('supabaseUrlInput',     state.supabaseUrl);
-    setVal('supabaseAnonKeyInput', state.supabaseAnonKey);
-    openModal('apiKeyDialog');
-}
-
-export function closeApiKeyDialog() {
-    closeModal('apiKeyDialog');
-}
-
-export function saveApiKeys() {
-    const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-
-    const supabaseUrl   = getVal('supabaseUrlInput');
-    const supabaseKey   = getVal('supabaseAnonKeyInput');
-
-    if (supabaseUrl && supabaseKey) {
-        state.supabaseUrl     = supabaseUrl;
-        state.supabaseAnonKey = supabaseKey;
-        localStorage.setItem('wine_supabaseUrl',     supabaseUrl);
-        localStorage.setItem('wine_supabaseAnonKey', supabaseKey);
-        // Re-initialize Supabase with new credentials
-        state.supabaseClient = null;
-        initSupabase(() => {
-            // Trigger re-render via the global window function
-            if (window.renderCellar) window.renderCellar();
-        });
-    }
-
-    closeApiKeyDialog();
-    showToast('API keys saved.');
-}
-
-export async function clearApiKeys() {
-    const confirmed = await showConfirm('Clear all API keys and disconnect from Supabase?',
-        { confirmLabel: 'Clear All', danger: true });
-    if (!confirmed) return;
-
-    state.supabaseUrl     = '';
-    state.supabaseAnonKey = '';
-    state.supabaseClient  = null;
-    state.currentUser     = null;
-
-    ['wine_supabaseUrl', 'wine_supabaseAnonKey'].forEach(k =>
-        localStorage.removeItem(k));
-
-    closeApiKeyDialog();
-
-    const authBar = document.getElementById('authBar');
-    if (authBar) authBar.style.display = 'none';
-
-    showToast('API keys cleared.');
-}
