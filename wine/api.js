@@ -1,13 +1,9 @@
 /**
  * Wine AI routing helper — centralises all Claude API calls for the wine tracker.
  *
- * Priority:
- *   1. Direct Anthropic API  — when state.anthropicKey is set (user's own key)
- *   2. Supabase Edge Function — falls back to the server-side ANTHROPIC_API_KEY_Wine
- *                               secret when Supabase is configured and user is logged in
- *
- * All callers (label.js, valuation.js, analysis.js) use callWineAI() and get
- * the same raw Anthropic response shape regardless of which path was used.
+ * All requests go through the Supabase Edge Function (wine-ai), which holds the
+ * ANTHROPIC_API_KEY_Wine and OPENAI_API_KEY_Wine server-side secrets.
+ * Users must be logged in to use AI features.
  */
 
 import state from './state.js';
@@ -15,7 +11,7 @@ import state from './state.js';
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Route a Claude request through the best available channel.
+ * Route a Claude request through the Supabase edge function.
  *
  * @param {object} opts
  * @param {'label'|'valuation'|'analysis'} opts.requestType
@@ -23,111 +19,30 @@ import state from './state.js';
  * @param {{base64: string, mediaType: string}} [opts.image] - Vision image (label only)
  * @param {number}  [opts.maxTokens]      - Defaults to 1024
  * @param {boolean} [opts.enableWebSearch] - Enable Anthropic web search tool (valuation)
+ * @param {string}  [opts.bottleSearch]   - Compact bottle identity for OpenAI search (valuation)
  * @returns {Promise<object>}             - Raw Anthropic API response
  */
 export async function callWineAI({ requestType, prompt, image, maxTokens = 1024, enableWebSearch = false, bottleSearch = null }) {
-    const hasDirectKey    = !!state.anthropicKey;
-    const hasEdgeFunction = !!(state.supabaseUrl && state.supabaseAnonKey);
-
-    if (!hasDirectKey && !hasEdgeFunction) {
+    if (!state.supabaseUrl || !state.supabaseAnonKey) {
         throw new Error(
-            'No AI access configured.\n\n' +
-            'Either add your Anthropic API key in 🔑 API Keys, ' +
-            'or connect Supabase to use the shared server key.'
+            'Supabase not configured.\n\n' +
+            'Make sure your Supabase URL and anon key are configured in 🔑 API Keys.'
         );
     }
-
-    if (hasDirectKey) {
-        return _callDirect({ requestType, prompt, image, maxTokens, enableWebSearch });
+    if (!state.supabaseClient) {
+        throw new Error(
+            'Supabase client not initialized.\n\n' +
+            'Make sure your Supabase URL and anon key are configured in 🔑 API Keys.'
+        );
     }
-    // Edge function path requires an authenticated session to prevent quota abuse.
     if (!state.currentUser) {
         throw new Error(
-            'Please log in to use the shared AI service.\n\n' +
-            'Alternatively, add your own Anthropic API key in 🔑 API Keys.'
+            'Please log in to use the AI features.\n\n' +
+            'Sign in using the auth bar at the top of the page.'
         );
     }
+
     return _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch });
-}
-
-// ── Direct Anthropic API call ─────────────────────────────────────────────────
-
-async function _callDirect({ requestType, prompt, image, maxTokens, enableWebSearch }) {
-    const content = (requestType === 'label' && image)
-        ? [
-            {
-                type: 'image',
-                source: { type: 'base64', media_type: image.mediaType, data: image.base64 },
-            },
-            { type: 'text', text: prompt },
-          ]
-        : prompt;
-
-    const headers = {
-        'x-api-key': state.anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        'anthropic-dangerous-direct-browser-access': 'true',
-    };
-    if (enableWebSearch) {
-        headers['anthropic-beta'] = 'web-search-2025-03-05';
-    }
-
-    const body = {
-        model: 'claude-opus-4-6',
-        max_tokens: maxTokens,
-        messages: [{ role: 'user', content }],
-    };
-    if (enableWebSearch) {
-        body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
-    }
-
-    console.log('[WineAI] Using direct Anthropic API path', enableWebSearch ? '(+web search)' : '');
-
-    // Retry up to 2 extra times on 529 (Anthropic overloaded) with backoff.
-    const BACKOFF_529 = [3000, 8000];
-    for (let attempt = 0; attempt <= BACKOFF_529.length; attempt++) {
-        if (attempt > 0) {
-            const delay = BACKOFF_529[attempt - 1];
-            console.warn(`[WineAI] Anthropic overloaded (529), retrying in ${delay / 1000}s… (attempt ${attempt + 1}/${BACKOFF_529.length + 1})`);
-            await _sleep(delay);
-        }
-
-        let response;
-        try {
-            response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(body),
-            });
-        } catch (err) {
-            console.error('[WineAI] Direct Anthropic fetch threw:', err);
-            if (err instanceof TypeError) {
-                throw new Error(
-                    'Network error contacting Anthropic API (CORS or connectivity issue).\n\n' +
-                    'Make sure you are serving the app over HTTP (not file://) and that ' +
-                    'your Anthropic API key is valid. Open DevTools → Network tab for details.\n\n' +
-                    `Original error: ${err.message}`
-                );
-            }
-            throw err;
-        }
-
-        if (response.ok) return response.json();
-
-        const errBody = await response.text().catch(() => '');
-        console.error(`[WineAI] Direct API HTTP ${response.status}:`, errBody.slice(0, 300));
-
-        if (response.status === 529 && attempt < BACKOFF_529.length) continue; // will retry
-
-        if (response.status === 401) {
-            throw new Error('Invalid Anthropic API key. Check 🔑 API Keys settings.');
-        }
-        if (response.status === 529) {
-            throw new Error('Anthropic API is temporarily overloaded. Please wait a few seconds and try again.');
-        }
-        throw new Error(`Claude API error ${response.status}: ${errBody.slice(0, 200)}`);
-    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -147,42 +62,23 @@ function _decodeJwtClaims(token) {
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
 async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottleSearch }) {
-    if (!state.supabaseUrl || !state.supabaseAnonKey) {
-        throw new Error(
-            'Supabase not configured.\n\n' +
-            'Make sure your Supabase URL and anon key are configured in 🔑 API Keys.'
-        );
-    }
-    if (!state.supabaseClient) {
-        throw new Error(
-            'Supabase client not initialized.\n\n' +
-            'Make sure your Supabase URL and anon key are configured in 🔑 API Keys.'
-        );
-    }
-
     console.log('[WineAI] Using Supabase edge function: wine-ai');
 
     // Force a full token refresh so the access_token is freshly signed with the
-    // project's current JWT_SECRET. getSession() returns whatever is cached in
-    // memory and only refreshes lazily; if the token is near expiry or the
-    // project's JWT_SECRET was rotated, the cached token fails gateway validation
-    // even though it looks non-expired on the client.
+    // project's current JWT_SECRET.
     let session;
     {
         const { data, error } = await state.supabaseClient.auth.refreshSession();
         if (!error && data?.session?.access_token) {
             session = data.session;
         } else {
-            // refreshSession() failed (offline, revoked refresh token, etc.)
-            // Fall back to whatever the SDK has cached.
             const { data: fallback } = await state.supabaseClient.auth.getSession();
             session = fallback?.session;
         }
     }
     if (!session?.access_token) {
         throw new Error(
-            'Session expired. Please log in again to use the shared AI service.\n\n' +
-            'Alternatively, add your own Anthropic API key in 🔑 API Keys.'
+            'Session expired. Please log in again to use the AI features.'
         );
     }
 
@@ -239,26 +135,22 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         }
 
         // Attempt 3: no Authorization header at all — only apikey.
-        // When verify_jwt is disabled on the function this should always work.
         if (response.status === 401) {
             console.warn('[WineAI] Attempt 3: apikey only (no Authorization header)');
             response = await _doFetch({ 'apikey': state.supabaseAnonKey });
         }
 
-        // Attempt 4: no headers at all (handles cases where apikey itself is invalid).
+        // Attempt 4: no headers at all.
         if (response.status === 401) {
             console.warn('[WineAI] Attempt 4: no auth headers');
             response = await _doFetch({});
         }
 
-        // Retry 529 (Anthropic overloaded) using the same headers that got past auth.
-        // We track which headers produced the last non-401 response implicitly —
-        // by this point `response` is the most-recent non-401 attempt.
+        // Retry 529 (Anthropic overloaded) with backoff.
         for (const delay of [3000, 8000]) {
             if (response.status !== 529) break;
             console.warn(`[WineAI] Anthropic overloaded (529) via edge fn, retrying in ${delay / 1000}s…`);
             await _sleep(delay);
-            // Re-send with same payload; auth attempt order doesn't matter now.
             response = await _doFetch({
                 'Authorization': `Bearer ${bearerToken}`,
                 'apikey': state.supabaseAnonKey,
@@ -275,7 +167,6 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     }
 
     if (!response.ok) {
-        // Parse as JSON so we can surface the OpenAI diagnostic even on error.
         let errData = null;
         let body = '';
         try {
@@ -286,7 +177,6 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         }
         console.error(`[WineAI] Edge function HTTP error (${response.status}):`, body.slice(0, 300));
 
-        // Log OpenAI search result even though Anthropic failed.
         _logOpenAIDiagnostic(errData, requestType);
 
         if (response.status === 401) {
@@ -312,16 +202,12 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
 
 /**
  * Log the OpenAI market-search diagnostic embedded in any response body.
- * _openaiChars/_openaiError are in the body (not headers) because Supabase's
- * gateway strips custom response headers before they reach the browser.
- * Called from both the success path and the Anthropic-error path.
  */
 function _logOpenAIDiagnostic(data, requestType) {
     if (!data || typeof data._openaiChars !== 'number') return;
     if (data._openaiChars > 0) {
         console.log(`[WineAI] OpenAI market search: ${data._openaiChars} chars injected into prompt ✓`);
     } else if (!data._openaiCalled) {
-        // OpenAI is only called for valuation requests — don't warn for label/analysis.
         if (requestType === 'valuation') {
             console.warn('[WineAI] OpenAI market search skipped — bottleSearch was empty (bottle has no name/vintage/winery/region?)');
         }
