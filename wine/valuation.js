@@ -1,9 +1,9 @@
 /**
  * Valuation service — AI-powered wine bottle value estimation.
  *
- * Single bottle: one Gemini request via the edge function (requestType: 'valuation').
+ * Single bottle: Gemini (Google Search grounding) → Claude fallback via the edge function.
  * Batch: one edge-function call with all bottles (requestType: 'batch-valuation');
- *        the server chunks them into groups of 8 and runs them in parallel via Gemini.
+ *        the server chunks them into groups of 8, each with Gemini → Claude fallback.
  *
  * Results are stored back on each bottle object and persisted to Supabase.
  * valueLow / valueHigh / valuationNote are kept in a localStorage cache
@@ -11,7 +11,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.14';
+import { callWineAI } from './api.js?v=1.3.15';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';
