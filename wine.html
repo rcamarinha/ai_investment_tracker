@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,24 +9,25 @@
     <link rel="stylesheet" href="css/wine.css?v=3.9.0">
 </head>
 <body>
+
+    <!-- ── Persistent navbar (rendered by navbar.js) ─────────────────────── -->
+    <div id="appNavbar" class="app-navbar"></div>
+
     <div class="container">
 
         <!-- ── Header ──────────────────────────────────────────────────── -->
         <div class="header wine-header">
-            <div style="margin-bottom: 10px;">
-                <a href="index.html" class="hub-link">← All Trackers</a>
-            </div>
-            <h1>🍷 Wine Cellar <span>v1.3.12</span></h1>
-            <p>AI-powered wine collection management with label recognition</p>
+            <h1>
+                <span data-i18n="wine.title">🍷 Wine Cellar</span>
+                <span>v1.3.12</span>
+            </h1>
+            <p data-i18n="wine.subtitle">AI-powered wine collection management with label recognition</p>
         </div>
-
-        <!-- ── Auth Bar ────────────────────────────────────────────────── -->
-        <div id="authBar" class="auth-bar" style="display: none;"></div>
 
         <!-- ── Label Scanner Card ──────────────────────────────────────── -->
         <div class="card" id="scannerCard">
-            <h2 style="margin-bottom: 8px;">📸 Scan Wine Label</h2>
-            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 18px;">
+            <h2 style="margin-bottom: 8px;" data-i18n="wine.scan_title">📸 Scan Wine Label</h2>
+            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 18px;" data-i18n="wine.scan_desc">
                 Photograph the front label — Claude AI will identify the wine and pre-fill the details.
             </p>
 
@@ -39,13 +40,13 @@
 
             <div class="scan-controls">
                 <!-- Primary CTA: works as camera on mobile, file picker on desktop -->
-                <label for="photoUpload" class="btn btn-accent scan-btn" style="cursor: pointer;">
+                <label for="photoUpload" class="btn btn-accent scan-btn" style="cursor: pointer;" data-i18n="wine.take_photo">
                     📷 Take Photo / Upload Image
                 </label>
                 <input type="file" id="photoUpload" accept="image/*" style="display: none;" />
 
                 <!-- Optional live camera for desktop (hidden on mobile via CSS) -->
-                <button class="btn btn-primary live-camera-btn" id="liveCameraBtn" onclick="toggleLiveCamera()">
+                <button class="btn btn-primary live-camera-btn" id="liveCameraBtn" onclick="toggleLiveCamera()" data-i18n="wine.live_camera">
                     🎥 Live Camera
                 </button>
             </div>
@@ -70,34 +71,34 @@
         <!-- ── Cellar Overview Card ─────────────────────────────────────── -->
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">
-                <h2>🍾 Your Cellar</h2>
+                <h2 data-i18n="wine.cellar_title">🍾 Your Cellar</h2>
                 <div class="cellar-stats">
                     <div class="cellar-stat">
                         <div class="stat-value" id="totalBottlesDisplay">0</div>
-                        <div class="stat-label">Bottles</div>
+                        <div class="stat-label" data-i18n="wine.bottles">Bottles</div>
                     </div>
                     <div class="cellar-stat">
                         <div class="stat-value" id="totalInvestedDisplay">€0</div>
-                        <div class="stat-label">Invested</div>
+                        <div class="stat-label" data-i18n="wine.invested">Invested</div>
                     </div>
                     <div class="cellar-stat">
                         <div class="stat-value" id="totalValueDisplay">€0</div>
-                        <div class="stat-label">Est. Value</div>
+                        <div class="stat-label" data-i18n="wine.est_value">Est. Value</div>
                     </div>
                     <div class="cellar-stat">
                         <div class="stat-value" id="totalGainDisplay" style="color: #4ade80;">+€0</div>
-                        <div class="stat-label">Gain / Loss</div>
+                        <div class="stat-label" data-i18n="wine.gain_loss">Gain / Loss</div>
                     </div>
                 </div>
             </div>
 
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;">
-                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()">🔑 API Keys</button>
-                <button class="btn btn-success" onclick="showAddBottleDialog()" title="Add bottle  (n)">➕ Add Bottle</button>
-                <button class="btn btn-accent" onclick="valuateAllBottles(true)" id="valuateBtn">💎 Update Valuations</button>
-                <button class="btn btn-warning" onclick="saveCellarSnapshot()" title="Save snapshot  (Ctrl+Shift+S)">💾 Save Snapshot</button>
-                <button class="btn btn-accent" onclick="analyzeCellar()" id="analyzeBtn">🤖 AI Analysis</button>
-                <button class="btn btn-primary" onclick="exportCellarCSV()" id="exportBtn">⬇ Export CSV</button>
+                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="wine.btn.api_keys">🔑 API Keys</button>
+                <button class="btn btn-success" onclick="showAddBottleDialog()" title="Add bottle  (n)" data-i18n="wine.btn.add">➕ Add Bottle</button>
+                <button class="btn btn-accent" onclick="valuateAllBottles(true)" id="valuateBtn" data-i18n="wine.btn.valuate">💎 Update Valuations</button>
+                <button class="btn btn-warning" onclick="saveCellarSnapshot()" title="Save snapshot  (Ctrl+Shift+S)" data-i18n="wine.btn.snapshot">💾 Save Snapshot</button>
+                <button class="btn btn-accent" onclick="analyzeCellar()" id="analyzeBtn" data-i18n="wine.btn.analyze">🤖 AI Analysis</button>
+                <button class="btn btn-primary" onclick="exportCellarCSV()" id="exportBtn" data-i18n="wine.btn.export">⬇ Export CSV</button>
             </div>
 
             <!-- Drink-window ready summary (P2) -->
@@ -109,17 +110,17 @@
                     <input type="search" id="bottleSearch" placeholder="Search by name, region, varietal, vintage…" autocomplete="off" />
                 </div>
                 <select id="bottleSort" title="Sort bottles">
-                    <option value="added">Recently Added</option>
-                    <option value="name">Name A–Z</option>
-                    <option value="vintage-desc">Vintage (newest)</option>
-                    <option value="value-desc">Value (highest)</option>
-                    <option value="gain-desc">Gain % (highest)</option>
+                    <option value="added" data-i18n="wine.sort.added">Recently Added</option>
+                    <option value="name" data-i18n="wine.sort.name">Name A–Z</option>
+                    <option value="vintage-desc" data-i18n="wine.sort.vintage">Vintage (newest)</option>
+                    <option value="value-desc" data-i18n="wine.sort.value">Value (highest)</option>
+                    <option value="gain-desc" data-i18n="wine.sort.gain">Gain % (highest)</option>
                 </select>
             </div>
 
             <!-- Advanced Filter Panel (P3) -->
             <details class="filter-panel" id="filterPanel" style="display: none;">
-                <summary>Filters</summary>
+                <summary data-i18n="wine.filters">Filters</summary>
                 <div class="filter-panel-body">
                     <div id="filterGroups"></div>
                 </div>
@@ -130,11 +131,11 @@
 
         <!-- ── Allocation Charts ────────────────────────────────────────── -->
         <div class="card" id="allocationSection" style="display: none;">
-            <h2 style="margin-bottom: 15px;">📊 Cellar Allocation</h2>
+            <h2 style="margin-bottom: 15px;" data-i18n="wine.allocation">📊 Cellar Allocation</h2>
             <div class="allocation-tabs">
-                <button class="tab-btn active" id="tab-region"   onclick="showAllocationTab('region')">By Region</button>
-                <button class="tab-btn"         id="tab-varietal" onclick="showAllocationTab('varietal')">By Varietal</button>
-                <button class="tab-btn"         id="tab-country"  onclick="showAllocationTab('country')">By Country</button>
+                <button class="tab-btn active" id="tab-region"   onclick="showAllocationTab('region')" data-i18n="wine.by_region">By Region</button>
+                <button class="tab-btn"         id="tab-varietal" onclick="showAllocationTab('varietal')" data-i18n="wine.by_varietal">By Varietal</button>
+                <button class="tab-btn"         id="tab-country"  onclick="showAllocationTab('country')" data-i18n="wine.by_country">By Country</button>
             </div>
             <div id="allocationChart" class="allocation-chart"></div>
         </div>
@@ -145,10 +146,10 @@
         <!-- ── History ──────────────────────────────────────────────────── -->
         <div id="historySection" style="display: none;">
             <div class="card">
-                <h2 style="margin-bottom: 15px;">📈 Cellar History</h2>
+                <h2 style="margin-bottom: 15px;" data-i18n="wine.history">📈 Cellar History</h2>
                 <div id="historyChart" style="margin-bottom: 15px;"></div>
                 <div id="historyLog"></div>
-                <button class="btn btn-danger btn-sm" onclick="clearHistory()" style="margin-top: 15px;">🗑 Clear History</button>
+                <button class="btn btn-danger btn-sm" onclick="clearHistory()" style="margin-top: 15px;" data-i18n="wine.clear_history">🗑 Clear History</button>
             </div>
         </div>
 
@@ -318,6 +319,7 @@
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
         // ── Imports ────────────────────────────────────────────────────────────
+        import { renderNavbar } from './services/navbar.js';
         import state from './wine/state.js?v=1.3.12';
         import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.3.12';
         import { initSupabase, updateAuthBar,
@@ -577,6 +579,11 @@
 
         // ── Initialization ─────────────────────────────────────────────────────
         console.log('=== WINE CELLAR INITIALIZING ===');
+
+        // Render persistent navbar (auth filled in once Supabase state is known)
+        renderNavbar({
+            supabaseConfigured: !!(localStorage.getItem('wine_supabaseUrl') && localStorage.getItem('wine_supabaseAnonKey'))
+        });
 
         // Load saved API keys from localStorage
         const storedAnthropicKey = localStorage.getItem('wine_anthropicKey');
