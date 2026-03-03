@@ -170,14 +170,13 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
 
         if (response.status === 401) {
             throw new Error(
-                'Wine AI authentication failed (401).\n\n' +
-                'The wine-ai edge function has JWT verification enabled, which is ' +
-                'rejecting the request ("Missing authorization header" or "Invalid JWT").\n\n' +
-                'Disable JWT verification via:\n' +
-                '• Dashboard: Supabase project → Edge Functions → wine-ai → toggle off "Verify JWT"\n' +
-                '• CLI: supabase functions deploy wine-ai --no-verify-jwt\n\n' +
-                'Check the browser console for a JWT issuer mismatch warning if the ' +
-                'issue persists after disabling verification.'
+                'Wine AI authentication failed (401 — JWT verification is enabled on the deployed function).\n\n' +
+                'supabase/functions/wine-ai/config.toml already has verify_jwt = false, but the ' +
+                'live function was deployed before that setting was applied.\n\n' +
+                'Fix: redeploy the function so the config takes effect:\n' +
+                '  supabase functions deploy wine-ai\n\n' +
+                'Or toggle it off manually in the Supabase Dashboard:\n' +
+                '  Edge Functions → wine-ai → uncheck "Enforce JWT Verification"'
             );
         }
         if (response.status === 529) {
