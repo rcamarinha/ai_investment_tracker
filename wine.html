@@ -93,7 +93,6 @@
             </div>
 
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;">
-                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="wine.btn.api_keys">🔑 API Keys</button>
                 <button class="btn btn-success" onclick="showAddBottleDialog()" title="Add bottle  (n)" data-i18n="wine.btn.add">➕ Add Bottle</button>
                 <button class="btn btn-accent" onclick="valuateAllBottles(true)" id="valuateBtn" data-i18n="wine.btn.valuate">💎 Update Valuations</button>
                 <button class="btn btn-warning" onclick="saveCellarSnapshot()" title="Save snapshot  (Ctrl+Shift+S)" data-i18n="wine.btn.snapshot">💾 Save Snapshot</button>
@@ -244,46 +243,6 @@
         </div>
     </div>
 
-    <!-- ═══ API Key Dialog ════════════════════════════════════════════════ -->
-    <div id="apiKeyDialog" style="display: none;">
-        <div class="card" style="max-width: 560px;">
-            <h2 style="margin-bottom: 20px;">🔑 API Key Management</h2>
-
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
-                    ☁️ Supabase Project URL (Cloud Sync)
-                </label>
-                <input type="text" id="supabaseUrlInput"
-                       placeholder="https://your-project.supabase.co"
-                       style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px;" />
-            </div>
-
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
-                    🔑 Supabase Anon Key (Public)
-                </label>
-                <input type="text" id="supabaseAnonKeyInput"
-                       placeholder="eyJhbGciOiJIUzI1NiIs..."
-                       style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px;" />
-                <div style="color: #94a3b8; font-size: 12px; margin-top: 6px;">
-                    This is the <strong>anon/public</strong> key. Row Level Security protects your data.
-                </div>
-            </div>
-
-            <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
-                <div style="color: #92400e; font-size: 13px;">
-                    🔒 <strong>Security:</strong> Keys are saved in your browser only (localStorage). Never committed to code.
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 10px;">
-                <button class="btn btn-accent" onclick="saveApiKeys()">💾 Save Keys</button>
-                <button class="btn btn-primary" onclick="closeApiKeyDialog()">Cancel</button>
-                <button class="btn btn-danger" onclick="clearApiKeys()" style="margin-left: auto;">🗑️ Clear All</button>
-            </div>
-        </div>
-    </div>
-
     <!-- ═══ Confirm Dialog ════════════════════════════════════════════════ -->
     <div id="confirmOverlay" class="confirm-overlay" style="display: none;">
         <div class="confirm-dialog">
@@ -313,16 +272,11 @@
                  exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.3.12';
         import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js?v=1.3.12';
         import { analyzeCellar } from './wine/analysis.js?v=1.3.12';
-        import { renderAllocationCharts, showAllocationTab,
-                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './wine/ui.js?v=1.3.12';
+        import { renderAllocationCharts, showAllocationTab } from './wine/ui.js?v=1.3.12';
         import { showToast, closeActiveModal } from './wine/utils.js?v=1.3.12';
 
         // ── Expose to onclick handlers ─────────────────────────────────────────
         window._wineState            = state;          // dev/debug access
-        window.showApiKeyDialog      = showApiKeyDialog;
-        window.closeApiKeyDialog     = closeApiKeyDialog;
-        window.saveApiKeys           = saveApiKeys;
-        window.clearApiKeys          = clearApiKeys;
         window.showAddBottleDialog   = showAddBottleDialog;
         window.showEditBottleDialog  = showEditBottleDialog;
         window.closeBottleDialog     = closeBottleDialog;
@@ -564,15 +518,7 @@
         console.log('=== WINE CELLAR INITIALIZING ===');
 
         // Render persistent navbar (auth filled in once Supabase state is known)
-        renderNavbar({
-            supabaseConfigured: !!(localStorage.getItem('wine_supabaseUrl') && localStorage.getItem('wine_supabaseAnonKey'))
-        });
-
-        // Load Supabase config (wine-specific keys override defaults)
-        const storedSBUrl = localStorage.getItem('wine_supabaseUrl');
-        const storedSBKey = localStorage.getItem('wine_supabaseAnonKey');
-        if (storedSBUrl)  state.supabaseUrl     = storedSBUrl;
-        if (storedSBKey)  state.supabaseAnonKey = storedSBKey;
+        renderNavbar({ supabaseConfigured: true });
 
         // Try to initialize Supabase (callback re-renders cellar after DB load)
         const supabaseOk = initSupabase(() => {
@@ -583,10 +529,6 @@
         // Apply cached valuation details + initial render
         applyValuationCache();
         renderCellar();
-
-        // Show the API keys button (always visible)
-        const apiKeyBtn = document.getElementById('apiKeyBtn');
-        if (apiKeyBtn) apiKeyBtn.style.display = '';
 
         // Handle password recovery redirect
         const hash = window.location.hash;
