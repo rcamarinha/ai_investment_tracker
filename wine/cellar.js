@@ -2,6 +2,7 @@
  * Cellar service — rendering, add/edit/delete bottles, snapshots, history.
  */
 
+import { t } from '../data/i18n.js';
 import state from './state.js';
 import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
          deleteSnapshotFromDB, clearSnapshotsFromDB } from './storage.js';
@@ -40,22 +41,22 @@ function timeAgo(dateStr) {
     if (!dateStr) return '';
     const diff = Date.now() - new Date(dateStr).getTime();
     const days = Math.floor(diff / 86400000);
-    if (days === 0) return 'today';
-    if (days === 1) return 'yesterday';
-    if (days < 30) return `${days}d ago`;
+    if (days === 0) return t('time.today');
+    if (days === 1) return t('time.yesterday');
+    if (days < 30) return t('time.days_ago').replace('{n}', days);
     const months = Math.floor(days / 30);
-    if (months < 12) return `${months}mo ago`;
-    return `${Math.floor(months / 12)}y ago`;
+    if (months < 12) return t('time.months_ago').replace('{n}', months);
+    return t('time.years_ago').replace('{n}', Math.floor(months / 12));
 }
 
 function drinkBadgeHtml(drinkWindow) {
     const status = getDrinkStatus(drinkWindow);
     if (status === 'unknown') return '';
     const map = {
-        'not-ready': { cls: 'drink-badge-not-ready', label: '🔵 Not Ready' },
-        'ready':     { cls: 'drink-badge-ready',     label: '🟢 Ready Now' },
-        'at-peak':   { cls: 'drink-badge-at-peak',   label: '🟡 At Peak'   },
-        'past-peak': { cls: 'drink-badge-past-peak', label: '🔴 Past Peak' },
+        'not-ready': { cls: 'drink-badge-not-ready', label: t('drink.not_ready') },
+        'ready':     { cls: 'drink-badge-ready',     label: t('drink.ready')     },
+        'at-peak':   { cls: 'drink-badge-at-peak',   label: t('drink.at_peak')   },
+        'past-peak': { cls: 'drink-badge-past-peak', label: t('drink.past_peak') },
     };
     const { cls, label } = map[status];
     return `<span class="drink-badge ${cls}">${label}</span>`;
@@ -134,7 +135,7 @@ function renderFilterPanel() {
     const varietals = [...new Set(state.cellar.map(b => b.varietal).filter(Boolean))].sort();
 
     if (countries.length === 0 && varietals.length === 0) {
-        container.innerHTML = '<span style="color:#64748b;font-size:13px;">No filters available yet.</span>';
+        container.innerHTML = `<span style="color:#64748b;font-size:13px;">${t('filter.no_filters')}</span>`;
         return;
     }
 
@@ -149,12 +150,12 @@ function renderFilterPanel() {
     container.innerHTML = `
         ${countries.length > 0 ? `
             <div class="filter-group">
-                <div class="filter-group-label">Country</div>
+                <div class="filter-group-label">${t('filter.country')}</div>
                 <div class="filter-chips">${chips(countries, 'country')}</div>
             </div>` : ''}
         ${varietals.length > 0 ? `
             <div class="filter-group">
-                <div class="filter-group-label">Varietal</div>
+                <div class="filter-group-label">${t('filter.varietal')}</div>
                 <div class="filter-chips">${chips(varietals, 'varietal')}</div>
             </div>` : ''}`;
 }
@@ -176,11 +177,11 @@ export function renderCellar() {
         bottlesDiv.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">🍾</div>
-                <h3>Your cellar is empty</h3>
-                <p>Scan a wine label with your camera, or add a bottle manually to get started.</p>
+                <h3>${t('cellar.empty_title')}</h3>
+                <p>${t('cellar.empty_desc')}</p>
                 <div class="empty-state-actions">
-                    <label for="photoUpload" class="btn btn-accent" style="cursor: pointer;">📷 Scan a Label</label>
-                    <button class="btn btn-success" onclick="showAddBottleDialog()">➕ Add Manually</button>
+                    <label for="photoUpload" class="btn btn-accent" style="cursor: pointer;">${t('cellar.scan_label')}</label>
+                    <button class="btn btn-success" onclick="showAddBottleDialog()">${t('cellar.add_manual')}</button>
                 </div>
             </div>`;
         updateStatsBar({ totalInvested: 0, totalEstimated: 0, totalBottles: 0 });
@@ -211,12 +212,10 @@ export function renderCellar() {
 
     if (result.length === 0) {
         const hasFilter = _activeCountries.size > 0 || _activeVarietals.size > 0;
-        const hint = hasFilter
-            ? 'Try clearing some filters above.'
-            : `Try a different search term.`;
+        const hint = hasFilter ? t('cellar.no_results_filters') : t('cellar.no_results_search');
         bottlesDiv.innerHTML = `
             <div class="no-results">
-                No wines match your current search/filter.<br>
+                ${t('cellar.no_results')}<br>
                 <span style="font-size:12px;color:#475569;">${hint}</span>
             </div>`;
     } else {
@@ -240,10 +239,10 @@ function updateReadySummary() {
     if (total === 0) { el.style.display = 'none'; return; }
 
     const parts = [];
-    if (counts['ready']     > 0) parts.push(`<span style="color:#4ade80;">🟢 ${counts['ready']} ready</span>`);
-    if (counts['at-peak']   > 0) parts.push(`<span style="color:#fbbf24;">🟡 ${counts['at-peak']} at peak</span>`);
-    if (counts['not-ready'] > 0) parts.push(`<span style="color:#60a5fa;">🔵 ${counts['not-ready']} not ready</span>`);
-    if (counts['past-peak'] > 0) parts.push(`<span style="color:#f87171;">🔴 ${counts['past-peak']} past peak</span>`);
+    if (counts['ready']     > 0) parts.push(`<span style="color:#4ade80;">🟢 ${counts['ready']} ${t('cellar.ready')}</span>`);
+    if (counts['at-peak']   > 0) parts.push(`<span style="color:#fbbf24;">🟡 ${counts['at-peak']} ${t('cellar.at_peak')}</span>`);
+    if (counts['not-ready'] > 0) parts.push(`<span style="color:#60a5fa;">🔵 ${counts['not-ready']} ${t('cellar.not_ready')}</span>`);
+    if (counts['past-peak'] > 0) parts.push(`<span style="color:#f87171;">🔴 ${counts['past-peak']} ${t('cellar.past_peak')}</span>`);
     el.style.display = 'block';
     el.innerHTML = parts.join('<span style="color:#334155;"> · </span>');
 }
@@ -266,7 +265,7 @@ function renderBottleCard(b) {
     ].filter(Boolean);
 
     const rangeHtml = (hasValuation && b.valueLow && b.valueHigh)
-        ? `<div class="valuation-range">Range: ${fmt(b.valueLow)} – ${fmt(b.valueHigh)}</div>`
+        ? `<div class="valuation-range">${t('bottle.card.range')} ${fmt(b.valueLow)} – ${fmt(b.valueHigh)}</div>`
         : '';
 
     const usdHtml = (hasValuation && b.estimatedValueUSD)
@@ -274,9 +273,9 @@ function renderBottleCard(b) {
         : '';
 
     const confidenceMap = {
-        high:   { cls: 'confidence-high',   label: '● High confidence' },
-        medium: { cls: 'confidence-medium', label: '● Medium confidence' },
-        low:    { cls: 'confidence-low',    label: '● Low confidence' },
+        high:   { cls: 'confidence-high',   label: t('conf.high')   },
+        medium: { cls: 'confidence-medium', label: t('conf.medium') },
+        low:    { cls: 'confidence-low',    label: t('conf.low')    },
     };
     const confEntry = b.confidence && confidenceMap[b.confidence];
     const confidenceHtml = confEntry
@@ -288,7 +287,7 @@ function renderBottleCard(b) {
         if (!b.lastValuedAt) return '';
         const ageDays = Math.floor((Date.now() - new Date(b.lastValuedAt).getTime()) / 86400000);
         return ageDays > 60
-            ? `<div class="valuation-stale">⚠ Valuation is ${ageDays} days old — consider refreshing</div>`
+            ? `<div class="valuation-stale">${t('bottle.card.stale').replace('{n}', ageDays)}</div>`
             : '';
     })();
 
@@ -310,27 +309,27 @@ function renderBottleCard(b) {
                 <div class="bottle-meta">${escapeHTML(b.winery || '')}${b.region && b.winery ? ' · ' : ''}${escapeHTML(b.region || '')}</div>
             </div>
             <div class="bottle-actions">
-                <button class="btn btn-sm btn-primary" onclick="showEditBottleDialog('${escapeHTML(b.id)}')" title="Edit bottle">✎ Edit</button>
+                <button class="btn btn-sm btn-primary" onclick="showEditBottleDialog('${escapeHTML(b.id)}')" title="Edit bottle">${t('bottle.card.edit')}</button>
                 <button class="btn btn-sm btn-accent" onclick="valuateSingleBottle('${escapeHTML(b.id)}')" title="Refresh AI valuation">💎</button>
             </div>
         </div>
 
-        ${tags.length > 0 ? `<div class="bottle-tags">${tags.map(t => `<span class="bottle-tag">${t}</span>`).join('')}</div>` : ''}
+        ${tags.length > 0 ? `<div class="bottle-tags">${tags.map(tag => `<span class="bottle-tag">${tag}</span>`).join('')}</div>` : ''}
 
         <div class="bottle-financials">
             ${hasPurchasePrice ? `
             <div class="bottle-fin-row">
-                <span>${b.qty} bottle${b.qty !== 1 ? 's' : ''} × ${fmt(b.purchasePrice)}</span>
-                <span style="color: #cbd5e1;">${fmt(totalInvested)} invested</span>
+                <span>${b.qty} ${b.qty !== 1 ? t('bottle.card.bottles') : t('bottle.card.bottle')} × ${fmt(b.purchasePrice)}</span>
+                <span style="color: #cbd5e1;">${fmt(totalInvested)} ${t('bottle.card.invested')}</span>
             </div>` : `
             <div class="bottle-fin-row">
-                <span>${b.qty} bottle${b.qty !== 1 ? 's' : ''}</span>
-                <span style="color: #64748b; font-size: 12px;">No purchase price</span>
+                <span>${b.qty} ${b.qty !== 1 ? t('bottle.card.bottles') : t('bottle.card.bottle')}</span>
+                <span style="color: #64748b; font-size: 12px;">${t('bottle.card.no_price')}</span>
             </div>`}
             ${hasValuation ? `
             <div class="bottle-fin-row">
                 <div>
-                    <div>Est. value ${confidenceHtml}</div>
+                    <div>${t('bottle.card.est_value')} ${confidenceHtml}</div>
                     ${rangeHtml}
                     ${usdHtml}
                 </div>
@@ -338,12 +337,12 @@ function renderBottleCard(b) {
             </div>
             ${hasPurchasePrice ? `
             <div class="bottle-gain ${gainClass}">
-                <span>Gain / Loss</span>
+                <span>${t('bottle.card.gain_loss')}</span>
                 <span>${gainSign}${fmt(gain)} (${gainSign}${gainPct.toFixed(1)}%)</span>
             </div>` : ''}` : `
             <div class="bottle-fin-row">
-                <span style="color: #64748b; font-size: 12px;">Valuation not yet fetched</span>
-                <span><button class="btn btn-sm" style="background: #451a03; color: #d97706; padding: 2px 8px; font-size: 11px;" onclick="valuateSingleBottle('${escapeHTML(b.id)}')">Get estimate →</button></span>
+                <span style="color: #64748b; font-size: 12px;">${t('bottle.card.no_valuation')}</span>
+                <span><button class="btn btn-sm" style="background: #451a03; color: #d97706; padding: 2px 8px; font-size: 11px;" onclick="valuateSingleBottle('${escapeHTML(b.id)}')">${t('bottle.card.get_estimate')}</button></span>
             </div>`}
         </div>
 
@@ -353,11 +352,11 @@ function renderBottleCard(b) {
         <div class="bottle-footer">
             <div>
                 ${badge}
-                ${hasWindow ? `<div class="drink-window-sub">Drink: ${escapeHTML(b.drinkWindow)}</div>` : ''}
+                ${hasWindow ? `<div class="drink-window-sub">${t('bottle.card.drink')} ${escapeHTML(b.drinkWindow)}</div>` : ''}
             </div>
             ${b.lastValuedAt
-                ? `<span class="valued-at">Valued ${timeAgo(b.lastValuedAt)}</span>`
-                : (b.purchaseDate ? `<span class="valued-at">Bought ${fmtDate(b.purchaseDate)}</span>` : '<span></span>')}
+                ? `<span class="valued-at">${t('bottle.card.valued')} ${timeAgo(b.lastValuedAt)}</span>`
+                : (b.purchaseDate ? `<span class="valued-at">${t('bottle.card.bought')} ${fmtDate(b.purchaseDate)}</span>` : '<span></span>')}
         </div>
 
         ${b.notes ? `<div class="bottle-notes">${escapeHTML(b.notes)}</div>` : ''}
@@ -386,8 +385,8 @@ export function showAddBottleDialog(prefilled = {}) {
     if (!requireAuth('add bottles')) return;
     state.editingBottleId = null;
 
-    document.getElementById('bottleDialogTitle').textContent = '🍾 Add Bottle';
-    document.getElementById('bottleDialogSubmit').textContent = 'Add Bottle';
+    document.getElementById('bottleDialogTitle').textContent = t('bottle.add_title');
+    document.getElementById('bottleDialogSubmit').textContent = t('bottle.btn.add');
     const deleteBtn = document.getElementById('bottleDeleteBtn');
     if (deleteBtn) deleteBtn.style.display = 'none';
 
@@ -414,8 +413,8 @@ export function showEditBottleDialog(id) {
     if (!bottle) return;
 
     state.editingBottleId = id;
-    document.getElementById('bottleDialogTitle').textContent = '✏️ Edit Bottle';
-    document.getElementById('bottleDialogSubmit').textContent = 'Save Changes';
+    document.getElementById('bottleDialogTitle').textContent = t('dialog.edit_bottle');
+    document.getElementById('bottleDialogSubmit').textContent = t('dialog.save');
     const deleteBtn = document.getElementById('bottleDeleteBtn');
     if (deleteBtn) deleteBtn.style.display = 'inline-flex';
 
@@ -469,7 +468,7 @@ export async function submitBottle() {
 
     const submitBtn = document.getElementById('bottleDialogSubmit');
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Saving...';
+    submitBtn.textContent = t('dialog.saving');
 
     const isEdit = !!state.editingBottleId;
     const existingBottle = isEdit ? state.cellar.find(b => b.id === state.editingBottleId) : null;
@@ -514,13 +513,13 @@ export async function submitBottle() {
 
         closeBottleDialog();
         renderCellar();
-        showToast(isEdit ? 'Bottle updated.' : 'Bottle added to cellar!');
+        showToast(isEdit ? t('dialog.updated') : t('dialog.added'));
     } catch (err) {
         showToast('Failed to save bottle: ' + err.message, 'error');
         console.error(err);
     } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = isEdit ? 'Save Changes' : 'Add Bottle';
+        submitBtn.textContent = isEdit ? t('dialog.save') : t('bottle.btn.add');
     }
 }
 

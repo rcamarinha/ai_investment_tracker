@@ -174,6 +174,67 @@ export const TRANSLATIONS = {
             'Consult a specialist before making investment decisions.',
         'wine.btn.analyze_done':    '🤖 AI Analysis',
 
+        // ── Bottle card (dynamic JS) ─────────────────────────────────────────
+        'bottle.card.edit':         '✎ Edit',
+        'bottle.card.bottle':       'bottle',
+        'bottle.card.bottles':      'bottles',
+        'bottle.card.invested':     'invested',
+        'bottle.card.no_price':     'No purchase price',
+        'bottle.card.est_value':    'Est. value',
+        'bottle.card.range':        'Range:',
+        'bottle.card.gain_loss':    'Gain / Loss',
+        'bottle.card.no_valuation': 'Valuation not yet fetched',
+        'bottle.card.get_estimate': 'Get estimate →',
+        'bottle.card.drink':        'Drink:',
+        'bottle.card.valued':       'Valued',
+        'bottle.card.bought':       'Bought',
+        'bottle.card.stale':        '⚠ Valuation is {n} days old — consider refreshing',
+
+        // ── Drink window badges ───────────────────────────────────────────────
+        'drink.not_ready':  '🔵 Not Ready',
+        'drink.ready':      '🟢 Ready Now',
+        'drink.at_peak':    '🟡 At Peak',
+        'drink.past_peak':  '🔴 Past Peak',
+
+        // ── Time ago ─────────────────────────────────────────────────────────
+        'time.today':      'today',
+        'time.yesterday':  'yesterday',
+        'time.days_ago':   '{n}d ago',
+        'time.months_ago': '{n}mo ago',
+        'time.years_ago':  '{n}y ago',
+
+        // ── Cellar summary counts ─────────────────────────────────────────────
+        'cellar.ready':     'ready',
+        'cellar.at_peak':   'at peak',
+        'cellar.not_ready': 'not ready',
+        'cellar.past_peak': 'past peak',
+
+        // ── Filter panel ──────────────────────────────────────────────────────
+        'filter.country':    'Country',
+        'filter.varietal':   'Varietal',
+        'filter.no_filters': 'No filters available yet.',
+
+        // ── Cellar empty / no-results ─────────────────────────────────────────
+        'cellar.empty_title':        'Your cellar is empty',
+        'cellar.empty_desc':         'Scan a wine label with your camera, or add a bottle manually to get started.',
+        'cellar.scan_label':         '📷 Scan a Label',
+        'cellar.add_manual':         '➕ Add Manually',
+        'cellar.no_results':         'No wines match your current search/filter.',
+        'cellar.no_results_filters': 'Try clearing some filters above.',
+        'cellar.no_results_search':  'Try a different search term.',
+
+        // ── Confidence badges ─────────────────────────────────────────────────
+        'conf.high':   '● High confidence',
+        'conf.medium': '● Medium confidence',
+        'conf.low':    '● Low confidence',
+
+        // ── Bottle dialogs ────────────────────────────────────────────────────
+        'dialog.edit_bottle': '✏️ Edit Bottle',
+        'dialog.save':        'Save Changes',
+        'dialog.saving':      'Saving...',
+        'dialog.added':       'Bottle added to cellar!',
+        'dialog.updated':     'Bottle updated.',
+
         // ── Claude language instruction ───────────────────────────────────────
         'ai.lang_instruction': '',   // empty in English — appended to every Claude prompt
     },
@@ -340,6 +401,67 @@ export const TRANSLATIONS = {
             'As avaliações de vinho e previsões de mercado são aproximadas. ' +
             'Consulte um especialista antes de tomar decisões de investimento.',
         'wine.btn.analyze_done':    '🤖 Análise IA',
+
+        // ── Bottle card (dynamic JS) ─────────────────────────────────────────
+        'bottle.card.edit':         '✎ Editar',
+        'bottle.card.bottle':       'garrafa',
+        'bottle.card.bottles':      'garrafas',
+        'bottle.card.invested':     'investido',
+        'bottle.card.no_price':     'Sem preço de compra',
+        'bottle.card.est_value':    'Valor Est.',
+        'bottle.card.range':        'Intervalo:',
+        'bottle.card.gain_loss':    'Ganho / Perda',
+        'bottle.card.no_valuation': 'Avaliação não obtida',
+        'bottle.card.get_estimate': 'Obter estimativa →',
+        'bottle.card.drink':        'Beber:',
+        'bottle.card.valued':       'Avaliado',
+        'bottle.card.bought':       'Comprado',
+        'bottle.card.stale':        '⚠ Avaliação tem {n} dias — considere atualizar',
+
+        // ── Drink window badges ───────────────────────────────────────────────
+        'drink.not_ready':  '🔵 Não Pronto',
+        'drink.ready':      '🟢 Pronto',
+        'drink.at_peak':    '🟡 No Pico',
+        'drink.past_peak':  '🔴 Pico Ultrapassado',
+
+        // ── Time ago ─────────────────────────────────────────────────────────
+        'time.today':      'hoje',
+        'time.yesterday':  'ontem',
+        'time.days_ago':   'há {n}d',
+        'time.months_ago': 'há {n}m',
+        'time.years_ago':  'há {n}a',
+
+        // ── Cellar summary counts ─────────────────────────────────────────────
+        'cellar.ready':     'prontos',
+        'cellar.at_peak':   'no pico',
+        'cellar.not_ready': 'não prontos',
+        'cellar.past_peak': 'pico ultrapassado',
+
+        // ── Filter panel ──────────────────────────────────────────────────────
+        'filter.country':    'País',
+        'filter.varietal':   'Casta',
+        'filter.no_filters': 'Sem filtros disponíveis.',
+
+        // ── Cellar empty / no-results ─────────────────────────────────────────
+        'cellar.empty_title':        'A sua adega está vazia',
+        'cellar.empty_desc':         'Digitalize um rótulo com a câmara, ou adicione uma garrafa manualmente para começar.',
+        'cellar.scan_label':         '📷 Digitalizar Rótulo',
+        'cellar.add_manual':         '➕ Adicionar Manualmente',
+        'cellar.no_results':         'Nenhum vinho corresponde à sua pesquisa/filtro.',
+        'cellar.no_results_filters': 'Tente limpar alguns filtros acima.',
+        'cellar.no_results_search':  'Tente um termo de pesquisa diferente.',
+
+        // ── Confidence badges ─────────────────────────────────────────────────
+        'conf.high':   '● Alta confiança',
+        'conf.medium': '● Confiança média',
+        'conf.low':    '● Baixa confiança',
+
+        // ── Bottle dialogs ────────────────────────────────────────────────────
+        'dialog.edit_bottle': '✏️ Editar Garrafa',
+        'dialog.save':        'Guardar Alterações',
+        'dialog.saving':      'A guardar...',
+        'dialog.added':       'Garrafa adicionada à adega!',
+        'dialog.updated':     'Garrafa atualizada.',
 
         // ── Claude language instruction ───────────────────────────────────────
         'ai.lang_instruction':
