@@ -3,14 +3,14 @@
  *
  * Routes AI requests for the Wine Cellar Tracker:
  *
- *   label       → Claude (vision + text) for label recognition
- *   valuation   → Gemini 1.5 Pro with Google Search grounding for single-bottle pricing
- *   batch-valuation → Gemini 1.5 Pro, bottles chunked 8 at a time in parallel
- *   analysis    → Claude for cellar insights
+ *   label           → Claude (vision + text) for label recognition
+ *   valuation       → Gemini (Google Search grounding) → Claude fallback
+ *   batch-valuation → Gemini chunked 8 at a time → Claude fallback per chunk
+ *   analysis        → Claude for cellar insights
  *
  * Secrets required:
- *   ANTHROPIC_API_KEY_Wine  — used for label + analysis requests
- *   GEMINI_WINE             — used for valuation requests (single + batch)
+ *   ANTHROPIC_API_KEY_Wine  — used for label, analysis, and valuation fallback
+ *   GEMINI_WINE             — used for valuation (primary); skipped if unset
  *
  * Request body:
  *   {
@@ -24,7 +24,7 @@
  *
  * Response shape:
  *   label / analysis → raw Anthropic response
- *   valuation        → { text: string, _geminiGrounding?: [...] }
+ *   valuation        → { text: string, _geminiGrounding?: [...], _fallback?: "claude" }
  *   batch-valuation  → { results: ValuationResult[] }
  */
 
@@ -33,8 +33,9 @@ const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
 
 const GEMINI_MODEL = "gemini-2.0-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const CLAUDE_MODEL = "claude-opus-4-6";
 
-const BATCH_CHUNK_SIZE = 8; // bottles per Gemini request in batch mode
+const BATCH_CHUNK_SIZE = 8; // bottles per request in batch mode
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,17 +51,13 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
-// ── Gemini helpers ────────────────────────────────────────────────────────────
+// ── Gemini helper ─────────────────────────────────────────────────────────────
 
 interface GeminiResult {
   text: string;
   groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
 }
 
-/**
- * Call Gemini 1.5 Pro with optional Google Search grounding.
- * Returns { text, groundingChunks }.
- */
 async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
@@ -89,20 +86,79 @@ async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResul
   return { text, groundingChunks };
 }
 
-// ── Single-bottle valuation via Gemini ────────────────────────────────────────
+// ── Claude text helper ────────────────────────────────────────────────────────
 
-async function handleGeminiValuation(prompt: string): Promise<Response> {
+async function callClaude(prompt: string, maxTokens = 4096, useWebSearch = true): Promise<{ text: string }> {
+  if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY_Wine secret not set on the server.");
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-api-key": ANTHROPIC_API_KEY,
+    "anthropic-version": "2023-06-01",
+  };
+
+  const reqBody: Record<string, unknown> = {
+    model: CLAUDE_MODEL,
+    max_tokens: maxTokens,
+    messages: [{ role: "user", content: prompt }],
+  };
+
+  if (useWebSearch) {
+    headers["anthropic-beta"] = "web-search-2025-03-05";
+    reqBody.tools = [{ type: "web_search_20250305", name: "web_search" }];
+  }
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(reqBody),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Claude API error ${res.status}: ${errText.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
+    .filter(b => b.type === "text")
+    .map(b => b.text ?? "")
+    .join("");
+
+  return { text };
+}
+
+// ── Single-bottle valuation: Gemini → Claude fallback ─────────────────────────
+
+async function handleValuation(prompt: string): Promise<Response> {
+  let geminiError = "";
+
+  // 1. Try Gemini (with Google Search grounding)
   try {
     const { text, groundingChunks } = await callGemini(prompt, 4096);
+    console.log("[wine-ai] Valuation via Gemini");
     return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("[wine-ai] Gemini valuation error:", message);
-    return jsonResponse({ error: message }, 502);
+    geminiError = err instanceof Error ? err.message : String(err);
+    console.warn("[wine-ai] Gemini valuation failed, falling back to Claude:", geminiError);
+  }
+
+  // 2. Fallback: Claude with web search
+  try {
+    const { text } = await callClaude(prompt, 4096, true);
+    console.log("[wine-ai] Valuation via Claude (fallback)");
+    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude" });
+  } catch (err) {
+    const claudeMsg = err instanceof Error ? err.message : String(err);
+    console.error("[wine-ai] Claude fallback also failed:", claudeMsg);
+    return jsonResponse(
+      { error: `Gemini failed: ${geminiError}; Claude fallback failed: ${claudeMsg}` },
+      502
+    );
   }
 }
 
-// ── Batch valuation via Gemini ────────────────────────────────────────────────
+// ── Batch valuation: Gemini → Claude fallback per chunk ───────────────────────
 
 interface BottleInfo {
   id?: string;
@@ -130,10 +186,6 @@ interface ValuationResult {
   error?: string;
 }
 
-/**
- * Build a prompt that asks Gemini to value multiple bottles at once.
- * Returns a JSON array of ValuationResult objects in the same order.
- */
 function buildBatchPrompt(bottles: BottleInfo[]): string {
   const today = new Date().toISOString().slice(0, 10);
   const lines = bottles.map((b, i) => {
@@ -150,7 +202,7 @@ function buildBatchPrompt(bottles: BottleInfo[]): string {
     return `${i + 1}. ${fields || "(unknown wine)"}`;
   }).join("\n");
 
-  return `You are a wine investment expert. Use Google Search to find current retail and auction market prices for each wine below, then return valuations.
+  return `You are a wine investment expert. Use web search to find current retail and auction market prices for each wine below, then return valuations.
 
 Today's date: ${today}
 
@@ -175,54 +227,81 @@ Rules:
 - Return ONLY the JSON array. No markdown fences, no preamble.`;
 }
 
-/**
- * Process an array of bottles in parallel chunks via Gemini.
- * Returns a flat array of ValuationResult matching the input order.
- */
-async function handleGeminiBatchValuation(bottles: BottleInfo[]): Promise<Response> {
+/** Parse a JSON array of ValuationResult from an AI response text. Returns null on failure. */
+function parseBatchText(
+  text: string,
+  chunk: BottleInfo[],
+  chunkIdx: number,
+  source: string
+): ValuationResult[] | null {
+  const jsonMatch = text.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): no JSON array found. Snippet:`, text.slice(0, 200));
+    return null;
+  }
+  try {
+    const parsed: ValuationResult[] = JSON.parse(jsonMatch[0]);
+    return parsed.map((r, i) => ({ ...r, id: chunk[i]?.id }));
+  } catch {
+    console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): JSON parse failed`);
+    return null;
+  }
+}
+
+async function handleBatchValuation(bottles: BottleInfo[]): Promise<Response> {
   if (!bottles || bottles.length === 0) {
     return jsonResponse({ error: "bottles array is empty" }, 400);
   }
 
-  // Split into chunks
   const chunks: BottleInfo[][] = [];
   for (let i = 0; i < bottles.length; i += BATCH_CHUNK_SIZE) {
     chunks.push(bottles.slice(i, i + BATCH_CHUNK_SIZE));
   }
 
-  console.log(`[wine-ai] Batch: ${bottles.length} bottle(s) → ${chunks.length} Gemini chunk(s)`);
+  console.log(`[wine-ai] Batch: ${bottles.length} bottle(s) → ${chunks.length} chunk(s)`);
 
-  // Run all chunks in parallel
-  const chunkPromises = chunks.map(async (chunk, chunkIdx) => {
+  const chunkPromises = chunks.map(async (chunk, chunkIdx): Promise<ValuationResult[]> => {
     const prompt = buildBatchPrompt(chunk);
+    let geminiError = "";
+
+    // 1. Try Gemini
     try {
       const { text } = await callGemini(prompt, 4096);
-
-      // Parse JSON array from response
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) {
-        console.warn(`[wine-ai] Chunk ${chunkIdx}: no JSON array in response. text snippet:`, text.slice(0, 200));
-        return chunk.map(b => ({ id: b.id, error: "Could not parse Gemini response" } as ValuationResult));
+      const parsed = parseBatchText(text, chunk, chunkIdx, "Gemini");
+      if (parsed) {
+        console.log(`[wine-ai] Chunk ${chunkIdx}: Gemini OK`);
+        return parsed;
       }
-
-      let parsed: ValuationResult[];
-      try {
-        parsed = JSON.parse(jsonMatch[0]);
-      } catch {
-        return chunk.map(b => ({ id: b.id, error: "Invalid JSON from Gemini" } as ValuationResult));
-      }
-
-      // Attach original IDs
-      return parsed.map((r, i) => ({ ...r, id: chunk[i]?.id }));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[wine-ai] Chunk ${chunkIdx} failed:`, msg);
-      return chunk.map(b => ({ id: b.id, error: msg } as ValuationResult));
+      geminiError = err instanceof Error ? err.message : String(err);
+      console.warn(`[wine-ai] Chunk ${chunkIdx}: Gemini failed:`, geminiError);
     }
+
+    // 2. Fallback: Claude
+    console.log(`[wine-ai] Chunk ${chunkIdx}: falling back to Claude`);
+    try {
+      const { text } = await callClaude(prompt, 4096, true);
+      const parsed = parseBatchText(text, chunk, chunkIdx, "Claude");
+      if (parsed) {
+        console.log(`[wine-ai] Chunk ${chunkIdx}: Claude fallback OK`);
+        return parsed;
+      }
+    } catch (err) {
+      const claudeMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[wine-ai] Chunk ${chunkIdx}: Claude fallback failed:`, claudeMsg);
+      const combined = geminiError
+        ? `Gemini: ${geminiError}; Claude: ${claudeMsg}`
+        : claudeMsg;
+      return chunk.map(b => ({ id: b.id, error: combined } as ValuationResult));
+    }
+
+    return chunk.map(b => ({
+      id: b.id,
+      error: "No valid JSON response from Gemini or Claude",
+    } as ValuationResult));
   });
 
-  const chunkResults = await Promise.all(chunkPromises);
-  const results: ValuationResult[] = chunkResults.flat();
+  const results: ValuationResult[] = (await Promise.all(chunkPromises)).flat();
 
   console.log(`[wine-ai] Batch complete: ${results.filter(r => !r.error).length}/${results.length} succeeded`);
   return jsonResponse({ results });
@@ -239,7 +318,6 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  // Parse body
   let body: {
     requestType: string;
     prompt?: string;
@@ -261,20 +339,20 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "requestType is required" }, 400);
   }
 
-  // ── Gemini routes (valuation + batch-valuation) ──────────────────────────
+  // ── Valuation routes (Gemini primary, Claude fallback) ───────────────────
   if (requestType === "valuation") {
     if (!prompt) return jsonResponse({ error: "prompt is required for valuation" }, 400);
-    return handleGeminiValuation(prompt);
+    return handleValuation(prompt);
   }
 
   if (requestType === "batch-valuation") {
     if (!Array.isArray(bottles) || bottles.length === 0) {
       return jsonResponse({ error: "bottles array is required for batch-valuation" }, 400);
     }
-    return handleGeminiBatchValuation(bottles);
+    return handleBatchValuation(bottles);
   }
 
-  // ── Claude routes (label + analysis) ────────────────────────────────────
+  // ── Claude-only routes (label + analysis) ────────────────────────────────
   if (!ANTHROPIC_API_KEY) {
     return jsonResponse({ error: "ANTHROPIC_API_KEY_Wine is not set on the server." }, 500);
   }
@@ -312,7 +390,7 @@ Deno.serve(async (req) => {
     }
 
     const anthropicBody: Record<string, unknown> = {
-      model: "claude-opus-4-6",
+      model: CLAUDE_MODEL,
       max_tokens: maxTokens,
       messages: [{ role: "user", content }],
     };
