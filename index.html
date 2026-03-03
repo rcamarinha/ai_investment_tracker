@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -56,154 +56,79 @@
     </style>
 </head>
 <body>
+
+    <!-- ── Persistent navbar (rendered by navbar.js) ─────────────────────── -->
+    <div id="appNavbar" class="app-navbar"></div>
+
     <div class="container" style="max-width: 760px;">
         <div class="header" style="text-align: center;">
-            <h1 style="font-size: 32px;">Investment Hub <span style="font-size: 13px; font-weight: normal; opacity: 0.5;">v3.9.0</span></h1>
-            <p>Track all your investments — stocks and wine — in one place</p>
-        </div>
-
-        <!--
-            Auth bar is rendered as static HTML so the login form is always
-            visible regardless of whether the Supabase CDN script loads.
-            JavaScript replaces the content only when auth state changes.
-        -->
-        <div id="authBar" class="auth-bar">
-            <div class="auth-login-panel">
-                <div class="auth-sso-section">
-                    <button class="btn-sso btn-google" onclick="handleGoogleLogin()">
-                        <svg width="18" height="18" viewBox="0 0 48 48">
-                            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                        </svg>
-                        Sign in with Google
-                    </button>
-                </div>
-                <div class="auth-divider"><span>or sign in with email</span></div>
-                <div class="auth-email-section">
-                    <input type="email"    id="authEmail"    placeholder="Email" />
-                    <input type="password" id="authPassword" placeholder="Password"
-                           onkeydown="if(event.key==='Enter') handleLogin()" />
-                    <button class="btn-sm" style="background: #2563eb;" onclick="handleLogin()">Login</button>
-                    <button class="btn-sm" style="background: #7c3aed;" onclick="handleSignup()">Sign Up</button>
-                    <button class="auth-forgot-link" onclick="handleForgotPassword()">Forgot password?</button>
-                </div>
-            </div>
+            <h1 style="font-size: 32px;">
+                <span data-i18n="nav.hub">Investment Hub</span>
+                <span style="font-size: 13px; font-weight: normal; opacity: 0.5;">v3.9.0</span>
+            </h1>
+            <p data-i18n="hub.subtitle">Track all your investments — stocks and wine — in one place</p>
         </div>
 
         <div class="hub-grid">
             <!-- Stock Portfolio -->
             <a href="portfolio.html" class="hub-card stocks" style="text-decoration: none;">
                 <div class="hub-icon">📈</div>
-                <div class="hub-title">Stock Portfolio</div>
-                <div class="hub-desc">
+                <div class="hub-title" data-i18n="hub.stock_title">Stock Portfolio</div>
+                <div class="hub-desc" data-i18n="hub.stock_desc">
                     Live market prices, AI-powered analysis, and multi-platform portfolio tracking.
                 </div>
                 <ul class="hub-features">
-                    <li>Live prices via Finnhub / FMP / Alpha Vantage</li>
-                    <li>6 investment perspective analyses</li>
-                    <li>Performance history &amp; snapshots</li>
-                    <li>Supabase cloud sync</li>
+                    <li data-i18n="hub.stock_f1">Live prices via Finnhub / FMP / Alpha Vantage</li>
+                    <li data-i18n="hub.stock_f2">6 investment perspective analyses</li>
+                    <li data-i18n="hub.stock_f3">Performance history &amp; snapshots</li>
+                    <li data-i18n="hub.stock_f4">Supabase cloud sync</li>
                 </ul>
-                <span class="hub-cta stocks">Open Portfolio →</span>
+                <span class="hub-cta stocks" data-i18n="hub.stock_cta">Open Portfolio →</span>
             </a>
 
             <!-- Wine Cellar -->
             <a href="wine.html" class="hub-card wine" style="text-decoration: none;">
                 <div class="hub-icon">🍷</div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <div class="hub-title">Wine Cellar</div>
-                    <span class="hub-badge new">New</span>
+                    <div class="hub-title" data-i18n="hub.wine_title">Wine Cellar</div>
+                    <span class="hub-badge new" data-i18n="hub.wine_badge">New</span>
                 </div>
-                <div class="hub-desc">
+                <div class="hub-desc" data-i18n="hub.wine_desc">
                     AI label recognition, cellar valuation, and investment tracking for your wine collection.
                 </div>
                 <ul class="hub-features">
-                    <li>Scan labels with camera → AI identifies wine</li>
-                    <li>Claude-powered bottle valuations</li>
-                    <li>Drink window &amp; cellar insights</li>
-                    <li>Supabase cloud sync</li>
+                    <li data-i18n="hub.wine_f1">Scan labels with camera → AI identifies wine</li>
+                    <li data-i18n="hub.wine_f2">Claude-powered bottle valuations</li>
+                    <li data-i18n="hub.wine_f3">Drink window &amp; cellar insights</li>
+                    <li data-i18n="hub.wine_f4">Supabase cloud sync</li>
                 </ul>
-                <span class="hub-cta wine">Open Wine Cellar →</span>
+                <span class="hub-cta wine" data-i18n="hub.wine_cta">Open Wine Cellar →</span>
             </a>
         </div>
     </div>
 
     <script type="module">
-        const SUPABASE_URL     = 'https://dybetrrhshqezokcxiid.supabase.co';
+        import { renderNavbar, updateNavbarAuth } from './services/navbar.js';
+
+        const SUPABASE_URL      = 'https://dybetrrhshqezokcxiid.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
 
         let sbClient = null;
         let currentUser = null;
         let passwordRecoveryMode = false;
 
-        function esc(str) {
-            if (str == null) return '';
-            return String(str)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+        // ── Initial navbar render (no auth yet) ──────────────────────────────
+        renderNavbar({ supabaseConfigured: true });
+
+        // ── Auth state updater ───────────────────────────────────────────────
+        function refreshNavbarAuth() {
+            updateNavbarAuth(currentUser, passwordRecoveryMode, !!sbClient);
         }
 
-        function renderAuthBar() {
-            const authBar = document.getElementById('authBar');
-            // Always keep authBar visible — never hide it
-
-            if (passwordRecoveryMode) {
-                authBar.innerHTML = `
-                    <div class="auth-login-panel">
-                        <div class="auth-email-section">
-                            <span style="color:#94a3b8;font-size:13px;">Set new password</span>
-                            <input type="password" id="newPassword" placeholder="New password" />
-                            <input type="password" id="confirmPassword" placeholder="Confirm password"
-                                   onkeydown="if(event.key==='Enter') handlePasswordReset()" />
-                            <button class="btn-sm" style="background:#059669;" onclick="handlePasswordReset()">Set Password</button>
-                            <button class="btn-sm" style="background:#475569;" onclick="cancelPasswordRecovery()">Cancel</button>
-                        </div>
-                    </div>`;
-                return;
-            }
-
-            if (currentUser) {
-                authBar.innerHTML = `
-                    <div class="auth-logged-in">
-                        <span style="color:#4ade80;font-weight:600;">☁️ Connected</span>
-                        <span style="color:#94a3b8;">${esc(currentUser.email)}</span>
-                        <span style="flex:1;"></span>
-                        <button class="btn-sm" style="background:#475569;" onclick="handleLogout()">Logout</button>
-                    </div>`;
-            } else {
-                // Restore the static login form
-                authBar.innerHTML = `
-                    <div class="auth-login-panel">
-                        <div class="auth-sso-section">
-                            <button class="btn-sso btn-google" onclick="handleGoogleLogin()">
-                                <svg width="18" height="18" viewBox="0 0 48 48">
-                                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                                </svg>
-                                Sign in with Google
-                            </button>
-                        </div>
-                        <div class="auth-divider"><span>or sign in with email</span></div>
-                        <div class="auth-email-section">
-                            <input type="email"    id="authEmail"    placeholder="Email" />
-                            <input type="password" id="authPassword" placeholder="Password"
-                                   onkeydown="if(event.key==='Enter') handleLogin()" />
-                            <button class="btn-sm" style="background:#2563eb;" onclick="handleLogin()">Login</button>
-                            <button class="btn-sm" style="background:#7c3aed;" onclick="handleSignup()">Sign Up</button>
-                            <button class="auth-forgot-link" onclick="handleForgotPassword()">Forgot password?</button>
-                        </div>
-                    </div>`;
-            }
-        }
-
-        // ── Auth handlers ──────────────────────────────────────────────────────
+        // ── Auth handlers (must be on window for navbar onclick attrs) ───────
         window.handleLogin = async function () {
             if (!sbClient) { alert('Auth service not ready — please refresh the page.'); return; }
-            const email = (document.getElementById('authEmail')?.value ?? '').trim();
+            const email    = (document.getElementById('authEmail')?.value ?? '').trim();
             const password = document.getElementById('authPassword')?.value ?? '';
             if (!email || !password) { alert('Please enter email and password.'); return; }
             try {
@@ -214,7 +139,7 @@
 
         window.handleSignup = async function () {
             if (!sbClient) { alert('Auth service not ready — please refresh the page.'); return; }
-            const email = (document.getElementById('authEmail')?.value ?? '').trim();
+            const email    = (document.getElementById('authEmail')?.value ?? '').trim();
             const password = document.getElementById('authPassword')?.value ?? '';
             if (!email || !password) { alert('Please enter email and password.'); return; }
             if (password.length < 6) { alert('Password must be at least 6 characters.'); return; }
@@ -229,7 +154,7 @@
             try {
                 await sbClient.auth.signOut();
                 currentUser = null;
-                renderAuthBar();
+                refreshNavbarAuth();
             } catch (err) { alert('Logout failed: ' + err.message); }
         };
 
@@ -259,7 +184,7 @@
         };
 
         window.handlePasswordReset = async function () {
-            const newPassword = document.getElementById('newPassword')?.value;
+            const newPassword     = document.getElementById('newPassword')?.value;
             const confirmPassword = document.getElementById('confirmPassword')?.value;
             if (!newPassword || !confirmPassword) { alert('Please fill in both password fields.'); return; }
             if (newPassword !== confirmPassword) { alert('Passwords do not match.'); return; }
@@ -269,18 +194,16 @@
                 if (error) throw error;
                 passwordRecoveryMode = false;
                 alert('Password updated successfully. You are now logged in.');
-                renderAuthBar();
+                refreshNavbarAuth();
             } catch (err) { alert('Failed to update password: ' + err.message); }
         };
 
         window.cancelPasswordRecovery = function () {
             passwordRecoveryMode = false;
-            renderAuthBar();
+            refreshNavbarAuth();
         };
 
-        // ── Boot ───────────────────────────────────────────────────────────────
-        // The login form is already in the HTML — JS only needs to update it
-        // when auth state changes (logged-in or password-recovery mode).
+        // ── Boot Supabase ────────────────────────────────────────────────────
         if (typeof supabase !== 'undefined') {
             try {
                 sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -288,17 +211,17 @@
                     currentUser = session?.user || null;
                     if (event === 'PASSWORD_RECOVERY') passwordRecoveryMode = true;
                     else if (event === 'USER_UPDATED' && passwordRecoveryMode) passwordRecoveryMode = false;
-                    renderAuthBar();
+                    refreshNavbarAuth();
                 });
                 sbClient.auth.getSession().then(({ data: { session } }) => {
                     currentUser = session?.user || null;
-                    if (currentUser) renderAuthBar(); // update to logged-in view if session exists
+                    if (currentUser) refreshNavbarAuth();
                 }).catch(err => console.error('getSession failed:', err));
             } catch (err) {
                 console.error('Supabase init failed:', err);
             }
         } else {
-            console.warn('Supabase CDN not loaded — login form visible but auth is disabled');
+            console.warn('Supabase CDN not loaded — auth disabled');
         }
     </script>
 </body>

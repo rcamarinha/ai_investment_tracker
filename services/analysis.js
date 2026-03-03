@@ -5,6 +5,7 @@
 import state from './state.js';
 import { escapeHTML } from './utils.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
+import { t } from '../data/i18n.js';
 
 // ── AI Analysis ─────────────────────────────────────────────────────────────
 
@@ -53,8 +54,8 @@ export async function analyzeMarkets() {
     }
 
     analyzeBtn.disabled = true;
-    analyzeBtn.textContent = 'Analyzing...';
-    analysisSection.innerHTML = `<div class="card loading">${perspective.icon} Analyzing through ${escapeHTML(perspective.name)} lens...</div>`;
+    analyzeBtn.textContent = t('analysis.analyzing');
+    analysisSection.innerHTML = `<div class="card loading">${perspective.icon} ${t('analysis.analyzing')}</div>`;
 
     try {
         let data;
@@ -85,7 +86,7 @@ Please provide your analysis in JSON format with these fields:
 - marketOverview: your OPINIONATED assessment of these market conditions strictly through the lens of ${perspective.name}. Explain what a ${perspective.name} practitioner would focus on and how they would interpret current conditions (3-4 sentences). Make it clear this is a ${perspective.name} perspective.
 - portfolioImpact: evaluate the specific holdings in this portfolio through the ${perspective.name} lens — which positions align well with this philosophy, which don't, and why (3-4 sentences). Be specific about individual holdings.
 
-Respond ONLY with valid JSON, no markdown, no preamble.`
+Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction')}`
                     }]
                 })
             });
@@ -145,7 +146,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
         analysisSection.innerHTML = `
             <div class="card analysis-section">
                 <div class="analysis-card market-news-card">
-                    <div class="analysis-title">\uD83D\uDCF0 Market News Overview</div>
+                    <div class="analysis-title">${t('analysis.market_news')}</div>
                     <div class="analysis-content">${escapeHTML(analysis.marketNews || analysis.marketOverview)}</div>
                 </div>
             </div>
@@ -155,15 +156,15 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
                     <span style="color: #64748b; font-size: 12px;">Inspired by ${escapeHTML(perspective.figures)}</span>
                 </div>
                 <div class="analysis-card" style="border-left: 3px solid ${perspective.color};">
-                    <div class="analysis-title">${perspective.icon} Market Assessment \u2014 ${escapeHTML(perspective.name)} View</div>
+                    <div class="analysis-title">${perspective.icon} ${t('analysis.market_assess')} \u2014 ${escapeHTML(perspective.name)} ${t('analysis.view')}</div>
                     <div class="analysis-content">${escapeHTML(analysis.marketOverview)}</div>
                 </div>
                 <div class="analysis-card" style="border-left: 3px solid ${perspective.color};">
-                    <div class="analysis-title">\uD83C\uDFAF Portfolio Evaluation \u2014 ${escapeHTML(perspective.name)} View</div>
+                    <div class="analysis-title">\uD83C\uDFAF ${t('analysis.portfolio_eval')}${escapeHTML(perspective.name)} ${t('analysis.view')}</div>
                     <div class="analysis-content">${escapeHTML(analysis.portfolioImpact)}</div>
                 </div>
                 <div class="disclaimer">
-                    <strong>Disclaimer:</strong> This analysis is generated from a ${escapeHTML(perspective.name)} perspective for educational purposes only. It should not be considered financial advice. Always consult with a qualified financial advisor before making investment decisions.
+                    <strong>Disclaimer:</strong> ${escapeHTML(t('analysis.disclaimer').replace('{perspective}', perspective.name))}
                 </div>
             </div>
         `;
@@ -177,7 +178,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`
     }
 
     analyzeBtn.disabled = false;
-    analyzeBtn.textContent = 'Get AI Analysis';
+    analyzeBtn.textContent = t('analysis.btn.analyze');
 }
 
 // ── Trade Ideas ─────────────────────────────────────────────────────────────
@@ -201,7 +202,7 @@ export async function getTradeIdeas() {
     }
 
     tradeIdeasBtn.disabled = true;
-    tradeIdeasBtn.textContent = 'Generating...';
+    tradeIdeasBtn.textContent = t('analysis.generating');
 
     const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     analysisSection.innerHTML = `<div class="card loading">\uD83D\uDCC8 Generating concrete trade ideas for ${today}...</div>`;
@@ -276,7 +277,7 @@ Respond in JSON format:
   ]
 }
 
-Respond ONLY with valid JSON, no markdown, no preamble.`;
+Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction')}`;
 
         if (useDirectAPI) {
             const headers = { 'Content-Type': 'application/json' };
@@ -351,11 +352,11 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
                     <span style="color: #94a3b8; font-size: 12px;">${escapeHTML(ideas.date || today)}</span>
                 </div>
                 <div style="background: #1e293b; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                    <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Market Summary</div>
+                    <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">${t('analysis.market_summary')}</div>
                     <div style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.marketSummary || ideas.marketOverview || '')}</div>
                 </div>
-                ${ideas.portfolioImpact ? `<div style="background: #1e293b; border-radius: 8px; padding: 15px; margin-bottom: 20px;"><div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Portfolio Impact</div><div style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.portfolioImpact)}</div></div>` : ''}
-                <h3 style="color: #e2e8f0; font-size: 18px; margin-bottom: 15px;">\uD83D\uDCC8 Concrete Trade Ideas</h3>
+                ${ideas.portfolioImpact ? `<div style="background: #1e293b; border-radius: 8px; padding: 15px; margin-bottom: 20px;"><div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">${t('analysis.portfolio_impact')}</div><div style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.portfolioImpact)}</div></div>` : ''}
+                <h3 style="color: #e2e8f0; font-size: 18px; margin-bottom: 15px;">${t('analysis.trade_ideas')}</h3>
                 ${(ideas.trades || ideas.ideas || []).map((trade, idx) => {
                     const action = (trade.action || 'WATCH').toUpperCase();
                     const color = actionColors[action] || '#6366f1';
@@ -369,18 +370,18 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
                                 <div class="trade-idea-subtitle">${escapeHTML(trade.subtitle || '')}</div>
                             </div>
                         </div>
-                        ${trade.context && trade.context.length > 0 ? `<div class="trade-idea-context"><h4>Current Context</h4><ul>${trade.context.map(c => `<li>${escapeHTML(c)}</li>`).join('')}</ul></div>` : ''}
-                        <div class="trade-idea-action"><h4>\uD83C\uDFAF Specific Action</h4><p>${escapeHTML(trade.specificAction || trade.description || '')}</p></div>
+                        ${trade.context && trade.context.length > 0 ? `<div class="trade-idea-context"><h4>${t('analysis.current_context')}</h4><ul>${trade.context.map(c => `<li>${escapeHTML(c)}</li>`).join('')}</ul></div>` : ''}
+                        <div class="trade-idea-action"><h4>${t('analysis.specific_action')}</h4><p>${escapeHTML(trade.specificAction || trade.description || '')}</p></div>
                         ${trade.rationale ? `<div class="trade-idea-rationale"><strong>Rationale:</strong> ${escapeHTML(trade.rationale)}</div>` : ''}
                     </div>`;
                 }).join('')}
                 ${ideas.executionPlan && ideas.executionPlan.length > 0 ? `
                 <div class="trade-ideas-summary">
-                    <h3>\uD83D\uDCCB Today's Execution Plan</h3>
+                    <h3>${t('analysis.exec_plan')}</h3>
                     ${ideas.executionPlan.map(step => `<div class="execution-step"><span class="execution-time">${escapeHTML(step.time || '')}</span><span class="execution-action">${escapeHTML(step.action || '')}</span></div>`).join('')}
                 </div>` : ''}
                 <div class="disclaimer" style="margin-top: 20px;">
-                    <strong>Disclaimer:</strong> These trade ideas are generated from a ${escapeHTML(perspective.name)} perspective for educational purposes only. They are not personalized financial advice. Always do your own research and consult with a qualified financial advisor before making investment decisions.
+                    <strong>Disclaimer:</strong> ${escapeHTML(t('analysis.trade_disclaimer').replace('{perspective}', perspective.name))}
                 </div>
             </div>
         `;
@@ -390,7 +391,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
     }
 
     tradeIdeasBtn.disabled = false;
-    tradeIdeasBtn.textContent = '\uD83D\uDCC8 Get Trade Ideas';
+    tradeIdeasBtn.textContent = t('analysis.btn.trade');
 }
 
 // ── Movers Analysis ──────────────────────────────────────────────────────────
@@ -440,7 +441,7 @@ export async function analyzeMovers(movers) {
 
 In 2-3 concise sentences, explain what general market factors, sector news, or company events could plausibly explain these kinds of price moves. Be specific about each ticker if you can, drawing on your knowledge of each company and its sector. Acknowledge if your training data may not cover the latest events, and suggest the investor checks financial news for the latest catalyst.
 
-Reply with plain text only — no markdown, no bullet points, no JSON.`;
+Reply with plain text only — no markdown, no bullet points, no JSON.${t('ai.lang_instruction')}`;
 
     try {
         let data;

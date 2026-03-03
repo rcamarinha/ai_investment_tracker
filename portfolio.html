@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,16 +8,18 @@
     <link rel="stylesheet" href="css/styles.css?v=3.9.0">
 </head>
 <body>
+
+    <!-- ── Persistent navbar (rendered by navbar.js) ─────────────────────── -->
+    <div id="appNavbar" class="app-navbar"></div>
+
     <div class="container">
         <div class="header">
-            <div style="margin-bottom: 10px;">
-                <a href="index.html" style="color: #bfdbfe; font-size: 13px; text-decoration: none; opacity: 0.8;">← All Trackers</a>
-            </div>
-            <h1>📈 AI Financial Advisor <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.9.0</span></h1>
-            <p>Market analysis and personalized portfolio insights</p>
+            <h1>
+                <span data-i18n="portfolio.title">📈 AI Financial Advisor</span>
+                <span style="font-size: 12px; font-weight: normal; opacity: 0.6;">v3.9.0</span>
+            </h1>
+            <p data-i18n="portfolio.subtitle">Market analysis and personalized portfolio insights</p>
         </div>
-
-        <div id="authBar" class="auth-bar" style="display: none;"></div>
 
         <!-- Artifact Network Warning (shown only in artifacts) -->
         <div id="artifactWarning" style="display: none; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
@@ -41,19 +43,19 @@
 
         <div class="card">
             <div class="portfolio-header">
-                <h2>💼 Your Portfolio</h2>
+                <h2 data-i18n="portfolio.your_portfolio">💼 Your Portfolio</h2>
                 <div class="total-value">
-                    <div>Total Value</div>
+                    <div data-i18n="portfolio.total_value">Total Value</div>
                     <div id="totalValue">$0</div>
                 </div>
             </div>
 
             <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
-                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()">🔑 API Keys</button>
-                <button class="btn btn-success" onclick="showAddPositionDialog()">➕ Add Position</button>
-                <button class="btn btn-primary" onclick="showImportDialog()">📋 Import from Spreadsheet</button>
-                <button class="btn btn-success" onclick="fetchMarketPrices()" id="refreshBtn">🔄 Update Prices</button>
-                <button class="btn btn-warning" onclick="savePortfolioSnapshot()">💾 Save Snapshot</button>
+                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="portfolio.btn.api_keys">🔑 API Keys</button>
+                <button class="btn btn-success" onclick="showAddPositionDialog()" data-i18n="portfolio.btn.add">➕ Add Position</button>
+                <button class="btn btn-primary" onclick="showImportDialog()" data-i18n="portfolio.btn.import">📋 Import from Spreadsheet</button>
+                <button class="btn btn-success" onclick="fetchMarketPrices()" id="refreshBtn" data-i18n="portfolio.btn.prices">🔄 Update Prices</button>
+                <button class="btn btn-warning" onclick="savePortfolioSnapshot()" data-i18n="portfolio.btn.snapshot">💾 Save Snapshot</button>
                 <div class="currency-selector" id="currencySelector">
                     <button class="currency-option active" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
                     <button class="currency-option" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
@@ -65,14 +67,14 @@
             <div class="positions" id="positions"></div>
 
             <div id="allocationSection" class="allocation-section" style="display: none;">
-                <h3 style="color: #e2e8f0; margin-bottom: 15px;">📊 Portfolio Allocation</h3>
+                <h3 style="color: #e2e8f0; margin-bottom: 15px;" data-i18n="portfolio.allocation">📊 Portfolio Allocation</h3>
                 <div class="allocation-charts">
                     <div class="allocation-chart-container">
-                        <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;">By Asset Type</h4>
+                        <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;" data-i18n="portfolio.by_type">By Asset Type</h4>
                         <div id="typeAllocationChart" class="allocation-chart"></div>
                     </div>
                     <div class="allocation-chart-container">
-                        <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;">By Sector</h4>
+                        <h4 style="color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 10px;" data-i18n="portfolio.by_sector">By Sector</h4>
                         <div id="sectorAllocationChart" class="allocation-chart"></div>
                     </div>
                 </div>
@@ -80,13 +82,13 @@
 
             <div class="perspective-selector" id="perspectiveSelector">
                 <div class="perspective-header">
-                    <span class="perspective-label">Investment Perspective:</span>
+                    <span class="perspective-label" data-i18n="portfolio.perspective">Investment Perspective:</span>
                 </div>
                 <div class="perspective-tabs" id="perspectiveTabs"></div>
                 <div class="perspective-info" id="perspectiveInfo"></div>
                 <div class="perspective-buttons">
-                    <button class="btn btn-accent" onclick="analyzeMarkets()" id="analyzeBtn">Get AI Analysis</button>
-                    <button class="btn btn-trade" onclick="getTradeIdeas()" id="tradeIdeasBtn">💹 Get Trade Ideas</button>
+                    <button class="btn btn-accent" onclick="analyzeMarkets()" id="analyzeBtn" data-i18n="portfolio.btn.analyze">Get AI Analysis</button>
+                    <button class="btn btn-trade" onclick="getTradeIdeas()" id="tradeIdeasBtn" data-i18n="portfolio.btn.trade">💹 Get Trade Ideas</button>
                 </div>
             </div>
         </div>
@@ -307,6 +309,7 @@
     -->
     <script type="module">
         // ── Import all modules ──────────────────────────────────────────────
+        import { renderNavbar } from './services/navbar.js';
         import state from './services/state.js';
         import { isArtifact } from './services/utils.js';
         import { loadSectorCache } from './data/sectors.js';
@@ -360,6 +363,10 @@
 
         // ── Initialization ──────────────────────────────────────────────────
         console.log('=== APP INITIALIZING (modular) ===');
+
+        // Render persistent navbar (auth section filled in by updateNavbarAuth
+        // once Supabase initialises and auth state is known)
+        renderNavbar({ supabaseConfigured: !!(localStorage.getItem('supabaseUrl') && localStorage.getItem('supabaseAnonKey')) });
 
         // Load portfolio history from localStorage
         const storedHistory = localStorage.getItem('portfolioHistory');
