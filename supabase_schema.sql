@@ -87,8 +87,10 @@ ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
 -- ============================================
 -- App Config: shared API keys (admin-managed)
 -- ============================================
--- Only users listed in admin_users can read. No frontend writes allowed.
--- Add admin users via Supabase Dashboard > Table Editor > admin_users.
+-- Pricing keys (finnhubKey, fmpKey, alphaVantageKey) are readable by all
+-- authenticated users so they never need to configure their own keys.
+-- Sensitive admin config (adminEmails) remains admin-only.
+-- No frontend writes allowed.
 
 CREATE TABLE app_config (
     key TEXT PRIMARY KEY,
@@ -99,11 +101,21 @@ CREATE TABLE app_config (
 
 ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
 
+-- Admin users can read ALL config rows (including adminEmails)
 CREATE POLICY "Admin users can read config"
     ON app_config FOR SELECT
     USING (EXISTS (
         SELECT 1 FROM admin_users WHERE user_id = auth.uid()
     ));
+
+-- All authenticated users can read the shared pricing API keys.
+-- This lets every logged-in user fetch market prices without configuring their own keys.
+CREATE POLICY "Authenticated users can read pricing keys"
+    ON app_config FOR SELECT
+    USING (
+        auth.role() = 'authenticated'
+        AND key IN ('finnhubKey', 'fmpKey', 'alphaVantageKey')
+    );
 
 -- Insert the shared API keys
 -- IMPORTANT: Replace the placeholder values below with your actual API keys
