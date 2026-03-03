@@ -31,7 +31,7 @@
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
 
-const GEMINI_MODEL = "gemini-1.5-pro";
+const GEMINI_MODEL = "gemini-2.0-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const BATCH_CHUNK_SIZE = 8; // bottles per Gemini request in batch mode
