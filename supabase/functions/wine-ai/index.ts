@@ -148,7 +148,7 @@ async function handleValuation(prompt: string): Promise<Response> {
   try {
     const { text } = await callClaude(prompt, 4096, true);
     console.log("[wine-ai] Valuation via Claude (fallback)");
-    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude" });
+    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude", _geminiError: geminiError });
   } catch (err) {
     const claudeMsg = err instanceof Error ? err.message : String(err);
     console.error("[wine-ai] Claude fallback also failed:", claudeMsg);
