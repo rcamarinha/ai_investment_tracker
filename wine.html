@@ -318,6 +318,7 @@
         import { showToast, closeActiveModal } from './wine/utils.js?v=1.3.12';
 
         // ── Expose to onclick handlers ─────────────────────────────────────────
+        window._wineState            = state;          // dev/debug access
         window.showApiKeyDialog      = showApiKeyDialog;
         window.closeApiKeyDialog     = closeApiKeyDialog;
         window.saveApiKeys           = saveApiKeys;
