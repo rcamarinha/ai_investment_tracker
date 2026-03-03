@@ -106,8 +106,7 @@ export function showAllocationTab(tab) {
 export function showApiKeyDialog() {
     if (!requireAuth('manage API keys')) return;
     const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
-    setVal('anthropicKeyInput',    state.anthropicKey);
-setVal('supabaseUrlInput',     state.supabaseUrl);
+    setVal('supabaseUrlInput',     state.supabaseUrl);
     setVal('supabaseAnonKeyInput', state.supabaseAnonKey);
     openModal('apiKeyDialog');
 }
@@ -119,14 +118,8 @@ export function closeApiKeyDialog() {
 export function saveApiKeys() {
     const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
-    const anthropicKey  = getVal('anthropicKeyInput');
     const supabaseUrl   = getVal('supabaseUrlInput');
     const supabaseKey   = getVal('supabaseAnonKeyInput');
-
-    if (anthropicKey) {
-        state.anthropicKey = anthropicKey;
-        localStorage.setItem('wine_anthropicKey', anthropicKey);
-    }
 
     if (supabaseUrl && supabaseKey) {
         state.supabaseUrl     = supabaseUrl;
@@ -150,13 +143,12 @@ export async function clearApiKeys() {
         { confirmLabel: 'Clear All', danger: true });
     if (!confirmed) return;
 
-    state.anthropicKey    = '';
     state.supabaseUrl     = '';
     state.supabaseAnonKey = '';
     state.supabaseClient  = null;
     state.currentUser     = null;
 
-    ['wine_anthropicKey', 'wine_supabaseUrl', 'wine_supabaseAnonKey'].forEach(k =>
+    ['wine_supabaseUrl', 'wine_supabaseAnonKey'].forEach(k =>
         localStorage.removeItem(k));
 
     closeApiKeyDialog();

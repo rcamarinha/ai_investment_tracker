@@ -251,24 +251,6 @@
 
             <div style="margin-bottom: 20px;">
                 <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
-                    🤖 Anthropic API Key (Label Recognition + AI Analysis)
-                </label>
-                <input type="password" id="anthropicKeyInput"
-                       placeholder="sk-ant-api03-..."
-                       style="width: 100%; padding: 12px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-family: monospace; font-size: 13px;" />
-                <div style="color: #94a3b8; font-size: 12px; margin-top: 6px; line-height: 1.6;">
-                    Required for: wine label scanning (vision AI) and cellar analysis.<br>
-                    Get API key: <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com/settings/keys</a>
-                </div>
-                <div style="color: #fbbf24; font-size: 12px; margin-top: 6px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; padding: 8px; line-height: 1.5;">
-                    ⚠️ <strong>Security notice:</strong> This key is sent directly from your browser and is visible in DevTools → Network tab. Only use a key you're comfortable exposing client-side, or connect Supabase to use server-side AI calls instead.
-                </div>
-            </div>
-
-            <hr style="border: 1px solid #334155; margin: 20px 0;">
-
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-weight: bold;">
                     ☁️ Supabase Project URL (Cloud Sync)
                 </label>
                 <input type="text" id="supabaseUrlInput"
@@ -336,6 +318,7 @@
         import { showToast, closeActiveModal } from './wine/utils.js?v=1.3.12';
 
         // ── Expose to onclick handlers ─────────────────────────────────────────
+        window._wineState            = state;          // dev/debug access
         window.showApiKeyDialog      = showApiKeyDialog;
         window.closeApiKeyDialog     = closeApiKeyDialog;
         window.saveApiKeys           = saveApiKeys;
@@ -585,9 +568,6 @@
             supabaseConfigured: !!(localStorage.getItem('wine_supabaseUrl') && localStorage.getItem('wine_supabaseAnonKey'))
         });
 
-        // Load saved API keys from localStorage
-        const storedAnthropicKey = localStorage.getItem('wine_anthropicKey');
-        if (storedAnthropicKey) state.anthropicKey = storedAnthropicKey;
         // Load Supabase config (wine-specific keys override defaults)
         const storedSBUrl = localStorage.getItem('wine_supabaseUrl');
         const storedSBKey = localStorage.getItem('wine_supabaseAnonKey');
