@@ -35,7 +35,6 @@ const GEMINI_MODEL = "gemini-2.0-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const CLAUDE_MODEL = "claude-opus-4-6";
 
-const BATCH_CHUNK_SIZE = 8; // bottles per request in batch mode
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -67,23 +66,40 @@ async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResul
     generationConfig: { maxOutputTokens: maxTokens },
   };
 
-  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  // Retry up to 3 times on 429 (rate limit) with exponential backoff: 5s, 10s, 20s
+  const MAX_RETRIES = 3;
+  let lastError = "";
 
-  if (!res.ok) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const parts = data.candidates?.[0]?.content?.parts ?? [];
+      const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
+      const groundingChunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? undefined;
+      return { text, groundingChunks };
+    }
+
     const errText = await res.text().catch(() => "");
+
+    if (res.status === 429 && attempt < MAX_RETRIES) {
+      const delaySec = Math.pow(2, attempt + 1) * 5; // 10s, 20s, 40s — but capped to avoid timeout
+      const delayMs = Math.min(delaySec * 1000, 20000); // cap at 20s per wait
+      lastError = `Gemini API error 429: ${errText.slice(0, 300)}`;
+      console.warn(`[wine-ai] Gemini 429 (rate limit), retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+      await new Promise(r => setTimeout(r, delayMs));
+      continue;
+    }
+
     throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
   }
 
-  const data = await res.json();
-  const parts = data.candidates?.[0]?.content?.parts ?? [];
-  const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
-  const groundingChunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? undefined;
-
-  return { text, groundingChunks };
+  throw new Error(lastError || "Gemini: max retries exceeded");
 }
 
 // ── Claude text helper ────────────────────────────────────────────────────────
@@ -254,59 +270,48 @@ async function handleBatchValuation(bottles: BottleInfo[]): Promise<Response> {
     return jsonResponse({ error: "bottles array is empty" }, 400);
   }
 
-  const chunks: BottleInfo[][] = [];
-  for (let i = 0; i < bottles.length; i += BATCH_CHUNK_SIZE) {
-    chunks.push(bottles.slice(i, i + BATCH_CHUNK_SIZE));
+  console.log(`[wine-ai] Batch: ${bottles.length} bottle(s) in one request`);
+
+  const prompt = buildBatchPrompt(bottles);
+  // Scale token budget with bottle count (~300 tokens per bottle JSON), min 4096, max 16384
+  const maxTokens = Math.min(16384, Math.max(4096, bottles.length * 300));
+
+  let geminiError = "";
+
+  // 1. Try Gemini (with retry logic built into callGemini)
+  try {
+    const { text } = await callGemini(prompt, maxTokens);
+    const parsed = parseBatchText(text, bottles, 0, "Gemini");
+    if (parsed) {
+      console.log(`[wine-ai] Batch: Gemini OK (${parsed.length} results)`);
+      return jsonResponse({ results: parsed });
+    }
+  } catch (err) {
+    geminiError = err instanceof Error ? err.message : String(err);
+    console.warn(`[wine-ai] Batch: Gemini failed:`, geminiError);
   }
 
-  console.log(`[wine-ai] Batch: ${bottles.length} bottle(s) → ${chunks.length} chunk(s)`);
-
-  const chunkPromises = chunks.map(async (chunk, chunkIdx): Promise<ValuationResult[]> => {
-    const prompt = buildBatchPrompt(chunk);
-    let geminiError = "";
-
-    // 1. Try Gemini
-    try {
-      const { text } = await callGemini(prompt, 4096);
-      const parsed = parseBatchText(text, chunk, chunkIdx, "Gemini");
-      if (parsed) {
-        console.log(`[wine-ai] Chunk ${chunkIdx}: Gemini OK`);
-        return parsed;
-      }
-    } catch (err) {
-      geminiError = err instanceof Error ? err.message : String(err);
-      const is429 = geminiError.includes("429");
-      console.warn(`[wine-ai] Chunk ${chunkIdx}: Gemini ${is429 ? "quota exceeded (429)" : "failed"}:`, geminiError);
+  // 2. Fallback: Claude
+  console.log(`[wine-ai] Batch: falling back to Claude`);
+  try {
+    const { text } = await callClaude(prompt, maxTokens, true);
+    const parsed = parseBatchText(text, bottles, 0, "Claude");
+    if (parsed) {
+      console.log(`[wine-ai] Batch: Claude fallback OK (${parsed.length} results)`);
+      return jsonResponse({ results: parsed });
     }
+  } catch (err) {
+    const claudeMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[wine-ai] Batch: Claude fallback also failed:`, claudeMsg);
+    return jsonResponse(
+      { error: `Gemini failed: ${geminiError}; Claude fallback failed: ${claudeMsg}` },
+      502
+    );
+  }
 
-    // 2. Fallback: Claude
-    console.log(`[wine-ai] Chunk ${chunkIdx}: falling back to Claude`);
-    try {
-      const { text } = await callClaude(prompt, 4096, true);
-      const parsed = parseBatchText(text, chunk, chunkIdx, "Claude");
-      if (parsed) {
-        console.log(`[wine-ai] Chunk ${chunkIdx}: Claude fallback OK`);
-        return parsed;
-      }
-    } catch (err) {
-      const claudeMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[wine-ai] Chunk ${chunkIdx}: Claude fallback failed:`, claudeMsg);
-      const combined = geminiError
-        ? `Gemini: ${geminiError}; Claude: ${claudeMsg}`
-        : claudeMsg;
-      return chunk.map(b => ({ id: b.id, error: combined } as ValuationResult));
-    }
-
-    return chunk.map(b => ({
-      id: b.id,
-      error: "No valid JSON response from Gemini or Claude",
-    } as ValuationResult));
+  return jsonResponse({
+    results: bottles.map(b => ({ id: b.id, error: "No valid JSON response from Gemini or Claude" } as ValuationResult)),
   });
-
-  const results: ValuationResult[] = (await Promise.all(chunkPromises)).flat();
-
-  console.log(`[wine-ai] Batch complete: ${results.filter(r => !r.error).length}/${results.length} succeeded`);
-  return jsonResponse({ results });
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
