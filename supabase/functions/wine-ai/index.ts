@@ -93,20 +93,26 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
 async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
+  // ⚠️ TESTING: grounding disabled — remove this line to re-enable
+  const FORCE_NO_GROUNDING = true;
+
   // Attempt 1: with Google Search grounding
-  try {
-    const result = await _callGeminiOnce(prompt, maxTokens, true);
-    console.log("[wine-ai] Gemini: grounded response OK");
-    return result;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!msg.includes("429")) throw err; // non-quota error → propagate immediately
-    console.warn("[wine-ai] Gemini grounding quota hit (429), retrying without Google Search...");
+  if (!FORCE_NO_GROUNDING) {
+    try {
+      const result = await _callGeminiOnce(prompt, maxTokens, true);
+      console.log("[wine-ai] Gemini: grounded response OK");
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("429")) throw err; // non-quota error → propagate immediately
+      console.warn("[wine-ai] Gemini grounding quota hit (429), retrying without Google Search...");
+    }
   }
 
   // Attempt 2: without grounding (bypasses grounding quota)
+  console.log(`[wine-ai] Gemini: sending ungrounded request (FORCE_NO_GROUNDING=${FORCE_NO_GROUNDING})`);
   const result = await _callGeminiOnce(prompt, maxTokens, false);
-  console.log("[wine-ai] Gemini: ungrounded response OK (grounding quota was exceeded)");
+  console.log("[wine-ai] Gemini: ungrounded response OK");
   return result;
 }
 
