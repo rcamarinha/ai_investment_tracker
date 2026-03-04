@@ -2,8 +2,9 @@
  * Valuation service — AI-powered wine bottle value estimation.
  *
  * Single bottle: Gemini (Google Search grounding) → Claude fallback via the edge function.
+ *   Gemini retries up to 3× on 429 rate-limit before falling back to Claude.
  * Batch: one edge-function call with all bottles (requestType: 'batch-valuation');
- *        the server chunks them into groups of 8, each with Gemini → Claude fallback.
+ *        the server sends all bottles in a single Gemini request → Claude fallback.
  *
  * Results are stored back on each bottle object and persisted to Supabase.
  * valueLow / valueHigh / valuationNote are kept in a localStorage cache
