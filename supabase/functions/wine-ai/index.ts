@@ -57,49 +57,57 @@ interface GeminiResult {
   groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
 }
 
-async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResult> {
-  if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
-
-  const body = {
+async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: boolean): Promise<GeminiResult & { usedGrounding: boolean }> {
+  const body: Record<string, unknown> = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    tools: [{ google_search: {} }],
     generationConfig: { maxOutputTokens: maxTokens },
   };
+  if (useGrounding) {
+    body.tools = [{ google_search: {} }];
+  }
 
-  // Retry up to 3 times on 429 (rate limit) with exponential backoff: 5s, 10s, 20s
-  const MAX_RETRIES = 3;
-  let lastError = "";
+  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const parts = data.candidates?.[0]?.content?.parts ?? [];
-      const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
-      const groundingChunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? undefined;
-      return { text, groundingChunks };
-    }
-
+  if (!res.ok) {
     const errText = await res.text().catch(() => "");
-
-    if (res.status === 429 && attempt < MAX_RETRIES) {
-      const delaySec = Math.pow(2, attempt + 1) * 5; // 10s, 20s, 40s — but capped to avoid timeout
-      const delayMs = Math.min(delaySec * 1000, 20000); // cap at 20s per wait
-      lastError = `Gemini API error 429: ${errText.slice(0, 300)}`;
-      console.warn(`[wine-ai] Gemini 429 (rate limit), retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})...`);
-      await new Promise(r => setTimeout(r, delayMs));
-      continue;
-    }
-
     throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
   }
 
-  throw new Error(lastError || "Gemini: max retries exceeded");
+  const data = await res.json();
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
+  const groundingChunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? undefined;
+  return { text, groundingChunks, usedGrounding: useGrounding };
+}
+
+/**
+ * Call Gemini with Google Search grounding.
+ * On 429 (grounding quota exceeded), immediately retries without grounding —
+ * Gemini still has strong wine knowledge from training data and avoids the
+ * separate grounding quota entirely. Only throws if both attempts fail.
+ */
+async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResult> {
+  if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
+
+  // Attempt 1: with Google Search grounding
+  try {
+    const result = await _callGeminiOnce(prompt, maxTokens, true);
+    console.log("[wine-ai] Gemini: grounded response OK");
+    return result;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("429")) throw err; // non-quota error → propagate immediately
+    console.warn("[wine-ai] Gemini grounding quota hit (429), retrying without Google Search...");
+  }
+
+  // Attempt 2: without grounding (bypasses grounding quota)
+  const result = await _callGeminiOnce(prompt, maxTokens, false);
+  console.log("[wine-ai] Gemini: ungrounded response OK (grounding quota was exceeded)");
+  return result;
 }
 
 // ── Claude text helper ────────────────────────────────────────────────────────
