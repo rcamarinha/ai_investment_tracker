@@ -31,7 +31,7 @@
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const CLAUDE_MODEL = "claude-opus-4-6";
 
@@ -85,32 +85,36 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
 }
 
 /**
- * Call Gemini with Google Search grounding.
- * On 429 (grounding quota exceeded), immediately retries without grounding —
- * Gemini still has strong wine knowledge from training data and avoids the
- * separate grounding quota entirely. Only throws if both attempts fail.
+ * Call Gemini with Google Search grounding (default).
+ * On 429 (grounding quota exceeded), retries without grounding.
+ * If the ungrounded attempt also fails, throws — meaning the Gemini key is dead.
  */
 async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
-  // ⚠️ TESTING: grounding disabled — remove this line to re-enable
-  const FORCE_NO_GROUNDING = true;
-
-  // Attempt 1: with Google Search grounding
-  if (!FORCE_NO_GROUNDING) {
-    try {
-      const result = await _callGeminiOnce(prompt, maxTokens, true);
-      console.log("[wine-ai] Gemini: grounded response OK");
-      return result;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("429")) throw err; // non-quota error → propagate immediately
-      console.warn("[wine-ai] Gemini grounding quota hit (429), retrying without Google Search...");
-    }
+  // Attempt 1: with Google Search grounding (default)
+  try {
+    const reqBody = {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: maxTokens },
+      tools: [{ google_search: {} }],
+    };
+    console.log("[wine-ai] Gemini grounded request:", JSON.stringify({ url: `${GEMINI_URL}?key=<redacted>`, body: reqBody }));
+    const result = await _callGeminiOnce(prompt, maxTokens, true);
+    console.log("[wine-ai] Gemini: grounded response OK");
+    return result;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("429")) throw err; // non-quota error → propagate immediately (key dead / model error)
+    console.warn("[wine-ai] Gemini grounding quota hit (429), retrying without Google Search...");
   }
 
-  // Attempt 2: without grounding (bypasses grounding quota)
-  console.log(`[wine-ai] Gemini: sending ungrounded request (FORCE_NO_GROUNDING=${FORCE_NO_GROUNDING})`);
+  // Attempt 2: without grounding (bypasses grounding quota); if this also fails → key is dead
+  const reqBody = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: maxTokens },
+  };
+  console.log("[wine-ai] Gemini ungrounded request:", JSON.stringify({ url: `${GEMINI_URL}?key=<redacted>`, body: reqBody }));
   const result = await _callGeminiOnce(prompt, maxTokens, false);
   console.log("[wine-ai] Gemini: ungrounded response OK");
   return result;
