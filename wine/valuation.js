@@ -4,7 +4,8 @@
  * Single bottle: Gemini (Google Search grounding) → Claude fallback via the edge function.
  *   Gemini retries up to 3× on 429 rate-limit before falling back to Claude.
  * Batch: one edge-function call with all bottles (requestType: 'batch-valuation');
- *        the server sends all bottles in a single Gemini request → Claude fallback.
+ *        the server splits them into chunks of 5, runs each chunk as a parallel
+ *        Gemini grounding call (→ Claude fallback per chunk if Gemini fails).
  *
  * Results are stored back on each bottle object and persisted to Supabase.
  * valueLow / valueHigh / valuationNote are kept in a localStorage cache
@@ -108,9 +109,9 @@ export async function valuateSingleBottle(bottleId) {
 
 /**
  * Valuate all bottles (or only unvalued ones) in a single batched request.
- * The edge function chunks them into groups of 8 and runs each chunk as one
- * Gemini call in parallel, so the total time is roughly one Gemini round-trip
- * instead of N sequential calls.
+ * The edge function splits them into chunks of 5 and runs each chunk as one
+ * parallel Gemini grounding call, so the total time is roughly one Gemini
+ * round-trip instead of N sequential calls.
  */
 export async function valuateAllBottles(forceAll = false) {
     if (!requireAuth('valuate bottles')) return;
