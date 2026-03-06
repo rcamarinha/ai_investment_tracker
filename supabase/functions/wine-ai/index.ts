@@ -31,7 +31,7 @@
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const CLAUDE_MODEL = "claude-opus-4-6";
 
