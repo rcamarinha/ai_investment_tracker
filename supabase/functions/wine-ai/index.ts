@@ -262,6 +262,15 @@ Rules:
 - Return ONLY the JSON array. No markdown fences, no preamble.`;
 }
 
+/** Sanitise common Gemini JSON quirks before parsing. */
+function sanitiseJson(s: string): string {
+  return s
+    .replace(/```json\s*/gi, "").replace(/```\s*/g, "") // strip markdown fences
+    .replace(/\bNone\b/g, "null")                       // Python-style None
+    .replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false")
+    .replace(/,(\s*[}\]])/g, "$1");                     // trailing commas
+}
+
 /** Parse a JSON array of ValuationResult from an AI response text. Returns null on failure. */
 function parseBatchText(
   text: string,
@@ -269,18 +278,34 @@ function parseBatchText(
   chunkIdx: number,
   source: string
 ): ValuationResult[] | null {
-  const jsonMatch = text.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
+  const clean = sanitiseJson(text);
+
+  // 1. Try JSON array [...]
+  const arrayMatch = clean.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    try {
+      const parsed: ValuationResult[] = JSON.parse(arrayMatch[0]);
+      return parsed.map((r, i) => ({ ...r, id: chunk[i]?.id }));
+    } catch {
+      console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): array JSON parse failed, trying object fallback`);
+    }
+  } else {
     console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): no JSON array found. Snippet:`, text.slice(0, 200));
-    return null;
   }
-  try {
-    const parsed: ValuationResult[] = JSON.parse(jsonMatch[0]);
-    return parsed.map((r, i) => ({ ...r, id: chunk[i]?.id }));
-  } catch {
-    console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): JSON parse failed`);
-    return null;
+
+  // 2. Object fallback {...} — Gemini sometimes returns a bare object for single-wine batches
+  const objMatch = clean.match(/\{[\s\S]*\}/);
+  if (objMatch) {
+    try {
+      const parsed: ValuationResult = JSON.parse(objMatch[0]);
+      console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): recovered single object as array`);
+      return [{ ...parsed, id: chunk[0]?.id }];
+    } catch {
+      console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): object fallback parse also failed`);
+    }
   }
+
+  return null;
 }
 
 // Optimal chunk size for Gemini grounding: small enough for focused per-wine
