@@ -13,7 +13,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.18';
+import { callWineAI } from './api.js?v=1.3.19';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';
@@ -25,6 +25,28 @@ function requireAuth(actionName) {
     if (state.currentUser) return true;
     showToast(`Please log in to ${actionName}.`, 'warning');
     return false;
+}
+
+// ── Navigation Guard (active while valuations are running) ────────────────────
+
+function _beforeUnloadHandler(e) {
+    e.preventDefault();
+    // Modern browsers show their own generic message; this string is for legacy ones.
+    e.returnValue = 'Valuation is still running. Leaving now will cancel it. Continue?';
+    return e.returnValue;
+}
+
+/** Attach the beforeunload guard and intercept same-site navbar link clicks. */
+export function attachValuationGuard() {
+    window.addEventListener('beforeunload', _beforeUnloadHandler);
+    // Mark body so wine.html's delegated click handler knows guard is active.
+    document.body.dataset.valuationRunning = '1';
+}
+
+/** Remove the navigation guard (call when valuations finish or fail). */
+export function detachValuationGuard() {
+    window.removeEventListener('beforeunload', _beforeUnloadHandler);
+    delete document.body.dataset.valuationRunning;
 }
 
 // ── Valuation Detail Cache (localStorage) ────────────────────────────────────
@@ -131,6 +153,7 @@ export async function valuateAllBottles(forceAll = false) {
     }
 
     state.valuationsLoading = true;
+    attachValuationGuard();
     const btn = document.getElementById('valuateBtn');
     if (btn) { btn.disabled = true; btn.textContent = `💎 Sending ${toValueate.length} bottle(s) for valuation...`; }
 
@@ -228,6 +251,7 @@ export async function valuateAllBottles(forceAll = false) {
         showToast(`Batch valuation failed: ${err.message}`, 'error');
     } finally {
         state.valuationsLoading = false;
+        detachValuationGuard();
         if (btn) { btn.disabled = false; btn.textContent = '💎 Update Valuations'; }
         renderCellar();
     }

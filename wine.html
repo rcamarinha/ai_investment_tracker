@@ -19,7 +19,7 @@
         <div class="header wine-header">
             <h1>
                 <span data-i18n="wine.title">🍷 Wine Cellar</span>
-                <span>v1.3.18</span>
+                <span>v1.3.19</span>
             </h1>
             <p data-i18n="wine.subtitle">AI-powered wine collection management with label recognition</p>
         </div>
@@ -261,19 +261,19 @@
     <script type="module">
         // ── Imports ────────────────────────────────────────────────────────────
         import { renderNavbar } from './services/navbar.js';
-        import state from './wine/state.js?v=1.3.18';
-        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.3.18';
+        import state from './wine/state.js?v=1.3.19';
+        import { recognizeLabel, fileToBase64, captureVideoFrame } from './wine/label.js?v=1.3.19';
         import { initSupabase, updateAuthBar,
                  handleLogin, handleSignup, handleLogout, handleGoogleLogin,
-                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.3.18';
+                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.3.19';
         import { renderCellar, showAddBottleDialog, showEditBottleDialog,
                  closeBottleDialog, submitBottle, deleteCurrentBottle,
                  saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory,
-                 exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.3.18';
-        import { valuateAllBottles, valuateSingleBottle, applyValuationCache } from './wine/valuation.js?v=1.3.18';
-        import { analyzeCellar } from './wine/analysis.js?v=1.3.18';
-        import { renderAllocationCharts, showAllocationTab } from './wine/ui.js?v=1.3.18';
-        import { showToast, closeActiveModal } from './wine/utils.js?v=1.3.18';
+                 exportCellarCSV, onFilterChange } from './wine/cellar.js?v=1.3.19';
+        import { valuateAllBottles, valuateSingleBottle, applyValuationCache, attachValuationGuard, detachValuationGuard } from './wine/valuation.js?v=1.3.19';
+        import { analyzeCellar } from './wine/analysis.js?v=1.3.19';
+        import { renderAllocationCharts, showAllocationTab } from './wine/ui.js?v=1.3.19';
+        import { showToast, closeActiveModal } from './wine/utils.js?v=1.3.19';
 
         // ── Expose to onclick handlers ─────────────────────────────────────────
         window._wineState            = state;          // dev/debug access
@@ -326,6 +326,26 @@
                 return;
             }
         });
+
+        // ── Valuation-in-progress navigation guard ─────────────────────────────
+        // Intercept navbar / page-internal link clicks while valuations are running
+        // so the user gets a chance to confirm before leaving and losing progress.
+        document.addEventListener('click', (e) => {
+            if (!document.body.dataset.valuationRunning) return;
+            const link = e.target.closest('a[href]');
+            if (!link) return;
+            const href = link.getAttribute('href');
+            // Ignore fragment-only links (#…) — they don't navigate away
+            if (!href || href.startsWith('#')) return;
+            e.preventDefault();
+            const confirmed = window.confirm(
+                'Valuation is still running.\n\nLeaving now will cancel the remaining bottles. Continue?'
+            );
+            if (confirmed) {
+                detachValuationGuard();
+                window.location.href = link.href;
+            }
+        }, true); // capture phase so it fires before onclick handlers
 
         // ── Search: live filtering ─────────────────────────────────────────────
         document.getElementById('bottleSearch').addEventListener('input', () => renderCellar());
