@@ -84,39 +84,47 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
   return { text, groundingChunks, usedGrounding: useGrounding };
 }
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 /**
  * Call Gemini with Google Search grounding (default).
- * On 429 (grounding quota exceeded), retries without grounding.
- * If the ungrounded attempt also fails, throws — meaning the Gemini key is dead.
+ * On 429 (grounding quota exceeded), waits briefly then retries without grounding.
+ * If the ungrounded attempt also fails with 429, waits and retries once more.
+ * If all attempts fail, throws — meaning the Gemini key is dead or exhausted.
  */
 async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
   // Attempt 1: with Google Search grounding (default)
   try {
-    const reqBody = {
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: maxTokens },
-      tools: [{ google_search: {} }],
-    };
-    console.log("[wine-ai] Gemini grounded request:", JSON.stringify({ url: `${GEMINI_URL}?key=<redacted>`, body: reqBody }));
+    console.log("[wine-ai] Gemini grounded request (with Google Search)");
     const result = await _callGeminiOnce(prompt, maxTokens, true);
     console.log("[wine-ai] Gemini: grounded response OK");
     return result;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (!msg.includes("429")) throw err; // non-quota error → propagate immediately (key dead / model error)
-    console.warn("[wine-ai] Gemini grounding quota hit (429), retrying without Google Search...");
+    if (!msg.includes("429")) throw err; // non-quota error → propagate immediately
+    console.warn("[wine-ai] Gemini grounding quota hit (429), waiting 2s then retrying without Google Search...");
+    await sleep(2000);
   }
 
-  // Attempt 2: without grounding (bypasses grounding quota); if this also fails → key is dead
-  const reqBody = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: maxTokens },
-  };
-  console.log("[wine-ai] Gemini ungrounded request:", JSON.stringify({ url: `${GEMINI_URL}?key=<redacted>`, body: reqBody }));
+  // Attempt 2: without grounding (bypasses grounding quota)
+  try {
+    console.log("[wine-ai] Gemini ungrounded request (no Google Search)");
+    const result = await _callGeminiOnce(prompt, maxTokens, false);
+    console.log("[wine-ai] Gemini: ungrounded response OK");
+    return result;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("429")) throw err;
+    console.warn("[wine-ai] Gemini ungrounded also 429, waiting 5s then making one final attempt...");
+    await sleep(5000);
+  }
+
+  // Attempt 3: final retry without grounding
+  console.log("[wine-ai] Gemini final ungrounded retry");
   const result = await _callGeminiOnce(prompt, maxTokens, false);
-  console.log("[wine-ai] Gemini: ungrounded response OK");
+  console.log("[wine-ai] Gemini: final retry OK");
   return result;
 }
 
@@ -356,10 +364,16 @@ async function handleBatchValuation(bottles: BottleInfo[]): Promise<Response> {
 
   console.log(`[wine-ai] Batch: ${bottles.length} bottle(s) → ${chunks.length} chunk(s) of ≤${CHUNK_SIZE}, running sequentially`);
 
+  // Inter-chunk delay to avoid hitting Gemini grounding rate limits on large batches.
+  // Gemini grounded searches are subject to per-minute quotas; a short pause between
+  // chunks prevents the cascade where Gemini 429s trigger expensive Claude fallbacks.
+  const INTER_CHUNK_DELAY_MS = 1500;
+
   // Process chunks sequentially to avoid exhausting Supabase worker resources
   // (concurrent outgoing connections + CPU/memory) on large lists.
   const results: ValuationResult[] = [];
   for (let idx = 0; idx < chunks.length; idx++) {
+    if (idx > 0) await sleep(INTER_CHUNK_DELAY_MS);
     try {
       const chunkResults = await valuateChunk(chunks[idx], idx);
       results.push(...chunkResults);
