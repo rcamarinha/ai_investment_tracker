@@ -329,25 +329,22 @@ async function handleBatchValuation(bottles: BottleInfo[]): Promise<Response> {
     chunks.push(bottles.slice(i, i + CHUNK_SIZE));
   }
 
-  console.log(`[wine-ai] Batch: ${bottles.length} bottle(s) → ${chunks.length} chunk(s) of ≤${CHUNK_SIZE}, running in parallel`);
+  console.log(`[wine-ai] Batch: ${bottles.length} bottle(s) → ${chunks.length} chunk(s) of ≤${CHUNK_SIZE}, running sequentially`);
 
-  // Process all chunks in parallel; use allSettled so a single chunk failure
-  // doesn't abort the rest.
-  const settled = await Promise.allSettled(
-    chunks.map((chunk, idx) => valuateChunk(chunk, idx))
-  );
-
+  // Process chunks sequentially to avoid exhausting Supabase worker resources
+  // (concurrent outgoing connections + CPU/memory) on large lists.
   const results: ValuationResult[] = [];
-  settled.forEach((outcome, idx) => {
-    if (outcome.status === "fulfilled") {
-      results.push(...outcome.value);
-    } else {
-      // Whole chunk threw unexpectedly — fill with error stubs
-      const msg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+  for (let idx = 0; idx < chunks.length; idx++) {
+    try {
+      const chunkResults = await valuateChunk(chunks[idx], idx);
+      results.push(...chunkResults);
+    } catch (err) {
+      // Whole chunk threw unexpectedly — fill with error stubs and keep going
+      const msg = err instanceof Error ? err.message : String(err);
       console.error(`[wine-ai] Chunk ${idx} rejected:`, msg);
       chunks[idx].forEach(b => results.push({ id: b.id, error: msg } as ValuationResult));
     }
-  });
+  }
 
   return jsonResponse({ results });
 }
