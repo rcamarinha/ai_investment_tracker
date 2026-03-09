@@ -134,9 +134,11 @@ export async function valuateAllBottles(forceAll = false) {
     const btn = document.getElementById('valuateBtn');
     if (btn) { btn.disabled = true; btn.textContent = `💎 Sending ${toValueate.length} bottle(s) for valuation...`; }
 
+    // Send at most CLIENT_BATCH_SIZE bottles per edge-function request, sequentially.
+    // This keeps each invocation small and avoids Supabase WORKER_LIMIT errors on large cellars.
+    const CLIENT_BATCH_SIZE = 10;
+
     try {
-        // Send all bottles to the edge function in one request.
-        // The server handles chunking and parallel Gemini calls internally.
         const bottleInfos = toValueate.map(b => ({
             id:            b.id,
             name:          b.name,
@@ -150,12 +152,24 @@ export async function valuateAllBottles(forceAll = false) {
             notes:         b.notes,
         }));
 
-        if (btn) btn.textContent = `💎 Valuing ${toValueate.length} bottle(s) via Gemini...`;
+        const allResults = [];
+        const totalBatches = Math.ceil(bottleInfos.length / CLIENT_BATCH_SIZE);
 
-        const data = await callWineAI({ requestType: 'batch-valuation', bottles: bottleInfos });
+        for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+            const batchStart = batchIdx * CLIENT_BATCH_SIZE;
+            const batchSlice = bottleInfos.slice(batchStart, batchStart + CLIENT_BATCH_SIZE);
+            const batchNum   = batchIdx + 1;
 
-        if (!data.results || !Array.isArray(data.results)) {
-            throw new Error('Unexpected response from batch valuation endpoint.');
+            if (btn) btn.textContent = `💎 Valuing batch ${batchNum}/${totalBatches} (${batchSlice.length} bottle(s))...`;
+            console.log(`[Valuation] Client batch ${batchNum}/${totalBatches}: ${batchSlice.length} bottles`);
+
+            const data = await callWineAI({ requestType: 'batch-valuation', bottles: batchSlice });
+
+            if (!data.results || !Array.isArray(data.results)) {
+                throw new Error(`Unexpected response from batch valuation endpoint (batch ${batchNum}).`);
+            }
+
+            allResults.push(...data.results);
         }
 
         if (btn) btn.textContent = `💎 Saving results...`;
@@ -164,7 +178,7 @@ export async function valuateAllBottles(forceAll = false) {
         const errors = [];
         const savePromises = [];
 
-        data.results.forEach((result, idx) => {
+        allResults.forEach((result, idx) => {
             const bottle = toValueate[idx];
             if (!bottle) return;
 
