@@ -57,14 +57,24 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
 
     // Force a full token refresh so the access_token is freshly signed with the
     // project's current JWT_SECRET.
+    // Get the current session. Only call refreshSession() if the access token is
+    // expired or about to expire (within 60 s). Unconditionally refreshing on every
+    // call rotates the single-use refresh token each time, which breaks long-running
+    // batch operations (e.g. 800-bottle valuation = 80 sequential edge-fn calls).
     let session;
     {
-        const { data, error } = await state.supabaseClient.auth.refreshSession();
-        if (!error && data?.session?.access_token) {
-            session = data.session;
-        } else {
-            const { data: fallback } = await state.supabaseClient.auth.getSession();
-            session = fallback?.session;
+        const { data: current } = await state.supabaseClient.auth.getSession();
+        session = current?.session;
+
+        const exp = _decodeJwtClaims(session?.access_token)?.exp ?? 0;
+        const expiresInSeconds = exp - Math.floor(Date.now() / 1000);
+
+        if (!session?.access_token || expiresInSeconds < 60) {
+            console.log('[WineAI] Token expired or expiring soon — refreshing session');
+            const { data, error } = await state.supabaseClient.auth.refreshSession();
+            if (!error && data?.session?.access_token) {
+                session = data.session;
+            }
         }
     }
     if (!session?.access_token) {
