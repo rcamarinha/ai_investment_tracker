@@ -135,8 +135,11 @@ export async function valuateAllBottles(forceAll = false) {
     if (btn) { btn.disabled = true; btn.textContent = `💎 Sending ${toValueate.length} bottle(s) for valuation...`; }
 
     // Send at most CLIENT_BATCH_SIZE bottles per edge-function request, sequentially.
-    // This keeps each invocation small and avoids Supabase WORKER_LIMIT errors on large cellars.
-    const CLIENT_BATCH_SIZE = 10;
+    // Must match CHUNK_SIZE on the server (currently 5) so each invocation handles
+    // exactly one Gemini grounding call.  Keeping this at 5 prevents the worst-case
+    // Gemini-429 → Claude-fallback cascade from pushing a single invocation over the
+    // Supabase edge function timeout (60s free / 150s paid).
+    const CLIENT_BATCH_SIZE = 5;
 
     try {
         const bottleInfos = toValueate.map(b => ({

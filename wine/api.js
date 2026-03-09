@@ -110,11 +110,21 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     const payload     = JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottles });
 
     // Build a fetch attempt with specific auth headers.
-    const _doFetch = (authHeaders) => fetch(functionUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: payload,
-    });
+    // Use an AbortController to enforce a client-side timeout slightly under the
+    // Supabase edge-function limit (60s free / 150s paid).  Without this, a
+    // timed-out function closes the connection without CORS headers, which the
+    // browser reports as the opaque "Failed to fetch" instead of a useful message.
+    const FETCH_TIMEOUT_MS = 55_000;
+    const _doFetch = (authHeaders) => {
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+        return fetch(functionUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: payload,
+            signal: ac.signal,
+        }).finally(() => clearTimeout(timer));
+    };
 
     let response;
     try {
@@ -159,6 +169,15 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         }
     } catch (err) {
         console.error('[WineAI] Edge function fetch threw:', err);
+        const isTimeout = err.name === 'AbortError';
+        if (isTimeout) {
+            throw new Error(
+                `The Wine AI server took longer than ${FETCH_TIMEOUT_MS / 1000}s to respond.\n\n` +
+                'This usually means the edge function timed out (Gemini + Claude fallback on the same batch exceeded the server limit).\n\n' +
+                'The batch size has been kept small to minimise this — if it keeps happening, ' +
+                'try valuating a smaller selection of bottles at a time.'
+            );
+        }
         throw new Error(
             'Network error contacting the Wine AI server (CORS or connectivity issue).\n\n' +
             'Verify your Supabase URL in 🔑 API Keys and that the wine-ai edge function ' +
