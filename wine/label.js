@@ -1,15 +1,16 @@
 /**
- * Label recognition service — camera capture + Claude Vision API.
+ * Label recognition service — camera capture + AI Vision.
  *
  * Flow:
  *   User picks file / captures photo
  *   → fileToBase64() converts it
- *   → recognizeLabel() sends base64 image to Claude claude-opus-4-6 (vision)
- *   → Claude returns structured JSON with wine details
+ *   → recognizeLabel() sends base64 image to Gemini Vision (primary)
+ *     or Claude claude-opus-4-6 Vision (fallback if Gemini unavailable)
+ *   → AI returns structured JSON with wine details
  *   → Caller pre-fills the Add Bottle dialog
  */
 
-import { callWineAI } from './api.js?v=1.3.19';
+import { callWineAI } from './api.js?v=1.3.20';
 
 // ── Label Recognition ────────────────────────────────────────────────────────
 

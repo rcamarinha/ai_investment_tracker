@@ -13,7 +13,7 @@
  */
 
 import state from './state.js';
-import { callWineAI } from './api.js?v=1.3.19';
+import { callWineAI } from './api.js?v=1.3.20';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar } from './cellar.js';
 import { showToast } from './utils.js';

@@ -3,14 +3,14 @@
  *
  * Routes AI requests for the Wine Cellar Tracker:
  *
- *   label           → Claude (vision + text) for label recognition
+ *   label           → Gemini Vision (primary) → Claude Vision fallback
  *   valuation       → Gemini (Google Search grounding) → Claude fallback
  *   batch-valuation → Gemini chunked 5 at a time (parallel) → Claude fallback per chunk
  *   analysis        → Claude for cellar insights
  *
  * Secrets required:
- *   ANTHROPIC_API_KEY_Wine  — used for label, analysis, and valuation fallback
- *   GEMINI_WINE             — used for valuation (primary); skipped if unset
+ *   ANTHROPIC_API_KEY_Wine  — used for label fallback, analysis, and valuation fallback
+ *   GEMINI_WINE             — used for label (primary) and valuation (primary); skipped if unset
  *
  * Request body:
  *   {
@@ -18,12 +18,13 @@
  *     prompt?: string,           // required for label / valuation / analysis
  *     image?: { base64, mediaType }, // label only
  *     maxTokens?: number,
- *     enableWebSearch?: boolean, // Claude web search (label/analysis)
+ *     enableWebSearch?: boolean, // Claude web search (analysis only)
  *     bottles?: BottleInfo[],    // batch-valuation only
  *   }
  *
  * Response shape:
- *   label / analysis → raw Anthropic response
+ *   label    → { content: [{type:"text", text:...}], _source: "gemini"|"claude" }
+ *   analysis → raw Anthropic response
  *   valuation        → { text: string, _geminiGrounding?: [...], _fallback?: "claude" }
  *   batch-valuation  → { results: ValuationResult[] }
  */
@@ -126,6 +127,48 @@ async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResul
   const result = await _callGeminiOnce(prompt, maxTokens, false);
   console.log("[wine-ai] Gemini: final retry OK");
   return result;
+}
+
+// ── Gemini Vision helper ──────────────────────────────────────────────────────
+
+/**
+ * Send an image + text prompt to Gemini Vision and return the text response.
+ * Uses the same GEMINI_WINE key as the text/grounding calls.
+ */
+async function callGeminiVision(
+  prompt: string,
+  imageBase64: string,
+  mediaType: string,
+  maxTokens = 1024,
+): Promise<{ text: string }> {
+  if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
+
+  const body = {
+    contents: [{
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: mediaType, data: imageBase64 } },
+        { text: prompt },
+      ],
+    }],
+    generationConfig: { maxOutputTokens: maxTokens },
+  };
+
+  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Gemini Vision API error ${res.status}: ${errText.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
+  return { text };
 }
 
 // ── Claude text helper ────────────────────────────────────────────────────────
@@ -388,6 +431,78 @@ async function handleBatchValuation(bottles: BottleInfo[]): Promise<Response> {
   return jsonResponse({ results });
 }
 
+// ── Label recognition: Gemini Vision primary, Claude Vision fallback ──────────
+
+/**
+ * Handles the "label" requestType.
+ * 1. Tries Gemini Vision (if GEMINI_WINE is set and an image is provided).
+ * 2. Falls back to Claude Vision on any Gemini error.
+ * Always returns { content: [{type:"text", text}], _source: "gemini"|"claude" }
+ * so the client-side parser (`data.content?.find(c => c.type === 'text')?.text`)
+ * works identically regardless of which model answered.
+ */
+async function handleLabel(
+  prompt: string,
+  image: { base64: string; mediaType: string } | undefined,
+  maxTokens: number,
+): Promise<Response> {
+  // 1. Try Gemini Vision (primary)
+  if (GEMINI_API_KEY && image?.base64) {
+    try {
+      console.log("[wine-ai] Label recognition via Gemini Vision (primary)");
+      const { text } = await callGeminiVision(
+        prompt,
+        image.base64,
+        image.mediaType || "image/jpeg",
+        maxTokens,
+      );
+      console.log("[wine-ai] Label: Gemini Vision OK");
+      // Normalise to the same shape as the Claude response so the client needs no changes
+      return jsonResponse({ content: [{ type: "text", text }], _source: "gemini" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("[wine-ai] Gemini Vision failed, falling back to Claude Vision:", msg);
+    }
+  }
+
+  // 2. Fallback: Claude Vision
+  if (!ANTHROPIC_API_KEY) {
+    return jsonResponse({ error: "ANTHROPIC_API_KEY_Wine is not set on the server." }, 500);
+  }
+
+  console.log("[wine-ai] Label recognition via Claude Vision (fallback)");
+
+  type ImagePart = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+  type TextPart  = { type: "text"; text: string };
+  const content: string | Array<ImagePart | TextPart> = image?.base64
+    ? [
+        { type: "image", source: { type: "base64", media_type: image.mediaType || "image/jpeg", data: image.base64 } },
+        { type: "text", text: prompt },
+      ]
+    : prompt;
+
+  const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, messages: [{ role: "user", content }] }),
+  });
+
+  if (!anthropicRes.ok) {
+    const errBody = await anthropicRes.text().catch(() => "");
+    return jsonResponse(
+      { error: `Anthropic API error: ${anthropicRes.status}`, details: errBody.slice(0, 300) },
+      anthropicRes.status,
+    );
+  }
+
+  const data = await anthropicRes.json();
+  return jsonResponse({ ...data, _source: "claude" });
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -433,31 +548,19 @@ Deno.serve(async (req) => {
     return handleBatchValuation(bottles);
   }
 
-  // ── Claude-only routes (label + analysis) ────────────────────────────────
+  // ── Label route (Gemini Vision primary, Claude Vision fallback) ───────────
+  if (requestType === "label") {
+    if (!prompt) return jsonResponse({ error: "prompt is required for label" }, 400);
+    return handleLabel(prompt, image, maxTokens);
+  }
+
+  // ── Analysis route (Claude only) ─────────────────────────────────────────
   if (!ANTHROPIC_API_KEY) {
     return jsonResponse({ error: "ANTHROPIC_API_KEY_Wine is not set on the server." }, 500);
   }
 
   if (!prompt) {
     return jsonResponse({ error: "prompt is required" }, 400);
-  }
-
-  type MessageContent =
-    | string
-    | Array<
-        | { type: "text"; text: string }
-        | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
-      >;
-
-  let content: MessageContent;
-
-  if (requestType === "label" && image?.base64) {
-    content = [
-      { type: "image", source: { type: "base64", media_type: image.mediaType || "image/jpeg", data: image.base64 } },
-      { type: "text", text: prompt },
-    ];
-  } else {
-    content = prompt;
   }
 
   try {
@@ -473,7 +576,7 @@ Deno.serve(async (req) => {
     const anthropicBody: Record<string, unknown> = {
       model: CLAUDE_MODEL,
       max_tokens: maxTokens,
-      messages: [{ role: "user", content }],
+      messages: [{ role: "user", content: prompt }],
     };
     if (enableWebSearch) {
       anthropicBody.tools = [{ type: "web_search_20250305", name: "web_search" }];
@@ -489,7 +592,7 @@ Deno.serve(async (req) => {
       const errBody = await anthropicRes.text().catch(() => "");
       return jsonResponse(
         { error: `Anthropic API error: ${anthropicRes.status}`, details: errBody.slice(0, 300) },
-        anthropicRes.status
+        anthropicRes.status,
       );
     }
 
