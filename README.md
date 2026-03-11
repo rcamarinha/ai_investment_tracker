@@ -20,10 +20,10 @@ A modular browser-based investment tracking suite — **Stock Portfolio** and **
 
 ### 🍷 Wine Cellar Tracker (`wine.html`)
 
-- **Label Scanning** — Take a photo of any wine label; Claude Vision AI identifies the wine and pre-fills all details
+- **Label Scanning** — Take a photo of any wine label; Gemini Vision AI (primary) or Claude Vision (fallback) identifies the wine and pre-fills all details
   - Mobile: standard OS picker — choose "Take Photo" or "Photo Library" (iOS & Android)
   - Desktop: file picker OR live camera via `getUserMedia`
-- **AI Valuations** — Claude searches Wine-Searcher, recent auction results (Sotheby's, Acker, Zachys, Hart Davis Hart), and retailer listings to estimate current market value per bottle. Returns: EUR + USD estimate, low–high range, confidence level (High / Medium / Low), cited sources, and an explanation note. Vintage-specific pricing — never averaged across years. Critic scores from label notes (e.g. "96/100") are passed to the prompt as anchors. A staleness warning appears when a valuation is over 60 days old
+- **AI Valuations** — Gemini with Google Search grounding (primary, falls back to Claude on quota errors) searches Wine-Searcher, recent auction results (Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart), and retailer listings to estimate current market value per bottle. Returns: EUR + USD estimate, low–high range, confidence level (High / Medium / Low), cited sources, and an explanation note. Vintage-specific pricing — never averaged across years. Critic scores from label notes (e.g. "96/100") are passed to the prompt as anchors. A staleness warning appears when a valuation is over 60 days old. A navigation guard warns before leaving the page while valuations are running
 - **Drink-Window Status** — Each bottle shows a live status badge: 🔵 Not Ready / 🟢 Ready Now / 🟡 At Peak / 🔴 Past Peak; cellar summary line counts bottles in each state
 - **Cellar Management** — Add, edit, and delete bottles with full metadata (vintage, region, varietal, appellation, etc.)
   - Inline form validation — errors appear beside the relevant field, no blocking alerts
@@ -66,9 +66,9 @@ Or deploy to GitHub Pages / any static host.
 
 | Provider | Used For |
 |----------|----------|
-| [Claude API](https://console.anthropic.com/) | Label scanning (vision), valuations, cellar analysis |
+| [Claude API](https://console.anthropic.com/) | Label scanning (Vision fallback), valuations (Gemini fallback), cellar analysis |
 
-The wine tracker needs **only** the Anthropic API key for all AI features. Supabase is optional for cloud sync.
+The wine tracker needs **only** the Anthropic API key. Gemini is called server-side via the Supabase Edge Function; no separate Gemini key is required. Supabase is optional for cloud sync.
 
 Enter keys via the **🔑 API Keys** button in each tracker.
 
@@ -113,12 +113,14 @@ ai_investment_tracker/
 │
 ├── wine/                   # Wine tracker modules
 │   ├── state.js            # Shared wine state
-│   ├── label.js            # Camera capture + Claude Vision label recognition
+│   ├── api.js              # Edge function client (routes label/valuation/analysis calls)
+│   ├── label.js            # Camera capture + Gemini/Claude Vision label recognition
 │   ├── storage.js          # Supabase auth + CRUD (self-contained)
 │   ├── cellar.js           # Rendering, add/edit/delete, snapshots, history
-│   ├── valuation.js        # Per-bottle AI market value estimation
+│   ├── valuation.js        # Per-bottle AI market value estimation (Gemini → Claude)
 │   ├── analysis.js         # AI cellar analysis (drink windows, recommendations)
-│   └── ui.js               # Allocation charts, API key dialog
+│   ├── ui.js               # Allocation charts, API key dialog
+│   └── utils.js            # escapeHTML, showToast, showConfirm helpers
 │
 ├── src/
 │   ├── portfolio.js        # Pure functions mirror of services/portfolio.js (for tests)
@@ -282,6 +284,14 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.10.0
+- **Gemini Vision for label scanning** — Gemini Vision is now the primary model for wine label recognition; Claude Vision acts as automatic fallback if Gemini is unavailable
+- **Gemini grounding for valuations** — Single-bottle and batch valuations now use Gemini with Google Search grounding as the primary engine (real-time web data); Claude is the per-chunk fallback on Gemini quota errors (429s retried up to 3× before switching)
+- **Scalable batch valuation** — Client sends sequential batches of 5 bottles; the edge function runs each batch as parallel Gemini grounding calls (CHUNK_SIZE=5), preventing timeout on large cellars (tested to 800+ bottles)
+- **Navigation guard** — Browser beforeunload warning and same-site link interception prevent accidental page navigation while valuations are running
+- **`wine/utils.js`** — Shared utility helpers (`escapeHTML`, `showToast`, `showConfirm`) extracted into their own module
+- **Additional test coverage** — New tests for exchange detection, asset type normalization, sector lookup, and investment perspectives
 
 ### v3.9.0
 - **Wine Cellar — live web-search valuations** — Valuation API calls now use Anthropic's `web_search_20250305` tool so Claude fetches real Wine-Searcher listings and recent auction data (Sotheby's, Acker, Zachys, Hart Davis Hart) instead of relying solely on training knowledge
