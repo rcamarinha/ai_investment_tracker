@@ -94,8 +94,8 @@ ai_investment_tracker/
 ├── wine.html               # Wine Cellar Tracker
 │
 ├── css/
-│   ├── styles.css          # Shared dark-theme styles + button guide
-│   └── wine.css            # Wine-specific styles (burgundy palette)
+│   ├── styles.css          # Design tokens (:root), shared dark-theme styles, button guide
+│   └── wine.css            # Wine-specific styles (maps --wine* tokens)
 │
 ├── data/
 │   ├── sectors.js          # Sector mapping + getSector() helpers
@@ -284,6 +284,13 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.11.0
+- **Design system tokens** — `css/styles.css` now defines a full `:root` token set: background layers (`--ink`, `--ink-2`, `--ink-3`, `--surface`, `--surface-2`), borders (`--border`, `--border-hover`), text (`--text-primary/secondary/tertiary`), semantic colours (`--up`, `--down`, `--gold`, `--wine*`), radii (`--r-sm/md/lg/xl`)
+- **New font stack** — Cormorant Garamond (display), Instrument Sans (body), DM Mono (mono) loaded via Google Fonts in all three HTML entry points
+- **Monetary values use DM Mono** — `font-family: var(--font-mono)` applied to all price/value/percentage elements: `.total-value`, `.position-value`, `.mover-pct`, `.allocation-bar-value`, `.bottle-gain`, `.cellar-stat .stat-value`, sales table cells
+- **All hardcoded colours replaced** — `styles.css` and `wine.css` now use CSS variables throughout; wine palette maps to `--wine`, `--wine-light`, `--wine-dim`
+- **Style guide updated** — `style-guide.html` reflects new token palette, font stacks, and uses CSS vars in its own inline styles
 
 ### v3.10.0
 - **Gemini Vision for label scanning** — Gemini Vision is now the primary model for wine label recognition; Claude Vision acts as automatic fallback if Gemini is unavailable

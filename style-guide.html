@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Design Library — AI Investment Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/wine.css">
     <style>
@@ -16,15 +18,15 @@
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: #64748b;
-            border-bottom: 1px solid #334155;
+            color: var(--text-tertiary);
+            border-bottom: 1px solid var(--border);
             padding-bottom: 8px;
             margin-bottom: 24px;
         }
         .sg-subsection-title {
             font-size: 13px;
             font-weight: 600;
-            color: #94a3b8;
+            color: var(--text-secondary);
             margin: 20px 0 12px;
         }
         .sg-row {
@@ -36,9 +38,9 @@
         }
         .sg-label {
             font-size: 11px;
-            color: #64748b;
+            color: var(--text-tertiary);
             margin-top: 6px;
-            font-family: monospace;
+            font-family: var(--font-mono);
         }
         .sg-swatch-grid {
             display: grid;
@@ -49,51 +51,51 @@
         .sg-swatch {
             border-radius: 10px;
             overflow: hidden;
-            border: 1px solid #334155;
+            border: 1px solid var(--border);
         }
         .sg-swatch-color {
             height: 52px;
         }
         .sg-swatch-info {
             padding: 8px 10px;
-            background: #0f172a;
+            background: var(--ink);
         }
         .sg-swatch-name {
             font-size: 12px;
             font-weight: 600;
-            color: #e2e8f0;
+            color: var(--text-primary);
         }
         .sg-swatch-value {
             font-size: 11px;
-            color: #64748b;
-            font-family: monospace;
+            color: var(--text-tertiary);
+            font-family: var(--font-mono);
         }
         .sg-box {
-            background: #0f172a;
-            border: 1px dashed #334155;
+            background: var(--ink);
+            border: 1px dashed var(--border);
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 12px;
         }
         .sg-note {
             font-size: 12px;
-            color: #64748b;
+            color: var(--text-tertiary);
             font-style: italic;
             margin-top: 8px;
         }
         .sg-type-scale > * { margin-bottom: 8px; }
         .sg-code {
-            font-family: monospace;
+            font-family: var(--font-mono);
             font-size: 11px;
-            background: #0f172a;
-            color: #94a3b8;
+            background: var(--ink);
+            color: var(--text-secondary);
             padding: 2px 6px;
             border-radius: 4px;
-            border: 1px solid #334155;
+            border: 1px solid var(--border);
         }
         .sg-divider {
             border: none;
-            border-top: 1px solid #1e293b;
+            border-top: 1px solid var(--ink-3);
             margin: 40px 0;
         }
         /* Fake interactive nav for demo */
@@ -139,39 +141,115 @@
 <div class="sg-section">
     <div class="sg-section-title">1 · Color Palette</div>
 
-    <div class="sg-subsection-title">Base / Neutral (Tailwind Slate dark)</div>
+    <div class="sg-subsection-title">Backgrounds</div>
     <div class="sg-swatch-grid">
         <div class="sg-swatch">
-            <div class="sg-swatch-color" style="background:#0f172a"></div>
-            <div class="sg-swatch-info"><div class="sg-swatch-name">bg-deep</div><div class="sg-swatch-value">#0f172a</div></div>
+            <div class="sg-swatch-color" style="background:#0B0C0E"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--ink</div><div class="sg-swatch-value">#0B0C0E · deepest bg</div></div>
         </div>
         <div class="sg-swatch">
-            <div class="sg-swatch-color" style="background:#1e293b"></div>
-            <div class="sg-swatch-info"><div class="sg-swatch-name">bg-base</div><div class="sg-swatch-value">#1e293b</div></div>
+            <div class="sg-swatch-color" style="background:#13151A"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--ink-2</div><div class="sg-swatch-value">#13151A</div></div>
         </div>
         <div class="sg-swatch">
-            <div class="sg-swatch-color" style="background:#334155"></div>
-            <div class="sg-swatch-info"><div class="sg-swatch-name">bg-elevated</div><div class="sg-swatch-value">#334155</div></div>
+            <div class="sg-swatch-color" style="background:#1C1F27"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--ink-3</div><div class="sg-swatch-value">#1C1F27</div></div>
         </div>
         <div class="sg-swatch">
-            <div class="sg-swatch-color" style="background:#475569"></div>
-            <div class="sg-swatch-info"><div class="sg-swatch-name">bg-hover</div><div class="sg-swatch-value">#475569</div></div>
+            <div class="sg-swatch-color" style="background:#232730"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--surface</div><div class="sg-swatch-value">#232730</div></div>
         </div>
         <div class="sg-swatch">
-            <div class="sg-swatch-color" style="background:#64748b"></div>
-            <div class="sg-swatch-info"><div class="sg-swatch-name">text-faint</div><div class="sg-swatch-value">#64748b</div></div>
+            <div class="sg-swatch-color" style="background:#2C3040"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--surface-2</div><div class="sg-swatch-value">#2C3040</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Borders</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--border</div><div class="sg-swatch-value">rgba(255,255,255,0.07)</div></div>
         </div>
         <div class="sg-swatch">
-            <div class="sg-swatch-color" style="background:#94a3b8"></div>
-            <div class="sg-swatch-info"><div class="sg-swatch-name">text-muted</div><div class="sg-swatch-value">#94a3b8</div></div>
+            <div class="sg-swatch-color" style="background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.25)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--border-hover</div><div class="sg-swatch-value">rgba(255,255,255,0.14)</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Text</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#F0EDE8"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--text-primary</div><div class="sg-swatch-value">#F0EDE8</div></div>
         </div>
         <div class="sg-swatch">
-            <div class="sg-swatch-color" style="background:#cbd5e1"></div>
-            <div class="sg-swatch-info"><div class="sg-swatch-name">text-secondary</div><div class="sg-swatch-value">#cbd5e1</div></div>
+            <div class="sg-swatch-color" style="background:#9A95A0"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--text-secondary</div><div class="sg-swatch-value">#9A95A0</div></div>
         </div>
         <div class="sg-swatch">
-            <div class="sg-swatch-color" style="background:#fff;border-bottom:1px solid #334155;"></div>
-            <div class="sg-swatch-info"><div class="sg-swatch-name">text-primary</div><div class="sg-swatch-value">#ffffff</div></div>
+            <div class="sg-swatch-color" style="background:#5C5870"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--text-tertiary</div><div class="sg-swatch-value">#5C5870</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Gold</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#C9A84C"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--gold</div><div class="sg-swatch-value">#C9A84C</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#7A6430"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--gold-dim</div><div class="sg-swatch-value">#7A6430</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--gold-glow</div><div class="sg-swatch-value">rgba(201,168,76,0.15)</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:rgba(201,168,76,0.35);border:1px solid rgba(201,168,76,0.5)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--gold-line</div><div class="sg-swatch-value">rgba(201,168,76,0.35)</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Wine</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#9B3A5A"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--wine</div><div class="sg-swatch-value">#9B3A5A</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#C4607C"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--wine-light</div><div class="sg-swatch-value">#C4607C</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#5A2035"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--wine-dim</div><div class="sg-swatch-value">#5A2035</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:rgba(155,58,90,0.18);border:1px solid rgba(155,58,90,0.4)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--wine-glow</div><div class="sg-swatch-value">rgba(155,58,90,0.18)</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:rgba(196,96,124,0.35);border:1px solid rgba(196,96,124,0.5)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--wine-line</div><div class="sg-swatch-value">rgba(196,96,124,0.35)</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Semantic</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#4CAF84"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--up</div><div class="sg-swatch-value">#4CAF84 · gains</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#E05A5A"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--down</div><div class="sg-swatch-value">#E05A5A · losses</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#7A8099"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">--neutral</div><div class="sg-swatch-value">#7A8099</div></div>
         </div>
     </div>
 
@@ -264,10 +342,12 @@
             <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">11px / uppercase / spaced — Section labels, column headers</div>
             <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;">10px / uppercase / spaced — Micro labels (movers column headers)</div>
         </div>
-        <div style="margin-top:20px;border-top:1px solid #334155;padding-top:16px;">
-            <div style="font-family:monospace;font-size:14px;color:#e2e8f0;background:#0f172a;padding:4px 8px;border-radius:4px;display:inline-block;">Monospace — ticker symbols, .trade-ticker</div>
+        <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px;">
+            <div style="font-family:var(--font-mono);font-size:14px;color:var(--text-primary);background:var(--ink);padding:4px 8px;border-radius:4px;display:inline-block;">Monospace — ticker symbols, .trade-ticker, all monetary values</div>
         </div>
-        <p class="sg-note">Font stack: <span class="sg-code">-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif</span></p>
+        <p class="sg-note">Display: <span class="sg-code">--font-display: 'Cormorant Garamond', Georgia, serif</span></p>
+        <p class="sg-note">Body: <span class="sg-code">--font-body: 'Instrument Sans', system-ui, sans-serif</span></p>
+        <p class="sg-note">Mono: <span class="sg-code">--font-mono: 'DM Mono', monospace</span> — used for all monetary values</p>
     </div>
 </div>
 
