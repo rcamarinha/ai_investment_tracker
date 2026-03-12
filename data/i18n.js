@@ -211,7 +211,12 @@ export const TRANSLATIONS = {
 
         // ── Filter panel ──────────────────────────────────────────────────────
         'filter.country':    'Country',
+        'filter.region':     'Region',
+        'filter.producer':   'Producer',
+        'filter.vintage':    'Vintage',
         'filter.varietal':   'Varietal',
+        'filter.more':       'More filters',
+        'filter.clear':      'Clear all',
         'filter.no_filters': 'No filters available yet.',
 
         // ── Cellar empty / no-results ─────────────────────────────────────────
@@ -439,7 +444,12 @@ export const TRANSLATIONS = {
 
         // ── Filter panel ──────────────────────────────────────────────────────
         'filter.country':    'País',
+        'filter.region':     'Região',
+        'filter.producer':   'Produtor',
+        'filter.vintage':    'Colheita',
         'filter.varietal':   'Casta',
+        'filter.more':       'Mais filtros',
+        'filter.clear':      'Limpar tudo',
         'filter.no_filters': 'Sem filtros disponíveis.',
 
         // ── Cellar empty / no-results ─────────────────────────────────────────

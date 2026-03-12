@@ -872,48 +872,117 @@
 }
 
 
-/* ── Advanced Filter Panel (P3) ─────────────────────────────────────────── */
+/* ── Filter Bar ──────────────────────────────────────────────────────────── */
 
-.filter-panel {
+.filter-bar {
+    flex-direction: column;
+    gap: 10px;
     margin-bottom: 16px;
-    border: 1px solid var(--ink-3);
-    border-radius: 10px;
-    overflow: hidden;
-    display: none; /* shown by JS when cellar has bottles */
+    /* display managed by JS */
 }
 
-.filter-panel summary {
-    padding: 9px 14px;
-    cursor: pointer;
+/* ── Readiness chips row ─────────────────────────────────────────────────── */
+
+.filter-readiness-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.readiness-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 20px;
     font-size: 13px;
-    color: var(--text-tertiary);
-    user-select: none;
-    list-style: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.readiness-chip:hover {
+    background: var(--chip-bg, rgba(255,255,255,0.05));
+    border-color: var(--chip-color, var(--wine));
+    color: var(--chip-color, var(--wine-light));
+}
+.readiness-chip.active {
+    background: var(--chip-bg, rgba(155,58,90,0.15));
+    border-color: var(--chip-color, var(--wine));
+    color: var(--chip-color, var(--wine-light));
+    font-weight: 500;
+}
+.readiness-chip strong {
+    font-weight: 600;
+}
+
+/* ── More-filters toggle row ─────────────────────────────────────────────── */
+
+.filter-bar-controls {
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: var(--ink);
-    transition: color 0.15s;
-}
-.filter-panel summary::-webkit-details-marker { display: none; }
-.filter-panel summary::before {
-    content: '▸';
-    transition: transform 0.15s;
-    font-size: 10px;
-}
-.filter-panel[open] summary::before { transform: rotate(90deg); }
-.filter-panel[open] summary {
-    border-bottom: 1px solid var(--ink-3);
-    color: var(--text-secondary);
+    gap: 8px;
 }
 
-.filter-panel-body {
+.filter-more-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 13px;
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    font-family: inherit;
+}
+.filter-more-btn:hover,
+.filter-more-btn.active {
+    border-color: var(--wine);
+    color: var(--text-primary);
+}
+.filter-more-btn.has-active {
+    border-color: var(--wine);
+    color: var(--wine-light);
+    background: rgba(155,58,90,0.12);
+}
+
+.filter-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    background: var(--wine);
+    color: #fff;
+    border-radius: 9px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.filter-clear-btn {
+    padding: 4px 10px !important;
+    font-size: 11px !important;
+}
+
+/* ── Expanded dimension filter groups ────────────────────────────────────── */
+
+.filter-expanded {
     padding: 14px;
     background: #080f1e;
+    border: 1px solid var(--ink-3);
+    border-radius: 10px;
 }
 
 .filter-group {
-    margin-bottom: 12px;
+    margin-bottom: 14px;
 }
 .filter-group:last-child { margin-bottom: 0; }
 
@@ -950,7 +1019,7 @@
     color: var(--text-primary);
 }
 .filter-chip.active {
-    background: var(--wine-glow);
+    background: var(--wine-glow, rgba(155,58,90,0.2));
     border-color: var(--wine);
     color: var(--wine-light);
 }

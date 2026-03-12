@@ -100,26 +100,84 @@ export function computeTotals() {
 }
 
 // ── Advanced Filter State ─────────────────────────────────────────────────────
-// Module-level Sets, persisted in the DOM (checkboxes); rebuilt on each render.
+// Module-level Sets, persisted in memory; rebuilt on each render.
 
+const _activeReadiness = new Set();
 const _activeCountries = new Set();
-const _activeVarietals  = new Set();
+const _activeRegions   = new Set();
+const _activeProducers = new Set();
+const _activeVintages  = new Set();
+const _activeVarietals = new Set();
 
-export function onFilterChange(checkbox) {
-    const dim = checkbox.dataset.dim;
-    const val = checkbox.value;
-    if (dim === 'country') {
-        if (checkbox.checked) _activeCountries.add(val); else _activeCountries.delete(val);
-    } else if (dim === 'varietal') {
-        if (checkbox.checked) _activeVarietals.add(val); else _activeVarietals.delete(val);
+// Readiness status chip click (toggle)
+export function onReadinessFilterClick(btn) {
+    const status = btn.dataset.status;
+    if (_activeReadiness.has(status)) {
+        _activeReadiness.delete(status);
+    } else {
+        _activeReadiness.add(status);
     }
     renderCellar();
 }
 
+// Dimension checkbox toggle (country / region / producer / vintage / varietal)
+export function onFilterChange(checkbox) {
+    const dim = checkbox.dataset.dim;
+    const val = checkbox.value;
+    const setMap = {
+        country:  _activeCountries,
+        region:   _activeRegions,
+        producer: _activeProducers,
+        vintage:  _activeVintages,
+        varietal: _activeVarietals,
+    };
+    const set = setMap[dim];
+    if (set) {
+        if (checkbox.checked) set.add(val); else set.delete(val);
+    }
+    renderCellar();
+}
+
+export function clearAllFilters() {
+    _activeReadiness.clear();
+    _activeCountries.clear();
+    _activeRegions.clear();
+    _activeProducers.clear();
+    _activeVintages.clear();
+    _activeVarietals.clear();
+    renderCellar();
+}
+
+export function toggleMoreFilters() {
+    const el  = document.getElementById('filterExpanded');
+    const btn = document.getElementById('filterMoreBtn');
+    if (!el) return;
+    const isOpen = el.style.display !== 'none';
+    el.style.display = isOpen ? 'none' : 'block';
+    if (btn) btn.classList.toggle('active', !isOpen);
+}
+
+function _totalActiveFilters() {
+    return _activeReadiness.size + _activeCountries.size + _activeRegions.size +
+           _activeProducers.size + _activeVintages.size + _activeVarietals.size;
+}
+
 function applyAdvancedFilters(bottles) {
     let result = bottles;
+    if (_activeReadiness.size > 0) {
+        result = result.filter(b => _activeReadiness.has(getDrinkStatus(b.drinkWindow)));
+    }
     if (_activeCountries.size > 0) {
         result = result.filter(b => _activeCountries.has(b.country || 'Unknown'));
+    }
+    if (_activeRegions.size > 0) {
+        result = result.filter(b => _activeRegions.has(b.region || 'Unknown'));
+    }
+    if (_activeProducers.size > 0) {
+        result = result.filter(b => _activeProducers.has(b.winery || 'Unknown'));
+    }
+    if (_activeVintages.size > 0) {
+        result = result.filter(b => _activeVintages.has(String(b.vintage || '')));
     }
     if (_activeVarietals.size > 0) {
         result = result.filter(b => _activeVarietals.has(b.varietal || 'Unknown'));
@@ -128,36 +186,78 @@ function applyAdvancedFilters(bottles) {
 }
 
 function renderFilterPanel() {
-    const container = document.getElementById('filterGroups');
-    if (!container) return;
+    const readinessRow = document.getElementById('readinessFilterRow');
+    const container    = document.getElementById('filterGroups');
+    if (!readinessRow || !container) return;
 
-    const countries = [...new Set(state.cellar.map(b => b.country).filter(Boolean))].sort();
-    const varietals = [...new Set(state.cellar.map(b => b.varietal).filter(Boolean))].sort();
+    // ── Readiness status chips ────────────────────────────────────────────────
+    const counts = { 'ready': 0, 'at-peak': 0, 'not-ready': 0, 'past-peak': 0 };
+    state.cellar.forEach(b => {
+        const s = getDrinkStatus(b.drinkWindow);
+        if (s in counts) counts[s]++;
+    });
 
-    if (countries.length === 0 && varietals.length === 0) {
-        container.innerHTML = `<span style="color:#64748b;font-size:13px;">${t('filter.no_filters')}</span>`;
-        return;
+    const readinessConfig = [
+        { status: 'ready',     icon: '🟢', label: t('cellar.ready'),     color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
+        { status: 'at-peak',   icon: '🟡', label: t('cellar.at_peak'),   color: '#fbbf24', bg: 'rgba(251,191,36,0.12)'  },
+        { status: 'not-ready', icon: '🔵', label: t('cellar.not_ready'), color: '#60a5fa', bg: 'rgba(96,165,250,0.12)'  },
+        { status: 'past-peak', icon: '🔴', label: t('cellar.past_peak'), color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+    ];
+
+    const totalWithWindow = Object.values(counts).reduce((a, b) => a + b, 0);
+    if (totalWithWindow === 0) {
+        readinessRow.innerHTML = '';
+    } else {
+        readinessRow.innerHTML = readinessConfig
+            .filter(c => counts[c.status] > 0)
+            .map(c => {
+                const isActive = _activeReadiness.has(c.status);
+                return `<button class="readiness-chip${isActive ? ' active' : ''}"
+                    data-status="${c.status}"
+                    onclick="onReadinessFilterClick(this)"
+                    style="--chip-color:${c.color};--chip-bg:${c.bg};"
+                    >${c.icon} <strong>${counts[c.status]}</strong> ${escapeHTML(c.label)}</button>`;
+            }).join('');
     }
 
-    const chips = (items, dim) => items.map(v => `
-        <label class="filter-chip${(dim === 'country' ? _activeCountries : _activeVarietals).has(v) ? ' active' : ''}">
-            <input type="checkbox" data-dim="${dim}" value="${escapeHTML(v)}"
-                   ${(dim === 'country' ? _activeCountries : _activeVarietals).has(v) ? 'checked' : ''}
-                   onchange="onFilterChange(this)" />
-            ${escapeHTML(v)}
-        </label>`).join('');
+    // ── Dimension filter groups ───────────────────────────────────────────────
+    const uniq  = (arr) => [...new Set(arr.filter(Boolean))].sort();
+    const uniqN = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => b - a);
 
-    container.innerHTML = `
-        ${countries.length > 0 ? `
+    const groups = [
+        { dim: 'country',  label: t('filter.country'),  items: uniq(state.cellar.map(b => b.country)),         set: _activeCountries },
+        { dim: 'region',   label: t('filter.region'),   items: uniq(state.cellar.map(b => b.region)),           set: _activeRegions   },
+        { dim: 'producer', label: t('filter.producer'), items: uniq(state.cellar.map(b => b.winery)),           set: _activeProducers },
+        { dim: 'vintage',  label: t('filter.vintage'),  items: uniqN(state.cellar.map(b => b.vintage)).map(String), set: _activeVintages  },
+        { dim: 'varietal', label: t('filter.varietal'), items: uniq(state.cellar.map(b => b.varietal)),         set: _activeVarietals },
+    ].filter(g => g.items.length > 0);
+
+    if (groups.length === 0) {
+        container.innerHTML = '';
+    } else {
+        const chipHtml = (items, dim, activeSet) => items.map(v => `
+            <label class="filter-chip${activeSet.has(v) ? ' active' : ''}">
+                <input type="checkbox" data-dim="${dim}" value="${escapeHTML(v)}"
+                       ${activeSet.has(v) ? 'checked' : ''}
+                       onchange="onFilterChange(this)" />
+                ${escapeHTML(v)}
+            </label>`).join('');
+
+        container.innerHTML = groups.map(g => `
             <div class="filter-group">
-                <div class="filter-group-label">${t('filter.country')}</div>
-                <div class="filter-chips">${chips(countries, 'country')}</div>
-            </div>` : ''}
-        ${varietals.length > 0 ? `
-            <div class="filter-group">
-                <div class="filter-group-label">${t('filter.varietal')}</div>
-                <div class="filter-chips">${chips(varietals, 'varietal')}</div>
-            </div>` : ''}`;
+                <div class="filter-group-label">${escapeHTML(g.label)}</div>
+                <div class="filter-chips">${chipHtml(g.items, g.dim, g.set)}</div>
+            </div>`).join('');
+    }
+
+    // ── Update active-count badge & clear button ──────────────────────────────
+    const total    = _totalActiveFilters();
+    const badge    = document.getElementById('filterCountBadge');
+    const clearBtn = document.getElementById('clearFiltersBtn');
+    const moreBtn  = document.getElementById('filterMoreBtn');
+    if (badge)    { badge.style.display    = total > 0 ? 'inline-flex' : 'none'; badge.textContent = total; }
+    if (clearBtn) { clearBtn.style.display = total > 0 ? '' : 'none'; }
+    if (moreBtn)  { moreBtn.classList.toggle('has-active', total > 0); }
 }
 
 // ── Portfolio Rendering ───────────────────────────────────────────────────────
@@ -166,12 +266,12 @@ export function renderCellar() {
     const bottlesDiv = document.getElementById('bottles');
     if (!bottlesDiv) return;
 
-    // Show/hide search + filter controls
+    // Show/hide search/sort controls and filter bar
     const controlsEl = document.getElementById('bottleControls');
     if (controlsEl) controlsEl.style.display = state.cellar.length > 0 ? 'flex' : 'none';
 
-    const filterPanel = document.getElementById('filterPanel');
-    if (filterPanel) filterPanel.style.display = state.cellar.length > 0 ? '' : 'none';
+    const filterBar = document.getElementById('filterBar');
+    if (filterBar) filterBar.style.display = state.cellar.length > 0 ? 'flex' : 'none';
 
     if (state.cellar.length === 0) {
         bottlesDiv.innerHTML = `
@@ -190,14 +290,11 @@ export function renderCellar() {
         return;
     }
 
-    // Rebuild the filter panel options (preserves checked state via Sets)
+    // Rebuild the filter panel (readiness chips + dimension groups)
     renderFilterPanel();
 
     const totals = computeTotals();
     updateStatsBar(totals);
-
-    // P2: Drink-window summary line
-    updateReadySummary();
 
     // Apply text search
     const searchTerm = document.getElementById('bottleSearch')?.value || '';
@@ -211,7 +308,7 @@ export function renderCellar() {
     result = sortBottles(result, sortMode);
 
     if (result.length === 0) {
-        const hasFilter = _activeCountries.size > 0 || _activeVarietals.size > 0;
+        const hasFilter = _totalActiveFilters() > 0;
         const hint = hasFilter ? t('cellar.no_results_filters') : t('cellar.no_results_search');
         bottlesDiv.innerHTML = `
             <div class="no-results">
@@ -226,26 +323,6 @@ export function renderCellar() {
     renderAllocationCharts();
 }
 
-function updateReadySummary() {
-    const el = document.getElementById('readySummary');
-    if (!el) return;
-
-    const counts = { 'ready': 0, 'at-peak': 0, 'not-ready': 0, 'past-peak': 0 };
-    state.cellar.forEach(b => {
-        const s = getDrinkStatus(b.drinkWindow);
-        if (s in counts) counts[s]++;
-    });
-    const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    if (total === 0) { el.style.display = 'none'; return; }
-
-    const parts = [];
-    if (counts['ready']     > 0) parts.push(`<span style="color:#4ade80;">🟢 ${counts['ready']} ${t('cellar.ready')}</span>`);
-    if (counts['at-peak']   > 0) parts.push(`<span style="color:#fbbf24;">🟡 ${counts['at-peak']} ${t('cellar.at_peak')}</span>`);
-    if (counts['not-ready'] > 0) parts.push(`<span style="color:#60a5fa;">🔵 ${counts['not-ready']} ${t('cellar.not_ready')}</span>`);
-    if (counts['past-peak'] > 0) parts.push(`<span style="color:#f87171;">🔴 ${counts['past-peak']} ${t('cellar.past_peak')}</span>`);
-    el.style.display = 'block';
-    el.innerHTML = parts.join('<span style="color:#334155;"> · </span>');
-}
 
 function renderBottleCard(b) {
     const hasPurchasePrice = b.purchasePrice != null && b.purchasePrice > 0;
