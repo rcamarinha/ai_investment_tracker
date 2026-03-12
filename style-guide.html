@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Design Library — AI Investment Tracker</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/wine.css">
+    <style>
+        /* Style-guide-only utilities */
+        .sg-section {
+            margin-bottom: 48px;
+        }
+        .sg-section-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #64748b;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 8px;
+            margin-bottom: 24px;
+        }
+        .sg-subsection-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #94a3b8;
+            margin: 20px 0 12px;
+        }
+        .sg-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        .sg-label {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 6px;
+            font-family: monospace;
+        }
+        .sg-swatch-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .sg-swatch {
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+        .sg-swatch-color {
+            height: 52px;
+        }
+        .sg-swatch-info {
+            padding: 8px 10px;
+            background: #0f172a;
+        }
+        .sg-swatch-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+        .sg-swatch-value {
+            font-size: 11px;
+            color: #64748b;
+            font-family: monospace;
+        }
+        .sg-box {
+            background: #0f172a;
+            border: 1px dashed #334155;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 12px;
+        }
+        .sg-note {
+            font-size: 12px;
+            color: #64748b;
+            font-style: italic;
+            margin-top: 8px;
+        }
+        .sg-type-scale > * { margin-bottom: 8px; }
+        .sg-code {
+            font-family: monospace;
+            font-size: 11px;
+            background: #0f172a;
+            color: #94a3b8;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #334155;
+        }
+        .sg-divider {
+            border: none;
+            border-top: 1px solid #1e293b;
+            margin: 40px 0;
+        }
+        /* Fake interactive nav for demo */
+        #demoNavbar { position: static; }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     NAVBAR (live demo)
+     ═══════════════════════════════════════════════════════════════ -->
+<nav class="app-navbar" id="demoNavbar">
+    <div class="navbar-inner">
+        <a href="#" class="nav-brand active">⬡ Hub</a>
+        <div class="nav-links">
+            <a href="#" class="nav-link active">Portfolio</a>
+            <a href="#" class="nav-link">Wine Cellar</a>
+            <a href="#" class="nav-link">Style Guide</a>
+        </div>
+        <div class="nav-actions">
+            <button class="lang-toggle">PT / EN</button>
+            <div class="nav-auth-wrap">
+                <button class="nav-auth-btn">Sign In</button>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE HEADER
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="container" style="max-width:1100px;margin:30px auto;padding:0 20px;">
+
+<div class="header" style="margin-bottom:36px;">
+    <h1>Design Library</h1>
+    <p>Living style guide for the AI Investment Tracker &amp; Wine Cellar apps — all components, tokens, and patterns in one place.</p>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     1. COLOR PALETTE
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">1 · Color Palette</div>
+
+    <div class="sg-subsection-title">Base / Neutral (Tailwind Slate dark)</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#0f172a"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">bg-deep</div><div class="sg-swatch-value">#0f172a</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#1e293b"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">bg-base</div><div class="sg-swatch-value">#1e293b</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#334155"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">bg-elevated</div><div class="sg-swatch-value">#334155</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#475569"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">bg-hover</div><div class="sg-swatch-value">#475569</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#64748b"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">text-faint</div><div class="sg-swatch-value">#64748b</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#94a3b8"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">text-muted</div><div class="sg-swatch-value">#94a3b8</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#cbd5e1"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">text-secondary</div><div class="sg-swatch-value">#cbd5e1</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#fff;border-bottom:1px solid #334155;"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">text-primary</div><div class="sg-swatch-value">#ffffff</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Accent Colors</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#2563eb"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">accent-blue</div><div class="sg-swatch-value">#2563eb · primary</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#7c3aed"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">accent-purple</div><div class="sg-swatch-value">#7c3aed · AI/special</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#4ade80"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">accent-green</div><div class="sg-swatch-value">#4ade80 · positive</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#f87171"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">accent-red</div><div class="sg-swatch-value">#f87171 · negative</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#f59e0b"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">accent-amber</div><div class="sg-swatch-value">#f59e0b · warning</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#10b981"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">accent-teal</div><div class="sg-swatch-value">#10b981 · trade</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Wine Palette (wine.css)</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#3b0764"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">wine-deep</div><div class="sg-swatch-value">#3b0764</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#9f1239"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">wine-mid</div><div class="sg-swatch-value">#9f1239 · Bordeaux</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#fda4af"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">wine-light</div><div class="sg-swatch-value">#fda4af · rosé</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:#d97706"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">wine-gold</div><div class="sg-swatch-value">#d97706 · value</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Semantic Gradients</div>
+    <div class="sg-swatch-grid">
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:linear-gradient(90deg,#2563eb,#7c3aed)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">Header / Brand</div><div class="sg-swatch-value">blue → purple</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:linear-gradient(90deg,#7c3aed,#2563eb)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">AI accent</div><div class="sg-swatch-value">purple → blue</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:linear-gradient(135deg,#059669,#10b981)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">Trade ideas</div><div class="sg-swatch-value">green gradient</div></div>
+        </div>
+        <div class="sg-swatch">
+            <div class="sg-swatch-color" style="background:linear-gradient(135deg,#9f1239,#3b0764,#1e1b4b)"></div>
+            <div class="sg-swatch-info"><div class="sg-swatch-name">Wine header</div><div class="sg-swatch-value">Bordeaux gradient</div></div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     2. TYPOGRAPHY
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">2 · Typography</div>
+
+    <div class="card">
+        <div class="sg-type-scale">
+            <div style="font-size:28px;font-weight:700;color:#fff;">28px / bold — Page title</div>
+            <div style="font-size:24px;font-weight:700;color:#4ade80;">24px / bold — Total value highlight</div>
+            <div style="font-size:18px;font-weight:700;color:#e2e8f0;">18px / bold — Card title (.analysis-title)</div>
+            <div style="font-size:16px;font-weight:700;color:#e2e8f0;">16px / bold — Trade idea title (.trade-idea-title)</div>
+            <div style="font-size:15px;font-weight:700;color:#fff;">15px / bold — Position symbol (.position-symbol)</div>
+            <div style="font-size:14px;color:#cbd5e1;line-height:1.6;">14px / regular — Body text, descriptions (.analysis-content)</div>
+            <div style="font-size:13px;color:#cbd5e1;">13px — Secondary body, form labels, buttons (.btn-sm)</div>
+            <div style="font-size:12px;color:#94a3b8;">12px — Captions, metadata, table cells</div>
+            <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">11px / uppercase / spaced — Section labels, column headers</div>
+            <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;">10px / uppercase / spaced — Micro labels (movers column headers)</div>
+        </div>
+        <div style="margin-top:20px;border-top:1px solid #334155;padding-top:16px;">
+            <div style="font-family:monospace;font-size:14px;color:#e2e8f0;background:#0f172a;padding:4px 8px;border-radius:4px;display:inline-block;">Monospace — ticker symbols, .trade-ticker</div>
+        </div>
+        <p class="sg-note">Font stack: <span class="sg-code">-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif</span></p>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     3. BUTTONS
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">3 · Buttons</div>
+
+    <div class="card">
+        <div class="sg-subsection-title">Default size (.btn)</div>
+        <div class="sg-row">
+            <div>
+                <button class="btn btn-primary">Import</button>
+                <div class="sg-label">.btn-primary</div>
+            </div>
+            <div>
+                <button class="btn btn-accent">✦ AI Analysis</button>
+                <div class="sg-label">.btn-accent</div>
+            </div>
+            <div>
+                <button class="btn btn-success">Update Prices</button>
+                <div class="sg-label">.btn-success</div>
+            </div>
+            <div>
+                <button class="btn btn-warning">📸 Snapshot</button>
+                <div class="sg-label">.btn-warning</div>
+            </div>
+            <div>
+                <button class="btn btn-danger">Clear All</button>
+                <div class="sg-label">.btn-danger</div>
+            </div>
+            <div>
+                <button class="btn btn-key">🔑 API Keys</button>
+                <div class="sg-label">.btn-key</div>
+            </div>
+            <div>
+                <button class="btn btn-trade">💡 Trade Ideas</button>
+                <div class="sg-label">.btn-trade</div>
+            </div>
+        </div>
+
+        <div class="sg-subsection-title">Compact size (.btn-sm)</div>
+        <div class="sg-row">
+            <div>
+                <button class="btn btn-sm btn-primary">Import</button>
+                <div class="sg-label">.btn-sm.btn-primary</div>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-accent">✦ Analyze</button>
+                <div class="sg-label">.btn-sm.btn-accent</div>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-success">Save</button>
+                <div class="sg-label">.btn-sm.btn-success</div>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-warning">Snapshot</button>
+                <div class="sg-label">.btn-sm.btn-warning</div>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-danger">Delete</button>
+                <div class="sg-label">.btn-sm.btn-danger</div>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-key">Keys</button>
+                <div class="sg-label">.btn-sm.btn-key</div>
+            </div>
+        </div>
+
+        <div class="sg-subsection-title">States</div>
+        <div class="sg-row">
+            <div>
+                <button class="btn btn-primary" disabled>Disabled</button>
+                <div class="sg-label">:disabled (50% opacity)</div>
+            </div>
+            <div>
+                <button class="btn btn-accent">Hover me</button>
+                <div class="sg-label">:hover (brightness +10%)</div>
+            </div>
+        </div>
+
+        <div class="sg-subsection-title">Position Action Buttons (icon-sized, 28px)</div>
+        <div class="sg-row">
+            <div>
+                <button class="position-action-btn action-refresh">↻</button>
+                <div class="sg-label">.action-refresh</div>
+            </div>
+            <div>
+                <button class="position-action-btn action-buy">+</button>
+                <div class="sg-label">.action-buy</div>
+            </div>
+            <div>
+                <button class="position-action-btn action-sell">−</button>
+                <div class="sg-label">.action-sell</div>
+            </div>
+            <div>
+                <button class="position-action-btn action-del">✕</button>
+                <div class="sg-label">.action-del</div>
+            </div>
+        </div>
+
+        <div class="sg-subsection-title">SSO Buttons</div>
+        <div class="sg-row">
+            <div>
+                <button class="btn-sso btn-google">
+                    <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                    Sign in with Google
+                </button>
+                <div class="sg-label">.btn-sso.btn-google</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     4. CARDS & LAYOUT
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">4 · Cards &amp; Layout</div>
+
+    <div class="sg-row" style="align-items:stretch;">
+        <div style="flex:1;min-width:260px;">
+            <div class="card">
+                <h3 style="margin-bottom:8px;">Base Card</h3>
+                <p style="color:#cbd5e1;font-size:14px;">Standard content card. Used for sections like AI analysis, controls, or any grouped content.</p>
+                <p class="sg-note">.card — bg #1e293b, border #334155, radius 15px, padding 25px</p>
+            </div>
+        </div>
+        <div style="flex:1;min-width:260px;">
+            <div class="analysis-card">
+                <div class="analysis-title">📊 Analysis Card</div>
+                <div class="analysis-content">Used inside the AI analysis section to group insight blocks. Slightly elevated surface.</div>
+                <p class="sg-note">.analysis-card — bg #334155, border #475569, radius 10px, padding 20px</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Idea Item (inside analysis)</div>
+    <div class="idea-item">
+        <div class="idea-title">MSFT — Microsoft Corporation</div>
+        <div class="idea-desc">Strong FCF generation and cloud growth support continued position. Consider adding on dips below $380.</div>
+    </div>
+
+    <div class="sg-subsection-title">Disclaimer</div>
+    <div class="disclaimer">
+        ⚠️ This analysis is for informational purposes only and does not constitute financial advice. Always conduct your own research before making investment decisions.
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     5. PORTFOLIO GRID
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">5 · Portfolio Grid</div>
+
+    <div class="card">
+        <div class="portfolio-header">
+            <div>
+                <h3 style="margin-bottom:4px;">My Portfolio</h3>
+                <p style="color:#94a3b8;font-size:13px;">5 positions · Last updated 2 min ago</p>
+            </div>
+            <div class="total-value">
+                <div>TOTAL VALUE</div>
+                <div>$148,320.00</div>
+            </div>
+        </div>
+
+        <div class="positions">
+            <!-- Header row -->
+            <div class="position-header-row">
+                <div>Symbol</div>
+                <div>Name / Platform</div>
+                <div>Shares</div>
+                <div>Avg Price</div>
+                <div>Current Value</div>
+                <div>Gain / Loss</div>
+                <div>Actions</div>
+            </div>
+
+            <!-- Position rows -->
+            <div class="position">
+                <div class="position-symbol pos-cell">AAPL</div>
+                <div class="pos-cell">
+                    <div>Apple Inc.</div>
+                    <div class="pos-secondary">Fidelity · Stock</div>
+                </div>
+                <div class="pos-cell">25</div>
+                <div class="pos-cell">
+                    <div>$172.50</div>
+                    <div class="pos-secondary">avg cost</div>
+                </div>
+                <div class="pos-cell pos-right">
+                    <div class="position-value">$4,812.50</div>
+                    <div class="pos-secondary">192.50/sh</div>
+                </div>
+                <div class="pos-cell pos-right" style="color:#4ade80;">
+                    <div>+$500.00</div>
+                    <div class="pos-secondary">+11.59%</div>
+                </div>
+                <div class="pos-cell">
+                    <div class="position-actions">
+                        <button class="position-action-btn action-refresh" title="Refresh">↻</button>
+                        <button class="position-action-btn action-buy" title="Buy more">+</button>
+                        <button class="position-action-btn action-sell" title="Sell">−</button>
+                        <button class="position-action-btn action-del" title="Delete">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="position">
+                <div class="position-symbol pos-cell">MSFT</div>
+                <div class="pos-cell">
+                    <div>Microsoft Corp.</div>
+                    <div class="pos-secondary">Schwab · Stock</div>
+                </div>
+                <div class="pos-cell">10</div>
+                <div class="pos-cell">
+                    <div>$420.00</div>
+                    <div class="pos-secondary">avg cost</div>
+                </div>
+                <div class="pos-cell pos-right">
+                    <div class="position-value">$4,150.00</div>
+                    <div class="pos-secondary">415.00/sh</div>
+                </div>
+                <div class="pos-cell pos-right" style="color:#f87171;">
+                    <div>−$50.00</div>
+                    <div class="pos-secondary">−1.19%</div>
+                </div>
+                <div class="pos-cell">
+                    <div class="position-actions">
+                        <button class="position-action-btn action-refresh">↻</button>
+                        <button class="position-action-btn action-buy">+</button>
+                        <button class="position-action-btn action-sell">−</button>
+                        <button class="position-action-btn action-del">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="position inactive">
+                <div class="position-symbol pos-cell" style="color:#64748b;">VOO</div>
+                <div class="pos-cell" style="color:#64748b;">
+                    <div>Vanguard S&amp;P 500</div>
+                    <div class="pos-secondary">Vanguard · ETF</div>
+                </div>
+                <div class="pos-cell" style="color:#64748b;">50</div>
+                <div class="pos-cell" style="color:#64748b;">$380.00</div>
+                <div class="pos-cell pos-right" style="color:#64748b;">$20,000.00</div>
+                <div class="pos-cell pos-right" style="color:#64748b;">—</div>
+                <div class="pos-cell"><span class="pos-secondary">(inactive)</span></div>
+            </div>
+        </div>
+        <p class="sg-note">.position — grid 7-col, bg #334155. .position.inactive — opacity 0.45, bg #2d3748</p>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     6. FORMS & INPUTS
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">6 · Forms &amp; Inputs</div>
+
+    <div class="card">
+        <div class="position-form-row" style="max-width:600px;">
+            <div class="position-form-group">
+                <label>Asset Symbol</label>
+                <div class="search-container">
+                    <input type="text" placeholder="e.g. AAPL" value="AAPL">
+                    <div class="search-results" style="display:block;position:static;border-radius:8px;margin-top:4px;">
+                        <div class="search-result-item">
+                            <span class="search-result-symbol">AAPL</span>
+                            <span class="search-result-name">Apple Inc.</span>
+                            <span class="search-result-type">Stock</span>
+                        </div>
+                        <div class="search-result-item">
+                            <span class="search-result-symbol">AAPL.BA</span>
+                            <span class="search-result-name">Apple Inc. (Buenos Aires)</span>
+                            <span class="search-result-type">Stock</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="sg-label">input + .search-results autocomplete</div>
+            </div>
+            <div class="position-form-group">
+                <label>Platform</label>
+                <select>
+                    <option>Fidelity</option>
+                    <option>Schwab</option>
+                    <option>Robinhood</option>
+                    <option>Vanguard</option>
+                </select>
+                <div class="sg-label">select — .position-form-group select</div>
+            </div>
+        </div>
+
+        <div class="position-form-row" style="max-width:600px;">
+            <div class="position-form-group">
+                <label>Shares</label>
+                <input type="number" placeholder="0.00" value="25">
+                <div class="position-calc-display">Total cost: $4,312.50</div>
+            </div>
+            <div class="position-form-group">
+                <label>Average Price ($)</label>
+                <input type="number" placeholder="0.00" value="172.50">
+            </div>
+        </div>
+
+        <div class="sg-subsection-title">Validation Error State</div>
+        <div class="position-form-group" style="max-width:280px;">
+            <label>Shares</label>
+            <input type="number" class="field-invalid" placeholder="0.00">
+            <div class="form-error">Shares must be a positive number.</div>
+        </div>
+
+        <div class="sg-subsection-title">Auth Bar Inputs</div>
+        <div class="auth-bar">
+            <div class="auth-login-panel">
+                <div class="auth-sso-section">
+                    <button class="btn-sso btn-google">
+                        <svg width="14" height="14" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                        Google
+                    </button>
+                </div>
+                <div class="auth-divider"><span>or</span></div>
+                <div class="auth-email-section">
+                    <input type="email" placeholder="email@example.com">
+                    <input type="password" placeholder="password">
+                    <button class="btn btn-sm btn-primary">Log In</button>
+                    <button class="btn btn-sm btn-primary">Sign Up</button>
+                    <button class="auth-forgot-link">Forgot?</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="sg-subsection-title">Logged-in Auth Bar</div>
+        <div class="auth-bar">
+            <div class="auth-logged-in">
+                <span style="color:#4ade80;">✓ Signed in as</span>
+                <strong style="color:#e2e8f0;">user@example.com</strong>
+                <span class="role-badge role-admin">Admin</span>
+                <span class="role-badge role-user">User</span>
+                <button class="btn btn-sm btn-danger" style="margin:0;">Sign Out</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     7. BADGES & TAGS
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">7 · Badges &amp; Tags</div>
+
+    <div class="card">
+        <div class="sg-subsection-title">Role Badges</div>
+        <div class="sg-row">
+            <div><span class="role-badge role-admin">Admin</span><div class="sg-label">.role-admin</div></div>
+            <div><span class="role-badge role-user">User</span><div class="sg-label">.role-user</div></div>
+        </div>
+
+        <div class="sg-subsection-title">Perspective Badge</div>
+        <div class="sg-row">
+            <div><span class="perspective-badge" style="background:#2563eb;">📊 Value</span><div class="sg-label">.perspective-badge</div></div>
+            <div><span class="perspective-badge" style="background:#7c3aed;">🤖 Quant</span></div>
+            <div><span class="perspective-badge" style="background:#059669;">🌱 GARP</span></div>
+        </div>
+
+        <div class="sg-subsection-title">Trade Action Tags</div>
+        <div class="sg-row">
+            <div>
+                <span class="trade-action" style="background:rgba(16,185,129,0.2);color:#10b981;">BUY</span>
+                <div class="sg-label">.trade-action buy</div>
+            </div>
+            <div>
+                <span class="trade-action" style="background:rgba(239,68,68,0.2);color:#ef4444;">SELL</span>
+                <div class="sg-label">.trade-action sell</div>
+            </div>
+            <div>
+                <span class="trade-action" style="background:rgba(99,102,241,0.2);color:#6366f1;">HOLD</span>
+                <div class="sg-label">.trade-action hold</div>
+            </div>
+            <div>
+                <span class="trade-action" style="background:rgba(139,92,246,0.2);color:#8b5cf6;">WATCH</span>
+                <div class="sg-label">.trade-action watch</div>
+            </div>
+            <div>
+                <span class="trade-action" style="background:rgba(245,158,11,0.2);color:#f59e0b;">REBALANCE</span>
+                <div class="sg-label">.trade-action rebalance</div>
+            </div>
+        </div>
+
+        <div class="sg-subsection-title">Ticker Tag</div>
+        <div class="sg-row">
+            <div>
+                <span class="trade-ticker">AAPL</span>
+                <div class="sg-label">.trade-ticker</div>
+            </div>
+            <div><span class="trade-ticker">MSFT</span></div>
+            <div><span class="trade-ticker">VOO</span></div>
+        </div>
+
+        <div class="sg-subsection-title">Confidence Badges (wine valuation)</div>
+        <div class="sg-row">
+            <div><span class="confidence-badge confidence-high">HIGH</span><div class="sg-label">.confidence-high</div></div>
+            <div><span class="confidence-badge confidence-medium">MEDIUM</span><div class="sg-label">.confidence-medium</div></div>
+            <div><span class="confidence-badge confidence-low">LOW</span><div class="sg-label">.confidence-low</div></div>
+        </div>
+
+        <div class="sg-subsection-title">Drink-Window Badges (wine)</div>
+        <div class="sg-row">
+            <div><span class="drink-badge drink-badge-ready">✓ Ready</span><div class="sg-label">.drink-badge-ready</div></div>
+            <div><span class="drink-badge drink-badge-at-peak">★ At Peak</span><div class="sg-label">.drink-badge-at-peak</div></div>
+            <div><span class="drink-badge drink-badge-not-ready">◷ Not Ready</span><div class="sg-label">.drink-badge-not-ready</div></div>
+            <div><span class="drink-badge drink-badge-past-peak">↓ Past Peak</span><div class="sg-label">.drink-badge-past-peak</div></div>
+        </div>
+
+        <div class="sg-subsection-title">Bottle Tags (wine)</div>
+        <div class="sg-row">
+            <div><span class="bottle-tag">Burgundy</span></div>
+            <div><span class="bottle-tag">Pinot Noir</span></div>
+            <div><span class="bottle-tag">2018</span></div>
+            <div><span class="bottle-tag">France</span></div>
+            <div><span class="drink-window">2024 – 2032</span></div>
+            <div><span class="unvalued-badge">Needs Valuation</span></div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     8. PERSPECTIVE SELECTOR
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">8 · Perspective Selector</div>
+
+    <div class="perspective-selector">
+        <div class="perspective-header">
+            <span class="perspective-label">Investment Lens</span>
+        </div>
+        <div class="perspective-tabs">
+            <button class="perspective-tab active" style="border-color:#2563eb;color:#60a5fa;">
+                📊 Value
+            </button>
+            <button class="perspective-tab">📈 GARP</button>
+            <button class="perspective-tab">🤖 Quant</button>
+            <button class="perspective-tab">🌐 Macro</button>
+            <button class="perspective-tab">🏖 Passive</button>
+            <button class="perspective-tab">📉 Technical</button>
+        </div>
+        <div class="perspective-info">
+            <div class="perspective-info-icon">📊</div>
+            <div class="perspective-info-text">
+                <div class="perspective-info-name">Value Investing</div>
+                <div class="perspective-info-desc">Buy great businesses at fair prices. Focus on margin of safety, intrinsic value, and long-term compounding.</div>
+                <div class="perspective-info-figures">Inspired by: Warren Buffett, Charlie Munger, Benjamin Graham</div>
+            </div>
+            <span class="perspective-badge" style="background:#2563eb;">📊 Value</span>
+        </div>
+        <div class="perspective-buttons">
+            <button class="btn btn-accent">✦ Analyze as Value Investor</button>
+            <button class="btn btn-trade">💡 Trade Ideas</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     9. TRADE IDEA CARDS
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">9 · Trade Idea Cards</div>
+
+    <div class="trade-idea-card buy">
+        <div class="trade-idea-header">
+            <div class="trade-idea-number">1</div>
+            <div class="trade-idea-title-section">
+                <div class="trade-idea-title">
+                    <span class="trade-ticker">NVDA</span>
+                    <span class="trade-action" style="background:rgba(16,185,129,0.2);color:#10b981;margin-left:8px;">BUY</span>
+                </div>
+                <div class="trade-idea-subtitle">Add to existing position · Technology / Semiconductors</div>
+            </div>
+        </div>
+        <div class="trade-idea-context">
+            <h4>Context</h4>
+            <ul>
+                <li>Current position: 15 shares @ $580 avg ($8,700 value)</li>
+                <li>AI accelerator demand remains structurally strong</li>
+                <li>Trading at 35x forward earnings — premium but justified</li>
+            </ul>
+        </div>
+        <div class="trade-idea-action">
+            <h4>⚡ Suggested Action</h4>
+            <p>Buy 5–10 additional shares on any pullback to $580–$600 range. Set a limit order to avoid chasing. Use no more than 5% of available cash.</p>
+        </div>
+        <div class="trade-idea-rationale">
+            Strong data center pipeline and dominant GPU market share support continued outperformance. Adding here increases AI infrastructure exposure at a reasonable entry.
+        </div>
+    </div>
+
+    <div class="trade-idea-card sell">
+        <div class="trade-idea-header">
+            <div class="trade-idea-number">2</div>
+            <div class="trade-idea-title-section">
+                <div class="trade-idea-title">
+                    <span class="trade-ticker">T</span>
+                    <span class="trade-action" style="background:rgba(239,68,68,0.2);color:#ef4444;margin-left:8px;">SELL</span>
+                </div>
+                <div class="trade-idea-subtitle">Trim position · Telecommunications</div>
+            </div>
+        </div>
+        <div class="trade-idea-context">
+            <h4>Context</h4>
+            <ul>
+                <li>Current position: 200 shares @ $17.50 avg ($3,500 value)</li>
+                <li>High debt load limits capital allocation flexibility</li>
+                <li>Dividend yield attractive but growth prospects limited</li>
+            </ul>
+        </div>
+        <div class="trade-idea-action">
+            <h4>⚡ Suggested Action</h4>
+            <p>Trim 50% of position at market open. Reallocate proceeds to higher-conviction growth holdings.</p>
+        </div>
+        <div class="trade-idea-rationale">
+            Capital reallocation toward higher-quality compounders offers better risk-adjusted returns given the current interest rate environment.
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Execution Plan</div>
+    <div class="trade-ideas-summary">
+        <h3>📋 Today's Execution Plan</h3>
+        <div class="execution-step">
+            <span class="execution-time">Market Open</span>
+            <span class="execution-action">Place limit buy on NVDA @ $595 — 7 shares</span>
+        </div>
+        <div class="execution-step">
+            <span class="execution-time">9:35 AM</span>
+            <span class="execution-action">Sell 100 shares of T at market price</span>
+        </div>
+        <div class="execution-step">
+            <span class="execution-time">EOD</span>
+            <span class="execution-action">Review fills and adjust limit orders as needed</span>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Border Color Legend (.trade-idea-card variants)</div>
+    <div class="sg-row" style="gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <div style="background:#334155;border-radius:8px;border-left:4px solid #10b981;padding:8px 12px;font-size:12px;color:#cbd5e1;">.buy — #10b981</div>
+        <div style="background:#334155;border-radius:8px;border-left:4px solid #ef4444;padding:8px 12px;font-size:12px;color:#cbd5e1;">.sell — #ef4444</div>
+        <div style="background:#334155;border-radius:8px;border-left:4px solid #f59e0b;padding:8px 12px;font-size:12px;color:#cbd5e1;">.rebalance — #f59e0b</div>
+        <div style="background:#334155;border-radius:8px;border-left:4px solid #6366f1;padding:8px 12px;font-size:12px;color:#cbd5e1;">.hold — #6366f1</div>
+        <div style="background:#334155;border-radius:8px;border-left:4px solid #8b5cf6;padding:8px 12px;font-size:12px;color:#cbd5e1;">.watch — #8b5cf6</div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     10. ALLOCATION CHARTS
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">10 · Allocation Charts</div>
+
+    <div class="allocation-section">
+        <h3 style="margin-bottom:16px;font-size:15px;">Portfolio Allocation</h3>
+        <div class="allocation-charts">
+            <div class="allocation-chart-container">
+                <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:12px;">By Asset Type</div>
+                <div class="allocation-chart">
+                    <div class="allocation-bar-row">
+                        <div class="allocation-bar-label">Stocks</div>
+                        <div class="allocation-bar-track">
+                            <div class="allocation-bar-fill" style="width:65%;background:#2563eb;">65%</div>
+                        </div>
+                        <div class="allocation-bar-value">$96,408</div>
+                    </div>
+                    <div class="allocation-bar-row">
+                        <div class="allocation-bar-label">ETFs</div>
+                        <div class="allocation-bar-track">
+                            <div class="allocation-bar-fill" style="width:25%;background:#7c3aed;">25%</div>
+                        </div>
+                        <div class="allocation-bar-value">$37,080</div>
+                    </div>
+                    <div class="allocation-bar-row">
+                        <div class="allocation-bar-label">REITs</div>
+                        <div class="allocation-bar-track">
+                            <div class="allocation-bar-fill" style="width:10%;background:#10b981;">10%</div>
+                        </div>
+                        <div class="allocation-bar-value">$14,832</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="allocation-chart-container">
+                <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:12px;">By Sector (clickable slicer)</div>
+                <div class="allocation-chart">
+                    <div class="allocation-bar-row slicer active">
+                        <div class="allocation-bar-label">Technology</div>
+                        <div class="allocation-bar-track">
+                            <div class="allocation-bar-fill" style="width:52%;background:#2563eb;">52%</div>
+                        </div>
+                        <div class="allocation-bar-value">$77,126</div>
+                    </div>
+                    <div class="allocation-bar-row slicer dimmed">
+                        <div class="allocation-bar-label">Financial</div>
+                        <div class="allocation-bar-track">
+                            <div class="allocation-bar-fill" style="width:18%;background:#7c3aed;">18%</div>
+                        </div>
+                        <div class="allocation-bar-value">$26,698</div>
+                    </div>
+                    <div class="allocation-bar-row slicer dimmed">
+                        <div class="allocation-bar-label">Healthcare</div>
+                        <div class="allocation-bar-track">
+                            <div class="allocation-bar-fill" style="width:12%;background:#10b981;">12%</div>
+                        </div>
+                        <div class="allocation-bar-value">$17,798</div>
+                    </div>
+                    <div class="allocation-bar-row slicer dimmed">
+                        <div class="allocation-bar-label">Consumer</div>
+                        <div class="allocation-bar-track">
+                            <div class="allocation-bar-fill" style="width:10%;background:#f59e0b;">10%</div>
+                        </div>
+                        <div class="allocation-bar-value">$14,832</div>
+                    </div>
+                    <div class="slicer-hint">Click a sector to filter · <span class="slicer-clear">Clear filter</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Currency Selector</div>
+    <div class="sg-box">
+        <div class="currency-selector">
+            <button class="currency-option active">USD</button>
+            <button class="currency-option">EUR</button>
+            <button class="currency-option">GBP</button>
+            <button class="currency-option">BRL</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     11. TOP MOVERS
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">11 · Top Movers</div>
+
+    <div class="movers-section">
+        <div class="movers-header">
+            <div class="movers-title">📈 Today's Movers <span style="font-size:12px;font-weight:400;color:#64748b;">(in your portfolio)</span></div>
+            <div class="movers-timestamp">Updated 2 min ago</div>
+        </div>
+        <div class="movers-grid">
+            <div>
+                <div class="movers-column-header gainers">▲ Gainers</div>
+                <div class="mover-chip gain">
+                    <span class="mover-symbol">NVDA</span>
+                    <span class="mover-name">Nvidia</span>
+                    <span class="mover-pct gain">+4.82%</span>
+                </div>
+                <div class="mover-chip gain">
+                    <span class="mover-symbol">AAPL</span>
+                    <span class="mover-name">Apple</span>
+                    <span class="mover-pct gain">+1.23%</span>
+                </div>
+            </div>
+            <div>
+                <div class="movers-column-header losers">▼ Losers</div>
+                <div class="mover-chip loss">
+                    <span class="mover-symbol">T</span>
+                    <span class="mover-name">AT&amp;T</span>
+                    <span class="mover-pct loss">−2.10%</span>
+                </div>
+                <div class="mover-chip loss">
+                    <span class="mover-symbol">INTC</span>
+                    <span class="mover-name">Intel</span>
+                    <span class="mover-pct loss">−1.45%</span>
+                </div>
+            </div>
+        </div>
+        <div class="movers-ai-section">
+            <div class="movers-ai-label">✦ AI Commentary</div>
+            <div class="movers-ai-text">
+                NVDA's surge is driven by strong earnings beat and raised guidance. AT&T's decline follows analyst downgrades citing elevated debt concerns. Overall portfolio sentiment is cautiously bullish today.
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     12. STATES
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">12 · States</div>
+
+    <div class="card">
+        <div class="sg-row" style="gap:20px;">
+            <div class="sg-box" style="flex:1;min-width:200px;">
+                <div class="loading">Loading prices…</div>
+                <p class="sg-label">.loading</p>
+            </div>
+            <div class="sg-box" style="flex:1;min-width:200px;">
+                <div class="empty-state">
+                    <div style="font-size:40px;margin-bottom:12px;">📭</div>
+                    <div style="font-size:16px;font-weight:600;color:#cbd5e1;margin-bottom:6px;">No positions yet</div>
+                    <div style="font-size:13px;color:#64748b;">Import a portfolio or add positions manually.</div>
+                </div>
+                <p class="sg-label">.empty-state</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     13. TOAST NOTIFICATIONS
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">13 · Toast Notifications</div>
+
+    <div class="card">
+        <p style="color:#94a3b8;font-size:13px;margin-bottom:16px;">Toasts appear in a fixed container at bottom-right. Below are static examples.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
+            <div class="toast toast-visible toast-success">
+                <span class="toast-icon">✓</span>
+                <span class="toast-msg">Portfolio saved successfully.</span>
+            </div>
+            <div class="toast toast-visible toast-error">
+                <span class="toast-icon">✕</span>
+                <span class="toast-msg">Failed to fetch prices. Check your API key.</span>
+            </div>
+            <div class="toast toast-visible toast-warning">
+                <span class="toast-icon">⚠</span>
+                <span class="toast-msg">Rate limit reached. Waiting 12s…</span>
+                <button class="toast-undo-btn">Undo</button>
+            </div>
+            <div class="toast toast-visible toast-info">
+                <span class="toast-icon">ℹ</span>
+                <span class="toast-msg">Snapshot created with 5 positions.</span>
+            </div>
+        </div>
+        <p class="sg-note">.toast.toast-success / .toast-error / .toast-warning / .toast-info</p>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     14. WINE COMPONENTS
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">14 · Wine Cellar Components</div>
+
+    <div class="sg-subsection-title">Wine Header</div>
+    <div class="header wine-header" style="margin-bottom:20px;">
+        <h1>🍷 Wine Cellar <span>v2.0</span></h1>
+        <p>Track and value your collection with AI</p>
+    </div>
+
+    <div class="sg-subsection-title">Cellar Stats Bar</div>
+    <div class="card">
+        <div class="cellar-stats">
+            <div class="cellar-stat"><div class="stat-value">48</div><div class="stat-label">Bottles</div></div>
+            <div class="cellar-stat"><div class="stat-value">12</div><div class="stat-label">Regions</div></div>
+            <div class="cellar-stat"><div class="stat-value" style="color:#4ade80;">$6,240</div><div class="stat-label">Est. Value</div></div>
+            <div class="cellar-stat"><div class="stat-value" style="color:#fbbf24;">8</div><div class="stat-label">Drink Now</div></div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Bottle Card</div>
+    <div class="bottles-grid" style="max-width:640px;">
+        <div class="bottle-card">
+            <div class="bottle-header">
+                <div>
+                    <div class="bottle-name">Domaine de la Romanée-Conti 2018</div>
+                    <div class="bottle-meta">Pinot Noir · Burgundy, France</div>
+                </div>
+                <div class="bottle-actions">
+                    <button class="position-action-btn action-buy" title="Add bottle">+</button>
+                    <button class="position-action-btn action-del" title="Remove">✕</button>
+                </div>
+            </div>
+            <div class="bottle-tags">
+                <span class="bottle-tag">Burgundy</span>
+                <span class="bottle-tag">Pinot Noir</span>
+                <span class="bottle-tag">2018</span>
+                <span class="drink-badge drink-badge-at-peak">★ At Peak</span>
+            </div>
+            <div class="bottle-financials">
+                <div class="bottle-fin-row">
+                    <span>Purchase price</span>
+                    <span style="color:#e2e8f0;">$380</span>
+                </div>
+                <div class="bottle-fin-row">
+                    <span>Quantity</span>
+                    <span style="color:#e2e8f0;">3 bottles</span>
+                </div>
+                <div class="bottle-gain positive">
+                    <span>Current value</span>
+                    <span>$1,890 (+66%)</span>
+                </div>
+            </div>
+            <div class="bottle-footer">
+                <span class="drink-window">2022 – 2035</span>
+                <span class="confidence-badge confidence-high">HIGH</span>
+                <span class="valued-at">Valued 2026-03-10</span>
+            </div>
+            <div class="bottle-notes">Exceptional vintage. Complex nose with dark cherry and earth. Decant 2 hours.</div>
+        </div>
+
+        <div class="bottle-card">
+            <div class="bottle-header">
+                <div>
+                    <div class="bottle-name">Château Pétrus 2015</div>
+                    <div class="bottle-meta">Merlot · Pomerol, France</div>
+                </div>
+                <div class="bottle-actions">
+                    <button class="position-action-btn action-buy">+</button>
+                    <button class="position-action-btn action-del">✕</button>
+                </div>
+            </div>
+            <div class="bottle-tags">
+                <span class="bottle-tag">Pomerol</span>
+                <span class="bottle-tag">Merlot</span>
+                <span class="bottle-tag">2015</span>
+                <span class="drink-badge drink-badge-not-ready">◷ Not Ready</span>
+            </div>
+            <div class="bottle-financials">
+                <div class="bottle-fin-row">
+                    <span>Purchase price</span>
+                    <span style="color:#e2e8f0;">$3,200</span>
+                </div>
+                <div class="bottle-fin-row">
+                    <span>Quantity</span>
+                    <span style="color:#e2e8f0;">1 bottle</span>
+                </div>
+                <div class="bottle-gain neutral">
+                    <span>Not yet valued</span>
+                    <span>—</span>
+                </div>
+            </div>
+            <div class="bottle-footer">
+                <span class="drink-window">2030 – 2055</span>
+                <span class="unvalued-badge">Needs Valuation</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Allocation Tabs (wine)</div>
+    <div class="card">
+        <div class="allocation-tabs">
+            <button class="tab-btn active">By Region</button>
+            <button class="tab-btn">By Grape</button>
+            <button class="tab-btn">By Vintage</button>
+            <button class="tab-btn">By Value</button>
+        </div>
+        <div class="alloc-bar-row">
+            <div class="alloc-label">Burgundy</div>
+            <div class="alloc-bar-track"><div class="alloc-bar-fill" style="width:42%;background:#9f1239;"></div></div>
+            <div class="alloc-pct">42%</div>
+            <div class="alloc-value">$2,620</div>
+        </div>
+        <div class="alloc-bar-row">
+            <div class="alloc-label">Bordeaux</div>
+            <div class="alloc-bar-track"><div class="alloc-bar-fill" style="width:28%;background:#7c3aed;"></div></div>
+            <div class="alloc-pct">28%</div>
+            <div class="alloc-value">$1,747</div>
+        </div>
+        <div class="alloc-bar-row">
+            <div class="alloc-label">Rhône</div>
+            <div class="alloc-bar-track"><div class="alloc-bar-fill" style="width:18%;background:#2563eb;"></div></div>
+            <div class="alloc-pct">18%</div>
+            <div class="alloc-value">$1,123</div>
+        </div>
+        <div class="alloc-bar-row">
+            <div class="alloc-label">Italy</div>
+            <div class="alloc-bar-track"><div class="alloc-bar-fill" style="width:12%;background:#d97706;"></div></div>
+            <div class="alloc-pct">12%</div>
+            <div class="alloc-value">$749</div>
+        </div>
+    </div>
+
+    <div class="sg-subsection-title">Wine Analysis Card</div>
+    <div class="wine-analysis-card">
+        <div class="wine-analysis-title">🍷 Cellar Overview</div>
+        <div class="wine-analysis-body">Your cellar leans heavily toward Burgundy, which is excellent for long-term appreciation. The 2018 vintage Pinot Noirs are approaching their drinking window over the next 2–3 years.</div>
+        <ul class="wine-analysis-list">
+            <li>Consider adding a white Burgundy to diversify within the region</li>
+            <li>Château Pétrus 2015 won't peak until 2030 — safe to hold</li>
+            <li>6 bottles are in peak drinking window right now</li>
+        </ul>
+    </div>
+
+    <div class="sg-subsection-title">Filter Panel (wine)</div>
+    <details class="filter-panel" open style="display:block;">
+        <summary>Advanced Filters</summary>
+        <div class="filter-panel-body">
+            <div class="filter-group">
+                <div class="filter-group-label">Drink Status</div>
+                <div class="filter-chips">
+                    <label class="filter-chip active"><input type="checkbox" checked>Ready Now</label>
+                    <label class="filter-chip"><input type="checkbox">Not Ready</label>
+                    <label class="filter-chip"><input type="checkbox">Past Peak</label>
+                </div>
+            </div>
+            <div class="filter-group">
+                <div class="filter-group-label">Region</div>
+                <div class="filter-chips">
+                    <label class="filter-chip active"><input type="checkbox" checked>Burgundy</label>
+                    <label class="filter-chip"><input type="checkbox">Bordeaux</label>
+                    <label class="filter-chip"><input type="checkbox">Rhône</label>
+                    <label class="filter-chip"><input type="checkbox">Italy</label>
+                    <label class="filter-chip"><input type="checkbox">Spain</label>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <div class="sg-subsection-title">Label Scanner Loading</div>
+    <div class="scan-loading">
+        <div class="spinner"></div>
+        Analyzing wine label with Gemini Vision…
+    </div>
+
+    <div class="sg-subsection-title" style="margin-top:20px;">Recognition Card</div>
+    <div class="recognition-card">
+        <h3>✦ Recognized Wine</h3>
+        <div class="recognition-field"><span class="field-label">Name</span><span class="field-value">Domaine Leflaive Puligny-Montrachet</span></div>
+        <div class="recognition-field"><span class="field-label">Vintage</span><span class="field-value">2020</span></div>
+        <div class="recognition-field"><span class="field-label">Region</span><span class="field-value">Burgundy, France</span></div>
+        <div class="recognition-field"><span class="field-label">Grape</span><span class="field-value">Chardonnay</span></div>
+        <div class="recognition-actions">
+            <button class="btn btn-sm btn-success">Add to Cellar</button>
+            <button class="btn btn-sm btn-primary">Dismiss</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     15. DIALOGS (static mock)
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">15 · Dialogs (static mock)</div>
+
+    <div class="sg-box">
+        <div class="card" style="max-width:520px;margin:0 auto;">
+            <h3 style="margin-bottom:20px;">Add / Edit Position</h3>
+            <div class="position-form-group">
+                <label>Asset Symbol</label>
+                <input type="text" placeholder="e.g. AAPL">
+            </div>
+            <div class="position-form-row">
+                <div class="position-form-group">
+                    <label>Shares</label>
+                    <input type="number" placeholder="0.00">
+                </div>
+                <div class="position-form-group">
+                    <label>Average Price ($)</label>
+                    <input type="number" placeholder="0.00">
+                    <div class="position-calc-display">Total: —</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+                <button class="btn btn-primary">Cancel</button>
+                <button class="btn btn-success">Save Position</button>
+            </div>
+        </div>
+        <p class="sg-note">Dialog modals use .card inside a fixed overlay. Use #positionDialog for portfolio, #bottleDialog for wine.</p>
+    </div>
+
+    <div class="sg-subsection-title" style="margin-top:24px;">Confirm Modal</div>
+    <div class="sg-box">
+        <div class="confirm-dialog" style="max-width:400px;margin:0 auto;">
+            <p>Are you sure you want to delete <strong>AAPL</strong> from your portfolio? This action cannot be undone.</p>
+            <div class="confirm-actions">
+                <button class="btn btn-sm btn-primary">Cancel</button>
+                <button class="btn btn-sm btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     16. SALES HISTORY TABLE
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">16 · Sales History Table</div>
+
+    <div class="card">
+        <table class="sales-history-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Symbol</th>
+                    <th>Shares</th>
+                    <th>Sell Price</th>
+                    <th>Gain / Loss</th>
+                    <th>%</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>2026-02-14</td>
+                    <td><span class="trade-ticker">META</span></td>
+                    <td>20</td>
+                    <td>$620.00</td>
+                    <td style="color:#4ade80;">+$3,200.00</td>
+                    <td style="color:#4ade80;">+34.8%</td>
+                </tr>
+                <tr>
+                    <td>2026-01-08</td>
+                    <td><span class="trade-ticker">INTC</span></td>
+                    <td>100</td>
+                    <td>$18.50</td>
+                    <td style="color:#f87171;">−$1,150.00</td>
+                    <td style="color:#f87171;">−38.3%</td>
+                </tr>
+                <tr>
+                    <td>2025-11-20</td>
+                    <td><span class="trade-ticker">AMZN</span></td>
+                    <td>5</td>
+                    <td>$210.00</td>
+                    <td style="color:#4ade80;">+$520.00</td>
+                    <td style="color:#4ade80;">+98.1%</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<hr class="sg-divider">
+
+<div style="text-align:center;color:#475569;font-size:12px;padding:20px 0 40px;">
+    AI Investment Tracker Design Library · Generated 2026-03-11 · <span class="sg-code">css/styles.css</span> + <span class="sg-code">css/wine.css</span>
+</div>
+
+</div><!-- /.container -->
+</body>
+</html>
