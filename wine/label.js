@@ -5,7 +5,7 @@
  *   User picks file / captures photo
  *   → fileToBase64() converts it
  *   → recognizeLabel() sends base64 image to Gemini Vision (primary)
- *     or Claude claude-opus-4-6 Vision (fallback if Gemini unavailable)
+ *     or Claude Vision (fallback if Gemini unavailable)
  *   → AI returns structured JSON with wine details
  *   → Caller pre-fills the Add Bottle dialog
  */
@@ -15,7 +15,7 @@ import { callWineAI } from './api.js?v=1.3.20';
 // ── Label Recognition ────────────────────────────────────────────────────────
 
 /**
- * Send a base64-encoded wine label image to Claude and return structured data.
+ * Send a base64-encoded wine label image to Gemini Vision (primary) or Claude Vision (fallback) and return structured data.
  * @param {string} imageBase64 - Pure base64 string (no data URI prefix)
  * @param {string} mediaType   - MIME type, e.g. 'image/jpeg'
  * @returns {Promise<Object>}  - Parsed wine data object

@@ -468,7 +468,7 @@ export async function logAssetMovement({
 
 /**
  * Append an AI valuation result to wine_price_history.
- * Called by valuation.js after each successful Claude API call.
+ * Called by valuation.js after each successful AI valuation call (Gemini primary, Claude fallback).
  * Also updates wines.drink_window if the valuation returned one.
  *
  * @param {object} bottle - in-memory bottle object (must have wineId)
