@@ -105,7 +105,7 @@ export async function valuateSingleBottle(bottleId) {
     try {
         const result = await fetchValuation(bottle);
         console.log('[Valuation] Parsed result:', result);
-        applyValuationResult(bottle, result);
+        applyValuationResult(bottle, result, result._aiSource);
         await saveBottleToDB(bottle);
         await Promise.all([
             saveWinePriceHistory(bottle),
@@ -259,7 +259,7 @@ export async function valuateAllBottles(forceAll = false) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function applyValuationResult(bottle, result) {
+function applyValuationResult(bottle, result, aiSource = 'gemini_ai') {
     bottle.estimatedValue    = result.estimatedValue;
     bottle.estimatedValueUSD = result.estimatedValueUSD ?? null;
     bottle.drinkWindow       = result.drinkWindow       || bottle.drinkWindow;
@@ -269,6 +269,7 @@ function applyValuationResult(bottle, result) {
     bottle.confidence        = result.confidence        ?? null;
     bottle.valuationSources  = result.sources           ?? null;
     bottle.lastValuedAt      = new Date().toISOString();
+    bottle._aiSource         = aiSource;
 
     if (bottle.id) {
         persistValCache(bottle.id, {
@@ -319,6 +320,7 @@ async function fetchValuation(bottle) {
         if (!parsed.estimatedValue || isNaN(parsed.estimatedValue)) {
             throw new Error('Invalid valuation response — estimatedValue missing or NaN');
         }
+        parsed._aiSource = data._fallback === 'claude' ? 'claude_ai' : 'gemini_ai';
         return parsed;
     } catch {
         throw new Error('Could not parse valuation JSON from Gemini.');

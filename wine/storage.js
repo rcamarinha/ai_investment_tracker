@@ -485,7 +485,7 @@ export async function saveWinePriceHistory(bottle) {
             value_high:    bottle.valueHigh    ?? null,
             valuation_note: bottle.valuationNote || null,
             drink_window:  bottle.drinkWindow  || null,
-            source:        'claude_ai',
+            source:        bottle._aiSource || 'gemini_ai',
             fetched_at:    bottle.lastValuedAt || new Date().toISOString(),
         });
 
