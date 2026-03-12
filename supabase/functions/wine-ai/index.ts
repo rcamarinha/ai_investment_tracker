@@ -6,10 +6,10 @@
  *   label           → Gemini Vision (primary) → Claude Vision fallback
  *   valuation       → Gemini (Google Search grounding) → Claude fallback
  *   batch-valuation → Gemini chunked 5 at a time (parallel) → Claude fallback per chunk
- *   analysis        → Claude for cellar insights
+ *   analysis        → Gemini (Google Search grounding) → Claude fallback
  *
  * Secrets required:
- *   ANTHROPIC_API_KEY_Wine  — used for label fallback, analysis, and valuation fallback
+ *   ANTHROPIC_API_KEY_Wine  — used for label fallback, analysis fallback, and valuation fallback
  *   GEMINI_WINE             — used for label (primary) and valuation (primary); skipped if unset
  *
  * Request body:
@@ -24,7 +24,7 @@
  *
  * Response shape:
  *   label    → { content: [{type:"text", text:...}], _source: "gemini"|"claude" }
- *   analysis → raw Anthropic response
+ *   analysis → { content: [{type:"text", text:...}], _source: "gemini"|"claude" }
  *   valuation        → { text: string, _geminiGrounding?: [...], _fallback?: "claude" }
  *   batch-valuation  → { results: ValuationResult[] }
  */
@@ -503,6 +503,42 @@ async function handleLabel(
   return jsonResponse({ ...data, _source: "claude" });
 }
 
+// ── Cellar analysis: Gemini primary (grounded), Claude fallback ───────────────
+
+async function handleAnalysis(prompt: string, maxTokens: number): Promise<Response> {
+  let geminiError = "";
+
+  // 1. Try Gemini with Google Search grounding
+  if (GEMINI_API_KEY) {
+    try {
+      console.log("[wine-ai] Cellar analysis via Gemini (primary)");
+      const { text } = await callGemini(prompt, maxTokens);
+      return jsonResponse({ content: [{ type: "text", text }], _source: "gemini" });
+    } catch (err) {
+      geminiError = err instanceof Error ? err.message : String(err);
+      console.warn("[wine-ai] Gemini analysis failed, falling back to Claude:", geminiError);
+    }
+  }
+
+  // 2. Fallback: Claude
+  if (!ANTHROPIC_API_KEY) {
+    return jsonResponse({ error: "Neither GEMINI_WINE nor ANTHROPIC_API_KEY_Wine is available." }, 500);
+  }
+
+  try {
+    console.log("[wine-ai] Cellar analysis via Claude (fallback)");
+    const { text } = await callClaude(prompt, maxTokens, false);
+    return jsonResponse({ content: [{ type: "text", text }], _source: "claude", _geminiError: geminiError || undefined });
+  } catch (err) {
+    const claudeMsg = err instanceof Error ? err.message : String(err);
+    console.error("[wine-ai] Claude analysis fallback also failed:", claudeMsg);
+    return jsonResponse(
+      { error: `Gemini failed: ${geminiError}; Claude fallback failed: ${claudeMsg}` },
+      502,
+    );
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -554,52 +590,11 @@ Deno.serve(async (req) => {
     return handleLabel(prompt, image, maxTokens);
   }
 
-  // ── Analysis route (Claude only) ─────────────────────────────────────────
-  if (!ANTHROPIC_API_KEY) {
-    return jsonResponse({ error: "ANTHROPIC_API_KEY_Wine is not set on the server." }, 500);
+  // ── Analysis route (Gemini primary, Claude fallback) ─────────────────────
+  if (requestType === "analysis") {
+    if (!prompt) return jsonResponse({ error: "prompt is required for analysis" }, 400);
+    return handleAnalysis(prompt, maxTokens);
   }
 
-  if (!prompt) {
-    return jsonResponse({ error: "prompt is required" }, 400);
-  }
-
-  try {
-    const anthropicHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    };
-    if (enableWebSearch) {
-      anthropicHeaders["anthropic-beta"] = "web-search-2025-03-05";
-    }
-
-    const anthropicBody: Record<string, unknown> = {
-      model: CLAUDE_MODEL,
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: prompt }],
-    };
-    if (enableWebSearch) {
-      anthropicBody.tools = [{ type: "web_search_20250305", name: "web_search" }];
-    }
-
-    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: anthropicHeaders,
-      body: JSON.stringify(anthropicBody),
-    });
-
-    if (!anthropicRes.ok) {
-      const errBody = await anthropicRes.text().catch(() => "");
-      return jsonResponse(
-        { error: `Anthropic API error: ${anthropicRes.status}`, details: errBody.slice(0, 300) },
-        anthropicRes.status,
-      );
-    }
-
-    const data = await anthropicRes.json();
-    return jsonResponse(data);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return jsonResponse({ error: message }, 500);
-  }
+  return jsonResponse({ error: `Unknown requestType: ${requestType}` }, 400);
 });

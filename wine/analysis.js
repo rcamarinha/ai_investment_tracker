@@ -1,5 +1,5 @@
 /**
- * Analysis service — AI-powered cellar analysis and insights via Claude API.
+ * Analysis service — AI-powered cellar analysis via Gemini (primary) / Claude (fallback).
  */
 
 import state from './state.js';
@@ -69,7 +69,7 @@ export async function analyzeCellar() {
         <div class="card" style="background: #1e1b4b; border-color: #3730a3;">
             <div style="display: flex; align-items: center; gap: 10px; color: #a5b4fc; padding: 10px 0;">
                 <div class="spinner"></div>
-                Analyzing your cellar with Claude...
+                Analyzing your cellar with AI...
             </div>
         </div>`;
 
