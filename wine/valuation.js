@@ -282,7 +282,7 @@ function applyValuationResult(bottle, result) {
     }
 }
 
-// ── Single-bottle Claude→Gemini API call ──────────────────────────────────────
+// ── Single-bottle Gemini→Claude API call ──────────────────────────────────────
 
 async function fetchValuation(bottle) {
     const prompt = buildValuationPrompt(bottle);
