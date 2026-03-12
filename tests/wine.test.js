@@ -32,6 +32,7 @@ const makeBottle = (overrides = {}) => ({
     varietal:       'Cabernet Sauvignon',
     country:        'France',
     alcohol:        '13.5%',
+    bottleSize:     '0.75L',
     drinkWindow:    '2025-2040',
     qty:            6,
     purchasePrice:  150,
@@ -701,5 +702,63 @@ describe('sortBottles', () => {
         const result = sortBottles(pair, 'value-desc');
         // Both have same value — order should be stable (no crash or reorder)
         expect(result).toHaveLength(2);
+    });
+});
+
+// ── bottleSize — validateBottle ───────────────────────────────────────────────
+
+describe('validateBottle — bottleSize', () => {
+    const base = { name: 'Château Margaux', qty: 6, purchasePrice: 150, vintage: 2018 };
+
+    it('accepts null bottleSize (field is optional)', () => {
+        expect(validateBottle({ ...base, bottleSize: null }).valid).toBe(true);
+    });
+
+    it('accepts undefined bottleSize (field absent)', () => {
+        expect(validateBottle({ ...base }).valid).toBe(true);
+    });
+
+    it('accepts standard 0.75L', () => {
+        expect(validateBottle({ ...base, bottleSize: '0.75L' }).valid).toBe(true);
+    });
+
+    it('accepts Magnum 1.5L', () => {
+        expect(validateBottle({ ...base, bottleSize: '1.5L' }).valid).toBe(true);
+    });
+
+    it('accepts all known sizes', () => {
+        const sizes = ['0.375L', '0.75L', '1.5L', '3.0L', '4.5L', '6.0L', '9.0L', '12.0L', '15.0L'];
+        sizes.forEach(size => {
+            expect(validateBottle({ ...base, bottleSize: size }).valid).toBe(true);
+        });
+    });
+
+    it('rejects an arbitrary unknown size string', () => {
+        const { valid, errors } = validateBottle({ ...base, bottleSize: '2.0L' });
+        expect(valid).toBe(false);
+        expect(errors.some(e => e.includes('Bottle size'))).toBe(true);
+    });
+
+    it('rejects a free-text size like "magnum"', () => {
+        expect(validateBottle({ ...base, bottleSize: 'magnum' }).valid).toBe(false);
+    });
+});
+
+// ── bottleSize — buildBottleFromScan ─────────────────────────────────────────
+
+describe('buildBottleFromScan — bottleSize', () => {
+    it('maps bottleSize from scan result when present', () => {
+        const bottle = buildBottleFromScan({ name: 'Margaux', bottleSize: '1.5L' });
+        expect(bottle.bottleSize).toBe('1.5L');
+    });
+
+    it('returns null for bottleSize when not present in scan', () => {
+        const bottle = buildBottleFromScan({ name: 'Margaux' });
+        expect(bottle.bottleSize).toBeNull();
+    });
+
+    it('maps standard 0.75L from scan', () => {
+        const bottle = buildBottleFromScan({ name: 'Margaux', bottleSize: '0.75L' });
+        expect(bottle.bottleSize).toBe('0.75L');
     });
 });

@@ -194,6 +194,7 @@ async function loadBottles() {
         drinkWindow:    row.wines?.drink_window,
         // Investment data from user_wines
         qty:            row.qty,
+        bottleSize:     row.bottle_size     ?? '0.75L',
         purchasePrice:  row.purchase_price,
         purchaseDate:   row.purchase_date,
         storage:        row.storage,
@@ -304,6 +305,7 @@ export async function saveBottleToDB(bottle) {
         user_id:             state.currentUser.id,
         wine_id:             wineId,
         qty:                 bottle.qty,
+        bottle_size:         bottle.bottleSize       || '0.75L',
         purchase_price:      bottle.purchasePrice    ?? null,
         purchase_date:       bottle.purchaseDate     || null,
         storage:             bottle.storage          || null,

@@ -334,11 +334,14 @@ function renderBottleCard(b) {
     const gainClass      = gain > 0 ? 'positive' : gain < 0 ? 'negative' : 'neutral';
     const gainSign       = gain >= 0 ? '+' : '';
 
+    const sizeLabel = b.bottleSize && b.bottleSize !== '0.75L' ? `🍾 ${escapeHTML(b.bottleSize)}` : null;
+
     const tags = [
         b.country     ? `🌍 ${escapeHTML(b.country)}` : null,
         b.appellation ? escapeHTML(b.appellation) : (b.region ? escapeHTML(b.region) : null),
         b.varietal    ? escapeHTML(b.varietal) : null,
         b.alcohol     ? `${escapeHTML(b.alcohol)} alc` : null,
+        sizeLabel,
     ].filter(Boolean);
 
     const rangeHtml = (hasValuation && b.valueLow && b.valueHigh)
@@ -475,6 +478,7 @@ export function showAddBottleDialog(prefilled = {}) {
     setField('bottleAppellation',   prefilled.appellation || '');
     setField('bottleCountry',       prefilled.country || '');
     setField('bottleAlcohol',       prefilled.alcohol || '');
+    setField('bottleSize',          prefilled.bottleSize || '0.75L');
     setField('bottleQty',           1);
     setField('bottlePurchasePrice', '');
     setField('bottlePurchaseDate',  new Date().toISOString().slice(0, 10));
@@ -503,6 +507,7 @@ export function showEditBottleDialog(id) {
     setField('bottleAppellation',   bottle.appellation || '');
     setField('bottleCountry',       bottle.country || '');
     setField('bottleAlcohol',       bottle.alcohol || '');
+    setField('bottleSize',          bottle.bottleSize || '0.75L');
     setField('bottleQty',           bottle.qty || 1);
     setField('bottlePurchasePrice', bottle.purchasePrice || '');
     setField('bottlePurchaseDate',  bottle.purchaseDate || '');
@@ -561,6 +566,7 @@ export async function submitBottle() {
         appellation:   getField('bottleAppellation').trim() || null,
         country:       getField('bottleCountry').trim() || null,
         alcohol:       getField('bottleAlcohol').trim() || null,
+        bottleSize:    getField('bottleSize') || '0.75L',
         qty,
         purchasePrice,
         purchaseDate:  getField('bottlePurchaseDate') || null,
@@ -650,7 +656,7 @@ export function exportCellarCSV() {
 
     const headers = [
         'Name', 'Winery', 'Vintage', 'Region', 'Appellation', 'Varietal',
-        'Country', 'Alcohol', 'Qty', 'Purchase Price (€)', 'Purchase Date',
+        'Country', 'Alcohol', 'Bottle Size', 'Qty', 'Purchase Price (€)', 'Purchase Date',
         'Storage', 'Est. Value (€)', 'Drink Window', 'Notes'
     ];
 
@@ -662,7 +668,7 @@ export function exportCellarCSV() {
 
     const rows = state.cellar.map(b => [
         b.name, b.winery, b.vintage, b.region, b.appellation, b.varietal,
-        b.country, b.alcohol, b.qty, b.purchasePrice, b.purchaseDate,
+        b.country, b.alcohol, b.bottleSize || '0.75L', b.qty, b.purchasePrice, b.purchaseDate,
         b.storage, b.estimatedValue, b.drinkWindow, b.notes
     ].map(csvVal).join(','));
 
