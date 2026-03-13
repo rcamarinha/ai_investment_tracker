@@ -19,11 +19,12 @@
 
         <!-- ── Header ──────────────────────────────────────────────────── -->
         <div class="header wine-header">
+            <div style="font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--wine-dim); margin-bottom: 6px;">Fine Wine · Spirits · Cellar</div>
             <h1>
-                <span data-i18n="wine.title">🍷 Wine Cellar</span>
+                <span data-i18n="wine.title">Cellar</span>
                 <span>v1.3.21</span>
             </h1>
-            <p data-i18n="wine.subtitle">AI-powered wine collection management with label recognition</p>
+            <p data-i18n="wine.subtitle" style="margin-top: 4px;">AI label recognition · valuations · drink windows</p>
         </div>
 
         <!-- ── Label Scanner Card ──────────────────────────────────────── -->
@@ -285,6 +286,13 @@
 
     <!-- ═══ Toast Container ═══════════════════════════════════════════════ -->
     <div id="toastContainer" class="toast-container"></div>
+
+    <!-- ── Mobile bottom tab nav ──────────────────────────────────────────── -->
+    <nav class="bottom-tab-nav">
+        <a href="index.html"     class="btn-nav"><span class="bn-icon">⊞</span>Hub</a>
+        <a href="portfolio.html" class="btn-nav"><span class="bn-icon">📈</span>Stocks</a>
+        <a href="wine.html"      class="btn-nav active-wine"><span class="bn-icon">🍷</span>Cellar</a>
+    </nav>
 
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">

@@ -16,12 +16,17 @@
 /* ── Wine Header Override ───────────────────────────────────────────────── */
 
 .wine-header {
-    background: linear-gradient(135deg, var(--wine) 0%, var(--wine-dim) 60%, #1e1b4b 100%);
+    background: var(--ink-3);
+    border-color: var(--wine-line);
+    border-left-color: var(--wine);
 }
 
-.wine-header h1 { font-size: 28px; margin-bottom: 8px; }
-.wine-header h1 span { font-size: 12px; font-weight: normal; opacity: 0.6; }
-.wine-header p { color: var(--wine-light); font-size: 14px; }
+.wine-header h1 {
+    font-size: clamp(22px, 4vw, 30px);
+    margin-bottom: 6px;
+}
+.wine-header h1 span { font-family: var(--font-mono); font-size: 11px; font-weight: 400; opacity: 0.4; margin-left: 8px; }
+.wine-header p { color: var(--wine-light); font-size: 14px; margin-top: 4px; }
 
 .hub-link {
     color: var(--wine-light);
