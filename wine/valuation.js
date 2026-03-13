@@ -176,6 +176,7 @@ export async function valuateAllBottles(forceAll = false) {
             country:       b.country,
             purchasePrice: b.purchasePrice,
             notes:         b.notes,
+            bottleSize:    b.bottleSize || '0.75L',
         }));
 
         const allResults = [];

@@ -257,6 +257,7 @@ interface BottleInfo {
   country?: string;
   purchasePrice?: number;
   notes?: string;
+  bottleSize?: string;
 }
 
 interface ValuationResult {
@@ -275,6 +276,8 @@ interface ValuationResult {
 function buildBatchPrompt(bottles: BottleInfo[]): string {
   const today = new Date().toISOString().slice(0, 10);
   const lines = bottles.map((b, i) => {
+    const size = b.bottleSize || "0.75L";
+    const isStandard = size === "0.75L";
     const fields = [
       b.name        && `Wine name: ${b.name}`,
       b.winery      && `Winery/Producer: ${b.winery}`,
@@ -283,6 +286,7 @@ function buildBatchPrompt(bottles: BottleInfo[]): string {
       b.appellation && `Appellation: ${b.appellation}`,
       b.varietal    && `Grape variety: ${b.varietal}`,
       b.country     && `Country: ${b.country}`,
+      `Bottle format: ${size}${isStandard ? " (standard)" : " — price accordingly; large formats trade at a premium"}`,
       b.purchasePrice && `Purchase price: €${b.purchasePrice}/bottle`,
     ].filter(Boolean).join(", ");
     return `${i + 1}. ${fields || "(unknown wine)"}`;
@@ -297,8 +301,8 @@ ${lines}
 
 Return a JSON array with exactly ${bottles.length} objects, one per wine, in the same order. Each object must have:
 {
-  "estimatedValue": <EUR per 750ml, number>,
-  "estimatedValueUSD": <USD per 750ml, number>,
+  "estimatedValue": <EUR per bottle in the specified bottle format, number>,
+  "estimatedValueUSD": <USD per bottle in the specified bottle format, number>,
   "valueLow": <low end EUR, number>,
   "valueHigh": <high end EUR, number>,
   "drinkWindow": <"YYYY-YYYY" or null>,
@@ -309,6 +313,7 @@ Return a JSON array with exactly ${bottles.length} objects, one per wine, in the
 
 Rules:
 - Be vintage-specific (do NOT average across years).
+- estimatedValue must reflect the actual bottle format listed for each wine (e.g. a Magnum is 1.5L and commands a premium over the standard 750ml price).
 - If you cannot find data for a wine, use low confidence and estimate conservatively.
 - Return ONLY the JSON array. No markdown fences, no preamble.`;
 }
