@@ -89,7 +89,7 @@ export function renderPortfolio() {
     }
     const totalGainLoss = totalMarketValueBase - totalInvestedBase;
     const totalGainLossPct = totalInvestedBase > 0 ? (totalGainLoss / totalInvestedBase) * 100 : 0;
-    const gainLossColor = totalGainLoss >= 0 ? '#4ade80' : '#f87171';
+    const gainLossColor = totalGainLoss >= 0 ? 'var(--up)' : 'var(--down)';
     const hasRates = Object.keys(state.exchangeRates).length > 0;
 
     const inactiveToggle = inactivePositions.length > 0
@@ -99,18 +99,18 @@ export function renderPortfolio() {
     portfolioHeader.innerHTML = `
         <div>
             <h2 style="margin-bottom: 5px;">\uD83D\uDCBC Your Portfolio</h2>
-            <div style="font-size: 13px; color: #94a3b8;">
+            <div style="font-size: 13px; color: var(--text-secondary);">
                 ${activePositions.length} active position${activePositions.length !== 1 ? 's' : ''}
                 ${Object.keys(state.marketPrices).length > 0 ? ` \u2022 ${positionsWithPrices} with live prices` : ' \u2022 Click "Update Prices" for live market data'}
                 ${hasRates ? ` \u2022 FX rates loaded` : ''}
                 ${inactiveToggle}
-                ${state.selectedSector ? `<span style="color: #60a5fa; margin-left: 8px;">Filtered: ${escapeHTML(state.selectedSector)} <span style="cursor:pointer; color:#f87171;" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(state.selectedSector).replace(/'/g, "\\'")}')">✕</span></span>` : ''}
+                ${state.selectedSector ? `<span style="color: var(--gold); margin-left: 8px;">Filtered: ${escapeHTML(state.selectedSector)} <span style="cursor:pointer; color:var(--down);" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(state.selectedSector).replace(/'/g, "\\'")}')">✕</span></span>` : ''}
             </div>
         </div>
         <div class="total-value">
-            <div style="color: #94a3b8; font-size: 12px;">Total Invested (${escapeHTML(base)})</div>
-            <div style="color: #cbd5e1; font-size: 16px; margin-bottom: 5px;">${formatCurrency(totalInvestedBase, base)}</div>
-            <div style="color: #94a3b8; font-size: 12px;">Market Value (${escapeHTML(base)})</div>
+            <div style="color: var(--text-secondary); font-size: 12px;">Total Invested (${escapeHTML(base)})</div>
+            <div style="color: var(--text-primary); font-size: 16px; margin-bottom: 5px;">${formatCurrency(totalInvestedBase, base)}</div>
+            <div style="color: var(--text-secondary); font-size: 12px;">Market Value (${escapeHTML(base)})</div>
             <div style="color: ${gainLossColor}; font-size: 24px; font-weight: bold;">${formatCurrency(totalMarketValueBase, base)}</div>
             ${totalInvestedBase > 0 ? `
                 <div style="color: ${gainLossColor}; font-size: 14px; margin-top: 5px;">
@@ -121,7 +121,7 @@ export function renderPortfolio() {
     `;
 
     if (state.portfolio.length === 0) {
-        positionsDiv.innerHTML = '<div style="text-align: center; color: #64748b; padding: 40px;">No positions yet. Click "Add Position" or import your portfolio to get started.</div>';
+        positionsDiv.innerHTML = '<div style="text-align: center; color: var(--text-tertiary); padding: 40px;">No positions yet. Click "Add Position" or import your portfolio to get started.</div>';
         return;
     }
 
@@ -158,19 +158,19 @@ export function renderPortfolio() {
         // Weight uses base currency conversion
         const marketValueBase = toBaseCurrency(marketValue, currency);
         const weight = totalMarketValueBase > 0 ? (marketValueBase / totalMarketValueBase) * 100 : 0;
-        const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
+        const color = gainLoss >= 0 ? 'var(--up)' : 'var(--down)';
 
         // Price metadata
         const metadata = state.priceMetadata[pos.symbol];
         let statusFlag = '\u23F3';
-        let statusColor = '#f59e0b';
+        let statusColor = 'var(--gold-dim)';
         let statusText = 'Pending';
         let timestampText = '';
 
         if (metadata) {
             if (metadata.success) {
                 statusFlag = '\u2713';
-                statusColor = '#4ade80';
+                statusColor = 'var(--up)';
                 statusText = metadata.source;
                 const date = new Date(metadata.timestamp);
                 const now = new Date();
@@ -184,7 +184,7 @@ export function renderPortfolio() {
                 }
             } else {
                 statusFlag = '\u2717';
-                statusColor = '#f87171';
+                statusColor = 'var(--down)';
                 statusText = metadata.error || 'Failed';
                 timestampText = 'Failed to fetch';
             }
@@ -192,7 +192,7 @@ export function renderPortfolio() {
 
         const escapedSymbol = escapeHTML(pos.symbol).replace(/'/g, "\\'");
         const sector = getSector(pos.symbol);
-        const typeColor = ({ 'ETF': '#8b5cf6', 'REIT': '#ec4899', 'Stock': '#3b82f6', 'Crypto': '#f59e0b' }[pos.type] || '#94a3b8');
+        const typeColor = ({ 'ETF': '#8b5cf6', 'REIT': '#ec4899', 'Stock': '#3b82f6', 'Crypto': 'var(--gold-dim)' }[pos.type] || '#94a3b8');
 
         // Action buttons: active positions get refresh/buy/sell/delete; inactive get just delete
         const actionButtons = isActive
@@ -212,7 +212,7 @@ export function renderPortfolio() {
                 <div class="pos-secondary">${timestampText ? escapeHTML(timestampText) : ''}</div>
             </div>
             <div class="pos-cell" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
-                <div style="font-size: 12px; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <div style="font-size: 12px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                     ${pos.name ? escapeHTML(pos.name.length > 35 ? pos.name.substring(0, 32) + '...' : pos.name) : escapeHTML(pos.symbol)}
                 </div>
                 <div class="pos-secondary">${pos.platform && pos.platform !== 'Unknown' ? escapeHTML(pos.platform) : ''}${pos.platform && pos.platform !== 'Unknown' && sector !== 'Other' ? ' \u2022 ' : ''}${sector !== 'Other' ? escapeHTML(sector) : ''}</div>
@@ -226,16 +226,16 @@ export function renderPortfolio() {
                 <div class="pos-secondary">${isActive ? 'avg ' + formatCurrency(pos.avgPrice, currency) : 'Closed'}</div>
             </div>
             <div class="pos-cell pos-right">
-                <div style="color: ${hasPrice ? '#60a5fa' : '#f59e0b'}; font-weight: bold;">
+                <div style="color: ${hasPrice ? 'var(--gold)' : 'var(--gold-dim)'}; font-weight: bold;">
                     ${isActive ? formatCurrency(marketValue, currency) : '\u2014'}
                 </div>
                 <div class="pos-secondary">${isActive ? (hasPrice ? formatCurrency(currentPrice, currency) + ' \u2022 ' + weight.toFixed(1) + '%' : '\u23F3 Pending') : ''}</div>
             </div>
             <div class="pos-cell pos-right pos-hide-mobile">
-                <div style="color: ${isActive ? color : '#64748b'}; font-weight: bold;">
+                <div style="color: ${isActive ? color : 'var(--text-tertiary)'}; font-weight: bold;">
                     ${isActive ? `${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss, currency)}` : '\u2014'}
                 </div>
-                <div class="pos-secondary" style="color: ${isActive ? color : '#64748b'};">
+                <div class="pos-secondary" style="color: ${isActive ? color : 'var(--text-tertiary)'};">
                     ${isActive ? formatPercent(gainLossPct) : ''}
                 </div>
             </div>
@@ -303,13 +303,13 @@ export function renderMoversSection(movers, updatedAt) {
                     <div class="movers-column-header gainers">▲ Top Gainers</div>
                     ${gainers.length > 0
                         ? gainers.map(m => chipHtml(m, true)).join('')
-                        : '<div style="color:#64748b;font-size:13px;">No gainers this update</div>'}
+                        : '<div style="color:var(--text-tertiary);font-size:13px;">No gainers this update</div>'}
                 </div>
                 <div>
                     <div class="movers-column-header losers">▼ Top Losers</div>
                     ${losers.length > 0
                         ? losers.map(m => chipHtml(m, false)).join('')
-                        : '<div style="color:#64748b;font-size:13px;">No losers this update</div>'}
+                        : '<div style="color:var(--text-tertiary);font-size:13px;">No losers this update</div>'}
                 </div>
             </div>
             <div class="movers-ai-section">
@@ -667,7 +667,7 @@ async function resolveIdentifiers(identifiers) {
     if (state.finnhubKey) {
         for (const id of needsResolution) {
             if (!isISIN(id.toUpperCase())) { afterFinnhub.push(id); continue; }
-            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — Finnhub lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
+            if (statusEl) statusEl.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — Finnhub lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
             const candidates = await lookupISINviaFinnhub(id);
             if (candidates.length > 1) {
                 // Multiple listings found — let user pick later
@@ -699,7 +699,7 @@ async function resolveIdentifiers(identifiers) {
     if (state.fmpKey && afterFinnhub.length > 0) {
         for (const id of afterFinnhub) {
             if (!isISIN(id.toUpperCase())) { needsClaude.push(id); continue; }
-            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — FMP lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
+            if (statusEl) statusEl.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — FMP lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
             const candidates = await lookupISINviaFMP(id);
             if (candidates.length > 1) {
                 const best = pickBestTicker(candidates);
@@ -741,7 +741,7 @@ async function resolveIdentifiers(identifiers) {
     }
 
     console.log(`=== RESOLVING ${needsClaude.length} IDENTIFIERS VIA CLAUDE (tier 3) ===`);
-    if (statusEl) statusEl.innerHTML = `<div style="color: #a78bfa; padding: 10px; font-size: 13px;">\u23F3 Resolving ${needsClaude.length} remaining ISIN(s) via Claude AI...</div>`;
+    if (statusEl) statusEl.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">\u23F3 Resolving ${needsClaude.length} remaining ISIN(s) via Claude AI...</div>`;
 
     const headers = { 'Content-Type': 'application/json' };
     if (!isClaudeAI && state.anthropicKey) {
@@ -864,33 +864,33 @@ function showImportReport(container, report) {
     const errCount = errors.length;
     const warnCount = warnings.length;
 
-    let html = `<div class="import-report" style="background: #1e293b; border-radius: 10px; padding: 18px; margin-bottom: 15px; font-size: 13px; max-height: 350px; overflow-y: auto;">`;
-    html += `<div style="font-weight: 700; font-size: 15px; color: #e2e8f0; margin-bottom: 10px;">Import Report</div>`;
-    html += `<div style="color: #4ade80; margin-bottom: 4px;">\u2713 Successfully parsed: ${successCount} positions</div>`;
-    if (errCount > 0) html += `<div style="color: #f87171; margin-bottom: 4px;">\u2717 Failed: ${errCount} lines</div>`;
-    if (warnCount > 0) html += `<div style="color: #f59e0b; margin-bottom: 4px;">\u26A0 Warnings: ${warnCount}</div>`;
+    let html = `<div class="import-report" style="background: var(--surface); border-radius: 10px; padding: 18px; margin-bottom: 15px; font-size: 13px; max-height: 350px; overflow-y: auto;">`;
+    html += `<div style="font-weight: 700; font-size: 15px; color: var(--text-primary); margin-bottom: 10px;">Import Report</div>`;
+    html += `<div style="color: var(--up); margin-bottom: 4px;">\u2713 Successfully parsed: ${successCount} positions</div>`;
+    if (errCount > 0) html += `<div style="color: var(--down); margin-bottom: 4px;">\u2717 Failed: ${errCount} lines</div>`;
+    if (warnCount > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">\u26A0 Warnings: ${warnCount}</div>`;
 
     if (warnings.length > 0) {
-        html += `<div style="margin-top: 10px; padding: 10px; background: #422006; border-radius: 6px; border-left: 3px solid #f59e0b;">`;
-        warnings.forEach(w => { html += `<div style="color: #fbbf24; font-size: 12px; margin-bottom: 3px;">\u26A0 ${escapeHTML(w)}</div>`; });
+        html += `<div style="margin-top: 10px; padding: 10px; background: var(--gold-glow); border-radius: 6px; border-left: 3px solid var(--gold);">`;
+        warnings.forEach(w => { html += `<div style="color: var(--gold); font-size: 12px; margin-bottom: 3px;">\u26A0 ${escapeHTML(w)}</div>`; });
         html += `</div>`;
     }
 
     if (errors.length > 0) {
-        html += `<div style="margin-top: 10px; padding: 10px; background: #350a0a; border-radius: 6px; border-left: 3px solid #f87171;">`;
-        errors.slice(0, 15).forEach(e => { html += `<div style="color: #fca5a5; font-size: 12px; margin-bottom: 3px;">${escapeHTML(e)}</div>`; });
-        if (errors.length > 15) html += `<div style="color: #fca5a5; font-size: 11px;">... and ${errors.length - 15} more</div>`;
+        html += `<div style="margin-top: 10px; padding: 10px; background: rgba(224,90,90,0.08); border-radius: 6px; border-left: 3px solid var(--down);">`;
+        errors.slice(0, 15).forEach(e => { html += `<div style="color: var(--down); font-size: 12px; margin-bottom: 3px;">${escapeHTML(e)}</div>`; });
+        if (errors.length > 15) html += `<div style="color: var(--down); font-size: 11px;">... and ${errors.length - 15} more</div>`;
         html += `</div>`;
     }
 
     if (successCount > 0) {
-        html += `<div style="margin-top: 12px;"><div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">Parsed positions (first 10)</div>`;
+        html += `<div style="margin-top: 12px;"><div style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">Parsed positions (first 10)</div>`;
         newPositions.slice(0, 10).forEach(p => {
-            const priceNote = p._needsCurrentPrice ? ' <span style="color:#f59e0b;">(price TBD)</span>' : '';
-            const isinNote = p._resolvedFrom ? ` <span style="color:#60a5fa;">(from ${escapeHTML(p._resolvedFrom)})</span>` : '';
-            html += `<div style="color: #cbd5e1; font-size: 12px; margin-bottom: 2px;">\u2022 <strong>${escapeHTML(p.symbol)}</strong>${isinNote}: ${p.shares} shares @ ${p.avgPrice > 0 ? '$' + p.avgPrice.toFixed(2) : 'pending'}${priceNote}</div>`;
+            const priceNote = p._needsCurrentPrice ? ' <span style="color:var(--gold);">(price TBD)</span>' : '';
+            const isinNote = p._resolvedFrom ? ` <span style="color:var(--gold);">(from ${escapeHTML(p._resolvedFrom)})</span>` : '';
+            html += `<div style="color: var(--text-primary); font-size: 12px; margin-bottom: 2px;">\u2022 <strong>${escapeHTML(p.symbol)}</strong>${isinNote}: ${p.shares} shares @ ${p.avgPrice > 0 ? '$' + p.avgPrice.toFixed(2) : 'pending'}${priceNote}</div>`;
         });
-        if (successCount > 10) html += `<div style="color: #94a3b8; font-size: 11px;">... and ${successCount - 10} more</div>`;
+        if (successCount > 10) html += `<div style="color: var(--text-secondary); font-size: 11px;">... and ${successCount - 10} more</div>`;
         html += `</div>`;
     }
 
@@ -912,16 +912,16 @@ function showTickerPickerDialog(isin, primary, alternatives) {
             const exchange = opt.exchange || detectStockExchange(opt.ticker);
             const typeBadge = opt.type && opt.type !== 'Stock' ? opt.type : '';
             return `
-                <label class="ticker-picker-option" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 6px; background: ${idx === 0 ? '#1e3a5f' : '#1e293b'}; border: 2px solid ${idx === 0 ? '#3b82f6' : '#334155'}; border-radius: 8px; cursor: pointer; transition: border-color 0.15s;"
-                    onmouseover="this.style.borderColor='#60a5fa'" onmouseout="this.style.borderColor='${idx === 0 ? '#3b82f6' : '#334155'}'">
-                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} style="accent-color: #3b82f6; width: 16px; height: 16px;" />
+                <label class="ticker-picker-option" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 6px; background: ${idx === 0 ? 'var(--gold-glow)' : 'var(--surface)'}; border: 2px solid ${idx === 0 ? 'var(--gold)' : 'var(--border)'}; border-radius: 8px; cursor: pointer; transition: border-color 0.15s;"
+                    onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='${idx === 0 ? 'var(--gold)' : 'var(--border)'}'">
+                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} style="accent-color: var(--gold); width: 16px; height: 16px;" />
                     <div style="flex: 1; min-width: 0;">
                         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <span style="font-weight: 700; color: #e2e8f0; font-size: 15px;">${escapeHTML(opt.ticker)}</span>
-                            <span style="color: #60a5fa; font-size: 12px; background: #1e3a5f; padding: 1px 8px; border-radius: 4px;">${escapeHTML(exchange)}</span>
-                            ${typeBadge ? `<span style="color: #a78bfa; font-size: 11px; background: #2e1065; padding: 1px 6px; border-radius: 4px;">${escapeHTML(typeBadge)}</span>` : ''}
+                            <span style="font-weight: 700; color: var(--text-primary); font-size: 15px;">${escapeHTML(opt.ticker)}</span>
+                            <span style="color: var(--gold); font-size: 12px; background: var(--gold-glow); padding: 1px 8px; border-radius: 4px;">${escapeHTML(exchange)}</span>
+                            ${typeBadge ? `<span style="color: var(--gold); font-size: 11px; background: var(--wine-glow); padding: 1px 6px; border-radius: 4px;">${escapeHTML(typeBadge)}</span>` : ''}
                         </div>
-                        <div style="color: #94a3b8; font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHTML(opt.name || opt.ticker)}</div>
+                        <div style="color: var(--text-secondary); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHTML(opt.name || opt.ticker)}</div>
                     </div>
                 </label>`;
         }).join('');
@@ -930,9 +930,9 @@ function showTickerPickerDialog(isin, primary, alternatives) {
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:10000;';
         overlay.innerHTML = `
             <div style="background: #0f172a; border: 1px solid #334155; border-radius: 14px; padding: 24px; max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
-                <div style="font-size: 16px; font-weight: 700; color: #e2e8f0; margin-bottom: 4px;">Multiple listings found</div>
-                <div style="font-size: 13px; color: #94a3b8; margin-bottom: 16px;">
-                    <span style="color: #60a5fa; font-weight: 600;">${escapeHTML(isin)}</span> is listed on multiple exchanges. Select the one you want to track:
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">Multiple listings found</div>
+                <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
+                    <span style="color: var(--gold); font-weight: 600;">${escapeHTML(isin)}</span> is listed on multiple exchanges. Select the one you want to track:
                 </div>
                 <div style="margin-bottom: 16px;">${optionsHTML}</div>
                 <div style="display: flex; gap: 10px; justify-content: flex-end;">
@@ -1142,7 +1142,7 @@ export async function importPositions() {
 
         if (isinsToResolve.length > 0) {
             const statusEl = document.getElementById('importReportArea');
-            if (statusEl) statusEl.innerHTML = `<div style="color: #60a5fa; padding: 10px; font-size: 13px;">\u23F3 Resolving ${isinsToResolve.length} ISIN(s) via API lookup...</div>`;
+            if (statusEl) statusEl.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">\u23F3 Resolving ${isinsToResolve.length} ISIN(s) via API lookup...</div>`;
 
             const resolved = await resolveIdentifiers(isinsToResolve);
 
@@ -1454,27 +1454,27 @@ export function updateHistoryDisplay() {
         if (!historyLog) return;
 
         historyLog.innerHTML = `
-            <h3 style="margin-bottom: 10px; color: #cbd5e1;">Snapshot Log</h3>
+            <h3 style="margin-bottom: 10px; color: var(--text-primary);">Snapshot Log</h3>
             <div style="max-height: 300px; overflow-y: auto;">
                 ${state.portfolioHistory.slice().reverse().map((snapshot) => {
                     const date = new Date(snapshot.timestamp);
                     const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
                     const gainLossPct = snapshot.totalInvested > 0 ? (gainLoss / snapshot.totalInvested) * 100 : 0;
-                    const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
+                    const color = gainLoss >= 0 ? 'var(--up)' : 'var(--down)';
                     const ts = encodeURIComponent(snapshot.timestamp);
                     return `
-                        <div style="background: #334155; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid ${color};">
+                        <div style="background: var(--surface-2); padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid ${color};">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                                <div style="font-size: 13px; color: #94a3b8;">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
+                                <div style="font-size: 13px; color: var(--text-secondary);">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <div style="font-size: 12px; color: #94a3b8;">${snapshot.positionCount} positions \u2022 ${snapshot.pricesAvailable} with prices</div>
-                                    <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" style="background: none; border: none; cursor: pointer; color: #94a3b8; font-size: 14px; padding: 2px 4px; border-radius: 4px; transition: color 0.2s;" onmouseover="this.style.color='#f87171'" onmouseout="this.style.color='#94a3b8'">\u{1F5D1}\u{FE0F}</button>
+                                    <div style="font-size: 12px; color: var(--text-secondary);">${snapshot.positionCount} positions \u2022 ${snapshot.pricesAvailable} with prices</div>
+                                    <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" style="background: none; border: none; cursor: pointer; color: var(--text-secondary); font-size: 14px; padding: 2px 4px; border-radius: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--down)'" onmouseout="this.style.color='var(--text-secondary)'">\u{1F5D1}\u{FE0F}</button>
                                 </div>
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
-                                <div><div style="color: #94a3b8; font-size: 11px;">Invested${snapshot.baseCurrency ? ' (' + snapshot.baseCurrency + ')' : ''}</div><div style="color: #cbd5e1;">${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}</div></div>
-                                <div><div style="color: #94a3b8; font-size: 11px;">Market Value</div><div style="color: #cbd5e1;">${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}</div></div>
-                                <div><div style="color: #94a3b8; font-size: 11px;">Gain/Loss</div><div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss, snapshot.baseCurrency)} (${formatPercent(gainLossPct)})</div></div>
+                                <div><div style="color: var(--text-secondary); font-size: 11px;">Invested${snapshot.baseCurrency ? ' (' + snapshot.baseCurrency + ')' : ''}</div><div style="color: var(--text-primary);">${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}</div></div>
+                                <div><div style="color: var(--text-secondary); font-size: 11px;">Market Value</div><div style="color: var(--text-primary);">${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}</div></div>
+                                <div><div style="color: var(--text-secondary); font-size: 11px;">Gain/Loss</div><div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss, snapshot.baseCurrency)} (${formatPercent(gainLossPct)})</div></div>
                             </div>
                         </div>
                     `;
@@ -1501,7 +1501,7 @@ function updateChart() {
         const maxValue = Math.max(...allValues) * 1.05;
         const range = maxValue - minValue;
 
-        let chartHTML = '<div style="background: #334155; padding: 20px; border-radius: 10px;">';
+        let chartHTML = '<div style="background: var(--surface-2); padding: 20px; border-radius: 10px;">';
         chartHTML += '<div style="display: flex; justify-content: space-around; gap: 8px; align-items: flex-end; height: 200px;">';
 
         state.portfolioHistory.forEach((snapshot) => {
@@ -1510,15 +1510,15 @@ function updateChart() {
             const marketHeight = ((snapshot.totalMarketValue - minValue) / range) * 180;
             const investedHeight = ((snapshot.totalInvested - minValue) / range) * 180;
             const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
-            const color = gainLoss >= 0 ? '#4ade80' : '#f87171';
+            const color = gainLoss >= 0 ? 'var(--up)' : 'var(--down)';
 
             chartHTML += `
                 <div style="flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 40px;">
                     <div style="position: relative; width: 100%; height: 180px; display: flex; align-items: flex-end; justify-content: center; gap: 2px;">
-                        <div style="width: 45%; background: #60a5fa; height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}"></div>
+                        <div style="width: 45%; background: var(--gold); height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}"></div>
                         <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0;" title="Market: ${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}"></div>
                     </div>
-                    <div style="font-size: 10px; color: #94a3b8; margin-top: 5px; text-align: center;">${label}</div>
+                    <div style="font-size: 10px; color: var(--text-secondary); margin-top: 5px; text-align: center;">${label}</div>
                 </div>
             `;
         });
@@ -1526,9 +1526,9 @@ function updateChart() {
         chartHTML += '</div>';
         chartHTML += `
             <div style="display: flex; justify-content: center; gap: 20px; margin-top: 15px; font-size: 12px;">
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: #60a5fa; border-radius: 2px;"></div><span style="color: #cbd5e1;">Invested</span></div>
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: #4ade80; border-radius: 2px;"></div><span style="color: #cbd5e1;">Market Value (Profit)</span></div>
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: #f87171; border-radius: 2px;"></div><span style="color: #cbd5e1;">Market Value (Loss)</span></div>
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--gold); border-radius: 2px;"></div><span style="color: var(--text-primary);">Invested</span></div>
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--up); border-radius: 2px;"></div><span style="color: var(--text-primary);">Market Value (Profit)</span></div>
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--down); border-radius: 2px;"></div><span style="color: var(--text-primary);">Market Value (Loss)</span></div>
             </div>
         `;
         chartHTML += '</div>';
@@ -2084,14 +2084,14 @@ function renderSalesHistory() {
     let totalRealized = 0;
     allSales.forEach(s => { totalRealized += s.realizedGainLoss || 0; });
 
-    const realizedColor = totalRealized >= 0 ? '#4ade80' : '#f87171';
+    const realizedColor = totalRealized >= 0 ? 'var(--up)' : 'var(--down)';
 
     section.style.display = 'block';
     const content = section.querySelector('.card') || section;
 
     content.innerHTML = `
         <h2 style="margin-bottom: 15px;">\uD83D\uDCC9 Sales History</h2>
-        <div style="margin-bottom: 15px; font-size: 14px; color: #94a3b8;">
+        <div style="margin-bottom: 15px; font-size: 14px; color: var(--text-secondary);">
             Total realized P&L: <span style="color: ${realizedColor}; font-weight: bold;">${totalRealized >= 0 ? '+' : ''}${formatCurrency(totalRealized)}</span>
             &bull; ${allSales.length} sale${allSales.length !== 1 ? 's' : ''}
         </div>
@@ -2110,10 +2110,10 @@ function renderSalesHistory() {
                 </thead>
                 <tbody>
                     ${allSales.map(s => {
-                        const plColor = (s.realizedGainLoss || 0) >= 0 ? '#4ade80' : '#f87171';
+                        const plColor = (s.realizedGainLoss || 0) >= 0 ? 'var(--up)' : 'var(--down)';
                         return `<tr>
                             <td>${escapeHTML(s.date)}</td>
-                            <td style="font-weight: 600; color: #60a5fa;">${escapeHTML(s.symbol)}</td>
+                            <td style="font-weight: 600; color: var(--gold);">${escapeHTML(s.symbol)}</td>
                             <td>${s.shares}</td>
                             <td>${formatCurrency(s.price)}</td>
                             <td>${s.costBasis ? formatCurrency(s.costBasis) : '\u2014'}</td>

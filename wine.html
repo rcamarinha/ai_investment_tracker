@@ -6,9 +6,9 @@
     <title>Wine Cellar Tracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.12.0"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.12.1">
-    <link rel="stylesheet" href="css/wine.css?v=3.12.0">
+    <script src="lib/supabase.js?v=3.13.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.13.0">
+    <link rel="stylesheet" href="css/wine.css?v=3.13.0">
 </head>
 <body>
 
@@ -101,7 +101,7 @@
                 <button class="btn btn-warning" onclick="saveCellarSnapshot()" title="Save snapshot  (Ctrl+Shift+S)" data-i18n="wine.btn.snapshot">💾 Save Snapshot</button>
                 <button class="btn btn-accent" onclick="analyzeCellar()" id="analyzeBtn" data-i18n="wine.btn.analyze">🤖 AI Analysis</button>
                 <button class="btn btn-primary" onclick="exportCellarCSV()" id="exportBtn" data-i18n="wine.btn.export">⬇ Export CSV</button>
-                <button class="btn btn-sm" onclick="deduplicateCellar()" id="deduplicateBtn" title="Find and merge duplicate entries for the same wine" style="background:#374151;color:#9ca3af;font-size:11px;">Fix Duplicates</button>
+                <button class="btn btn-sm" onclick="deduplicateCellar()" id="deduplicateBtn" title="Find and merge duplicate entries for the same wine" style="background:var(--surface-2);color:var(--text-secondary);font-size:11px;">Fix Duplicates</button>
             </div>
 
             <!-- Search + Sort (shown only when cellar has bottles) -->
@@ -512,7 +512,7 @@
                             <span class="field-label">${label}</span>
                             <span class="field-value">${escapeHTML(String(value))}</span>
                         </div>`).join('')}
-                    ${wine.notes ? `<div style="margin-top: 10px; font-size: 12px; color: #64748b; font-style: italic;">${escapeHTML(wine.notes)}</div>` : ''}
+                    ${wine.notes ? `<div style="margin-top: 10px; font-size: 12px; color: var(--text-tertiary); font-style: italic;">${escapeHTML(wine.notes)}</div>` : ''}
                     <div class="recognition-actions">
                         <button class="btn btn-success" onclick="addScannedToBottleDialog()">➕ Add to Cellar</button>
                         <button class="btn btn-primary btn-sm" onclick="clearScan()">✕ Dismiss</button>
@@ -536,8 +536,8 @@
         function showRecognitionError(message) {
             const resultEl = document.getElementById('recognitionResult');
             resultEl.innerHTML = `
-                <div class="recognition-card" style="border-color: #f87171;">
-                    <h3 style="color: #f87171;">❌ Scan Failed</h3>
+                <div class="recognition-card" style="border-color: var(--down);">
+                    <h3 style="color: var(--down);">❌ Scan Failed</h3>
                     <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">${escapeHTML(message)}</p>
                     <div class="recognition-actions">
                         <button class="btn btn-success" onclick="addManually()">➕ Add Manually</button>
