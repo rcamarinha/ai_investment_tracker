@@ -333,6 +333,9 @@ function buildValuationPrompt(bottle) {
         : null;
     const criticLine = criticMatch ? `Critic score: ${criticMatch[1]}/100` : '';
 
+    const bottleSize = bottle.bottleSize || '0.75L';
+    const isStandardSize = bottleSize === '0.75L';
+
     const details = [
         bottle.name        && `Wine name: ${bottle.name}`,
         bottle.winery      && `Winery/Producer: ${bottle.winery}`,
@@ -341,6 +344,7 @@ function buildValuationPrompt(bottle) {
         bottle.appellation && `Appellation: ${bottle.appellation}`,
         bottle.varietal    && `Grape variety: ${bottle.varietal}`,
         bottle.country     && `Country: ${bottle.country}`,
+        `Bottle format: ${bottleSize}${isStandardSize ? ' (standard)' : ' — price accordingly; large formats trade at a premium'}`,
         criticLine,
         bottle.purchasePrice && `Purchase price: €${bottle.purchasePrice}/bottle`,
         bottle.purchaseDate  && `Purchase date: ${bottle.purchaseDate}`,
@@ -374,7 +378,7 @@ Return a valid JSON object with exactly these fields:
 }
 
 Guidelines:
-- estimatedValue: best estimate per 750ml bottle in EUR
+- estimatedValue: best estimate per ${bottleSize} bottle in EUR (match the bottle format above)
 - estimatedValueUSD: same estimate converted to USD at current exchange rate
 - valueLow / valueHigh: realistic market range in EUR
 - confidence: "high" if you found direct price data, "medium" if using comparables, "low" if largely estimated

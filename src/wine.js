@@ -126,6 +126,11 @@ export function validateBottle(data) {
         }
     }
 
+    const VALID_BOTTLE_SIZES = ['0.375L', '0.75L', '1.5L', '3.0L', '4.5L', '6.0L', '9.0L', '12.0L', '15.0L'];
+    if (data && data.bottleSize != null && !VALID_BOTTLE_SIZES.includes(data.bottleSize)) {
+        errors.push(`Bottle size must be one of: ${VALID_BOTTLE_SIZES.join(', ')}`);
+    }
+
     return { valid: errors.length === 0, errors };
 }
 
@@ -151,6 +156,7 @@ export function buildBottleFromScan(scanResult) {
         varietal:    scanResult.varietal    || null,
         country:     scanResult.country     || null,
         alcohol:     scanResult.alcohol     || null,
+        bottleSize:  scanResult.bottleSize  || null,
         notes:       scanResult.notes       || null,
     };
 }

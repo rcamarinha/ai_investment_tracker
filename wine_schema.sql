@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS user_wines (
 
     -- Investment data (user-specific per lot)
     qty             INTEGER NOT NULL DEFAULT 1,
+    bottle_size     TEXT DEFAULT '0.75L',        -- e.g. "0.75L", "1.5L" (Magnum), "3.0L" (Double Magnum)
     purchase_price  NUMERIC DEFAULT NULL,        -- per bottle, EUR
     purchase_date   DATE DEFAULT NULL,
     storage         TEXT DEFAULT NULL,           -- e.g. "Home cellar", "Cavissima"

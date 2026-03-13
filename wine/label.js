@@ -33,6 +33,7 @@ Return ONLY a valid JSON object with exactly these fields (use null for any fiel
   "varietal": "grape variety or blend description",
   "country": "country of origin",
   "alcohol": "alcohol percentage as string e.g. 13.5%",
+  "bottleSize": "bottle format as one of: 0.375L, 0.75L, 1.5L, 3.0L, 4.5L, 6.0L, 9.0L, 12.0L, 15.0L — look for text like 75cl, 750ml, 1.5L, Magnum, Double Magnum, Jeroboam, Imperial, Methuselah on the label; return null if not visible",
   "notes": "any other notable text from the label (awards, special designations, classification, producer description)"
 }
 
