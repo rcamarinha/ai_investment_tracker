@@ -863,7 +863,7 @@ NVDA	8	780.00</div>
       <span class="summary-label">Total</span>
     </div>
     <div class="summary-note" id="sum-note">
-      Run each scenario above and mark Pass / Fail. Results are saved in localStorage and persist across page reloads.
+      Run each scenario above and mark Pass / Fail. Use ⬇ Export to save results as a text file.
     </div>
   </div>
 
@@ -875,48 +875,17 @@ NVDA	8	780.00</div>
 </div><!-- /page -->
 
 <script>
-  // ── State ──────────────────────────────────────────────────────────────
+  // ── Session-only state (no localStorage) ──────────────────────────────
   const SCENARIOS = ['A1','A2','B1','B2','C1','C2','D1','D2'];
   const CRITERIA_COUNT = { A1:4, A2:3, B1:4, B2:3, C1:4, C2:3, D1:3, D2:3 };
-  let results = JSON.parse(localStorage.getItem('ux-test-results') || '{}');
-  let observations = JSON.parse(localStorage.getItem('ux-test-obs') || '{}');
+  let results = {};
+  let observations = {};
 
-  // ── Init ───────────────────────────────────────────────────────────────
-  window.addEventListener('DOMContentLoaded', () => {
-    // Restore state
-    SCENARIOS.forEach(id => {
-      if (results[id]) applyBadge(id, results[id]);
-    });
-    // Restore observations
-    document.querySelectorAll('textarea.obs-input').forEach((ta, i) => {
-      const id = SCENARIOS[Math.floor(i)];
-      // find by parent scenario
-    });
-    Object.entries(observations).forEach(([id, text]) => {
-      const ta = document.querySelector(`#s-${id} textarea`);
-      if (ta) ta.value = text;
-    });
-    // Restore checkboxes
-    SCENARIOS.forEach(id => {
-      const n = CRITERIA_COUNT[id] || 0;
-      for (let i = 1; i <= n; i++) {
-        const key = `crit-${id}-${i}`;
-        if (localStorage.getItem(key) === '1') {
-          const el = document.getElementById(`c-${id}-${i}`);
-          if (el) {
-            el.querySelector('input').checked = true;
-            el.classList.add('checked');
-          }
-        }
-      }
-    });
-    updateSummary();
-  });
+  window.addEventListener('DOMContentLoaded', () => updateSummary());
 
   // ── Mark scenario result ───────────────────────────────────────────────
   function markResult(id, status) {
     results[id] = status;
-    localStorage.setItem('ux-test-results', JSON.stringify(results));
     applyBadge(id, status);
     updateSummary();
   }
@@ -939,16 +908,13 @@ NVDA	8	780.00</div>
 
   // ── Criterion tick ─────────────────────────────────────────────────────
   function tickCriterion(scenarioId, num, checkbox) {
-    const key = `crit-${scenarioId}-${num}`;
-    localStorage.setItem(key, checkbox.checked ? '1' : '0');
     const label = checkbox.closest('.criterion');
     if (label) label.classList.toggle('checked', checkbox.checked);
   }
 
-  // ── Save observation ───────────────────────────────────────────────────
+  // ── Save observation (session only) ───────────────────────────────────
   function saveObs(id, text) {
     observations[id] = text;
-    localStorage.setItem('ux-test-obs', JSON.stringify(observations));
   }
 
   // ── Summary ────────────────────────────────────────────────────────────
@@ -983,11 +949,7 @@ NVDA	8	780.00</div>
     if (!confirm('Reset all test results?')) return;
     results = {};
     observations = {};
-    localStorage.removeItem('ux-test-results');
-    localStorage.removeItem('ux-test-obs');
     SCENARIOS.forEach(id => {
-      const n = CRITERIA_COUNT[id] || 0;
-      for (let i = 1; i <= n; i++) localStorage.removeItem(`crit-${id}-${i}`);
       const badge = document.getElementById(`badge-${id}`);
       const card  = document.getElementById(`s-${id}`);
       if (badge) { badge.className = 'status-badge badge-pending'; badge.textContent = 'Pending'; }
@@ -1028,43 +990,40 @@ NVDA	8	780.00</div>
 
   // ── Automated: CSS Token Check ─────────────────────────────────────────
   function runTokenCheck() {
-    const required = {
-      '--gold':       '#C9A84C',
-      '--wine':       '#9B3A5A',
-      '--wine-light': '#C4607C',
-      '--up':         '#4CAF84',
-      '--down':       '#E05A5A',
-      '--ink':        '#0B0C0E',
-      '--ink-3':      '#1C1F27',
-      '--text-primary': '#F0EDE8',
-    };
-
-    // Load styles.css from parent directory
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = '../index.html';
-    document.body.appendChild(iframe);
-
-    iframe.onload = () => {
-      try {
-        const cs = iframe.contentWindow.getComputedStyle(iframe.contentDocument.documentElement);
+    // Fetch styles.css from the same origin and check custom property declarations
+    fetch('../css/styles.css')
+      .then(r => r.text())
+      .then(css => {
+        const required = {
+          '--gold':         '#C9A84C',
+          '--wine':         '#9B3A5A',
+          '--wine-light':   '#C4607C',
+          '--up':           '#4CAF84',
+          '--down':         '#E05A5A',
+          '--ink':          '#0B0C0E',
+          '--ink-3':        '#1C1F27',
+          '--text-primary': '#F0EDE8',
+        };
         let output = '';
         let allPass = true;
         Object.entries(required).forEach(([token, expected]) => {
-          const val = cs.getPropertyValue(token).trim();
-          const ok  = val.toLowerCase() === expected.toLowerCase();
+          // Match: --token: #HEX inside :root block
+          const re = new RegExp(`${token}\\s*:\\s*(#[0-9a-fA-F]{3,8})`);
+          const match = css.match(re);
+          const val = match ? match[1] : null;
+          const ok  = val && val.toLowerCase() === expected.toLowerCase();
           if (!ok) allPass = false;
-          output += `${ok ? '✓' : '✗'} ${token}: ${val || '(not set)'}${ok ? '' : ` (expected ${expected})`}\n`;
+          output += `${ok ? '✓' : '✗'} ${token}: ${val || '(not found)'}${ok ? '' : `  ← expected ${expected}`}\n`;
         });
-        output += allPass ? '\n✓ All tokens correct.' : '\n✗ Some tokens missing or incorrect.';
+        output += allPass ? '\n✓ All tokens correct.' : '\n✗ Some tokens missing — check css/styles.css :root block.';
         const el = document.getElementById('tokenCheckOutput');
         el.textContent = output;
         el.classList.add('has-content');
-      } catch (e) {
-        document.getElementById('tokenCheckOutput').textContent = 'Cross-origin check blocked. Open the app in same origin and run manually in DevTools console.';
-      }
-      iframe.remove();
-    };
+      })
+      .catch(() => {
+        document.getElementById('tokenCheckOutput').textContent =
+          'Could not fetch styles.css. Run from cacoventures.com or a local HTTP server (not file://).';
+      });
   }
 
   // ── Automated: Contrast Check ──────────────────────────────────────────
