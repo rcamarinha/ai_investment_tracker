@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UX Scenario Tests — Investment Hub</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:        #0B0C0E;
+    --ink-2:      #13151A;
+    --ink-3:      #1C1F27;
+    --surface:    #232730;
+    --border:     rgba(255,255,255,0.07);
+    --gold:       #C9A84C;
+    --wine:       #9B3A5A;
+    --wine-light: #C4607C;
+    --up:         #4CAF84;
+    --down:       #E05A5A;
+    --text-primary:   #F0EDE8;
+    --text-secondary: #9A95A0;
+    --text-tertiary:  #5C5870;
+    --font-body: 'Instrument Sans', system-ui, sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--ink);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 32px 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 960px; margin: 0 auto; }
+
+  h1 {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--gold);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .subtitle { color: var(--text-tertiary); font-size: 13px; margin-bottom: 32px; }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 4px;
+    background: var(--ink-3);
+    border-radius: 2px;
+    margin-bottom: 32px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold), var(--wine-light));
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  /* Scenario card */
+  .scenario {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+  .scenario.active  { border-color: rgba(201,168,76,0.4); }
+  .scenario.passed  { border-color: rgba(76,175,132,0.4); }
+  .scenario.failed  { border-color: rgba(224,90,90,0.35); }
+  .scenario.skipped { border-color: var(--border); opacity: 0.55; }
+
+  .scenario-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+
+  .scenario-id {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+  .scenario-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .scenario-persona {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 3px;
+  }
+
+  .status-badge {
+    flex-shrink: 0;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .badge-pending  { background: var(--ink-2); color: var(--text-tertiary); border: 1px solid var(--border); }
+  .badge-running  { background: rgba(201,168,76,0.12); color: var(--gold); border: 1px solid rgba(201,168,76,0.3); }
+  .badge-pass     { background: rgba(76,175,132,0.12); color: var(--up); border: 1px solid rgba(76,175,132,0.3); }
+  .badge-fail     { background: rgba(224,90,90,0.12); color: var(--down); border: 1px solid rgba(224,90,90,0.3); }
+  .badge-skip     { background: var(--ink-3); color: var(--text-tertiary); border: 1px solid var(--border); }
+
+  /* Steps */
+  .steps { list-style: none; padding: 0; margin: 0 0 14px; }
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 13px;
+  }
+  .step:last-child { border-bottom: none; }
+  .step-num {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    min-width: 20px;
+    margin-top: 2px;
+  }
+  .step-text { color: var(--text-secondary); flex: 1; line-height: 1.4; }
+  .step-expect {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 3px;
+  }
+  .step-result {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    min-width: 60px;
+    text-align: right;
+  }
+  .step-result.ok   { color: var(--up); }
+  .step-result.fail { color: var(--down); }
+  .step-result.wait { color: var(--text-tertiary); }
+
+  /* Criteria checkboxes */
+  .criteria { margin-bottom: 14px; }
+  .criteria-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+  }
+  .criterion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+  }
+  .criterion input[type="checkbox"] {
+    width: 14px; height: 14px;
+    accent-color: var(--gold);
+    cursor: pointer;
+  }
+  .criterion.checked { color: var(--up); }
+
+  /* Action buttons */
+  .scenario-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn-run {
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.15s;
+  }
+  .btn-run:hover { opacity: 0.85; }
+  .btn-run.gold  { background: linear-gradient(135deg, var(--gold), #A07830); color: var(--ink); }
+  .btn-run.wine  { background: linear-gradient(135deg, var(--wine), #6A2040); color: var(--text-primary); }
+  .btn-run.ghost { background: var(--ink-2); color: var(--text-secondary); border: 1px solid var(--border); }
+  .btn-run.pass  { background: rgba(76,175,132,0.15); color: var(--up); border: 1px solid rgba(76,175,132,0.3); }
+  .btn-run.fail  { background: rgba(224,90,90,0.12); color: var(--down); border: 1px solid rgba(224,90,90,0.3); }
+  .btn-run.link  {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-tertiary);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  a.btn-run.link { color: var(--text-tertiary); }
+
+  /* Viewport preview */
+  .viewport-strip {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .vp-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--ink-2);
+    border: 1px solid var(--border);
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .vp-tag.target { border-color: rgba(201,168,76,0.3); color: var(--gold); background: rgba(201,168,76,0.08); }
+
+  /* Summary footer */
+  .summary {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-top: 32px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .summary-stat { text-align: center; }
+  .summary-num {
+    font-family: var(--font-mono);
+    font-size: 28px;
+    font-weight: 500;
+    display: block;
+  }
+  .summary-num.pass  { color: var(--up); }
+  .summary-num.fail  { color: var(--down); }
+  .summary-num.total { color: var(--gold); }
+  .summary-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    display: block;
+  }
+  .summary-note {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    min-width: 200px;
+  }
+
+  /* Section dividers */
+  .section-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-tertiary);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin: 32px 0 16px;
+  }
+
+  /* Observation log */
+  .obs-log {
+    background: var(--ink-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    min-height: 48px;
+    line-height: 1.7;
+    margin-top: 10px;
+    white-space: pre-wrap;
+  }
+  .obs-log::before { content: '> '; color: var(--gold); }
+  .obs-log.has-content { color: var(--text-secondary); }
+
+  textarea.obs-input {
+    width: 100%;
+    background: var(--ink-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    resize: vertical;
+    min-height: 64px;
+    margin-top: 8px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  textarea.obs-input:focus { border-color: rgba(201,168,76,0.4); }
+  textarea.obs-input::placeholder { color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>UX Scenario Tests</h1>
+  <p class="subtitle">Investment Hub — Design System v2 · Run after each design change to validate user experience</p>
+
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION A — First Impression & Navigation
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="section-title">A · First Impression &amp; Navigation</div>
+
+  <!-- A1 -->
+  <div class="scenario" id="s-A1">
+    <div class="scenario-header">
+      <div>
+        <div class="scenario-id">A1</div>
+        <div class="scenario-title">Hub page loads — wealth overview visible within 2 seconds</div>
+        <div class="scenario-persona">Persona: Wealthy investor, 45–60, iPhone 14 Pro, first visit</div>
+      </div>
+      <span class="status-badge badge-pending" id="badge-A1">Pending</span>
+    </div>
+
+    <div class="viewport-strip">
+      <div class="vp-tag target">📱 390×844 (iPhone 14)</div>
+      <div class="vp-tag">💻 1280×800 (Desktop)</div>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-text">Open <code>index.html</code> in browser (via HTTP server, not file://)</div>
+          <div class="step-expect">Expect: Page loads, navbar appears, hub layout visible</div>
+        </div>
+        <span class="step-result wait" id="A1-s1">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-text">Resize browser to 390px wide (mobile viewport)</div>
+          <div class="step-expect">Expect: Bottom tab nav appears (Hub / Stocks / Cellar)</div>
+        </div>
+        <span class="step-result wait" id="A1-s2">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-text">Verify hub card typography: Portfolio title uses Cormorant Garamond serif</div>
+          <div class="step-expect">Expect: Elegant serif font, NOT bold sans-serif</div>
+        </div>
+        <span class="step-result wait" id="A1-s3">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">4</span>
+        <div>
+          <div class="step-text">Verify gold accent on stock card, wine-rose on cellar card</div>
+          <div class="step-expect">Expect: Distinct colour-coded sections, no blue/purple gradient</div>
+        </div>
+        <span class="step-result wait" id="A1-s4">—</span>
+      </li>
+    </ul>
+
+    <div class="criteria">
+      <div class="criteria-label">Acceptance Criteria</div>
+      <label class="criterion" id="c-A1-1"><input type="checkbox" onchange="tickCriterion('A1',1,this)"> No blue or purple gradient visible in headers</label>
+      <label class="criterion" id="c-A1-2"><input type="checkbox" onchange="tickCriterion('A1',2,this)"> Cormorant Garamond serif font renders in hub card titles</label>
+      <label class="criterion" id="c-A1-3"><input type="checkbox" onchange="tickCriterion('A1',3,this)"> Bottom nav shows at ≤640px viewport width</label>
+      <label class="criterion" id="c-A1-4"><input type="checkbox" onchange="tickCriterion('A1',4,this)"> Gold sparkline chart visible below hero metric</label>
+    </div>
+
+    <textarea class="obs-input" placeholder="Observations / issues found…" onchange="saveObs('A1',this.value)"></textarea>
+
+    <div style="margin-top: 12px;" class="scenario-actions">
+      <a href="../index.html" target="_blank" class="btn-run link">↗ Open Hub</a>
+      <button class="btn-run gold" onclick="markResult('A1','pass')">✓ Pass</button>
+      <button class="btn-run fail" onclick="markResult('A1','fail')">✗ Fail</button>
+      <button class="btn-run ghost" onclick="markResult('A1','skip')">Skip</button>
+    </div>
+  </div>
+
+  <!-- A2 -->
+  <div class="scenario" id="s-A2">
+    <div class="scenario-header">
+      <div>
+        <div class="scenario-id">A2</div>
+        <div class="scenario-title">Navigation between Hub → Portfolio → Cellar is seamless</div>
+        <div class="scenario-persona">Persona: Regular user, switching between asset classes</div>
+      </div>
+      <span class="status-badge badge-pending" id="badge-A2">Pending</span>
+    </div>
+
+    <div class="viewport-strip">
+      <div class="vp-tag target">📱 390×844 (Primary — mobile)</div>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-text">From hub, tap "Portfolio" in bottom nav</div>
+          <div class="step-expect">Expect: Navigate to portfolio.html, Stocks tab is active (gold)</div>
+        </div>
+        <span class="step-result wait" id="A2-s1">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-text">Tap "Cellar" in bottom nav</div>
+          <div class="step-expect">Expect: Navigate to wine.html, Cellar tab is active (wine-rose)</div>
+        </div>
+        <span class="step-result wait" id="A2-s2">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-text">Verify bottom nav remains fixed during page scroll</div>
+          <div class="step-expect">Expect: Nav stays visible at bottom, doesn't scroll away</div>
+        </div>
+        <span class="step-result wait" id="A2-s3">—</span>
+      </li>
+    </ul>
+
+    <div class="criteria">
+      <div class="criteria-label">Acceptance Criteria</div>
+      <label class="criterion" id="c-A2-1"><input type="checkbox" onchange="tickCriterion('A2',1,this)"> Active tab state is visually clear (gold / wine-rose tint)</label>
+      <label class="criterion" id="c-A2-2"><input type="checkbox" onchange="tickCriterion('A2',2,this)"> Bottom nav stays fixed while scrolling long pages</label>
+      <label class="criterion" id="c-A2-3"><input type="checkbox" onchange="tickCriterion('A2',3,this)"> No content is hidden behind the bottom nav (padding-bottom applied)</label>
+    </div>
+
+    <textarea class="obs-input" placeholder="Observations / issues found…" onchange="saveObs('A2',this.value)"></textarea>
+
+    <div style="margin-top: 12px;" class="scenario-actions">
+      <a href="../portfolio.html" target="_blank" class="btn-run link">↗ Open Portfolio</a>
+      <a href="../wine.html"      target="_blank" class="btn-run link">↗ Open Cellar</a>
+      <button class="btn-run gold" onclick="markResult('A2','pass')">✓ Pass</button>
+      <button class="btn-run fail" onclick="markResult('A2','fail')">✗ Fail</button>
+      <button class="btn-run ghost" onclick="markResult('A2','skip')">Skip</button>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION B — Stock Portfolio UX
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="section-title">B · Stock Portfolio</div>
+
+  <!-- B1 -->
+  <div class="scenario" id="s-B1">
+    <div class="scenario-header">
+      <div>
+        <div class="scenario-id">B1</div>
+        <div class="scenario-title">Portfolio header feels premium — no startup-gradient aesthetic</div>
+        <div class="scenario-persona">Persona: HNWI expecting private-banking visual standard</div>
+      </div>
+      <span class="status-badge badge-pending" id="badge-B1">Pending</span>
+    </div>
+
+    <div class="viewport-strip">
+      <div class="vp-tag target">📱 390×844</div>
+      <div class="vp-tag">💻 1280×800</div>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-text">Open portfolio.html — inspect the page header area</div>
+          <div class="step-expect">Expect: Dark card with gold left border, serif "Portfolio" title, no gradient</div>
+        </div>
+        <span class="step-result wait" id="B1-s1">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-text">Check eyebrow text above title</div>
+          <div class="step-expect">Expect: "Equities · ETFs · Crypto" in monospace uppercase</div>
+        </div>
+        <span class="step-result wait" id="B1-s2">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-text">Verify monetary values use DM Mono font (not body sans-serif)</div>
+          <div class="step-expect">Expect: All €/$ amounts in monospace, clearly tabular</div>
+        </div>
+        <span class="step-result wait" id="B1-s3">—</span>
+      </li>
+    </ul>
+
+    <div class="criteria">
+      <div class="criteria-label">Acceptance Criteria</div>
+      <label class="criterion" id="c-B1-1"><input type="checkbox" onchange="tickCriterion('B1',1,this)"> Header background is dark ink, NOT blue/purple gradient</label>
+      <label class="criterion" id="c-B1-2"><input type="checkbox" onchange="tickCriterion('B1',2,this)"> Gold left-border accent on header card</label>
+      <label class="criterion" id="c-B1-3"><input type="checkbox" onchange="tickCriterion('B1',3,this)"> Title uses Cormorant Garamond (inspect DevTools → font)</label>
+      <label class="criterion" id="c-B1-4"><input type="checkbox" onchange="tickCriterion('B1',4,this)"> Monospace DM Mono used for all monetary amounts</label>
+    </div>
+
+    <textarea class="obs-input" placeholder="Observations / issues found…" onchange="saveObs('B1',this.value)"></textarea>
+
+    <div style="margin-top: 12px;" class="scenario-actions">
+      <a href="../portfolio.html" target="_blank" class="btn-run link">↗ Open Portfolio</a>
+      <button class="btn-run gold" onclick="markResult('B1','pass')">✓ Pass</button>
+      <button class="btn-run fail" onclick="markResult('B1','fail')">✗ Fail</button>
+      <button class="btn-run ghost" onclick="markResult('B1','skip')">Skip</button>
+    </div>
+  </div>
+
+  <!-- B2 -->
+  <div class="scenario" id="s-B2">
+    <div class="scenario-header">
+      <div>
+        <div class="scenario-id">B2</div>
+        <div class="scenario-title">Import portfolio data — positions display correctly on mobile</div>
+        <div class="scenario-persona">Persona: User pasting from a broker spreadsheet export</div>
+      </div>
+      <span class="status-badge badge-pending" id="badge-B2">Pending</span>
+    </div>
+
+    <div class="viewport-strip">
+      <div class="vp-tag target">📱 390×844 (Primary)</div>
+      <div class="vp-tag">💻 1280×800</div>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-text">Click "Import from Spreadsheet" → paste sample data:</div>
+          <div class="step-expect" style="font-family: var(--font-mono); background: var(--ink-2); padding: 6px 10px; border-radius: 4px; margin-top: 4px; font-size: 10px; color: var(--text-secondary);">AAPL	10	185.50
+MSFT	5	380.00
+IWDA	22	95.50
+NVDA	8	780.00</div>
+        </div>
+        <span class="step-result wait" id="B2-s1">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-text">Verify positions appear in the grid with correct values</div>
+          <div class="step-expect">Expect: Positions visible, no broken layout on mobile</div>
+        </div>
+        <span class="step-result wait" id="B2-s2">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-text">On 390px width: check that position rows are readable (not truncated beyond usability)</div>
+          <div class="step-expect">Expect: Symbol + value readable; secondary cols may be hidden (pos-hide-mobile)</div>
+        </div>
+        <span class="step-result wait" id="B2-s3">—</span>
+      </li>
+    </ul>
+
+    <div class="criteria">
+      <div class="criteria-label">Acceptance Criteria</div>
+      <label class="criterion" id="c-B2-1"><input type="checkbox" onchange="tickCriterion('B2',1,this)"> Positions render without horizontal overflow on mobile</label>
+      <label class="criterion" id="c-B2-2"><input type="checkbox" onchange="tickCriterion('B2',2,this)"> Ticker symbol and current value always visible</label>
+      <label class="criterion" id="c-B2-3"><input type="checkbox" onchange="tickCriterion('B2',3,this)"> Gain/loss shown in correct colour (green up / red down)</label>
+    </div>
+
+    <textarea class="obs-input" placeholder="Observations / issues found…" onchange="saveObs('B2',this.value)"></textarea>
+
+    <div style="margin-top: 12px;" class="scenario-actions">
+      <a href="../portfolio.html" target="_blank" class="btn-run link">↗ Open Portfolio</a>
+      <button class="btn-run gold" onclick="markResult('B2','pass')">✓ Pass</button>
+      <button class="btn-run fail" onclick="markResult('B2','fail')">✗ Fail</button>
+      <button class="btn-run ghost" onclick="markResult('B2','skip')">Skip</button>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION C — Wine Cellar UX
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="section-title">C · Wine Cellar</div>
+
+  <!-- C1 -->
+  <div class="scenario" id="s-C1">
+    <div class="scenario-header">
+      <div>
+        <div class="scenario-id">C1</div>
+        <div class="scenario-title">Wine page feels premium / editorial — distinct from stock page</div>
+        <div class="scenario-persona">Persona: Collector who treats wine as serious investment</div>
+      </div>
+      <span class="status-badge badge-pending" id="badge-C1">Pending</span>
+    </div>
+
+    <div class="viewport-strip">
+      <div class="vp-tag target">📱 390×844</div>
+      <div class="vp-tag">💻 1280×800</div>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-text">Open wine.html — inspect header area</div>
+          <div class="step-expect">Expect: Wine-rose left border, burgundy eyebrow text, serif title "Cellar"</div>
+        </div>
+        <span class="step-result wait" id="C1-s1">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-text">Add a wine bottle manually (Pétrus 2015, 1 bottle, €4200)</div>
+          <div class="step-expect">Expect: Bottle card appears with wine-rose accent, Cormorant italic for name</div>
+        </div>
+        <span class="step-result wait" id="C1-s2">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-text">Verify the visual contrast with portfolio page is obvious</div>
+          <div class="step-expect">Expect: User can immediately tell they're in a different section (wine vs stocks)</div>
+        </div>
+        <span class="step-result wait" id="C1-s3">—</span>
+      </li>
+    </ul>
+
+    <div class="criteria">
+      <div class="criteria-label">Acceptance Criteria</div>
+      <label class="criterion" id="c-C1-1"><input type="checkbox" onchange="tickCriterion('C1',1,this)"> Wine header left border is wine-rose (#C4607C), NOT gold</label>
+      <label class="criterion" id="c-C1-2"><input type="checkbox" onchange="tickCriterion('C1',2,this)"> "Fine Wine · Spirits · Cellar" eyebrow visible in header</label>
+      <label class="criterion" id="c-C1-3"><input type="checkbox" onchange="tickCriterion('C1',3,this)"> Cellar tab in bottom nav shows wine-rose active state</label>
+      <label class="criterion" id="c-C1-4"><input type="checkbox" onchange="tickCriterion('C1',4,this)"> Visual language clearly distinct from stock portfolio page</label>
+    </div>
+
+    <textarea class="obs-input" placeholder="Observations / issues found…" onchange="saveObs('C1',this.value)"></textarea>
+
+    <div style="margin-top: 12px;" class="scenario-actions">
+      <a href="../wine.html" target="_blank" class="btn-run link">↗ Open Cellar</a>
+      <button class="btn-run wine" onclick="markResult('C1','pass')">✓ Pass</button>
+      <button class="btn-run fail" onclick="markResult('C1','fail')">✗ Fail</button>
+      <button class="btn-run ghost" onclick="markResult('C1','skip')">Skip</button>
+    </div>
+  </div>
+
+  <!-- C2 -->
+  <div class="scenario" id="s-C2">
+    <div class="scenario-header">
+      <div>
+        <div class="scenario-id">C2</div>
+        <div class="scenario-title">Scan label flow — accessible on mobile, camera opens correctly</div>
+        <div class="scenario-persona">Persona: User in wine cellar, holding iPhone, adding new bottle</div>
+      </div>
+      <span class="status-badge badge-pending" id="badge-C2">Pending</span>
+    </div>
+
+    <div class="viewport-strip">
+      <div class="vp-tag target">📱 Real device or DevTools mobile emulation</div>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-text">On mobile viewport: tap "Take Photo / Upload Image" button</div>
+          <div class="step-expect">Expect: Native file picker or camera opens (OS-level)</div>
+        </div>
+        <span class="step-result wait" id="C2-s1">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-text">Verify "Live Camera" button is hidden on mobile (&lt;600px)</div>
+          <div class="step-expect">Expect: Live Camera button NOT visible (only take photo/upload)</div>
+        </div>
+        <span class="step-result wait" id="C2-s2">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-text">Upload a test image — verify preview appears and AI result card shows</div>
+          <div class="step-expect">Expect: Image preview + recognition result (requires Anthropic key)</div>
+        </div>
+        <span class="step-result wait" id="C2-s3">—</span>
+      </li>
+    </ul>
+
+    <div class="criteria">
+      <div class="criteria-label">Acceptance Criteria</div>
+      <label class="criterion" id="c-C2-1"><input type="checkbox" onchange="tickCriterion('C2',1,this)"> Scan button clearly visible and tappable on mobile</label>
+      <label class="criterion" id="c-C2-2"><input type="checkbox" onchange="tickCriterion('C2',2,this)"> No desktop-only camera shown on mobile</label>
+      <label class="criterion" id="c-C2-3"><input type="checkbox" onchange="tickCriterion('C2',3,this)"> Result card uses wine-rose colour scheme</label>
+    </div>
+
+    <textarea class="obs-input" placeholder="Observations / issues found…" onchange="saveObs('C2',this.value)"></textarea>
+
+    <div style="margin-top: 12px;" class="scenario-actions">
+      <a href="../wine.html" target="_blank" class="btn-run link">↗ Open Cellar</a>
+      <button class="btn-run wine" onclick="markResult('C2','pass')">✓ Pass</button>
+      <button class="btn-run fail" onclick="markResult('C2','fail')">✗ Fail</button>
+      <button class="btn-run ghost" onclick="markResult('C2','skip')">Skip</button>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SECTION D — Visual Design Audit
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="section-title">D · Visual Design Audit</div>
+
+  <!-- D1 -->
+  <div class="scenario" id="s-D1">
+    <div class="scenario-header">
+      <div>
+        <div class="scenario-id">D1</div>
+        <div class="scenario-title">Design token consistency — all pages use CSS variables, not hardcoded hex</div>
+        <div class="scenario-persona">Developer audit — run in DevTools</div>
+      </div>
+      <span class="status-badge badge-pending" id="badge-D1">Pending</span>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-text">Open DevTools → Elements → inspect any header card. Check computed background colour.</div>
+          <div class="step-expect">Expect: background is <code>#1C1F27</code> (--ink-3), not a gradient hex</div>
+        </div>
+        <span class="step-result wait" id="D1-s1">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-text">In DevTools Console, run: <code>getComputedStyle(document.documentElement).getPropertyValue('--gold')</code></div>
+          <div class="step-expect">Expect: Returns <code> #C9A84C</code></div>
+        </div>
+        <span class="step-result wait" id="D1-s2">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-text">Run automated CSS token check below</div>
+          <div class="step-expect">Expect: All tokens present and correct</div>
+        </div>
+        <span class="step-result wait" id="D1-s3">—</span>
+      </li>
+    </ul>
+
+    <!-- Automated CSS token checker -->
+    <div style="background: var(--ink-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+      <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.08em;">Automated Token Checker</div>
+      <button class="btn-run gold" onclick="runTokenCheck()" style="margin-bottom: 10px;">▶ Run Token Check</button>
+      <div id="tokenCheckOutput" class="obs-log">Awaiting run…</div>
+    </div>
+
+    <div class="criteria">
+      <div class="criteria-label">Acceptance Criteria</div>
+      <label class="criterion" id="c-D1-1"><input type="checkbox" onchange="tickCriterion('D1',1,this)"> All 8 required CSS tokens resolve to correct values</label>
+      <label class="criterion" id="c-D1-2"><input type="checkbox" onchange="tickCriterion('D1',2,this)"> No blue (#2563eb) or purple (#7c3aed) gradient remains in headers</label>
+      <label class="criterion" id="c-D1-3"><input type="checkbox" onchange="tickCriterion('D1',3,this)"> Font variables resolve to 3 distinct typefaces</label>
+    </div>
+
+    <div style="margin-top: 12px;" class="scenario-actions">
+      <button class="btn-run gold" onclick="markResult('D1','pass')">✓ Pass</button>
+      <button class="btn-run fail" onclick="markResult('D1','fail')">✗ Fail</button>
+      <button class="btn-run ghost" onclick="markResult('D1','skip')">Skip</button>
+    </div>
+  </div>
+
+  <!-- D2 -->
+  <div class="scenario" id="s-D2">
+    <div class="scenario-header">
+      <div>
+        <div class="scenario-id">D2</div>
+        <div class="scenario-title">Accessibility — text contrast meets WCAG AA on dark background</div>
+        <div class="scenario-persona">Accessibility audit</div>
+      </div>
+      <span class="status-badge badge-pending" id="badge-D2">Pending</span>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-text">Run contrast check on primary text (#F0EDE8) vs background (#0B0C0E)</div>
+          <div class="step-expect">Expect: Contrast ratio ≥ 7:1 (AAA)</div>
+        </div>
+        <span class="step-result wait" id="D2-s1">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-text">Check gold text (#C9A84C) on dark card (#1C1F27)</div>
+          <div class="step-expect">Expect: Contrast ratio ≥ 4.5:1 (AA)</div>
+        </div>
+        <span class="step-result wait" id="D2-s2">—</span>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-text">Run automated contrast check below</div>
+          <div class="step-expect">Expect: Pass / Warn for each pair</div>
+        </div>
+        <span class="step-result wait" id="D2-s3">—</span>
+      </li>
+    </ul>
+
+    <!-- Automated contrast checker -->
+    <div style="background: var(--ink-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+      <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.08em;">Automated Contrast Checker</div>
+      <button class="btn-run gold" onclick="runContrastCheck()" style="margin-bottom: 10px;">▶ Run Contrast Check</button>
+      <div id="contrastOutput" class="obs-log">Awaiting run…</div>
+    </div>
+
+    <div class="criteria">
+      <div class="criteria-label">Acceptance Criteria</div>
+      <label class="criterion" id="c-D2-1"><input type="checkbox" onchange="tickCriterion('D2',1,this)"> Primary text on ink background: ≥ 7:1 (AAA)</label>
+      <label class="criterion" id="c-D2-2"><input type="checkbox" onchange="tickCriterion('D2',2,this)"> Gold accent on card: ≥ 4.5:1 (AA)</label>
+      <label class="criterion" id="c-D2-3"><input type="checkbox" onchange="tickCriterion('D2',3,this)"> Tertiary text used only for decorative/non-critical content</label>
+    </div>
+
+    <div style="margin-top: 12px;" class="scenario-actions">
+      <button class="btn-run gold" onclick="markResult('D2','pass')">✓ Pass</button>
+      <button class="btn-run fail" onclick="markResult('D2','fail')">✗ Fail</button>
+      <button class="btn-run ghost" onclick="markResult('D2','skip')">Skip</button>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════
+       SUMMARY
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="section-title">Results Summary</div>
+
+  <div class="summary">
+    <div class="summary-stat">
+      <span class="summary-num pass" id="sum-pass">0</span>
+      <span class="summary-label">Passed</span>
+    </div>
+    <div class="summary-stat">
+      <span class="summary-num fail" id="sum-fail">0</span>
+      <span class="summary-label">Failed</span>
+    </div>
+    <div class="summary-stat">
+      <span class="summary-num total" id="sum-total">7</span>
+      <span class="summary-label">Total</span>
+    </div>
+    <div class="summary-note" id="sum-note">
+      Run each scenario above and mark Pass / Fail. Use ⬇ Export to save results as a text file.
+    </div>
+  </div>
+
+  <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+    <button class="btn-run ghost" onclick="resetAll()">↺ Reset All Results</button>
+    <button class="btn-run gold" onclick="exportResults()">⬇ Export Report</button>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+  // ── Session-only state (no localStorage) ──────────────────────────────
+  const SCENARIOS = ['A1','A2','B1','B2','C1','C2','D1','D2'];
+  const CRITERIA_COUNT = { A1:4, A2:3, B1:4, B2:3, C1:4, C2:3, D1:3, D2:3 };
+  let results = {};
+  let observations = {};
+
+  window.addEventListener('DOMContentLoaded', () => updateSummary());
+
+  // ── Mark scenario result ───────────────────────────────────────────────
+  function markResult(id, status) {
+    results[id] = status;
+    applyBadge(id, status);
+    updateSummary();
+  }
+
+  function applyBadge(id, status) {
+    const badge = document.getElementById(`badge-${id}`);
+    const card  = document.getElementById(`s-${id}`);
+    if (!badge || !card) return;
+    const map = {
+      pass:  { cls: 'badge-pass',  label: '✓ Pass',  cardCls: 'passed'  },
+      fail:  { cls: 'badge-fail',  label: '✗ Fail',  cardCls: 'failed'  },
+      skip:  { cls: 'badge-skip',  label: 'Skipped', cardCls: 'skipped' },
+    };
+    const m = map[status];
+    if (!m) return;
+    badge.className = `status-badge ${m.cls}`;
+    badge.textContent = m.label;
+    card.className = `scenario ${m.cardCls}`;
+  }
+
+  // ── Criterion tick ─────────────────────────────────────────────────────
+  function tickCriterion(scenarioId, num, checkbox) {
+    const label = checkbox.closest('.criterion');
+    if (label) label.classList.toggle('checked', checkbox.checked);
+  }
+
+  // ── Save observation (session only) ───────────────────────────────────
+  function saveObs(id, text) {
+    observations[id] = text;
+  }
+
+  // ── Summary ────────────────────────────────────────────────────────────
+  function updateSummary() {
+    let pass = 0, fail = 0, skip = 0;
+    SCENARIOS.forEach(id => {
+      if (results[id] === 'pass') pass++;
+      else if (results[id] === 'fail') fail++;
+      else if (results[id] === 'skip') skip++;
+    });
+    const total = SCENARIOS.length;
+    document.getElementById('sum-pass').textContent = pass;
+    document.getElementById('sum-fail').textContent = fail;
+    document.getElementById('sum-total').textContent = total;
+
+    const pct = Math.round(((pass + skip) / total) * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+
+    const note = document.getElementById('sum-note');
+    const remaining = total - pass - fail - skip;
+    if (remaining === 0 && fail === 0) {
+      note.textContent = `All ${total} scenarios resolved. ${pass} passed, ${skip} skipped. Design system implementation complete. ✓`;
+    } else if (fail > 0) {
+      note.textContent = `${fail} scenario(s) failing. Review observations and fix CSS/HTML before shipping.`;
+    } else {
+      note.textContent = `${remaining} scenario(s) remaining. Run each and mark Pass / Fail.`;
+    }
+  }
+
+  // ── Reset ──────────────────────────────────────────────────────────────
+  function resetAll() {
+    if (!confirm('Reset all test results?')) return;
+    results = {};
+    observations = {};
+    SCENARIOS.forEach(id => {
+      const badge = document.getElementById(`badge-${id}`);
+      const card  = document.getElementById(`s-${id}`);
+      if (badge) { badge.className = 'status-badge badge-pending'; badge.textContent = 'Pending'; }
+      if (card)  { card.className = 'scenario'; }
+    });
+    document.querySelectorAll('textarea.obs-input').forEach(ta => ta.value = '');
+    document.querySelectorAll('.criterion input[type="checkbox"]').forEach(cb => { cb.checked = false; cb.closest('.criterion').classList.remove('checked'); });
+    document.getElementById('progressFill').style.width = '0%';
+    updateSummary();
+  }
+
+  // ── Export ─────────────────────────────────────────────────────────────
+  function exportResults() {
+    const date = new Date().toISOString().slice(0,10);
+    let report = `UX Test Report — Investment Hub Design System v2\n`;
+    report += `Date: ${date}\n`;
+    report += `${'─'.repeat(52)}\n\n`;
+    SCENARIOS.forEach(id => {
+      const status = results[id] || 'pending';
+      const obs = observations[id] || '';
+      report += `${id}  [${status.toUpperCase()}]\n`;
+      if (obs) report += `    Notes: ${obs}\n`;
+      report += '\n';
+    });
+    const pass = SCENARIOS.filter(id => results[id] === 'pass').length;
+    const fail = SCENARIOS.filter(id => results[id] === 'fail').length;
+    report += `${'─'.repeat(52)}\n`;
+    report += `PASS: ${pass}   FAIL: ${fail}   TOTAL: ${SCENARIOS.length}\n`;
+
+    const blob = new Blob([report], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `ux-test-${date}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Automated: CSS Token Check ─────────────────────────────────────────
+  function runTokenCheck() {
+    // Fetch styles.css from the same origin and check custom property declarations
+    fetch('../css/styles.css')
+      .then(r => r.text())
+      .then(css => {
+        const required = {
+          '--gold':         '#C9A84C',
+          '--wine':         '#9B3A5A',
+          '--wine-light':   '#C4607C',
+          '--up':           '#4CAF84',
+          '--down':         '#E05A5A',
+          '--ink':          '#0B0C0E',
+          '--ink-3':        '#1C1F27',
+          '--text-primary': '#F0EDE8',
+        };
+        let output = '';
+        let allPass = true;
+        Object.entries(required).forEach(([token, expected]) => {
+          // Match: --token: #HEX inside :root block
+          const re = new RegExp(`${token}\\s*:\\s*(#[0-9a-fA-F]{3,8})`);
+          const match = css.match(re);
+          const val = match ? match[1] : null;
+          const ok  = val && val.toLowerCase() === expected.toLowerCase();
+          if (!ok) allPass = false;
+          output += `${ok ? '✓' : '✗'} ${token}: ${val || '(not found)'}${ok ? '' : `  ← expected ${expected}`}\n`;
+        });
+        output += allPass ? '\n✓ All tokens correct.' : '\n✗ Some tokens missing — check css/styles.css :root block.';
+        const el = document.getElementById('tokenCheckOutput');
+        el.textContent = output;
+        el.classList.add('has-content');
+      })
+      .catch(() => {
+        document.getElementById('tokenCheckOutput').textContent =
+          'Could not fetch styles.css. Run from cacoventures.com or a local HTTP server (not file://).';
+      });
+  }
+
+  // ── Automated: Contrast Check ──────────────────────────────────────────
+  function runContrastCheck() {
+    const pairs = [
+      { label: 'Primary text on ink',      fg: '#F0EDE8', bg: '#0B0C0E', minRatio: 7.0,  level: 'AAA' },
+      { label: 'Secondary text on card',   fg: '#9A95A0', bg: '#1C1F27', minRatio: 4.5,  level: 'AA'  },
+      { label: 'Gold accent on card',      fg: '#C9A84C', bg: '#1C1F27', minRatio: 4.5,  level: 'AA'  },
+      { label: 'Wine-light on card',       fg: '#C4607C', bg: '#1C1F27', minRatio: 4.5,  level: 'AA'  },
+      { label: 'Up green on card',         fg: '#4CAF84', bg: '#1C1F27', minRatio: 4.5,  level: 'AA'  },
+      { label: 'Down red on card',         fg: '#E05A5A', bg: '#1C1F27', minRatio: 4.5,  level: 'AA'  },
+    ];
+
+    function hexToRgb(hex) {
+      const r = parseInt(hex.slice(1,3), 16);
+      const g = parseInt(hex.slice(3,5), 16);
+      const b = parseInt(hex.slice(5,7), 16);
+      return [r, g, b];
+    }
+
+    function luminance([r,g,b]) {
+      const ch = [r,g,b].map(c => {
+        c /= 255;
+        return c <= 0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4);
+      });
+      return 0.2126*ch[0] + 0.7152*ch[1] + 0.0722*ch[2];
+    }
+
+    function contrastRatio(fg, bg) {
+      const l1 = luminance(hexToRgb(fg));
+      const l2 = luminance(hexToRgb(bg));
+      const lighter = Math.max(l1, l2);
+      const darker  = Math.min(l1, l2);
+      return ((lighter + 0.05) / (darker + 0.05)).toFixed(2);
+    }
+
+    let output = '';
+    let allPass = true;
+    pairs.forEach(p => {
+      const ratio = contrastRatio(p.fg, p.bg);
+      const ok    = parseFloat(ratio) >= p.minRatio;
+      if (!ok) allPass = false;
+      output += `${ok ? '✓' : '⚠'} ${p.label}\n`;
+      output += `   Ratio: ${ratio}:1  (min ${p.minRatio} for ${p.level})\n\n`;
+    });
+    output += allPass ? '✓ All contrast ratios pass.' : '⚠ Some pairs below threshold — check tertiary text usage.';
+
+    const el = document.getElementById('contrastOutput');
+    el.textContent = output;
+    el.classList.add('has-content');
+  }
+</script>
+</body>
+</html>

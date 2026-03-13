@@ -126,7 +126,8 @@ ai_investment_tracker/
 │   ├── portfolio.js        # Pure functions mirror of services/portfolio.js (for tests)
 │   └── wine.js             # Pure functions mirror of wine/ modules (for tests)
 │
-├── tests/                  # Vitest test suite (266 tests across 9 files)
+├── tests/                  # Vitest test suite (266 tests across 9 files) + UX test suite
+│   ├── ux-scenarios.html   # Interactive UX test suite (8 scenarios, runs on GitHub Pages)
 │   ├── wine.test.js        # Wine: totals, gains, grouping, validation, scan parsing
 │   ├── calculations.test.js
 │   ├── allocation.test.js
@@ -247,6 +248,7 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 | Test file | What it covers |
 |-----------|---------------|
+| `ux-scenarios.html` | Interactive UX test suite — 8 scenarios (navigation, mobile, headers, contrast). Runs at `cacoventures.com/tests/ux-scenarios.html`. Session-only state; export results as `.txt` |
 | `wine.test.js` | Cellar totals, bottle gain/loss, allocation grouping, validation, label scan parsing, snapshot building |
 | `calculations.test.js` | Portfolio gain/loss, totals |
 | `allocation.test.js` | Portfolio weight calculations, type aggregation |
@@ -284,6 +286,16 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.12.0
+- **Premium design system v2** — full redesign of all three pages (hub, portfolio, cellar) targeting HNWI audience; no more blue/purple gradient headers
+- **Hub page** (`index.html`) — new hero total-wealth metric, gold sparkline SVG chart, dark premium hub cards with ambient glow; side-by-side layout on desktop, stacked on mobile
+- **Headers** — replaced gradient backgrounds with `var(--ink-3)` dark card + 3px coloured left border: gold for stocks, wine-rose for cellar
+- **Cormorant Garamond** promoted to all page titles and hub card names; DM Mono enforced on all monetary amounts
+- **Mobile bottom tab nav** — fixed `Hub / Stocks / Cellar` bar appears at ≤640px; safe-area-inset padding for iPhone notch; active tab tinted gold (stocks) or wine-rose (cellar)
+- **New CSS component classes** — `hub-card-premium`, `pos-card-mobile`, `pos-icon-badge`, `chip-scroll-row`, `chip-filter`, `ai-insight-card`, `seg-tab-row`, `bottom-tab-nav`, `btn-stock`, `btn-ghost-stock/wine`, `dw-badge` variants
+- **Drink-window badges** — `.dw-ready`, `.dw-peak`, `.dw-hold`, `.dw-past` pill badges unified in `styles.css` design system
+- **UX test suite** (`tests/ux-scenarios.html`) — 8 interactive scenarios across first-impression, navigation, stock portfolio, wine cellar, and visual design audit sections; automated WCAG contrast checker and CSS token validator; session-only state (no localStorage); export report as `.txt`
 
 ### v3.11.0
 - **Design system tokens** — `css/styles.css` now defines a full `:root` token set: background layers (`--ink`, `--ink-2`, `--ink-3`, `--surface`, `--surface-2`), borders (`--border`, `--border-hover`), text (`--text-primary/secondary/tertiary`), semantic colours (`--up`, `--down`, `--gold`, `--wine*`), radii (`--r-sm/md/lg/xl`)

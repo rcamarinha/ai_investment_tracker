@@ -77,13 +77,22 @@ body {
 .container { margin: 0 auto; padding: 0 10px; }
 
 .header {
-    background: linear-gradient(90deg, #2563eb 0%, #7c3aed 100%);
-    padding: 30px;
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--gold);
+    padding: 28px 32px;
     border-radius: var(--r-xl);
     margin-bottom: 20px;
 }
-.header h1 { font-size: 28px; margin-bottom: 10px; }
-.header p { color: #bfdbfe; font-size: 14px; }
+.header h1 {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 300;
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+    color: var(--text-primary);
+}
+.header p { color: var(--text-secondary); font-size: 14px; }
 
 .card {
     background: var(--ink-3);
@@ -1350,3 +1359,421 @@ body {
 body > #appNavbar + * {
     /* container sits directly after the navbar — keep existing margin-top */
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Design System v2 — Mobile-first premium components
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Hero Metric Section ────────────────────────────────────────────────── */
+
+.hero-metric-section {
+    padding: 20px 0 16px;
+}
+
+.hero-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 4px;
+}
+
+.hero-value-display {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 6vw, 44px);
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.hero-value-display.gold  { color: var(--gold); }
+.hero-value-display.wine  { color: var(--wine-light); }
+
+.hero-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    margin-top: 6px;
+}
+.hero-delta.up   { color: var(--up); }
+.hero-delta.down { color: var(--down); }
+
+
+/* ── Sparkline / Mini Chart ─────────────────────────────────────────────── */
+
+.mini-chart {
+    border-radius: var(--r-lg);
+    background: var(--ink-3);
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.mini-chart svg { display: block; width: 100%; }
+
+.mini-chart-labels {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 10px 8px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+}
+
+
+/* ── Hub Cards (premium) ────────────────────────────────────────────────── */
+
+.hub-card-premium {
+    border-radius: var(--r-xl);
+    padding: 22px 24px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    text-decoration: none;
+    display: block;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.hub-card-premium:hover {
+    transform: translateY(-2px);
+}
+.hub-card-premium.stock-hub {
+    background: linear-gradient(135deg, #1C1A10, #1E1C12);
+    border: 1px solid var(--gold-line);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+.hub-card-premium.wine-hub {
+    background: linear-gradient(135deg, #1A0F14, #1C1018);
+    border: 1px solid var(--wine-line);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+.hub-card-premium:hover.stock-hub { box-shadow: 0 8px 32px rgba(201,168,76,0.15); }
+.hub-card-premium:hover.wine-hub  { box-shadow: 0 8px 32px rgba(155,58,90,0.18); }
+
+.hub-card-glow-bg {
+    position: absolute;
+    top: -24px; right: -24px;
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    filter: blur(28px);
+    pointer-events: none;
+}
+.stock-hub .hub-card-glow-bg { background: var(--gold-glow); }
+.wine-hub  .hub-card-glow-bg { background: var(--wine-glow); }
+
+.hub-card-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+.stock-hub .hub-card-eyebrow { color: var(--gold-dim); }
+.wine-hub  .hub-card-eyebrow { color: var(--wine-dim); }
+
+.hub-card-name {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 300;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+}
+.stock-hub .hub-card-name { color: var(--gold); }
+.wine-hub  .hub-card-name { color: var(--wine-light); }
+
+.hub-card-sub {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-bottom: 16px;
+}
+
+.hub-card-value-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.hub-card-amount {
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.hub-card-delta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+.hub-card-delta.up   { color: var(--up); }
+.hub-card-delta.down { color: var(--down); }
+
+
+/* ── Mobile Position Cards ──────────────────────────────────────────────── */
+
+.pos-card-mobile {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    transition: border-color 0.15s;
+}
+.pos-card-mobile:hover { border-color: var(--border-hover); }
+.pos-card-mobile.stock { border-left: 2px solid var(--gold-dim); }
+.pos-card-mobile.wine  { border-left: 2px solid var(--wine-dim); }
+
+.pos-icon-badge {
+    width: 40px; height: 40px;
+    border-radius: var(--r-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -0.02em;
+    flex-shrink: 0;
+}
+.pos-icon-badge.stock { background: var(--gold-glow);  color: var(--gold); }
+.pos-icon-badge.wine  { background: var(--wine-glow);  color: var(--wine-light); }
+
+.pos-card-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pos-card-sub {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+}
+
+.pos-card-right { text-align: right; flex-shrink: 0; }
+
+.pos-card-value {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+.pos-card-change {
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+.pos-card-change.up   { color: var(--up); }
+.pos-card-change.down { color: var(--down); }
+
+
+/* ── Chip / Filter Row ──────────────────────────────────────────────────── */
+
+.chip-scroll-row {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    margin-bottom: 14px;
+}
+.chip-scroll-row::-webkit-scrollbar { display: none; }
+
+.chip-filter {
+    flex-shrink: 0;
+    padding: 5px 14px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    background: var(--ink-3);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+.chip-filter:hover { border-color: var(--border-hover); color: var(--text-primary); }
+.chip-filter.active-stock {
+    border-color: var(--gold-line);
+    color: var(--gold);
+    background: var(--gold-glow);
+}
+.chip-filter.active-wine {
+    border-color: var(--wine-line);
+    color: var(--wine-light);
+    background: var(--wine-glow);
+}
+
+
+/* ── AI Insight Card ────────────────────────────────────────────────────── */
+
+.ai-insight-card {
+    background: linear-gradient(135deg, var(--ink-3), var(--surface));
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+.ai-insight-card::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -30px;
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    background: var(--gold-glow);
+    filter: blur(28px);
+    pointer-events: none;
+}
+.ai-insight-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.ai-insight-badge {
+    background: var(--gold-glow);
+    border: 1px solid var(--gold-line);
+    color: var(--gold);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 100px;
+}
+.ai-insight-badge.wine-badge {
+    background: var(--wine-glow);
+    border-color: var(--wine-line);
+    color: var(--wine-light);
+}
+.ai-insight-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    font-style: italic;
+}
+
+
+/* ── Segment Tabs ───────────────────────────────────────────────────────── */
+
+.seg-tab-row {
+    display: flex;
+    background: var(--ink-3);
+    border-radius: var(--r-lg);
+    padding: 3px;
+    gap: 2px;
+    margin-bottom: 16px;
+}
+.seg-tab-item {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: var(--r-md);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    background: transparent;
+}
+.seg-tab-item.active-stock {
+    background: linear-gradient(135deg, var(--gold-dim), #5A4820);
+    color: var(--gold);
+}
+.seg-tab-item.active-wine {
+    background: linear-gradient(135deg, var(--wine-dim), #3A1525);
+    color: var(--wine-light);
+}
+
+
+/* ── Bottom Tab Nav (mobile) ────────────────────────────────────────────── */
+
+.bottom-tab-nav {
+    display: none; /* shown via media query */
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--ink-2);
+    border-top: 1px solid var(--border);
+    padding: 10px 0 env(safe-area-inset-bottom, 10px);
+    z-index: 90;
+    justify-content: space-around;
+}
+.btn-nav {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    padding: 4px 16px;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+.btn-nav .bn-icon { font-size: 20px; line-height: 1; }
+.btn-nav.active       { color: var(--gold); }
+.btn-nav.active-wine  { color: var(--wine-light); }
+.btn-nav:hover        { color: var(--text-secondary); }
+
+@media (max-width: 640px) {
+    .bottom-tab-nav { display: flex; }
+    body { padding-bottom: 68px; } /* clearance for fixed bottom nav */
+}
+
+
+/* ── Premium Button Variants ────────────────────────────────────────────── */
+
+.btn-stock {
+    background: linear-gradient(135deg, var(--gold), #A07830);
+    color: var(--ink);
+    font-weight: 700;
+}
+.btn-wine-primary {
+    background: linear-gradient(135deg, var(--wine), var(--wine-dim));
+    color: var(--text-primary);
+}
+.btn-ghost-stock {
+    background: var(--gold-glow);
+    color: var(--gold);
+    border: 1px solid var(--gold-line);
+}
+.btn-ghost-wine {
+    background: var(--wine-glow);
+    color: var(--wine-light);
+    border: 1px solid var(--wine-line);
+}
+
+
+/* ── Drink Window Badges (design system) ────────────────────────────────── */
+
+.dw-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--font-mono);
+    letter-spacing: 0.02em;
+}
+.dw-ready { background: rgba(76,175,132,0.12); color: var(--up);       border: 1px solid rgba(76,175,132,0.3); }
+.dw-peak  { background: rgba(201,168,76,0.12); color: var(--gold);     border: 1px solid var(--gold-line); }
+.dw-hold  { background: rgba(92,88,112,0.15);  color: var(--neutral);  border: 1px solid rgba(92,88,112,0.35); }
+.dw-past  { background: rgba(224,90,90,0.12);  color: var(--down);     border: 1px solid rgba(224,90,90,0.3); }
