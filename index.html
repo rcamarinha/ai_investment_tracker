@@ -8,127 +8,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="lib/supabase.js?v=3.13.0"></script>
     <link rel="stylesheet" href="css/styles.css?v=3.13.0">
-    <style>
-        /* Hub-specific layout */
-        .hub-layout {
-            display: flex;
-            flex-direction: column;
-            gap: 0;
-        }
-
-        /* Hero wealth section */
-        .hub-hero {
-            padding: 8px 0 20px;
-        }
-        .hub-eyebrow {
-            font-family: var(--font-mono);
-            font-size: 10px;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: var(--text-tertiary);
-            margin-bottom: 4px;
-        }
-        .hub-total {
-            font-family: var(--font-display);
-            font-size: clamp(30px, 7vw, 46px);
-            font-weight: 300;
-            letter-spacing: -0.02em;
-            color: var(--text-primary);
-            line-height: 1;
-        }
-        .hub-year-delta {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--up);
-            margin-top: 6px;
-        }
-
-        /* Sparkline area */
-        .hub-chart {
-            background: var(--ink-3);
-            border-radius: var(--r-lg);
-            overflow: hidden;
-            margin-bottom: 6px;
-        }
-        .hub-chart svg { display: block; width: 100%; }
-        .hub-chart-labels {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 10px 8px;
-            font-family: var(--font-mono);
-            font-size: 9px;
-            color: var(--text-tertiary);
-        }
-
-        /* Hub card stack */
-        .hub-cards-stack {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            margin-top: 4px;
-        }
-
-        @media (min-width: 640px) {
-            .hub-cards-stack {
-                flex-direction: row;
-            }
-            .hub-card-premium { flex: 1; }
-        }
-
-        /* Feature list inside hub cards */
-        .hub-features-list {
-            list-style: none;
-            padding: 0;
-            margin: 10px 0 16px;
-        }
-        .hub-features-list li {
-            font-size: 12px;
-            color: var(--text-tertiary);
-            padding: 2px 0;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .hub-features-list li::before {
-            content: '—';
-            font-family: var(--font-mono);
-            font-size: 10px;
-            color: var(--text-tertiary);
-            opacity: 0.5;
-        }
-        .hub-card-cta {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            font-family: var(--font-mono);
-            letter-spacing: 0.05em;
-            padding: 7px 0 2px;
-            border-top: 1px solid;
-            width: 100%;
-        }
-        .stock-hub .hub-card-cta { color: var(--gold); border-color: var(--gold-dim); }
-        .wine-hub  .hub-card-cta { color: var(--wine-light); border-color: var(--wine-dim); }
-    </style>
 </head>
 <body>
 
     <!-- ── Persistent navbar (rendered by navbar.js) ─────────────────────── -->
     <div id="appNavbar" class="app-navbar"></div>
 
-    <div class="container" style="max-width: 680px;">
+    <div class="container container-hub">
 
         <!-- ── Hub Header ──────────────────────────────────────────────── -->
-        <div class="header" style="border-left-color: var(--gold);">
-            <div style="font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 6px;" data-i18n="hub.eyebrow">Investment Hub · v3.12</div>
-            <h1 style="font-size: clamp(22px, 4vw, 30px);">
-                <span data-i18n="nav.hub">A language for <em style="color: var(--gold); font-style: italic;">wealth</em></span>
+        <div class="header">
+            <div class="header-eyebrow" data-i18n="hub.eyebrow">Investment Hub · v3.12</div>
+            <h1>
+                <span data-i18n="nav.hub">A language for <em>wealth</em></span>
             </h1>
-            <p data-i18n="hub.subtitle" style="margin-top: 4px;">Stocks &amp; wine — one private portfolio view</p>
+            <p data-i18n="hub.subtitle">Stocks &amp; wine — one private portfolio view</p>
         </div>
 
         <div class="hub-layout">

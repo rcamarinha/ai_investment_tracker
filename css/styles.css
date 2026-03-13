@@ -52,10 +52,11 @@
     --font-mono:    'DM Mono', monospace;
 
     /* Radii */
-    --r-sm: 8px;
-    --r-md: 12px;
-    --r-lg: 16px;
-    --r-xl: 20px;
+    --r-sm:  8px;
+    --r-md:  12px;
+    --r-lg:  16px;
+    --r-xl:  20px;
+    --r-2xl: 28px;
 }
 
 
@@ -1777,3 +1778,434 @@ body > #appNavbar + * {
 .dw-peak  { background: rgba(201,168,76,0.12); color: var(--gold);     border: 1px solid var(--gold-line); }
 .dw-hold  { background: rgba(92,88,112,0.15);  color: var(--neutral);  border: 1px solid rgba(92,88,112,0.35); }
 .dw-past  { background: rgba(224,90,90,0.12);  color: var(--down);     border: 1px solid rgba(224,90,90,0.3); }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Design System v3 — Full component library (Investment Hub)
+   All pages must only reference classes defined here (or wine.css).
+   No inline styles. No per-page <style> blocks.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ── Container variants ──────────────────────────────────────────────────── */
+
+/* Narrower hub / landing page container */
+.container-hub { max-width: 680px; }
+
+
+/* ── Header eyebrow & version tag ────────────────────────────────────────── */
+
+.header-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+.header-eyebrow.wine-eyebrow { color: var(--wine-light); }
+
+/* Small version/tag span inside an h1 */
+.header-version {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 400;
+    opacity: 0.4;
+    margin-left: 8px;
+}
+
+/* Italic em inside a display heading */
+.header h1 em { color: var(--gold); font-style: italic; }
+
+
+/* ── Hub page layout ─────────────────────────────────────────────────────── */
+
+.hub-layout        { display: flex; flex-direction: column; gap: 0; }
+.hub-hero          { padding: 8px 0 20px; }
+
+.hub-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 4px;
+}
+
+.hub-total {
+    font-family: var(--font-display);
+    font-size: clamp(30px, 7vw, 46px);
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.hub-year-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--up);
+    margin-top: 6px;
+}
+
+/* Sparkline chart wrapper */
+.hub-chart {
+    background: var(--ink-3);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+.hub-chart svg { display: block; width: 100%; }
+
+.hub-chart-labels {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 10px 8px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+}
+
+/* Hub card stack: column on mobile, row on tablet+ */
+.hub-cards-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 4px;
+}
+@media (min-width: 640px) {
+    .hub-cards-stack           { flex-direction: row; }
+    .hub-cards-stack .hub-card-premium { flex: 1; }
+}
+
+/* Feature list inside hub cards */
+.hub-features-list {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 16px;
+}
+.hub-features-list li {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    padding: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.hub-features-list li::before {
+    content: '—';
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    opacity: 0.5;
+}
+
+/* CTA row at bottom of hub card */
+.hub-card-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    letter-spacing: 0.05em;
+    padding: 7px 0 2px;
+    border-top: 1px solid;
+    width: 100%;
+}
+.stock-hub .hub-card-cta { color: var(--gold);       border-color: var(--gold-dim); }
+.wine-hub  .hub-card-cta { color: var(--wine-light);  border-color: var(--wine-dim); }
+
+
+/* ── Hero metric section ─────────────────────────────────────────────────── */
+
+/* Wraps hero-label + hero-value-display + hero-delta on a page header */
+.hero-metric { padding: 4px 0 20px; }
+
+
+/* ── Wine card detail components ─────────────────────────────────────────── */
+
+.wine-card-detail {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 16px;
+    margin-bottom: 8px;
+    border-left: 2px solid var(--wine-dim);
+}
+
+.wine-name {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 400;
+    font-style: italic;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+    line-height: 1.2;
+}
+
+.wine-vintage {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--wine-light);
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.wine-meta-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.wine-meta-item {
+    flex: 1;
+    min-width: 64px;
+    background: var(--ink-2);
+    border-radius: var(--r-md);
+    padding: 8px 10px;
+}
+
+.wm-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 3px;
+}
+
+.wm-value {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+.wm-value.wine-accent { color: var(--wine-light); }
+.wm-value.up-color    { color: var(--up); }
+
+
+/* ── Section & chart heading helpers ─────────────────────────────────────── */
+
+/* Generic h3 inside a card */
+.section-heading     { color: var(--text-primary); margin-bottom: 15px; }
+
+/* Small uppercase chart/section label */
+.chart-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+/* Cellar/Portfolio card header row (title left, stats right) */
+.card-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+/* Row of action buttons below a card header */
+.action-buttons-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+
+/* ── Form utilities ──────────────────────────────────────────────────────── */
+
+/* Bold label used in dialogs (API keys, etc.) */
+.form-label-bold {
+    display: block;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+/* Helper text below form inputs */
+.form-helper {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+    margin-top: 4px;
+}
+.form-helper a { color: var(--gold); text-decoration: none; }
+.form-helper a:hover { text-decoration: underline; }
+
+/* Security / warning notice (amber tint) */
+.security-notice {
+    color: #fbbf24;
+    font-size: 12px;
+    margin-top: 6px;
+    background: rgba(251,191,36,0.08);
+    border: 1px solid rgba(251,191,36,0.3);
+    border-radius: 6px;
+    padding: 8px;
+    line-height: 1.5;
+}
+
+/* Horizontal rule styled for dark theme */
+.hr-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
+}
+
+/* Textarea — same look as position-form-group inputs */
+.position-form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border-hover);
+    border-radius: var(--r-sm);
+    font-size: 14px;
+    font-family: var(--font-body);
+    resize: vertical;
+}
+
+
+/* ── API strategy info block ─────────────────────────────────────────────── */
+
+.api-info-block {
+    background: var(--surface);
+    padding: 15px;
+    border-radius: var(--r-sm);
+    margin-bottom: 20px;
+}
+
+.api-info-title {
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.api-tier-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.8;
+}
+.api-tier-status-primary  { color: var(--up); font-weight: 600; }
+.api-tier-status-fallback { color: var(--gold); font-weight: 600; }
+
+.api-info-detail {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--ink-2);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* Form field section (label + input + helper) */
+.form-field-section { margin-bottom: 20px; }
+
+/* Inline security/info card with amber background (legacy artifact warning) */
+.info-card-amber {
+    background: #fef3c7;
+    border: 2px solid #f59e0b;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+.info-card-amber-title { font-weight: bold; color: #92400e; margin-bottom: 5px; }
+.info-card-amber-body  { color: #78350f; font-size: 14px; margin-bottom: 10px; }
+.info-card-amber-code  {
+    color: #78350f;
+    font-size: 13px;
+    background: white;
+    padding: 10px;
+    border-radius: 5px;
+    line-height: 1.6;
+}
+
+/* Radio group row */
+.radio-group-row {
+    display: flex;
+    gap: 16px;
+    padding: 10px 14px;
+    background: var(--ink-2);
+    border-radius: var(--r-sm);
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+.radio-group-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: var(--text-primary);
+}
+
+
+/* ── Button: secondary (outlined) ────────────────────────────────────────── */
+
+.btn-secondary {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-hover);
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.btn-secondary:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+/* Primary gold-gradient button (stock / AI actions) */
+.btn-primary-stock {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 11px 20px;
+    border-radius: var(--r-md);
+    background: linear-gradient(135deg, var(--gold), #A07830);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    transition: filter 0.15s;
+}
+.btn-primary-stock:hover { filter: brightness(1.08); }
+
+/* Primary wine-gradient button (cellar / sommelier actions) */
+.btn-primary-wine {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 11px 20px;
+    border-radius: var(--r-md);
+    background: linear-gradient(135deg, var(--wine), var(--wine-dim));
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: filter 0.15s;
+}
+.btn-primary-wine:hover { filter: brightness(1.1); }
