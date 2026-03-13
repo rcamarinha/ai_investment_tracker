@@ -261,7 +261,7 @@ body {
 
 .position-symbol  { font-size: 15px; font-weight: bold; color: var(--text-primary); }
 .position-details { color: var(--text-primary); }
-.position-value   { color: #60a5fa; font-weight: bold; font-family: var(--font-mono); }
+.position-value   { color: var(--gold); font-weight: bold; font-family: var(--font-mono); }
 
 /* Two-line cell helpers */
 .pos-cell { min-width: 0; }
@@ -311,7 +311,7 @@ body {
     margin-top: 15px;
 }
 
-.market-news-card { border-left: 3px solid #60a5fa; }
+.market-news-card { border-left: 3px solid var(--gold); }
 
 
 /* ── Perspective Selector ────────────────────────────────────────────────── */
@@ -650,11 +650,11 @@ body {
 .slicer-clear {
     display: inline-block;
     font-size: 11px;
-    color: #60a5fa;
+    color: var(--gold);
     cursor: pointer;
     margin-left: 8px;
 }
-.slicer-clear:hover { color: #93c5fd; text-decoration: underline; }
+.slicer-clear:hover { color: var(--text-primary); text-decoration: underline; }
 
 
 /* ── Legacy Trade Idea (old format) ──────────────────────────────────────── */
@@ -742,7 +742,7 @@ body {
 }
 
 .position-calc-display {
-    color: #60a5fa;
+    color: var(--gold);
     font-size: 13px;
     margin-top: 6px;
     min-height: 18px;
@@ -785,7 +785,7 @@ body {
 
 .search-result-symbol {
     font-weight: 700;
-    color: #60a5fa;
+    color: var(--gold);
     font-size: 14px;
     min-width: 70px;
 }
@@ -1230,7 +1230,7 @@ body {
     transition: color 0.15s;
 }
 .nav-brand:hover { color: var(--text-primary); }
-.nav-brand.active { color: #60a5fa; }
+.nav-brand.active { color: var(--gold); }
 
 /* Page links */
 .nav-links {
@@ -1251,7 +1251,7 @@ body {
     white-space: nowrap;
 }
 .nav-link:hover  { color: var(--text-primary); background: var(--ink-3); }
-.nav-link.active { color: #60a5fa; background: var(--ink-2); }
+.nav-link.active { color: var(--gold); background: var(--ink-2); }
 
 /* Right-side actions area */
 .nav-actions {
@@ -1275,8 +1275,8 @@ body {
     transition: border-color 0.15s, color 0.15s;
 }
 .lang-toggle:hover {
-    border-color: #60a5fa;
-    color: #60a5fa;
+    border-color: var(--gold);
+    color: var(--gold);
 }
 
 /* Auth wrap (relative anchor for dropdown) */
