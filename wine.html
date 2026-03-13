@@ -100,6 +100,7 @@
                 <button class="btn btn-warning" onclick="saveCellarSnapshot()" title="Save snapshot  (Ctrl+Shift+S)" data-i18n="wine.btn.snapshot">💾 Save Snapshot</button>
                 <button class="btn btn-accent" onclick="analyzeCellar()" id="analyzeBtn" data-i18n="wine.btn.analyze">🤖 AI Analysis</button>
                 <button class="btn btn-primary" onclick="exportCellarCSV()" id="exportBtn" data-i18n="wine.btn.export">⬇ Export CSV</button>
+                <button class="btn btn-sm" onclick="deduplicateCellar()" id="deduplicateBtn" title="Find and merge duplicate entries for the same wine" style="background:#374151;color:#9ca3af;font-size:11px;">Fix Duplicates</button>
             </div>
 
             <!-- Search + Sort (shown only when cellar has bottles) -->
@@ -298,7 +299,7 @@
                  closeBottleDialog, submitBottle, deleteCurrentBottle,
                  saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory,
                  exportCellarCSV, onFilterChange, onReadinessFilterClick,
-                 clearAllFilters, toggleMoreFilters } from './wine/cellar.js?v=1.3.21';
+                 clearAllFilters, toggleMoreFilters, deduplicateCellar } from './wine/cellar.js?v=1.3.21';
         import { valuateAllBottles, valuateSingleBottle, applyValuationCache, attachValuationGuard, detachValuationGuard } from './wine/valuation.js?v=1.3.21';
         import { analyzeCellar } from './wine/analysis.js?v=1.3.21';
         import { renderAllocationCharts, showAllocationTab } from './wine/ui.js?v=1.3.21';
@@ -320,6 +321,7 @@
         window.clearHistory          = clearHistory;
         window.renderCellar          = renderCellar;
         window.exportCellarCSV           = exportCellarCSV;
+        window.deduplicateCellar         = deduplicateCellar;
         window.onFilterChange            = onFilterChange;
         window.onReadinessFilterClick    = onReadinessFilterClick;
         window.clearAllFilters           = clearAllFilters;

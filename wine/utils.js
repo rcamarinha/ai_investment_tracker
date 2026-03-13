@@ -155,6 +155,54 @@ export function showConfirm(message, { confirmLabel = 'Confirm', cancelLabel = '
     });
 }
 
+// ── Merge Dialog ──────────────────────────────────────────────────────────────
+
+/**
+ * Show a 3-choice dialog when adding a wine that already exists in the cellar.
+ *
+ * @param {Array}  existingHoldings  - user_wines rows already in DB for this wine
+ * @param {object} newBottle         - bottle data being added (has .qty)
+ * @returns {Promise<'merge'|'separate'|'cancel'>}
+ */
+export function showMergeDialog(existingHoldings, newBottle) {
+    return new Promise(resolve => {
+        const existingQty = existingHoldings.reduce((sum, h) => sum + (h.qty || 0), 0);
+        const newQty      = newBottle.qty || 1;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-overlay';
+        overlay.style.cssText = 'display:flex;z-index:10001;';
+
+        overlay.innerHTML = `
+            <div class="confirm-dialog" style="max-width:440px;">
+                <p style="margin-bottom:8px;font-weight:600;font-size:15px;">Wine already in cellar</p>
+                <p style="color:#94a3b8;font-size:13px;margin-bottom:20px;">
+                    You already have <strong style="color:#e2e8f0;">${existingQty} bottle${existingQty !== 1 ? 's' : ''}</strong>
+                    of this wine. What would you like to do?
+                </p>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <button id="_mrgMerge" class="btn btn-success" style="width:100%;justify-content:center;">
+                        Merge — combine into ${existingQty + newQty} bottles
+                    </button>
+                    <button id="_mrgSeparate" class="btn btn-primary" style="width:100%;justify-content:center;">
+                        Add as separate lot
+                    </button>
+                    <button id="_mrgCancel" class="btn" style="width:100%;justify-content:center;background:#374151;color:#9ca3af;">
+                        Cancel
+                    </button>
+                </div>
+            </div>`;
+
+        document.body.appendChild(overlay);
+
+        const cleanup = result => { overlay.remove(); resolve(result); };
+
+        overlay.querySelector('#_mrgMerge').addEventListener('click',    () => cleanup('merge'));
+        overlay.querySelector('#_mrgSeparate').addEventListener('click', () => cleanup('separate'));
+        overlay.querySelector('#_mrgCancel').addEventListener('click',   () => cleanup('cancel'));
+    });
+}
+
 // ── Modal Open / Close ────────────────────────────────────────────────────────
 
 /**
