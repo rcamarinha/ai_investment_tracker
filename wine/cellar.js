@@ -5,9 +5,10 @@
 import { t } from '../data/i18n.js';
 import state from './state.js';
 import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
-         deleteSnapshotFromDB, clearSnapshotsFromDB } from './storage.js';
+         deleteSnapshotFromDB, clearSnapshotsFromDB,
+         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js';
 import { renderAllocationCharts } from './ui.js';
-import { showToast, showUndoToast, showConfirm, openModal, closeModal, escapeHTML } from './utils.js';
+import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML } from './utils.js';
 import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
@@ -583,6 +584,66 @@ export async function submitBottle() {
         valuationSources:  existingBottle?.valuationSources  ?? null,
     };
 
+    // ── Duplicate check for new bottles only ─────────────────────────────────
+    let mergeTargetIds = []; // IDs of all existing holdings being merged
+
+    if (!isEdit) {
+        const existingHoldings = await findExistingUserWineHoldings(
+            bottleData.name, bottleData.winery, bottleData.vintage
+        );
+
+        if (existingHoldings.length > 0) {
+            const choice = await showMergeDialog(existingHoldings, bottleData);
+
+            if (choice === 'cancel') {
+                submitBtn.disabled = false;
+                submitBtn.textContent = t('bottle.btn.add');
+                return;
+            }
+
+            if (choice === 'merge') {
+                // Merge all existing holdings + new bottle into the primary (oldest) row
+                const primary = existingHoldings[0];
+                mergeTargetIds = existingHoldings.map(h => h.id);
+
+                // Sum quantities
+                const existingQty = existingHoldings.reduce((sum, h) => sum + (h.qty || 0), 0);
+                bottleData.id     = primary.id;
+                bottleData.wineId = primary.wine_id;
+                bottleData.qty    = existingQty + qty;
+
+                // Weighted average purchase price
+                const allRows = [
+                    ...existingHoldings.map(h => ({ qty: h.qty, price: h.purchase_price })),
+                    { qty, price: purchasePrice },
+                ];
+                const withPrice = allRows.filter(r => r.price != null && r.price > 0);
+                if (withPrice.length > 0) {
+                    const totalCost = withPrice.reduce((s, r) => s + (r.qty || 0) * r.price, 0);
+                    const totalQtyP = withPrice.reduce((s, r) => s + (r.qty || 0), 0);
+                    bottleData.purchasePrice = totalQtyP > 0 ? totalCost / totalQtyP : null;
+                }
+
+                // Best valuation: most recently valued existing row
+                const withVal = [...existingHoldings]
+                    .filter(h => h.last_valued_at)
+                    .sort((a, b) => new Date(b.last_valued_at) - new Date(a.last_valued_at));
+                if (withVal.length > 0) {
+                    const bv = withVal[0];
+                    bottleData.estimatedValue    ??= bv.estimated_value;
+                    bottleData.estimatedValueUSD ??= bv.estimated_value_usd;
+                    bottleData.valueLow          ??= bv.value_low;
+                    bottleData.valueHigh         ??= bv.value_high;
+                    bottleData.confidence        ??= bv.confidence;
+                    bottleData.valuationNote     ??= bv.valuation_note;
+                    bottleData.valuationSources  ??= bv.valuation_sources;
+                    bottleData.lastValuedAt      ??= bv.last_valued_at;
+                }
+            }
+            // 'separate' → fall through and insert normally
+        }
+    }
+
     try {
         const savedId = await saveBottleToDB(bottleData);
         bottleData.id = savedId || bottleData.id || ('local-' + Date.now());
@@ -590,13 +651,30 @@ export async function submitBottle() {
         if (isEdit) {
             const idx = state.cellar.findIndex(b => b.id === state.editingBottleId);
             if (idx >= 0) state.cellar[idx] = bottleData;
+        } else if (mergeTargetIds.length > 0) {
+            // Delete any secondary duplicate holdings from DB (all except primary)
+            const secondaryIds = mergeTargetIds.slice(1);
+            for (const sid of secondaryIds) {
+                await state.supabaseClient
+                    .from('user_wines')
+                    .delete()
+                    .eq('id', sid)
+                    .eq('user_id', state.currentUser.id);
+            }
+            // Replace all merged entries in-memory with the unified bottle
+            state.cellar = state.cellar.filter(b => !mergeTargetIds.includes(b.id));
+            state.cellar.push(bottleData);
         } else {
             state.cellar.push(bottleData);
         }
 
         closeBottleDialog();
         renderCellar();
-        showToast(isEdit ? t('dialog.updated') : t('dialog.added'));
+        showToast(
+            isEdit          ? t('dialog.updated') :
+            mergeTargetIds.length > 0 ? 'Bottles merged successfully.' :
+                                        t('dialog.added')
+        );
     } catch (err) {
         showToast('Failed to save bottle: ' + err.message, 'error');
         console.error(err);
@@ -786,6 +864,42 @@ export async function clearHistory() {
         showToast('History cleared.');
     } catch (err) {
         showToast('Failed to clear history: ' + err.message, 'error');
+    }
+}
+
+// ── Fix Existing Duplicates ───────────────────────────────────────────────────
+
+/**
+ * Scan the cellar for duplicate holdings (same wine, multiple user_wines rows),
+ * merge them in the DB, and refresh the in-memory state.
+ */
+export async function deduplicateCellar() {
+    if (!requireAuth('fix duplicates')) return;
+
+    showToast('Scanning for duplicates…', 'info', 3000);
+
+    try {
+        const { winesFixed, bottlesMerged } = await findAndMergeDuplicates();
+
+        if (winesFixed === 0) {
+            showToast('No duplicates found — your cellar is clean!', 'success');
+            return;
+        }
+
+        // Reload cellar from DB so in-memory state reflects merged rows
+        const { loadFromDatabase } = await import('./storage.js');
+        await loadFromDatabase();
+
+        renderCellar();
+        showToast(
+            `Fixed ${winesFixed} duplicate wine${winesFixed !== 1 ? 's' : ''} `
+            + `(${bottlesMerged} extra entr${bottlesMerged !== 1 ? 'ies' : 'y'} merged).`,
+            'success',
+            6000
+        );
+    } catch (err) {
+        showToast('Failed to fix duplicates: ' + err.message, 'error');
+        console.error(err);
     }
 }
 

@@ -466,6 +466,141 @@ export async function logAssetMovement({
     }
 }
 
+// ── Duplicate Detection & Merging ─────────────────────────────────────────────
+
+/**
+ * Find any existing user_wines rows for the same wine (name + winery + vintage).
+ * Used before adding a new bottle to detect duplicates.
+ *
+ * @param {string} name
+ * @param {string|null} winery
+ * @param {number|null} vintage
+ * @returns {Promise<Array>} existing user_wines rows (empty = no duplicate)
+ */
+export async function findExistingUserWineHoldings(name, winery, vintage) {
+    if (!state.supabaseClient || !state.currentUser || !name) return [];
+
+    // Step 1: find wine in shared catalog
+    let query = state.supabaseClient
+        .from('wines')
+        .select('id')
+        .ilike('name', name);
+
+    if (vintage) {
+        query = query.eq('vintage', vintage);
+    } else {
+        query = query.is('vintage', null);
+    }
+    if (winery) {
+        query = query.ilike('winery', winery);
+    } else {
+        query = query.is('winery', null);
+    }
+
+    const { data: wineData } = await query.maybeSingle();
+    if (!wineData) return [];
+
+    // Step 2: find all user holdings for this wine
+    const { data: holdings } = await state.supabaseClient
+        .from('user_wines')
+        .select('*')
+        .eq('user_id', state.currentUser.id)
+        .eq('wine_id', wineData.id)
+        .order('created_at', { ascending: true });
+
+    return holdings || [];
+}
+
+/**
+ * Find all duplicate user_wines groups (same wine_id, same user) and merge them.
+ * Merges by: summing qty, weighted-average purchase price, keeping best valuation.
+ *
+ * @returns {Promise<{winesFixed: number, bottlesMerged: number}>}
+ */
+export async function findAndMergeDuplicates() {
+    if (!state.supabaseClient || !state.currentUser) return { winesFixed: 0, bottlesMerged: 0 };
+
+    const { data, error } = await state.supabaseClient
+        .from('user_wines')
+        .select('*, wines(name, winery, vintage)')
+        .eq('user_id', state.currentUser.id)
+        .order('created_at', { ascending: true });
+
+    if (error || !data) return { winesFixed: 0, bottlesMerged: 0 };
+
+    // Group by wine_id
+    const groups = {};
+    for (const row of data) {
+        if (!groups[row.wine_id]) groups[row.wine_id] = [];
+        groups[row.wine_id].push(row);
+    }
+
+    const duplicateGroups = Object.values(groups).filter(g => g.length > 1);
+
+    let winesFixed = 0;
+    let bottlesMerged = 0;
+
+    for (const group of duplicateGroups) {
+        await _mergeDuplicateGroup(group);
+        winesFixed++;
+        bottlesMerged += group.length - 1;
+    }
+
+    return { winesFixed, bottlesMerged };
+}
+
+/**
+ * Merge a group of duplicate user_wines rows (all same wine_id, same user).
+ * Keeps the oldest row (rows[0], sorted by created_at ASC), deletes the rest.
+ */
+async function _mergeDuplicateGroup(rows) {
+    const primary     = rows[0];
+    const secondaries = rows.slice(1);
+
+    // Sum quantities
+    const totalQty = rows.reduce((sum, r) => sum + (r.qty || 0), 0);
+
+    // Weighted average purchase price (only for rows that have one)
+    const withPrice = rows.filter(r => r.purchase_price != null && r.purchase_price > 0);
+    let mergedPrice = primary.purchase_price;
+    if (withPrice.length > 0) {
+        const totalCost    = withPrice.reduce((s, r) => s + (r.qty || 0) * r.purchase_price, 0);
+        const totalQtyP    = withPrice.reduce((s, r) => s + (r.qty || 0), 0);
+        mergedPrice = totalQtyP > 0 ? totalCost / totalQtyP : null;
+    }
+
+    // Best valuation: most recently valued row
+    const withVal = rows
+        .filter(r => r.last_valued_at)
+        .sort((a, b) => new Date(b.last_valued_at) - new Date(a.last_valued_at));
+    const best = withVal[0] || null;
+
+    await state.supabaseClient
+        .from('user_wines')
+        .update({
+            qty:                 totalQty,
+            purchase_price:      mergedPrice,
+            estimated_value:     best?.estimated_value     ?? primary.estimated_value,
+            estimated_value_usd: best?.estimated_value_usd ?? primary.estimated_value_usd,
+            value_low:           best?.value_low           ?? primary.value_low,
+            value_high:          best?.value_high          ?? primary.value_high,
+            confidence:          best?.confidence          ?? primary.confidence,
+            valuation_note:      best?.valuation_note      ?? primary.valuation_note,
+            valuation_sources:   best?.valuation_sources   ?? primary.valuation_sources,
+            last_valued_at:      best?.last_valued_at      ?? primary.last_valued_at,
+            updated_at:          new Date().toISOString(),
+        })
+        .eq('id', primary.id);
+
+    for (const row of secondaries) {
+        await state.supabaseClient
+            .from('user_wines')
+            .delete()
+            .eq('id', row.id)
+            .eq('user_id', state.currentUser.id);
+    }
+}
+
 // ── Wine Price History ────────────────────────────────────────────────────────
 
 /**
