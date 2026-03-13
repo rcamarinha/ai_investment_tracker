@@ -50,17 +50,17 @@ function buildAuthDropdownHTML(user, passwordRecoveryMode) {
     if (passwordRecoveryMode) {
         return `
             <div class="nav-dropdown-inner">
-                <p style="color:#94a3b8;font-size:13px;margin:0 0 8px;">${t('auth.set_password')}</p>
+                <p style="color:var(--text-secondary);font-size:13px;margin:0 0 8px;">${t('auth.set_password')}</p>
                 <input type="password" id="newPassword"
                        placeholder="${t('auth.new_password_ph')}"
-                       style="width:100%;padding:8px 10px;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:6px;font-size:13px;box-sizing:border-box;" />
+                       style="width:100%;padding:8px 10px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:13px;box-sizing:border-box;" />
                 <input type="password" id="confirmPassword"
                        placeholder="${t('auth.confirm_ph')}"
                        onkeydown="if(event.key==='Enter') handlePasswordReset()"
-                       style="width:100%;padding:8px 10px;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:6px;font-size:13px;box-sizing:border-box;" />
+                       style="width:100%;padding:8px 10px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:13px;box-sizing:border-box;" />
                 <div style="display:flex;gap:8px;">
-                    <button class="btn-sm" style="background:#059669;" onclick="handlePasswordReset()">${t('auth.set_btn')}</button>
-                    <button class="btn-sm" style="background:#475569;" onclick="cancelPasswordRecovery()">${t('auth.cancel')}</button>
+                    <button class="btn-sm" style="background:var(--up);" onclick="handlePasswordReset()">${t('auth.set_btn')}</button>
+                    <button class="btn-sm" style="background:var(--surface-2);" onclick="cancelPasswordRecovery()">${t('auth.cancel')}</button>
                 </div>
             </div>`;
     }
@@ -68,11 +68,11 @@ function buildAuthDropdownHTML(user, passwordRecoveryMode) {
     if (user) {
         return `
             <div class="nav-dropdown-inner">
-                <div style="display:flex;flex-direction:column;gap:3px;padding-bottom:10px;border-bottom:1px solid #334155;margin-bottom:10px;">
-                    <span style="color:#4ade80;font-weight:600;font-size:13px;">☁️ ${t('auth.connected')}</span>
-                    <span style="color:#94a3b8;font-size:12px;word-break:break-all;">${esc(user.email)}</span>
+                <div style="display:flex;flex-direction:column;gap:3px;padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:10px;">
+                    <span style="color:var(--up);font-weight:600;font-size:13px;">☁️ ${t('auth.connected')}</span>
+                    <span style="color:var(--text-secondary);font-size:12px;word-break:break-all;">${esc(user.email)}</span>
                 </div>
-                <button class="btn-sm" style="background:#475569;width:100%;" onclick="handleLogout()">${t('nav.logout')}</button>
+                <button class="btn-sm" style="background:var(--surface-2);width:100%;" onclick="handleLogout()">${t('nav.logout')}</button>
             </div>`;
     }
 
@@ -86,11 +86,11 @@ function buildAuthDropdownHTML(user, passwordRecoveryMode) {
             <div style="display:flex;flex-direction:column;gap:8px;">
                 <input type="email" id="authEmail"
                        placeholder="${t('auth.email_ph')}"
-                       style="width:100%;padding:8px 10px;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:6px;font-size:13px;box-sizing:border-box;" />
+                       style="width:100%;padding:8px 10px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:13px;box-sizing:border-box;" />
                 <input type="password" id="authPassword"
                        placeholder="${t('auth.password_ph')}"
                        onkeydown="if(event.key==='Enter') handleLogin()"
-                       style="width:100%;padding:8px 10px;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:6px;font-size:13px;box-sizing:border-box;" />
+                       style="width:100%;padding:8px 10px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:13px;box-sizing:border-box;" />
                 <div style="display:flex;gap:8px;">
                     <button class="btn-sm" style="background:#2563eb;flex:1;" onclick="handleLogin()">${t('auth.login_btn')}</button>
                     <button class="btn-sm" style="background:#7c3aed;flex:1;" onclick="handleSignup()">${t('auth.signup_btn')}</button>

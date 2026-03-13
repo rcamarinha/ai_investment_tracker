@@ -287,6 +287,12 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.13.0
+- **Full design-token audit** — systematic pass across all JS service files (`services/portfolio.js`, `services/navbar.js`, `services/analysis.js`) and `wine.html` replacing every hardcoded hex color (`#60a5fa`, `#4ade80`, `#f87171`, `#94a3b8`, `#64748b`, `#334155`, etc.) with the correct CSS custom property token (`var(--gold)`, `var(--up)`, `var(--down)`, `var(--text-secondary)`, `var(--surface-2)`, etc.)
+- **Style guide comprehensive update** — `style-guide.html` rewritten to accurately document the current premium design system: correct wine token palette, current header pattern (dark ink + coloured left border, no gradient), perspective tab gold active state, and trade-idea legend using semantic tokens
+- **Design System v2 section added** (§17 in style guide) — live demos of all new mobile-first components: `.hero-metric-section`, `.hub-card-premium` (stock + wine), `.pos-card-mobile`, `.chip-scroll-row` / `.chip-filter`, `.ai-insight-card`, `.seg-tab-row`, `.bottom-tab-nav`, `.btn-stock` / `.btn-wine-primary` / `.btn-ghost-*`, `.dw-badge` variants
+- **`styles.css` blue references fixed** — seven `#60a5fa` (Tailwind blue) occurrences in `.position-value`, `.market-news-card`, `.search-result-symbol`, `.position-calc-display`, `.nav-brand.active`, `.lang-toggle`, `.slicer-clear` all replaced with gold / text tokens
+
 ### v3.12.0
 - **Premium design system v2** — full redesign of all three pages (hub, portfolio, cellar) targeting HNWI audience; no more blue/purple gradient headers
 - **Hub page** (`index.html`) — new hero total-wealth metric, gold sparkline SVG chart, dark premium hub cards with ambient glow; side-by-side layout on desktop, stacked on mobile

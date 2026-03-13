@@ -39,12 +39,12 @@ export async function analyzeMarkets() {
 
     if (!useDirectAPI && !useEdgeFunction) {
         analysisSection.innerHTML = `
-            <div class="card" style="background: #334155; padding: 20px;">
-                <h3 style="color: #cbd5e1; margin-bottom: 10px;">\uD83E\uDD16 AI Analysis</h3>
-                <p style="color: #94a3b8; margin-bottom: 15px;">AI analysis requires either a Supabase connection or your own Anthropic API key.</p>
-                <ol style="color: #94a3b8; margin-left: 20px; line-height: 1.8;">
+            <div class="card" style="background: var(--surface-2); padding: 20px;">
+                <h3 style="color: var(--text-primary); margin-bottom: 10px;">\uD83E\uDD16 AI Analysis</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">AI analysis requires either a Supabase connection or your own Anthropic API key.</p>
+                <ol style="color: var(--text-secondary); margin-left: 20px; line-height: 1.8;">
                     <li>Get an API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com</a></li>
-                    <li>Click the <strong style="color: #cbd5e1;">\uD83D\uDD11 API Keys</strong> button above</li>
+                    <li>Click the <strong style="color: var(--text-primary);">\uD83D\uDD11 API Keys</strong> button above</li>
                     <li>Enter your Anthropic key and save</li>
                     <li>Click "Get AI Analysis" again</li>
                 </ol>
@@ -153,7 +153,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
             <div class="card analysis-section">
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
                     <span class="perspective-badge" style="background: ${perspective.color};">${perspective.icon} ${escapeHTML(perspective.name)}</span>
-                    <span style="color: #64748b; font-size: 12px;">Inspired by ${escapeHTML(perspective.figures)}</span>
+                    <span style="color: var(--text-tertiary); font-size: 12px;">Inspired by ${escapeHTML(perspective.figures)}</span>
                 </div>
                 <div class="analysis-card" style="border-left: 3px solid ${perspective.color};">
                     <div class="analysis-title">${perspective.icon} ${t('analysis.market_assess')} \u2014 ${escapeHTML(perspective.name)} ${t('analysis.view')}</div>
@@ -172,7 +172,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
         console.error('=== ANALYZE MARKETS ERROR ===', err);
         analysisSection.innerHTML = `
             <div class="card">
-                <div class="analysis-content" style="color: #f87171;">\u274C Unable to generate analysis: ${escapeHTML(err.message)}<br><br>Check the browser console (F12) for detailed error information.</div>
+                <div class="analysis-content" style="color: var(--down);">\u274C Unable to generate analysis: ${escapeHTML(err.message)}<br><br>Check the browser console (F12) for detailed error information.</div>
             </div>
         `;
     }
@@ -215,9 +215,9 @@ export async function getTradeIdeas() {
 
     if (!useDirectAPI && !useEdgeFunction) {
         analysisSection.innerHTML = `
-            <div class="card" style="background: #334155; padding: 20px;">
-                <h3 style="color: #cbd5e1; margin-bottom: 10px;">\uD83D\uDCC8 Trade Ideas</h3>
-                <p style="color: #94a3b8;">Trade ideas require either a Supabase connection or your own Anthropic API key.</p>
+            <div class="card" style="background: var(--surface-2); padding: 20px;">
+                <h3 style="color: var(--text-primary); margin-bottom: 10px;">\uD83D\uDCC8 Trade Ideas</h3>
+                <p style="color: var(--text-secondary);">Trade ideas require either a Supabase connection or your own Anthropic API key.</p>
             </div>
         `;
         tradeIdeasBtn.disabled = false;
@@ -349,14 +349,14 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
             <div class="card trade-ideas-section">
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
                     <span class="perspective-badge" style="background: ${perspective.color};">${perspective.icon} ${escapeHTML(perspective.name)}</span>
-                    <span style="color: #94a3b8; font-size: 12px;">${escapeHTML(ideas.date || today)}</span>
+                    <span style="color: var(--text-secondary); font-size: 12px;">${escapeHTML(ideas.date || today)}</span>
                 </div>
-                <div style="background: #1e293b; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                    <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">${t('analysis.market_summary')}</div>
-                    <div style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.marketSummary || ideas.marketOverview || '')}</div>
+                <div style="background: var(--surface); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                    <div style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">${t('analysis.market_summary')}</div>
+                    <div style="color: var(--text-primary); font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.marketSummary || ideas.marketOverview || '')}</div>
                 </div>
-                ${ideas.portfolioImpact ? `<div style="background: #1e293b; border-radius: 8px; padding: 15px; margin-bottom: 20px;"><div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">${t('analysis.portfolio_impact')}</div><div style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.portfolioImpact)}</div></div>` : ''}
-                <h3 style="color: #e2e8f0; font-size: 18px; margin-bottom: 15px;">${t('analysis.trade_ideas')}</h3>
+                ${ideas.portfolioImpact ? `<div style="background: var(--surface); border-radius: 8px; padding: 15px; margin-bottom: 20px;"><div style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">${t('analysis.portfolio_impact')}</div><div style="color: var(--text-primary); font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.portfolioImpact)}</div></div>` : ''}
+                <h3 style="color: var(--text-primary); font-size: 18px; margin-bottom: 15px;">${t('analysis.trade_ideas')}</h3>
                 ${(ideas.trades || ideas.ideas || []).map((trade, idx) => {
                     const action = (trade.action || 'WATCH').toUpperCase();
                     const color = actionColors[action] || '#6366f1';
@@ -387,7 +387,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
         `;
     } catch (err) {
         console.error('=== GET TRADE IDEAS ERROR ===', err);
-        analysisSection.innerHTML = `<div class="card"><div class="analysis-content" style="color: #f87171;">\u274C Unable to generate trade ideas: ${escapeHTML(err.message)}</div></div>`;
+        analysisSection.innerHTML = `<div class="card"><div class="analysis-content" style="color: var(--down);">\u274C Unable to generate trade ideas: ${escapeHTML(err.message)}</div></div>`;
     }
 
     tradeIdeasBtn.disabled = false;
