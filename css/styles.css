@@ -68,14 +68,14 @@ body {
     font-family: var(--font-body);
     background: var(--ink);
     color: var(--text-primary);
-    padding: 20px;
+    padding: 0;
     min-height: 100vh;
 }
 
 
 /* ── Layout ──────────────────────────────────────────────────────────────── */
 
-.container { margin: 0 auto; padding: 0 10px; }
+.container { margin: 0 auto; padding: 20px; }
 
 .header {
     background: var(--ink-3);
@@ -226,39 +226,56 @@ body {
 /* ── Portfolio Grid ──────────────────────────────────────────────────────── */
 
 .positions {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     margin-bottom: 20px;
 }
 
+/* Card-style position row — uses .pos-card-mobile base from Design System v2 */
 .position {
-    background: var(--surface);
-    border: 1px solid var(--border-hover);
-    border-radius: 0;
-    padding: 10px 12px;
-    margin-bottom: 1px;
-    display: grid;
-    grid-template-columns: 90px minmax(120px, 1fr) 70px 110px 130px 130px 120px;
-    gap: 10px;
-    align-items: center;
-    font-size: 13px;
-}
-.position:first-child { border-radius: 10px 10px 0 0; }
-.position:last-child  { border-radius: 0 0 10px 10px; margin-bottom: 0; }
-
-.position-header-row {
     background: var(--ink-3);
-    border: 1px solid var(--border-hover);
-    border-radius: 10px 10px 0 0;
-    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--gold-dim);
+    border-radius: var(--r-lg);
+    padding: 12px 14px;
     display: grid;
-    grid-template-columns: 90px minmax(120px, 1fr) 70px 110px 130px 130px 120px;
+    grid-template-columns: 40px 1fr auto;
     gap: 10px;
-    align-items: center;
-    font-size: 11px;
-    font-weight: bold;
-    color: var(--text-secondary);
-    text-transform: uppercase;
+    align-items: start;
+    transition: border-color 0.15s;
 }
+.position:hover { border-color: var(--border-hover); border-left-color: var(--gold); }
+
+/* Inactive (closed) position */
+.position.inactive {
+    opacity: 0.45;
+    border-left-color: var(--border);
+}
+.position.inactive:hover { opacity: 0.7; }
+
+/* Middle column */
+.pos-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.pos-card-body .position-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+/* Status dot inline with name */
+.pos-status-dot {
+    font-size: 11px;
+    margin-right: 3px;
+    vertical-align: middle;
+}
+
+/* Header row no longer needed but kept for JS compat — hidden */
+.position-header-row { display: none; }
 
 .position-symbol  { font-size: 15px; font-weight: bold; color: var(--text-primary); }
 .position-details { color: var(--text-primary); }
@@ -852,15 +869,6 @@ body {
 .position-action-btn.action-buy  { background: #059669; }
 .position-action-btn.action-sell { background: var(--gold); }
 .position-action-btn.action-del  { background: #dc2626; }
-
-/* Inactive position row */
-.position.inactive {
-    opacity: 0.45;
-    background: var(--ink-3);
-}
-.position.inactive:hover {
-    opacity: 0.7;
-}
 
 /* Inactive toggle */
 .inactive-toggle {
@@ -1734,7 +1742,7 @@ body > #appNavbar + * {
 
 @media (max-width: 640px) {
     .bottom-tab-nav { display: flex; }
-    body { padding-bottom: 68px; } /* clearance for fixed bottom nav */
+    .container { padding-bottom: 68px; } /* clearance for fixed bottom nav */
 }
 
 
