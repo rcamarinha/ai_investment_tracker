@@ -30,14 +30,14 @@
         <!-- ── Label Scanner Card ──────────────────────────────────────── -->
         <div class="card" id="scannerCard">
             <h2 style="margin-bottom: 8px;" data-i18n="wine.scan_title">📸 Scan Wine Label</h2>
-            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 18px;" data-i18n="wine.scan_desc">
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 18px;" data-i18n="wine.scan_desc">
                 Photograph the front label — AI will identify the wine and pre-fill the details.
             </p>
 
             <!-- Scanner collapsed summary (shown after successful scan) -->
             <div class="scanner-summary" id="scannerSummary">
                 <span>✅</span>
-                <span id="scannerSummaryText" style="color: #cbd5e1;"></span>
+                <span id="scannerSummaryText" style="color: var(--text-primary);"></span>
                 <button class="btn btn-sm btn-primary" onclick="clearScan()" style="margin-left: auto;">✕ Clear</button>
             </div>
 
@@ -89,7 +89,7 @@
                         <div class="stat-label" data-i18n="wine.est_value">Est. Value</div>
                     </div>
                     <div class="cellar-stat">
-                        <div class="stat-value" id="totalGainDisplay" style="color: #4ade80;">+€0</div>
+                        <div class="stat-value" id="totalGainDisplay" style="color: var(--up);">+€0</div>
                         <div class="stat-label" data-i18n="wine.gain_loss">Gain / Loss</div>
                     </div>
                 </div>
@@ -220,7 +220,7 @@
             <div class="position-form-row">
                 <div class="position-form-group">
                     <label>Bottle Size</label>
-                    <select id="bottleSize" style="width: 100%; padding: 10px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px;">
+                    <select id="bottleSize" style="width: 100%; padding: 10px; background: var(--surface-2); color: white; border: 1px solid var(--border-hover); border-radius: 8px;">
                         <option value="0.375L">0.375 L — Half bottle</option>
                         <option value="0.75L" selected>0.75 L — Standard</option>
                         <option value="1.5L">1.5 L — Magnum</option>
@@ -234,7 +234,7 @@
                 </div>
             </div>
 
-            <hr style="border: 1px solid #334155; margin: 16px 0;">
+            <hr style="border: 1px solid var(--border); margin: 16px 0;">
 
             <div class="position-form-row">
                 <div class="position-form-group">
@@ -262,7 +262,7 @@
 
             <div class="position-form-group">
                 <label>Notes</label>
-                <textarea id="bottleNotes" placeholder="Awards, tasting notes, special designations..." style="width: 100%; height: 80px; padding: 10px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; resize: vertical;"></textarea>
+                <textarea id="bottleNotes" placeholder="Awards, tasting notes, special designations..." style="width: 100%; height: 80px; padding: 10px; background: var(--surface-2); color: white; border: 1px solid var(--border-hover); border-radius: 8px; resize: vertical;"></textarea>
             </div>
 
             <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
@@ -538,7 +538,7 @@
             resultEl.innerHTML = `
                 <div class="recognition-card" style="border-color: #f87171;">
                     <h3 style="color: #f87171;">❌ Scan Failed</h3>
-                    <p style="color: #94a3b8; font-size: 13px; margin-bottom: 12px;">${escapeHTML(message)}</p>
+                    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">${escapeHTML(message)}</p>
                     <div class="recognition-actions">
                         <button class="btn btn-success" onclick="addManually()">➕ Add Manually</button>
                         <button class="btn btn-primary btn-sm" onclick="clearScan()">✕ Dismiss</button>
