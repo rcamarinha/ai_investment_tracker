@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Investment Hub — Design System v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════ */
+:root {
+  --ink:          #0B0C0E;
+  --ink-2:        #13151A;
+  --ink-3:        #1C1F27;
+  --surface:      #232730;
+  --surface-2:    #2C3040;
+  --border:       rgba(255,255,255,0.07);
+  --border-hover: rgba(255,255,255,0.14);
+  --text-primary:   #F0EDE8;
+  --text-secondary: #9A95A0;
+  --text-tertiary:  #5C5870;
+  --gold:         #C9A84C;
+  --gold-dim:     #7A6430;
+  --gold-glow:    rgba(201,168,76,0.15);
+  --gold-line:    rgba(201,168,76,0.35);
+  --wine:         #9B3A5A;
+  --wine-light:   #C4607C;
+  --wine-dim:     #5A2035;
+  --wine-glow:    rgba(155,58,90,0.18);
+  --wine-line:    rgba(196,96,124,0.35);
+  --up:           #4CAF84;
+  --down:         #E05A5A;
+  --neutral:      #7A8099;
+  --warn:         #E09A3A;
+  --warn-glow:    rgba(224,154,58,0.15);
+  --warn-line:    rgba(224,154,58,0.35);
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-body:    'Instrument Sans', system-ui, sans-serif;
+  --font-mono:    'DM Mono', monospace;
+  --r-xs:  6px;
+  --r-sm:  8px;
+  --r-md:  12px;
+  --r-lg:  16px;
+  --r-xl:  20px;
+  --r-2xl: 28px;
+}
+
+- { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+  background: var(–ink);
+  color: var(–text-primary);
+  font-family: var(–font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  }
+
+/* ══ PAGE LAYOUT ══ */
+.page { max-width: 1280px; margin: 0 auto; padding: 48px 32px 96px; }
+
+.section {
+margin-bottom: 64px;
+}
+.section-header {
+display: flex; align-items: center; gap: 12px;
+border-bottom: 1px solid var(–border);
+padding-bottom: 12px;
+margin-bottom: 28px;
+}
+.section-label {
+font-family: var(–font-mono);
+font-size: 10px;
+letter-spacing: 0.14em;
+text-transform: uppercase;
+color: var(–text-tertiary);
+}
+.section-tag {
+font-family: var(–font-mono);
+font-size: 9px;
+padding: 2px 8px;
+border-radius: 100px;
+letter-spacing: 0.08em;
+}
+.tag-shared { background: var(–surface); color: var(–text-secondary); border: 1px solid var(–border-hover); }
+.tag-stock  { background: var(–gold-glow); color: var(–gold); border: 1px solid var(–gold-line); }
+.tag-wine   { background: var(–wine-glow); color: var(–wine-light); border: 1px solid var(–wine-line); }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+
+@media (max-width: 900px) {
+.grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+.grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+.page { padding: 24px 16px 64px; }
+}
+
+/* ══ HEADER ══ */
+.ds-header {
+padding: 0 0 48px;
+margin-bottom: 48px;
+border-bottom: 1px solid var(–border);
+}
+.ds-eyebrow {
+font-family: var(–font-mono);
+font-size: 10px;
+letter-spacing: 0.14em;
+color: var(–text-tertiary);
+text-transform: uppercase;
+margin-bottom: 8px;
+}
+.ds-title {
+font-family: var(–font-display);
+font-size: clamp(32px, 5vw, 52px);
+font-weight: 300;
+letter-spacing: -0.01em;
+line-height: 1.05;
+margin-bottom: 10px;
+}
+.ds-title em { font-style: italic; color: var(–gold); }
+.ds-subtitle { font-size: 14px; color: var(–text-secondary); max-width: 600px; line-height: 1.7; }
+
+/* ══ COMPONENT CARD ══ */
+.comp-card {
+background: var(–ink-2);
+border: 1px solid var(–border);
+border-radius: var(–r-xl);
+padding: 20px;
+}
+.comp-card-label {
+font-family: var(–font-mono);
+font-size: 9px;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+color: var(–text-tertiary);
+margin-bottom: 14px;
+}
+
+/* ═══════════════════════════════════════════
+
+1. NAVIGATION
+   ═══════════════════════════════════════════ */
+
+/* Bottom Nav */
+.bottom-nav {
+display: flex;
+background: var(–ink-2);
+border-top: 1px solid var(–border);
+border-radius: var(–r-xl);
+padding: 10px 8px;
+overflow: hidden;
+}
+.bn-item {
+flex: 1;
+display: flex; flex-direction: column;
+align-items: center; gap: 3px;
+font-size: 9px;
+color: var(–text-tertiary);
+font-family: var(–font-mono);
+letter-spacing: 0.05em;
+padding: 4px 0;
+cursor: pointer;
+border-radius: var(–r-md);
+transition: color 0.2s;
+}
+.bn-icon { font-size: 17px; line-height: 1; }
+.bn-item.active-hub   { color: var(–text-primary); background: var(–ink-3); }
+.bn-item.active-stock { color: var(–gold); }
+.bn-item.active-wine  { color: var(–wine-light); }
+
+/* Page Header */
+.page-header {
+background: var(–ink-2);
+border: 1px solid var(–border);
+border-radius: var(–r-xl);
+padding: 20px 22px;
+}
+.ph-eyebrow {
+font-family: var(–font-mono);
+font-size: 9px;
+letter-spacing: 0.12em;
+text-transform: uppercase;
+color: var(–text-tertiary);
+margin-bottom: 4px;
+}
+.ph-title {
+font-family: var(–font-display);
+font-size: 26px;
+font-weight: 300;
+letter-spacing: -0.01em;
+margin-bottom: 2px;
+}
+.ph-title.stock { color: var(–gold); }
+.ph-title.wine  { color: var(–wine-light); }
+.ph-sub {
+font-size: 12px;
+color: var(–text-secondary);
+}
+.ph-version {
+font-family: var(–font-mono);
+font-size: 10px;
+color: var(–text-tertiary);
+margin-top: 6px;
+}
+
+/* ═══════════════════════════════════════════
+2. HERO METRICS / STAT TILES
+═══════════════════════════════════════════ */
+
+.hero-metric {
+background: var(–ink-2);
+border: 1px solid var(–border);
+border-radius: var(–r-xl);
+padding: 20px 22px;
+}
+.hm-label {
+font-family: var(–font-mono);
+font-size: 10px;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+color: var(–text-tertiary);
+margin-bottom: 6px;
+}
+.hm-value {
+font-family: var(–font-display);
+font-size: 42px;
+font-weight: 300;
+letter-spacing: -0.02em;
+line-height: 1;
+margin-bottom: 8px;
+}
+.hm-value.stock { color: var(–gold); }
+.hm-value.wine  { color: var(–wine-light); }
+.hm-value.neutral { color: var(–text-primary); }
+.hm-delta {
+font-family: var(–font-mono);
+font-size: 12px;
+display: inline-flex; align-items: center; gap: 4px;
+}
+.hm-delta.up   { color: var(–up); }
+.hm-delta.down { color: var(–down); }
+
+/* Stat Tiles Row — 4 up (Cellar summary) */
+.stat-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.stat-tile {
+background: var(–ink-3);
+border: 1px solid var(–border);
+border-radius: var(–r-lg);
+padding: 12px 14px;
+}
+.st-label {
+font-family: var(–font-mono);
+font-size: 9px;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+color: var(–text-tertiary);
+margin-bottom: 4px;
+}
+.st-value {
+font-family: var(–font-mono);
+font-size: 18px;
+font-weight: 500;
+color: var(–text-primary);
+}
+.st-value.up   { color: var(–up); }
+.st-value.down { color: var(–down); }
+.st-value.wine { color: var(–wine-light); }
+.st-value.gold { color: var(–gold); }
+
+@media (max-width: 600px) {
+.stat-tiles { grid-template-columns: 1fr 1fr; }
+}
+
+/* ═══════════════════════════════════════════
+3. ACTION BUTTON BAR
+═══════════════════════════════════════════ */
+
+.action-bar {
+display: flex;
+flex-wrap: wrap;
+gap: 8px;
+}
+
+/* Primary */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; border: none; font-family: var(–font-body); font-size: 13px; font-weight: 500; border-radius: var(–r-md); padding: 9px 16px; transition: opacity 0.15s, transform 0.1s; white-space: nowrap; }
+.btn:active { transform: scale(0.97); }
+
+.btn-primary-stock { background: linear-gradient(135deg, #C9A84C, #A07830); color: var(–ink); font-weight: 600; }
+.btn-primary-wine  { background: linear-gradient(135deg, #9B3A5A, #7A2040); color: #F0EDE8; font-weight: 600; }
+
+.btn-ghost-stock { background: var(–gold-glow); color: var(–gold); border: 1px solid var(–gold-line); }
+.btn-ghost-wine  { background: var(–wine-glow); color: var(–wine-light); border: 1px solid var(–wine-line); }
+.btn-ghost       { background: var(–ink-3); color: var(–text-secondary); border: 1px solid var(–border-hover); }
+
+.btn-icon { padding: 9px 12px; font-size: 15px; }
+
+/* Full-width variant */
+.btn-full { width: 100%; }
+
+/* ═══════════════════════════════════════════
+4. CURRENCY TOGGLE
+═══════════════════════════════════════════ */
+
+.currency-toggle {
+display: inline-flex;
+background: var(–ink-3);
+border: 1px solid var(–border);
+border-radius: 100px;
+padding: 3px;
+gap: 2px;
+}
+.ct-opt {
+padding: 5px 14px;
+border-radius: 100px;
+font-family: var(–font-mono);
+font-size: 12px;
+font-weight: 500;
+color: var(–text-tertiary);
+cursor: pointer;
+transition: all 0.2s;
+}
+.ct-opt.active {
+background: var(–surface-2);
+color: var(–gold);
+border: 1px solid var(–gold-line);
+}
+
+/* ═══════════════════════════════════════════
+5. POSITION CARDS
+═══════════════════════════════════════════ */
+
+.pos-card {
+background: var(–ink-3);
+border: 1px solid var(–border);
+border-left: 2px solid transparent;
+border-radius: var(–r-lg);
+padding: 12px 14px;
+display: grid;
+grid-template-columns: 38px 1fr auto;
+gap: 10px;
+align-items: center;
+transition: border-color 0.2s, background 0.2s;
+cursor: pointer;
+}
+.pos-card:hover { background: var(–surface); border-color: var(–border-hover); }
+.pos-card.stock { border-left-color: var(–gold-dim); }
+.pos-card.etf   { border-left-color: #4A7A6A; }
+.pos-card.crypto { border-left-color: #5A6AAA; }
+.pos-card.wine  { border-left-color: var(–wine-dim); }
+
+.pos-icon {
+width: 38px; height: 38px;
+border-radius: var(–r-sm);
+display: flex; align-items: center; justify-content: center;
+font-size: 10px;
+font-family: var(–font-mono);
+font-weight: 500;
+}
+.pos-icon.stock  { background: var(–gold-glow);  color: var(–gold); }
+.pos-icon.etf    { background: rgba(74,122,106,0.15); color: #6AAA92; }
+.pos-icon.crypto { background: rgba(90,106,170,0.15); color: #8A9ACA; }
+.pos-icon.wine-i { background: var(–wine-glow); color: var(–wine-light); font-size: 16px; }
+
+.pos-name { font-size: 13px; font-weight: 500; color: var(–text-primary); margin-bottom: 2px; }
+.pos-sub  { font-family: var(–font-mono); font-size: 10px; color: var(–text-tertiary); }
+.pos-platform {
+display: inline-block;
+font-family: var(–font-mono);
+font-size: 9px;
+padding: 1px 6px;
+border-radius: 4px;
+background: var(–surface);
+color: var(–text-tertiary);
+margin-top: 3px;
+}
+
+.pos-right { text-align: right; }
+.pos-value { font-family: var(–font-mono); font-size: 13px; font-weight: 500; color: var(–text-primary); margin-bottom: 2px; }
+.pos-change { font-family: var(–font-mono); font-size: 10px; }
+.pos-change.up   { color: var(–up); }
+.pos-change.down { color: var(–down); }
+
+/* ═══════════════════════════════════════════
+6. WINE BOTTLE CARDS
+═══════════════════════════════════════════ */
+
+.wine-card {
+background: var(–ink-3);
+border: 1px solid var(–border);
+border-left: 2px solid var(–wine-dim);
+border-radius: var(–r-xl);
+padding: 16px;
+transition: border-color 0.2s;
+}
+.wine-card:hover { border-color: var(–wine-line); }
+
+.wc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.wc-name {
+font-family: var(–font-display);
+font-size: 17px;
+font-style: italic;
+font-weight: 400;
+color: var(–text-primary);
+line-height: 1.2;
+}
+.wc-producer { font-size: 12px; color: var(–text-secondary); margin-top: 1px; }
+.wc-vintage {
+font-family: var(–font-mono);
+font-size: 20px;
+font-weight: 300;
+color: var(–wine-light);
+flex-shrink: 0;
+}
+
+.wc-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.wc-meta-item { background: var(–ink-2); border-radius: var(–r-md); padding: 8px 10px; }
+.wcm-label { font-family: var(–font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(–text-tertiary); margin-bottom: 3px; }
+.wcm-value { font-family: var(–font-mono); font-size: 13px; color: var(–text-primary); }
+.wcm-value.wine { color: var(–wine-light); }
+.wcm-value.up   { color: var(–up); }
+.wcm-value.down { color: var(–down); }
+
+.wc-footer { display: flex; align-items: center; justify-content: space-between; }
+
+/* Drink window badges */
+.dw-badge {
+display: inline-flex; align-items: center; gap: 4px;
+padding: 4px 10px; border-radius: 100px;
+font-family: var(–font-mono); font-size: 10px;
+border: 1px solid transparent;
+}
+.dw-hold   { background: rgba(92,88,112,0.2);   color: var(–neutral);    border-color: rgba(92,88,112,0.4); }
+.dw-ready  { background: rgba(76,175,132,0.12); color: var(–up);         border-color: rgba(76,175,132,0.3); }
+.dw-peak   { background: rgba(201,168,76,0.12); color: var(–gold);       border-color: var(–gold-line); }
+.dw-past   { background: rgba(224,90,90,0.12);  color: var(–down);       border-color: rgba(224,90,90,0.3); }
+
+/* Confidence badges */
+.conf-badge {
+display: inline-flex; align-items: center; gap: 3px;
+padding: 3px 8px; border-radius: 100px;
+font-family: var(–font-mono); font-size: 9px;
+}
+.conf-high { background: rgba(76,175,132,0.1); color: var(–up); border: 1px solid rgba(76,175,132,0.25); }
+.conf-med  { background: rgba(224,154,58,0.1); color: var(–warn); border: 1px solid var(–warn-line); }
+.conf-low  { background: rgba(224,90,90,0.1);  color: var(–down); border: 1px solid rgba(224,90,90,0.25); }
+
+/* Staleness warning */
+.stale-warning {
+display: flex; align-items: center; gap: 6px;
+background: var(–warn-glow);
+border: 1px solid var(–warn-line);
+border-radius: var(–r-md);
+padding: 8px 12px;
+font-size: 12px;
+color: var(–warn);
+font-family: var(–font-mono);
+font-size: 11px;
+}
+
+/* ═══════════════════════════════════════════
+7. ALLOCATION CHARTS (placeholder rings)
+═══════════════════════════════════════════ */
+
+.alloc-section {
+background: var(–ink-2);
+border: 1px solid var(–border);
+border-radius: var(–r-xl);
+padding: 20px;
+}
+.alloc-title {
+font-family: var(–font-mono);
+font-size: 10px;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+color: var(–text-tertiary);
+margin-bottom: 16px;
+}
+.alloc-tabs {
+display: flex; gap: 4px; margin-bottom: 16px;
+}
+.alloc-tab {
+padding: 5px 12px;
+border-radius: 100px;
+font-family: var(–font-mono);
+font-size: 10px;
+color: var(–text-tertiary);
+background: var(–ink-3);
+border: 1px solid var(–border);
+cursor: pointer;
+}
+.alloc-tab.active-stock { color: var(–gold); border-color: var(–gold-line); background: var(–gold-glow); }
+.alloc-tab.active-wine  { color: var(–wine-light); border-color: var(–wine-line); background: var(–wine-glow); }
+
+.alloc-chart {
+display: flex; align-items: center; gap: 20px;
+}
+.donut-placeholder {
+flex-shrink: 0;
+width: 80px; height: 80px;
+border-radius: 50%;
+position: relative;
+}
+.donut-placeholder svg { width: 80px; height: 80px; }
+
+.alloc-legend { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.legend-name { color: var(–text-secondary); flex: 1; }
+.legend-pct  { font-family: var(–font-mono); font-size: 11px; color: var(–text-primary); }
+
+/* ═══════════════════════════════════════════
+8. AI CARDS
+═══════════════════════════════════════════ */
+
+.ai-card {
+background: var(–ink-3);
+border: 1px solid var(–border);
+border-radius: var(–r-xl);
+padding: 16px;
+position: relative;
+overflow: hidden;
+}
+.ai-card::after {
+content: ‘’;
+position: absolute;
+top: -24px; right: -24px;
+width: 80px; height: 80px;
+border-radius: 50%;
+background: var(–gold-glow);
+filter: blur(28px);
+pointer-events: none;
+}
+.ai-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.ai-badge {
+font-family: var(–font-mono);
+font-size: 9px;
+letter-spacing: 0.1em;
+padding: 3px 8px;
+border-radius: 100px;
+border: 1px solid var(–gold-line);
+background: var(–gold-glow);
+color: var(–gold);
+}
+.ai-badge.wine {
+border-color: var(–wine-line);
+background: var(–wine-glow);
+color: var(–wine-light);
+}
+.ai-perspective {
+font-family: var(–font-mono);
+font-size: 9px;
+color: var(–text-tertiary);
+}
+.ai-text {
+font-size: 13px;
+color: var(–text-secondary);
+line-height: 1.65;
+font-style: italic;
+}
+
+/* Perspective selector */
+.perspective-select {
+display: flex; flex-wrap: wrap; gap: 6px;
+}
+.persp-chip {
+padding: 6px 12px;
+border-radius: var(–r-md);
+font-family: var(–font-mono);
+font-size: 10px;
+letter-spacing: 0.06em;
+color: var(–text-tertiary);
+background: var(–ink-3);
+border: 1px solid var(–border);
+cursor: pointer;
+transition: all 0.15s;
+}
+.persp-chip:hover { border-color: var(–border-hover); color: var(–text-secondary); }
+.persp-chip.active { background: var(–gold-glow); color: var(–gold); border-color: var(–gold-line); }
+
+/* ═══════════════════════════════════════════
+9. FORMS
+═══════════════════════════════════════════ */
+
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-label {
+font-family: var(–font-mono);
+font-size: 10px;
+letter-spacing: 0.08em;
+text-transform: uppercase;
+color: var(–text-tertiary);
+}
+.form-label .req { color: var(–down); margin-left: 2px; }
+
+.form-input, .form-select, .form-textarea {
+background: var(–ink-3);
+border: 1px solid var(–border);
+border-radius: var(–r-md);
+padding: 10px 12px;
+color: var(–text-primary);
+font-family: var(–font-body);
+font-size: 14px;
+transition: border-color 0.15s;
+outline: none;
+width: 100%;
+-webkit-appearance: none;
+}
+.form-input::placeholder { color: var(–text-tertiary); }
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+border-color: var(–border-hover);
+background: var(–surface);
+}
+.form-input.stock:focus { border-color: var(–gold-line); }
+.form-input.wine:focus  { border-color: var(–wine-line); }
+
+.form-select {
+background-image: url(“data:image/svg+xml,%3Csvg xmlns=‘http://www.w3.org/2000/svg’ width=‘10’ height=‘6’ viewBox=‘0 0 10 6’%3E%3Cpath d=‘M0 0l5 6 5-6z’ fill=’%235C5870’/%3E%3C/svg%3E”);
+background-repeat: no-repeat;
+background-position: right 12px center;
+padding-right: 32px;
+}
+
+.form-textarea { resize: vertical; min-height: 80px; }
+
+.form-error {
+font-family: var(–font-mono);
+font-size: 10px;
+color: var(–down);
+margin-top: 2px;
+}
+.form-hint {
+font-size: 11px;
+color: var(–text-tertiary);
+margin-top: 2px;
+}
+
+/* Import textarea */
+.import-area {
+background: var(–ink-3);
+border: 1px dashed var(–border-hover);
+border-radius: var(–r-lg);
+padding: 16px;
+color: var(–text-secondary);
+font-family: var(–font-mono);
+font-size: 12px;
+min-height: 120px;
+resize: vertical;
+outline: none;
+width: 100%;
+transition: border-color 0.15s;
+}
+.import-area:focus { border-color: var(–gold-line); }
+
+/* Import mode toggle */
+.import-mode {
+display: flex; gap: 8px;
+}
+.im-option {
+flex: 1;
+padding: 10px 14px;
+border-radius: var(–r-md);
+border: 1px solid var(–border);
+background: var(–ink-3);
+cursor: pointer;
+transition: all 0.15s;
+}
+.im-option.active { border-color: var(–gold-line); background: var(–gold-glow); }
+.im-title {
+font-size: 13px;
+font-weight: 500;
+color: var(–text-primary);
+margin-bottom: 2px;
+}
+.im-option.active .im-title { color: var(–gold); }
+.im-desc { font-size: 11px; color: var(–text-tertiary); }
+
+/* ═══════════════════════════════════════════
+10. MODALS / DIALOGS
+═══════════════════════════════════════════ */
+
+.modal-overlay {
+background: rgba(11,12,14,0.85);
+backdrop-filter: blur(6px);
+border-radius: var(–r-xl);
+padding: 4px;
+}
+.modal {
+background: var(–ink-2);
+border: 1px solid var(–border-hover);
+border-radius: var(–r-xl);
+padding: 24px;
+max-width: 480px;
+width: 100%;
+}
+.modal-header {
+display: flex; justify-content: space-between; align-items: center;
+margin-bottom: 20px;
+}
+.modal-title {
+font-family: var(–font-display);
+font-size: 22px;
+font-weight: 300;
+}
+.modal-title.stock { color: var(–gold); }
+.modal-title.wine  { color: var(–wine-light); }
+.modal-close {
+width: 28px; height: 28px;
+border-radius: 50%;
+background: var(–ink-3);
+border: 1px solid var(–border);
+color: var(–text-secondary);
+display: flex; align-items: center; justify-content: center;
+font-size: 14px;
+cursor: pointer;
+}
+.modal-form { display: flex; flex-direction: column; gap: 14px; }
+.modal-actions {
+display: flex; gap: 8px; margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════
+11. API KEY DIALOG
+═══════════════════════════════════════════ */
+
+.api-tier {
+background: var(–ink-3);
+border: 1px solid var(–border);
+border-radius: var(–r-lg);
+padding: 12px 14px;
+display: flex; align-items: flex-start; gap: 10px;
+margin-bottom: 8px;
+}
+.api-tier-badge {
+flex-shrink: 0;
+padding: 3px 8px;
+border-radius: var(–r-xs);
+font-family: var(–font-mono);
+font-size: 9px;
+letter-spacing: 0.08em;
+font-weight: 500;
+}
+.tier-primary  { background: rgba(76,175,132,0.15); color: var(–up); border: 1px solid rgba(76,175,132,0.3); }
+.tier-fallback { background: var(–gold-glow); color: var(–gold); border: 1px solid var(–gold-line); }
+.tier-last     { background: var(–surface); color: var(–text-secondary); border: 1px solid var(–border-hover); }
+.tier-ai       { background: rgba(130,100,200,0.12); color: #A080E0; border: 1px solid rgba(130,100,200,0.3); }
+
+.api-tier-body { flex: 1; }
+.api-tier-name { font-size: 13px; font-weight: 500; color: var(–text-primary); margin-bottom: 2px; }
+.api-tier-desc { font-size: 11px; color: var(–text-tertiary); }
+.api-tier-input { margin-top: 8px; }
+
+/* ═══════════════════════════════════════════
+12. ALERTS & SYSTEM MESSAGES
+═══════════════════════════════════════════ */
+
+.alert {
+display: flex; gap: 10px; align-items: flex-start;
+border-radius: var(–r-lg);
+padding: 12px 14px;
+border: 1px solid;
+font-size: 13px;
+line-height: 1.6;
+}
+.alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.alert-body {}
+.alert-title { font-weight: 600; margin-bottom: 4px; }
+.alert-steps { font-size: 12px; color: inherit; opacity: 0.8; }
+
+.alert-warn  { background: var(–warn-glow);  border-color: var(–warn-line);  color: var(–warn); }
+.alert-info  { background: rgba(92,88,112,0.15); border-color: rgba(92,88,112,0.3); color: var(–text-secondary); }
+.alert-error { background: rgba(224,90,90,0.1);  border-color: rgba(224,90,90,0.25); color: var(–down); }
+
+/* ═══════════════════════════════════════════
+13. SCAN LABEL UI
+═══════════════════════════════════════════ */
+
+.scan-area {
+background: var(–ink-3);
+border: 1px dashed var(–wine-line);
+border-radius: var(–r-xl);
+padding: 28px 20px;
+text-align: center;
+}
+.scan-icon { font-size: 36px; margin-bottom: 10px; }
+.scan-title { font-family: var(–font-display); font-size: 18px; font-style: italic; color: var(–text-primary); margin-bottom: 4px; }
+.scan-sub   { font-size: 12px; color: var(–text-tertiary); margin-bottom: 16px; }
+.scan-actions { display: flex; gap: 8px; justify-content: center; }
+
+/* ═══════════════════════════════════════════
+14. HISTORY / SPARKLINE CHART
+═══════════════════════════════════════════ */
+
+.chart-container {
+background: var(–ink-2);
+border: 1px solid var(–border);
+border-radius: var(–r-xl);
+padding: 16px;
+}
+.chart-header {
+display: flex; justify-content: space-between; align-items: center;
+margin-bottom: 12px;
+}
+.chart-label {
+font-family: var(–font-mono);
+font-size: 10px;
+text-transform: uppercase;
+letter-spacing: 0.1em;
+color: var(–text-tertiary);
+}
+.chart-area-box {
+height: 80px;
+background: var(–ink-3);
+border-radius: var(–r-md);
+overflow: hidden;
+position: relative;
+}
+.chart-area-box svg { width: 100%; height: 100%; }
+.chart-time-labels {
+display: flex; justify-content: space-between;
+padding: 5px 4px 0;
+font-family: var(–font-mono);
+font-size: 9px;
+color: var(–text-tertiary);
+}
+
+/* ═══════════════════════════════════════════
+15. TOAST
+═══════════════════════════════════════════ */
+
+.toast {
+display: inline-flex; align-items: center; gap: 8px;
+background: var(–surface-2);
+border: 1px solid var(–border-hover);
+border-radius: 100px;
+padding: 8px 16px;
+font-size: 13px;
+color: var(–text-primary);
+box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.toast.success { border-color: rgba(76,175,132,0.4); }
+.toast.success .toast-icon { color: var(–up); }
+.toast-undo {
+font-family: var(–font-mono);
+font-size: 11px;
+color: var(–gold);
+cursor: pointer;
+padding-left: 8px;
+border-left: 1px solid var(–border-hover);
+}
+
+/* ═══════════════════════════════════════════
+16. TICKER PICKER MODAL
+═══════════════════════════════════════════ */
+
+.ticker-option {
+background: var(–ink-3);
+border: 1px solid var(–border);
+border-radius: var(–r-lg);
+padding: 12px 14px;
+display: flex; justify-content: space-between; align-items: center;
+cursor: pointer;
+transition: all 0.15s;
+margin-bottom: 6px;
+}
+.ticker-option:hover { border-color: var(–gold-line); background: var(–gold-glow); }
+.ticker-option.selected { border-color: var(–gold); background: var(–gold-glow); }
+.to-ticker { font-family: var(–font-mono); font-size: 14px; font-weight: 500; color: var(–gold); }
+.to-exchange { font-size: 11px; color: var(–text-tertiary); margin-top: 1px; }
+.to-check { color: var(–gold); font-size: 16px; opacity: 0; }
+.ticker-option.selected .to-check { opacity: 1; }
+
+/* ═══════════════════════════════════════════
+PAGE ASSEMBLY
+═══════════════════════════════════════════ */
+
+.page { max-width: 1280px; margin: 0 auto; padding: 48px 32px 96px; }
+
+@keyframes fadeUp {
+from { opacity:0; transform:translateY(12px); }
+to   { opacity:1; transform:translateY(0); }
+}
+.section { animation: fadeUp 0.5s ease both; }
+</style>
+
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+
+  <div class="ds-header">
+    <div class="ds-eyebrow">cacoventures.com · Design System v2 — All Components</div>
+    <h1 class="ds-title">Investment Hub <em>components</em></h1>
+    <p class="ds-subtitle">Every UI component found across index.html, portfolio.html, and wine.html — with tokens, states, and Claude Code prompts. Drop tokens into <code style="font-family:var(--font-mono);font-size:12px;color:var(--gold)">css/styles.css</code>, then apply each component section by section.</p>
+  </div>
+
+  <!-- 1. NAVIGATION -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">01 · Navigation</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div class="grid-2">
+      <div class="comp-card">
+        <div class="comp-card-label">Bottom Nav — Hub active</div>
+        <div class="bottom-nav">
+          <div class="bn-item active-hub"><span class="bn-icon">⊞</span>Hub</div>
+          <div class="bn-item"><span class="bn-icon">📈</span>Stocks</div>
+          <div class="bn-item"><span class="bn-icon">🍷</span>Cellar</div>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">Bottom Nav — Stock active</div>
+        <div class="bottom-nav">
+          <div class="bn-item"><span class="bn-icon">⊞</span>Hub</div>
+          <div class="bn-item active-stock"><span class="bn-icon">📈</span>Stocks</div>
+          <div class="bn-item"><span class="bn-icon">🍷</span>Cellar</div>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">Page Header — Portfolio</div>
+        <div class="page-header">
+          <div class="ph-eyebrow">Equities · ETFs · Crypto</div>
+          <div class="ph-title stock">Portfolio</div>
+          <div class="ph-sub">Live prices · AI analysis · 6 perspectives</div>
+          <div class="ph-version">v3.13.0</div>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">Page Header — Cellar</div>
+        <div class="page-header">
+          <div class="ph-eyebrow">Fine Wine · Spirits · Cellar</div>
+          <div class="ph-title wine">Cellar</div>
+          <div class="ph-sub">AI label recognition · valuations · drink windows</div>
+          <div class="ph-version">v1.3.22</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. HERO METRICS -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">02 · Hero Metrics & Stat Tiles</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div class="grid-2" style="margin-bottom:16px">
+      <div class="comp-card">
+        <div class="comp-card-label">Portfolio Total Value</div>
+        <div class="hero-metric">
+          <div class="hm-label">Total Portfolio Value</div>
+          <div class="hm-value stock">€ 247,820</div>
+          <div class="hm-delta up">↑ +€ 1,240 today · +0.5%</div>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">Cellar Total Value</div>
+        <div class="hero-metric">
+          <div class="hm-label">Collection Value</div>
+          <div class="hm-value wine">€ 36,320</div>
+          <div class="hm-delta up">↑ +€ 4,210 · +13.1%</div>
+        </div>
+      </div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-card-label">Cellar Summary — 4 stat tiles (Bottles / Invested / Est. Value / Gain)</div>
+      <div class="stat-tiles">
+        <div class="stat-tile">
+          <div class="st-label">Bottles</div>
+          <div class="st-value wine">38</div>
+        </div>
+        <div class="stat-tile">
+          <div class="st-label">Invested</div>
+          <div class="st-value">€ 28,400</div>
+        </div>
+        <div class="stat-tile">
+          <div class="st-label">Est. Value</div>
+          <div class="st-value wine">€ 36,320</div>
+        </div>
+        <div class="stat-tile">
+          <div class="st-label">Gain / Loss</div>
+          <div class="st-value up">+€ 7,920</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. ACTION BUTTONS -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">03 · Action Button Bars</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div class="grid-2">
+      <div class="comp-card">
+        <div class="comp-card-label">Portfolio actions</div>
+        <div class="action-bar">
+          <button class="btn btn-ghost">🔑 API Keys</button>
+          <button class="btn btn-ghost-stock">➕ Add Position</button>
+          <button class="btn btn-ghost">📋 Import</button>
+          <button class="btn btn-ghost">🔄 Update Prices</button>
+          <button class="btn btn-ghost">💾 Snapshot</button>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">Cellar actions</div>
+        <div class="action-bar">
+          <button class="btn btn-ghost-wine">➕ Add Bottle</button>
+          <button class="btn btn-ghost-wine">💎 Valuations</button>
+          <button class="btn btn-ghost">💾 Snapshot</button>
+          <button class="btn btn-ghost">🤖 AI Analysis</button>
+          <button class="btn btn-ghost">⬇ Export CSV</button>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">Currency Toggle</div>
+        <div style="display:flex; gap:12px; align-items:center;">
+          <div class="currency-toggle">
+            <div class="ct-opt active">€ EUR</div>
+            <div class="ct-opt">$ USD</div>
+          </div>
+          <div class="currency-toggle">
+            <div class="ct-opt">€ EUR</div>
+            <div class="ct-opt active" style="color:var(--gold);border-color:var(--gold-line);background:var(--gold-glow)">$ USD</div>
+          </div>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">AI Perspective Selector</div>
+        <div class="perspective-select">
+          <div class="persp-chip active">Value</div>
+          <div class="persp-chip">GARP</div>
+          <div class="persp-chip">Quant</div>
+          <div class="persp-chip">Macro</div>
+          <div class="persp-chip">Passive</div>
+          <div class="persp-chip">Technical</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. POSITION CARDS -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">04 · Position Cards</span>
+      <span class="section-tag tag-stock">Portfolio</span>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="pos-card stock" style="margin-bottom:8px">
+          <div class="pos-icon stock">ASML</div>
+          <div>
+            <div class="pos-name">ASML Holding NV</div>
+            <div class="pos-sub">AMS · Stock · 4 shares</div>
+            <div class="pos-platform">DEGIRO</div>
+          </div>
+          <div class="pos-right">
+            <div class="pos-value">€ 3,244</div>
+            <div class="pos-change up">↑ +2.1%</div>
+          </div>
+        </div>
+        <div class="pos-card etf" style="margin-bottom:8px">
+          <div class="pos-icon etf">IWDA</div>
+          <div>
+            <div class="pos-name">iShares MSCI World</div>
+            <div class="pos-sub">AMS · ETF · 22 units</div>
+            <div class="pos-platform">TRADING 212</div>
+          </div>
+          <div class="pos-right">
+            <div class="pos-value">€ 16,940</div>
+            <div class="pos-change up">↑ +0.3%</div>
+          </div>
+        </div>
+        <div class="pos-card crypto">
+          <div class="pos-icon crypto">BTC</div>
+          <div>
+            <div class="pos-name">Bitcoin</div>
+            <div class="pos-sub">Crypto · 0.12 BTC</div>
+            <div class="pos-platform">IBKR</div>
+          </div>
+          <div class="pos-right">
+            <div class="pos-value">€ 11,040</div>
+            <div class="pos-change down">↓ −2.1%</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="background:var(--ink-2);border:1px solid var(--border);border-radius:var(--r-xl);padding:16px">
+          <div class="comp-card-label" style="margin-bottom:10px">Left border key</div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--text-secondary)">
+            <div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:2px;background:var(--gold-dim)"></div>Stock</div>
+            <div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:2px;background:#4A7A6A"></div>ETF</div>
+            <div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:2px;background:#5A6AAA"></div>Crypto</div>
+            <div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:2px;background:var(--wine-dim)"></div>Wine</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. WINE BOTTLE CARDS -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">05 · Wine Bottle Cards</span>
+      <span class="section-tag tag-wine">Cellar</span>
+    </div>
+    <div class="grid-2">
+      <div class="wine-card">
+        <div class="wc-header">
+          <div>
+            <div class="wc-name">Chryseia, Prats &amp; Symington</div>
+            <div class="wc-producer">Douro · Portugal</div>
+          </div>
+          <div class="wc-vintage">2017</div>
+        </div>
+        <div class="wc-meta">
+          <div class="wc-meta-item">
+            <div class="wcm-label">Est. Value</div>
+            <div class="wcm-value wine">€ 480</div>
+          </div>
+          <div class="wc-meta-item">
+            <div class="wcm-label">Bottles</div>
+            <div class="wcm-value">3</div>
+          </div>
+          <div class="wc-meta-item">
+            <div class="wcm-label">Gain</div>
+            <div class="wcm-value up">+34%</div>
+          </div>
+        </div>
+        <div class="wc-footer">
+          <div class="dw-badge dw-peak">🟡 At Peak</div>
+          <div class="conf-badge conf-high">🟢 High confidence</div>
+        </div>
+      </div>
+      <div class="wine-card">
+        <div class="wc-header">
+          <div>
+            <div class="wc-name">Pétrus</div>
+            <div class="wc-producer">Pomerol · Bordeaux</div>
+          </div>
+          <div class="wc-vintage">2015</div>
+        </div>
+        <div class="wc-meta">
+          <div class="wc-meta-item">
+            <div class="wcm-label">Est. Value</div>
+            <div class="wcm-value wine">€ 4,200</div>
+          </div>
+          <div class="wc-meta-item">
+            <div class="wcm-label">Bottles</div>
+            <div class="wcm-value">1</div>
+          </div>
+          <div class="wc-meta-item">
+            <div class="wcm-label">Gain</div>
+            <div class="wcm-value up">+18%</div>
+          </div>
+        </div>
+        <div class="wc-footer">
+          <div class="dw-badge dw-hold">🔵 Hold · 2028</div>
+          <div class="conf-badge conf-med">🟡 Medium</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <div class="stale-warning">
+        ⚠️ Valuation from 68 days ago — refresh recommended
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. ALLOCATION CHARTS -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">06 · Allocation Charts</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div class="grid-2">
+      <div class="alloc-section">
+        <div class="alloc-title">Portfolio Allocation · By Asset Type</div>
+        <div class="alloc-tabs">
+          <div class="alloc-tab active-stock">By Type</div>
+          <div class="alloc-tab">By Sector</div>
+        </div>
+        <div class="alloc-chart">
+          <div class="donut-placeholder">
+            <svg viewBox="0 0 80 80">
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#1C1F27" stroke-width="14"/>
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#C9A84C" stroke-width="14" stroke-dasharray="70 106" stroke-dashoffset="21" opacity="0.9"/>
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#4A7A6A" stroke-width="14" stroke-dasharray="42 134" stroke-dashoffset="-49" opacity="0.8"/>
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#5A6AAA" stroke-width="14" stroke-dasharray="28 148" stroke-dashoffset="-91" opacity="0.7"/>
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#7A8099" stroke-width="14" stroke-dasharray="36 140" stroke-dashoffset="-119" opacity="0.5"/>
+            </svg>
+          </div>
+          <div class="alloc-legend">
+            <div class="legend-item"><div class="legend-dot" style="background:#C9A84C"></div><span class="legend-name">Stocks</span><span class="legend-pct">40%</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#4A7A6A"></div><span class="legend-name">ETFs</span><span class="legend-pct">24%</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#5A6AAA"></div><span class="legend-name">Crypto</span><span class="legend-pct">16%</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#7A8099"></div><span class="legend-name">Other</span><span class="legend-pct">20%</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="alloc-section">
+        <div class="alloc-title">Cellar Allocation · By Region</div>
+        <div class="alloc-tabs">
+          <div class="alloc-tab active-wine">By Region</div>
+          <div class="alloc-tab">By Varietal</div>
+          <div class="alloc-tab">By Country</div>
+        </div>
+        <div class="alloc-chart">
+          <div class="donut-placeholder">
+            <svg viewBox="0 0 80 80">
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#1C1F27" stroke-width="14"/>
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#9B3A5A" stroke-width="14" stroke-dasharray="60 116" stroke-dashoffset="21" opacity="0.9"/>
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#C4607C" stroke-width="14" stroke-dasharray="44 132" stroke-dashoffset="-39" opacity="0.7"/>
+              <circle cx="40" cy="40" r="28" fill="none" stroke="#5A2035" stroke-width="14" stroke-dasharray="72 104" stroke-dashoffset="-83" opacity="0.5"/>
+            </svg>
+          </div>
+          <div class="alloc-legend">
+            <div class="legend-item"><div class="legend-dot" style="background:#9B3A5A"></div><span class="legend-name">Bordeaux</span><span class="legend-pct">34%</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#C4607C"></div><span class="legend-name">Douro</span><span class="legend-pct">25%</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#5A2035"></div><span class="legend-name">Burgundy</span><span class="legend-pct">41%</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. AI CARDS -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">07 · AI Insight Cards</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div class="grid-2">
+      <div class="ai-card">
+        <div class="ai-header">
+          <div class="ai-badge">AI · VALUE</div>
+          <div class="ai-perspective">Warren Buffett / Graham</div>
+        </div>
+        <div class="ai-text">"Semiconductor exposure at 23% looks elevated post-rally. Consider trimming ASML after the recent run to reduce single-name concentration."</div>
+      </div>
+      <div class="ai-card" style="--gold-glow:rgba(155,58,90,0.1)">
+        <div class="ai-header">
+          <div class="ai-badge wine">SOMMELIER</div>
+        </div>
+        <div class="ai-text">"4 bottles at peak. Chryseia 2017 should be opened within 18 months for optimal expression. Consider buying into Burgundy to balance the Douro concentration."</div>
+      </div>
+      <div class="ai-card">
+        <div class="ai-header">
+          <div class="ai-badge">AI · MACRO</div>
+          <div class="ai-perspective">Top-down</div>
+        </div>
+        <div class="ai-text">"European energy exposure looks thin given geopolitical dynamics. A 3–5% allocation to names like TotalEnergies or Equinor would add defensive ballast."</div>
+      </div>
+      <div class="ai-card">
+        <div class="ai-header">
+          <div class="ai-badge">💹 TRADE IDEA</div>
+        </div>
+        <div class="ai-text">"Buy 2 shares of NOVO-B (Novo Nordisk) at market open. Stop-loss: −8%. Target: +15% in 6 months based on GLP-1 pipeline strength."</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. FORMS -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">08 · Forms — Add Position / Add Bottle</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div class="grid-2">
+      <div class="comp-card">
+        <div class="comp-card-label">Add Position (Portfolio)</div>
+        <div class="modal-form">
+          <div class="form-group">
+            <label class="form-label">Ticker Symbol <span class="req">*</span></label>
+            <input class="form-input stock" placeholder="e.g. ASML, IWDA.AS" type="text">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Asset Type</label>
+            <select class="form-select">
+              <option>Stock</option><option>ETF</option><option>Crypto</option><option>REIT</option><option>Bond</option><option>Other</option>
+            </select>
+          </div>
+          <div class="grid-2" style="gap:8px">
+            <div class="form-group">
+              <label class="form-label">Shares <span class="req">*</span></label>
+              <input class="form-input stock" placeholder="0" type="number">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Invested <span class="req">*</span></label>
+              <input class="form-input stock" placeholder="€ 0.00" type="number">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Platform</label>
+            <input class="form-input" placeholder="DEGIRO, IBKR…" type="text">
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-primary-stock btn-full">Add Position</button>
+            <button class="btn btn-ghost">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">Add Bottle (Cellar)</div>
+        <div class="modal-form">
+          <div class="form-group">
+            <label class="form-label">Wine Name <span class="req">*</span></label>
+            <input class="form-input wine" placeholder="e.g. Chryseia" type="text">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Winery / Producer</label>
+            <input class="form-input" placeholder="e.g. Prats &amp; Symington" type="text">
+          </div>
+          <div class="grid-2" style="gap:8px">
+            <div class="form-group">
+              <label class="form-label">Vintage</label>
+              <input class="form-input wine" placeholder="2017" type="number">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Quantity <span class="req">*</span></label>
+              <input class="form-input wine" placeholder="1" type="number">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Bottle Size</label>
+            <select class="form-select">
+              <option>0.75 L — Standard</option>
+              <option>1.5 L — Magnum</option>
+              <option>3.0 L — Double Magnum</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Purchase Price / bottle (€)</label>
+            <input class="form-input" placeholder="Optional" type="number">
+            <span class="form-hint">Leave blank — value shown without P&amp;L</span>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-primary-wine btn-full">Add Bottle</button>
+            <button class="btn btn-ghost">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. IMPORT -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">09 · Import from Spreadsheet</span>
+      <span class="section-tag tag-stock">Portfolio</span>
+    </div>
+    <div class="comp-card">
+      <div class="comp-card-label">Import Panel</div>
+      <div class="import-mode" style="margin-bottom:14px">
+        <div class="im-option active">
+          <div class="im-title">Add to existing</div>
+          <div class="im-desc">Merge new positions into portfolio</div>
+        </div>
+        <div class="im-option">
+          <div class="im-title">Replace all</div>
+          <div class="im-desc">Clear and reload from scratch</div>
+        </div>
+      </div>
+      <textarea class="import-area" placeholder="Paste from any spreadsheet or broker export&#10;(tab, comma, semicolon or pipe separated)&#10;&#10;Ticker   Qty   Avg Price   Platform&#10;ASML     4     810.00      DEGIRO"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-primary-stock">Import Positions</button>
+        <button class="btn btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. API KEY DIALOG -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">10 · API Key Management</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div class="comp-card">
+      <div class="comp-card-label">3-tier strategy display + key inputs</div>
+      <div class="api-tier">
+        <div class="api-tier-badge tier-primary">PRIMARY</div>
+        <div class="api-tier-body">
+          <div class="api-tier-name">🚀 Finnhub — 60 calls/min</div>
+          <div class="api-tier-desc">Fast, unlimited daily. Best for US &amp; EU stocks.</div>
+          <div class="api-tier-input"><input class="form-input stock" placeholder="Enter Finnhub API key" type="password"></div>
+        </div>
+      </div>
+      <div class="api-tier">
+        <div class="api-tier-badge tier-fallback">FALLBACK #1</div>
+        <div class="api-tier-body">
+          <div class="api-tier-name">⚡ Financial Modeling Prep — 250/day</div>
+          <div class="api-tier-desc">Generous daily limit. Covers what Finnhub misses.</div>
+          <div class="api-tier-input"><input class="form-input" placeholder="Enter FMP API key" type="password"></div>
+        </div>
+      </div>
+      <div class="api-tier">
+        <div class="api-tier-badge tier-last">FALLBACK #2</div>
+        <div class="api-tier-body">
+          <div class="api-tier-name">🔄 Alpha Vantage — 5/min, 25/day</div>
+          <div class="api-tier-desc">Last resort. Good international coverage. Use sparingly.</div>
+          <div class="api-tier-input"><input class="form-input" placeholder="Enter Alpha Vantage key" type="password"></div>
+        </div>
+      </div>
+      <div class="api-tier">
+        <div class="api-tier-badge tier-ai">AI</div>
+        <div class="api-tier-body">
+          <div class="api-tier-name">🤖 Anthropic — AI Analysis</div>
+          <div class="api-tier-desc">Required for AI analysis outside claude.ai.</div>
+          <div class="api-tier-input"><input class="form-input" placeholder="sk-ant-…" type="password"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary-stock">💾 Save Keys</button>
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-ghost" style="color:var(--down);border-color:rgba(224,90,90,0.3);margin-left:auto">🗑 Clear All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. ALERTS -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">11 · Alerts & System Messages</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="alert alert-warn">
+        <div class="alert-icon">⚠️</div>
+        <div class="alert-body">
+          <div class="alert-title">Network Restrictions Detected</div>
+          <div class="alert-steps">Claude artifacts cannot fetch live market prices. Save page locally and reopen for full functionality.</div>
+        </div>
+      </div>
+      <div class="alert alert-info">
+        <div class="alert-icon">ℹ️</div>
+        <div class="alert-body">API keys are stored in your browser only (localStorage). Never sent to any server other than the relevant provider.</div>
+      </div>
+      <div class="alert alert-error">
+        <div class="alert-icon">✕</div>
+        <div class="alert-body">Failed to fetch price for NOVO-B. Tried all 3 providers. Check ticker format or API key limits.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 12. SCAN + TOASTS + TICKER PICKER -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">12 · Scan UI · Toasts · Ticker Picker</span>
+      <span class="section-tag tag-wine">Cellar</span>
+    </div>
+    <div class="grid-2">
+      <div class="comp-card">
+        <div class="comp-card-label">Label Scan Area</div>
+        <div class="scan-area">
+          <div class="scan-icon">📸</div>
+          <div class="scan-title">Scan Wine Label</div>
+          <div class="scan-sub">AI identifies wine and pre-fills all details</div>
+          <div class="scan-actions">
+            <button class="btn btn-primary-wine">📷 Take Photo</button>
+            <button class="btn btn-ghost-wine">🎥 Live Camera</button>
+          </div>
+        </div>
+      </div>
+      <div class="comp-card">
+        <div class="comp-card-label">Toast Messages</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="toast success"><span class="toast-icon">✓</span> Bottle added to cellar</div>
+          <div class="toast"><span class="toast-icon">💾</span> Snapshot saved</div>
+          <div class="toast success"><span>🗑 Chryseia 2017 deleted</span><span class="toast-undo">Undo</span></div>
+        </div>
+        <div class="comp-card-label" style="margin-top:20px;margin-bottom:10px">Ticker Picker (ISIN → multi-exchange)</div>
+        <div class="ticker-option selected">
+          <div><div class="to-ticker">ASML.AS</div><div class="to-exchange">Euronext Amsterdam</div></div>
+          <div class="to-check">✓</div>
+        </div>
+        <div class="ticker-option">
+          <div><div class="to-ticker">ASML.DE</div><div class="to-exchange">XETRA Frankfurt</div></div>
+          <div class="to-check">✓</div>
+        </div>
+        <div class="ticker-option">
+          <div><div class="to-ticker">ASML</div><div class="to-exchange">NASDAQ</div></div>
+          <div class="to-check">✓</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 13. HISTORY CHART -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">13 · Portfolio & Cellar History</span>
+      <span class="section-tag tag-shared">Shared</span>
+    </div>
+    <div class="grid-2">
+      <div class="chart-container">
+        <div class="chart-header">
+          <div class="chart-label">Portfolio History</div>
+          <button class="btn btn-ghost" style="padding:5px 10px;font-size:11px">💾 Save Snapshot</button>
+        </div>
+        <div class="chart-area-box">
+          <svg viewBox="0 0 400 80" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="gStock2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#C9A84C" stop-opacity="0.25"/>
+                <stop offset="100%" stop-color="#C9A84C" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0,65 L60,58 L120,62 L180,48 L240,38 L300,32 L360,20 L400,16" fill="none" stroke="#C9A84C" stroke-width="1.5"/>
+            <path d="M0,65 L60,58 L120,62 L180,48 L240,38 L300,32 L360,20 L400,16 L400,80 L0,80Z" fill="url(#gStock2)"/>
+          </svg>
+        </div>
+        <div class="chart-time-labels">
+          <span>Jan</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Now</span>
+        </div>
+      </div>
+      <div class="chart-container">
+        <div class="chart-header">
+          <div class="chart-label">Cellar History</div>
+          <button class="btn btn-ghost" style="padding:5px 10px;font-size:11px">🗑 Clear</button>
+        </div>
+        <div class="chart-area-box">
+          <svg viewBox="0 0 400 80" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="gWine2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#9B3A5A" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#9B3A5A" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0,70 L80,64 L160,55 L240,44 L320,34 L400,22" fill="none" stroke="#C4607C" stroke-width="1.5"/>
+            <path d="M0,70 L80,64 L160,55 L240,44 L320,34 L400,22 L400,80 L0,80Z" fill="url(#gWine2)"/>
+          </svg>
+        </div>
+        <div class="chart-time-labels">
+          <span>Jan</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Now</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLAUDE CODE PROMPT -->
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">Claude Code Prompt — Apply full design system</span>
+    </div>
+    <div style="background:var(--ink-2);border:1px solid var(--border);border-radius:var(--r-xl);padding:24px;">
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);line-height:2;white-space:pre-wrap;">Apply the Investment Hub design system v2 across css/styles.css, css/wine.css, index.html, portfolio.html, and wine.html.
+
+STEP 1 — ADD TOKENS to :root in css/styles.css:
+–ink:#0B0C0E; –ink-2:#13151A; –ink-3:#1C1F27;
+–surface:#232730; –surface-2:#2C3040;
+–border:rgba(255,255,255,0.07); –border-hover:rgba(255,255,255,0.14);
+–text-primary:#F0EDE8; –text-secondary:#9A95A0; –text-tertiary:#5C5870;
+–gold:#C9A84C; –gold-dim:#7A6430; –gold-glow:rgba(201,168,76,0.15); –gold-line:rgba(201,168,76,0.35);
+–wine:#9B3A5A; –wine-light:#C4607C; –wine-dim:#5A2035;
+–wine-glow:rgba(155,58,90,0.18); –wine-line:rgba(196,96,124,0.35);
+–up:#4CAF84; –down:#E05A5A; –neutral:#7A8099;
+–warn:#E09A3A; –warn-glow:rgba(224,154,58,0.15); –warn-line:rgba(224,154,58,0.35);
+–font-display:‘Cormorant Garamond’,Georgia,serif;
+–font-body:‘Instrument Sans’,system-ui,sans-serif;
+–font-mono:‘DM Mono’,monospace;
+–r-xs:6px; –r-sm:8px; –r-md:12px; –r-lg:16px; –r-xl:20px; –r-2xl:28px;
+
+STEP 2 — ADD Google Fonts to head of all 3 HTML files:
+<link rel=“preconnect” href=“https://fonts.googleapis.com”>
+<link href=“https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap” rel=“stylesheet”>
+
+STEP 3 — CSS RULES to apply throughout:
+
+- All monetary values: font-family:var(–font-mono)
+- Section/page titles: font-family:var(–font-display), font-weight:300
+- Portfolio accent color: var(–gold); Wine accent: var(–wine-light)
+- Up/gain values: color:var(–up); Down/loss: color:var(–down)
+- Card backgrounds: var(–ink-3); borders: 1px solid var(–border)
+- Left accent border on position cards: 2px solid var(–gold-dim) for stocks, var(–wine-dim) for wine
+- Drink window badges: dw-hold/dw-ready/dw-peak/dw-past (see design system)
+- Confidence badges: conf-high/conf-med/conf-low
+- Warning banner (staleness): background var(–warn-glow), border var(–warn-line)
+- Import textarea: dashed border var(–border-hover), focus: var(–gold-line)
+- API tier badges: green=PRIMARY, gold=FALLBACK#1, grey=FALLBACK#2, purple=AI
+- Toasts: background var(–surface-2), border var(–border-hover), border-radius 100px
+- Ticker picker options: hover background var(–gold-glow), selected border var(–gold)
+- Chart area backgrounds: var(–ink-3); sparkline stroke for stocks #C9A84C, wine #C4607C
+
+Do not change any JavaScript or HTML structure. Only CSS and font-family references.</div>
+</div>
+
+  </div>
+
+</div>
+</body>
+</html>
