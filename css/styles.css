@@ -1836,7 +1836,7 @@ body > #appNavbar + * {
     color: var(--text-tertiary);
     margin-bottom: 6px;
 }
-.header-eyebrow.wine-eyebrow { color: var(--wine-light); }
+.header-eyebrow.wine-eyebrow { color: var(--wine); }
 
 /* Small version/tag span inside an h1 */
 .header-version {

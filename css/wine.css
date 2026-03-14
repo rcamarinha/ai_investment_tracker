@@ -16,16 +16,8 @@
 /* ── Wine Header Override ───────────────────────────────────────────────── */
 
 .wine-header {
-    background: var(--ink-3);
     border-left-color: var(--wine);
 }
-
-.wine-header h1 {
-    font-size: clamp(22px, 4vw, 30px);
-    margin-bottom: 6px;
-}
-.wine-header .header-version { font-family: var(--font-mono); font-size: 11px; font-weight: 400; opacity: 0.4; margin-left: 8px; }
-.wine-header p { color: var(--text-secondary); font-size: 14px; margin-top: 4px; }
 
 .hub-link {
     color: var(--wine-light);
