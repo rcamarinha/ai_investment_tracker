@@ -176,8 +176,8 @@ export function showMergeDialog(existingHoldings, newBottle) {
         overlay.innerHTML = `
             <div class="confirm-dialog" style="max-width:440px;">
                 <p style="margin-bottom:8px;font-weight:600;font-size:15px;">Wine already in cellar</p>
-                <p style="color:#94a3b8;font-size:13px;margin-bottom:20px;">
-                    You already have <strong style="color:#e2e8f0;">${existingQty} bottle${existingQty !== 1 ? 's' : ''}</strong>
+                <p style="color:var(--text-secondary);font-size:13px;margin-bottom:20px;">
+                    You already have <strong style="color:var(--text-primary);">${existingQty} bottle${existingQty !== 1 ? 's' : ''}</strong>
                     of this wine. What would you like to do?
                 </p>
                 <div style="display:flex;flex-direction:column;gap:8px;">
@@ -187,7 +187,7 @@ export function showMergeDialog(existingHoldings, newBottle) {
                     <button id="_mrgSeparate" class="btn btn-primary" style="width:100%;justify-content:center;">
                         Add as separate lot
                     </button>
-                    <button id="_mrgCancel" class="btn" style="width:100%;justify-content:center;background:#374151;color:#9ca3af;">
+                    <button id="_mrgCancel" class="btn btn-secondary" style="width:100%;justify-content:center;">
                         Cancel
                     </button>
                 </div>

@@ -92,8 +92,8 @@ function buildAuthDropdownHTML(user, passwordRecoveryMode) {
                        onkeydown="if(event.key==='Enter') handleLogin()"
                        style="width:100%;padding:8px 10px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:13px;box-sizing:border-box;" />
                 <div style="display:flex;gap:8px;">
-                    <button class="btn-sm" style="background:#2563eb;flex:1;" onclick="handleLogin()">${t('auth.login_btn')}</button>
-                    <button class="btn-sm" style="background:#7c3aed;flex:1;" onclick="handleSignup()">${t('auth.signup_btn')}</button>
+                    <button class="btn btn-sm btn-primary" style="flex:1;" onclick="handleLogin()">${t('auth.login_btn')}</button>
+                    <button class="btn btn-sm btn-key" style="flex:1;" onclick="handleSignup()">${t('auth.signup_btn')}</button>
                 </div>
                 <button class="auth-forgot-link" onclick="handleForgotPassword()">${t('auth.forgot')}</button>
             </div>

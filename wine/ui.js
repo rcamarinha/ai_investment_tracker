@@ -72,7 +72,7 @@ export function showAllocationTab(tab) {
     const totalEstimated = sorted.reduce((s, [, v]) => s + v.estimated, 0);
 
     if (totalEstimated === 0) {
-        allocationChart.innerHTML = '<div style="color: #64748b; padding: 10px;">No data to display.</div>';
+        allocationChart.innerHTML = '<div style="color: var(--text-tertiary); padding: 10px;">No data to display.</div>';
         return;
     }
 

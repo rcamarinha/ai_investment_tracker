@@ -98,7 +98,7 @@ export async function valuateSingleBottle(bottleId) {
     if (cardEl) {
         const actionsEl = cardEl.querySelector('.bottle-actions');
         if (actionsEl) {
-            actionsEl.innerHTML = '<span style="color: #94a3b8; font-size: 12px; padding: 4px 6px;">Valuing...</span>';
+            actionsEl.innerHTML = '<span class="bottle-fin-muted" style="padding: 4px 6px;">Valuing...</span>';
         }
     }
 
