@@ -26,9 +26,9 @@
 
         <!-- Artifact Network Warning (shown only in artifacts) -->
         <div id="artifactWarning" class="info-card-amber" style="display: none;">
-            <div style="display: flex; align-items: start; gap: 10px;">
-                <div style="font-size: 24px;">⚠️</div>
-                <div style="flex: 1;">
+            <div class="info-card-amber-inner">
+                <div class="info-card-amber-icon">⚠️</div>
+                <div>
                     <div class="info-card-amber-title">Network Restrictions Detected</div>
                     <div class="info-card-amber-body">
                         Claude artifacts cannot fetch live market prices due to network security restrictions.
@@ -174,18 +174,18 @@
                     <div class="form-helper">This is the <strong>anon/public</strong> key (safe for browser use). Row Level Security protects your data.</div>
                 </div>
 
-                <div class="info-card-amber" style="margin-bottom: 20px;">
-                    <div class="info-card-amber-body" style="margin-bottom: 0;">
+                <div class="info-card-amber">
+                    <div class="info-card-amber-body">
                         <strong>🔒 Security:</strong> API keys saved in your browser only (localStorage). Supabase anon key is safe for public use.
                         <br><br>
                         <strong>📊 Coverage:</strong> All 3 price APIs combined = ~98%+ success rate. Finnhub ~85%, FMP ~10%, Alpha Vantage ~5%.
                     </div>
                 </div>
 
-                <div style="display: flex; gap: 10px;">
+                <div class="action-buttons-row">
                     <button class="btn btn-accent" onclick="saveApiKeys()">💾 Save Keys</button>
                     <button class="btn btn-primary" onclick="closeApiKeyDialog()">Cancel</button>
-                    <button class="btn btn-danger" onclick="clearApiKeys()" style="margin-left: auto;">🗑️ Clear All Keys</button>
+                    <button class="btn btn-danger btn-push-right" onclick="clearApiKeys()">🗑️ Clear All Keys</button>
                 </div>
             </div>
         </div>
@@ -207,9 +207,9 @@
                     </div>
                 </div>
                 <div class="position-form-group">
-                    <textarea id="importText" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10" style="height: 200px; font-family: monospace; font-size: 12px;"></textarea>
+                    <textarea id="importText" class="textarea-code" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10"></textarea>
                 </div>
-                <div class="radio-group-row" style="margin-bottom: 12px;">
+                <div class="radio-group-row">
                     <label class="radio-group-label">
                         <input type="radio" name="importMode" value="add" checked style="accent-color: var(--up);" />
                         <span><strong>Add</strong> to existing portfolio</span>
@@ -220,7 +220,7 @@
                     </label>
                 </div>
                 <div id="importReportArea"></div>
-                <div style="display: flex; gap: 10px;">
+                <div class="action-buttons-row">
                     <button class="btn btn-accent" onclick="importPositions()">Import Positions</button>
                     <button class="btn btn-primary" onclick="closeImportDialog()">Cancel</button>
                 </div>
@@ -248,7 +248,7 @@
                 <div class="position-form-row">
                     <div id="positionSymbolGroup" class="position-form-group">
                         <label>Ticker Symbol *</label>
-                        <input type="text" id="positionSymbol" placeholder="e.g. AAPL" style="text-transform: uppercase;" />
+                        <input type="text" id="positionSymbol" class="input-uppercase" placeholder="e.g. AAPL" />
                     </div>
                     <div id="positionNameGroup" class="position-form-group">
                         <label>Asset Name</label>
@@ -295,7 +295,7 @@
                     <input type="date" id="positionDate" />
                 </div>
 
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <div class="action-buttons-row">
                     <button id="positionDialogSubmit" class="btn btn-success" onclick="submitPosition()">Add Position</button>
                     <button class="btn btn-primary" onclick="closePositionDialog()">Cancel</button>
                 </div>

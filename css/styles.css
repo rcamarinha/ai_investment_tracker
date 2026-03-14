@@ -2217,3 +2217,149 @@ body > #appNavbar + * {
     transition: filter 0.15s;
 }
 .btn-primary-wine:hover { filter: brightness(1.1); }
+
+
+/* ── Misc utilities ────────────────────────────────────────────────────────── */
+
+/* Push a flex child to the far end */
+.btn-push-right { margin-left: auto; }
+
+/* Uppercase text input (ticker symbols) */
+.input-uppercase { text-transform: uppercase; }
+
+/* Monospace code/paste textarea */
+.textarea-code {
+    height: 200px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+/* ── Info card amber: inner flex layout ──────────────────────────────────── */
+
+.info-card-amber-inner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+.info-card-amber-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+/* Last body element inside amber card needs no bottom margin */
+.info-card-amber-body:last-child { margin-bottom: 0; }
+
+/* ── Radio group spacing ──────────────────────────────────────────────────── */
+.radio-group-row { margin-bottom: 12px; }
+
+/* ── Ticker picker modal ─────────────────────────────────────────────────── */
+
+.ticker-picker-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+.ticker-picker-dialog {
+    background: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 24px;
+    max-width: 480px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.ticker-picker-dialog h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.ticker-picker-dialog p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+.ticker-picker-options { margin-bottom: 16px; }
+.ticker-picker-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    margin-bottom: 6px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+.ticker-picker-option:hover,
+.ticker-picker-option:focus-within { border-color: var(--gold); }
+.ticker-picker-option.is-first {
+    background: var(--gold-glow);
+    border-color: var(--gold);
+}
+.ticker-picker-option input[type="radio"] {
+    accent-color: var(--gold);
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+.ticker-option-content {
+    flex: 1;
+    min-width: 0;
+}
+.ticker-option-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.ticker-option-ticker {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 15px;
+}
+.ticker-option-badge {
+    color: var(--gold);
+    font-size: 12px;
+    background: var(--gold-glow);
+    padding: 1px 8px;
+    border-radius: var(--r-sm);
+}
+.ticker-option-badge.type-badge {
+    font-size: 11px;
+    background: var(--wine-glow);
+    padding: 1px 6px;
+}
+.ticker-option-name {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ticker-picker-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+/* ── Icon button with danger hover ───────────────────────────────────────── */
+
+.btn-icon-hover-danger {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 14px;
+    padding: 2px 4px;
+    border-radius: var(--r-sm);
+    transition: color 0.2s;
+}
+.btn-icon-hover-danger:hover { color: var(--down); }

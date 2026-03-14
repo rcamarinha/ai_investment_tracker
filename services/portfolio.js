@@ -893,30 +893,27 @@ function showTickerPickerDialog(isin, primary, alternatives) {
             const exchange = opt.exchange || detectStockExchange(opt.ticker);
             const typeBadge = opt.type && opt.type !== 'Stock' ? opt.type : '';
             return `
-                <label class="ticker-picker-option" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 6px; background: ${idx === 0 ? 'var(--gold-glow)' : 'var(--surface)'}; border: 2px solid ${idx === 0 ? 'var(--gold)' : 'var(--border)'}; border-radius: 8px; cursor: pointer; transition: border-color 0.15s;"
-                    onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='${idx === 0 ? 'var(--gold)' : 'var(--border)'}'">
-                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} style="accent-color: var(--gold); width: 16px; height: 16px;" />
-                    <div style="flex: 1; min-width: 0;">
-                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <span style="font-weight: 700; color: var(--text-primary); font-size: 15px;">${escapeHTML(opt.ticker)}</span>
-                            <span style="color: var(--gold); font-size: 12px; background: var(--gold-glow); padding: 1px 8px; border-radius: 4px;">${escapeHTML(exchange)}</span>
-                            ${typeBadge ? `<span style="color: var(--gold); font-size: 11px; background: var(--wine-glow); padding: 1px 6px; border-radius: 4px;">${escapeHTML(typeBadge)}</span>` : ''}
+                <label class="ticker-picker-option${idx === 0 ? ' is-first' : ''}">
+                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} />
+                    <div class="ticker-option-content">
+                        <div class="ticker-option-header">
+                            <span class="ticker-option-ticker">${escapeHTML(opt.ticker)}</span>
+                            <span class="ticker-option-badge">${escapeHTML(exchange)}</span>
+                            ${typeBadge ? `<span class="ticker-option-badge type-badge">${escapeHTML(typeBadge)}</span>` : ''}
                         </div>
-                        <div style="color: var(--text-secondary); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHTML(opt.name || opt.ticker)}</div>
+                        <div class="ticker-option-name">${escapeHTML(opt.name || opt.ticker)}</div>
                     </div>
                 </label>`;
         }).join('');
 
         const overlay = document.createElement('div');
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:10000;';
+        overlay.className = 'ticker-picker-overlay';
         overlay.innerHTML = `
-            <div style="background: #0f172a; border: 1px solid #334155; border-radius: 14px; padding: 24px; max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
-                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">Multiple listings found</div>
-                <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
-                    <span style="color: var(--gold); font-weight: 600;">${escapeHTML(isin)}</span> is listed on multiple exchanges. Select the one you want to track:
-                </div>
-                <div style="margin-bottom: 16px;">${optionsHTML}</div>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <div class="ticker-picker-dialog">
+                <h3>Multiple listings found</h3>
+                <p><span style="color: var(--gold); font-weight: 600;">${escapeHTML(isin)}</span> is listed on multiple exchanges. Select the one you want to track:</p>
+                <div class="ticker-picker-options">${optionsHTML}</div>
+                <div class="ticker-picker-footer">
                     <button class="btn btn-primary" id="tickerPickerConfirm">Confirm Selection</button>
                 </div>
             </div>`;
@@ -1449,7 +1446,7 @@ export function updateHistoryDisplay() {
                                 <div style="font-size: 13px; color: var(--text-secondary);">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <div style="font-size: 12px; color: var(--text-secondary);">${snapshot.positionCount} positions \u2022 ${snapshot.pricesAvailable} with prices</div>
-                                    <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" style="background: none; border: none; cursor: pointer; color: var(--text-secondary); font-size: 14px; padding: 2px 4px; border-radius: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--down)'" onmouseout="this.style.color='var(--text-secondary)'">\u{1F5D1}\u{FE0F}</button>
+                                    <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" class="btn-icon-hover-danger">\u{1F5D1}\u{FE0F}</button>
                                 </div>
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
