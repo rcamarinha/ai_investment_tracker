@@ -28,8 +28,8 @@ export function renderPerspectiveTabs() {
     if (!tabsContainer || !infoContainer) return;
 
     tabsContainer.innerHTML = Object.entries(INVESTMENT_PERSPECTIVES).map(([key, p]) => `
-        <div class="perspective-tab ${key === state.selectedPerspective ? 'active' : ''}"
-             style="${key === state.selectedPerspective ? `border-color: ${p.color}; box-shadow: 0 0 8px ${p.color}40;` : ''}"
+        <div class="persp-chip ${key === state.selectedPerspective ? 'active' : ''}"
+             style="${key === state.selectedPerspective ? `border-color: ${p.color}; color: ${p.color};` : ''}"
              onclick="selectPerspective('${key}')">
             <span>${p.icon}</span>
             <span>${p.name}</span>

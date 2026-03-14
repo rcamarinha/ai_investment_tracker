@@ -186,16 +186,21 @@ export function renderPortfolio() {
         const displayName = pos.name
             ? escapeHTML(pos.name.length > 35 ? pos.name.substring(0, 32) + '...' : pos.name)
             : escapeHTML(pos.symbol);
-        const subParts = [];
-        if (pos.platform && pos.platform !== 'Unknown') subParts.push(escapeHTML(pos.platform));
-        if (pos.type) subParts.push(escapeHTML(pos.type));
-        if (sector !== 'Other') subParts.push(escapeHTML(sector));
-        const cardSub = subParts.join(' \u00B7 ');
+        // DS asset-type class for left-border and icon color
+        const typeRaw = (pos.type || '').toLowerCase();
+        const assetTypeClass = typeRaw === 'etf' ? 'etf' : typeRaw === 'crypto' ? 'crypto' : typeRaw === 'wine' ? 'wine' : 'stock';
+        const subTypeParts = [];
+        if (pos.type) subTypeParts.push(escapeHTML(pos.type));
+        if (sector !== 'Other') subTypeParts.push(escapeHTML(sector));
+        const cardSub = subTypeParts.join(' \u00B7 ');
         const positionSub = isActive
             ? `${pos.shares} shs \u00B7 avg ${formatCurrency(pos.avgPrice, currency)}`
             : 'Closed';
         const priceSub = isActive
             ? (hasPrice ? `${formatCurrency(currentPrice, currency)} \u00B7 ${weight.toFixed(1)}%` : '\u23F3 Pending')
+            : '';
+        const platformBadge = (pos.platform && pos.platform !== 'Unknown')
+            ? `<span class="pos-platform">${escapeHTML(pos.platform)}</span>`
             : '';
 
         // Action buttons: active positions get refresh/buy/sell/delete; inactive get just delete
@@ -207,21 +212,22 @@ export function renderPortfolio() {
             : `<button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
 
         return `
-        <div class="position${isActive ? '' : ' inactive'}" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
-            <div class="pos-icon-badge stock">${tickerBadge}</div>
-            <div class="pos-card-body">
-                <div class="pos-card-name">
+        <div class="pos-card ${assetTypeClass}${isActive ? '' : ' inactive'}" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
+            <div class="pos-icon ${assetTypeClass}">${tickerBadge}</div>
+            <div>
+                <div class="pos-name">
                     <span class="pos-status-dot" style="color:${statusColor}" title="${escapeHTML(statusText)}">${statusFlag}</span>
                     ${displayName}
                 </div>
-                <div class="pos-card-sub">${cardSub}</div>
-                <div class="pos-card-sub">${positionSub}${timestampText ? ' \u00B7 ' + escapeHTML(timestampText) : ''}</div>
+                <div class="pos-sub">${cardSub}</div>
+                <div class="pos-sub">${positionSub}${timestampText ? ' \u00B7 ' + escapeHTML(timestampText) : ''}</div>
+                ${platformBadge}
                 <div class="position-actions">${actionButtons}</div>
             </div>
-            <div class="pos-card-right">
-                <div class="pos-card-value">${isActive ? formatCurrency(marketValue, currency) : '\u2014'}</div>
-                ${isActive ? `<div class="pos-card-change ${pnlClass}">${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss, currency)} (${formatPercent(gainLossPct)})</div>` : ''}
-                ${priceSub ? `<div class="pos-card-sub">${priceSub}</div>` : ''}
+            <div class="pos-right">
+                <div class="pos-value">${isActive ? formatCurrency(marketValue, currency) : '\u2014'}</div>
+                ${isActive ? `<div class="pos-change ${pnlClass}">${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss, currency)} (${formatPercent(gainLossPct)})</div>` : ''}
+                ${priceSub ? `<div class="pos-sub">${priceSub}</div>` : ''}
             </div>
         </div>
         `;
@@ -893,17 +899,14 @@ function showTickerPickerDialog(isin, primary, alternatives) {
             const exchange = opt.exchange || detectStockExchange(opt.ticker);
             const typeBadge = opt.type && opt.type !== 'Stock' ? opt.type : '';
             return `
-                <label class="ticker-picker-option${idx === 0 ? ' is-first' : ''}">
-                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} />
-                    <div class="ticker-option-content">
-                        <div class="ticker-option-header">
-                            <span class="ticker-option-ticker">${escapeHTML(opt.ticker)}</span>
-                            <span class="ticker-option-badge">${escapeHTML(exchange)}</span>
-                            ${typeBadge ? `<span class="ticker-option-badge type-badge">${escapeHTML(typeBadge)}</span>` : ''}
-                        </div>
-                        <div class="ticker-option-name">${escapeHTML(opt.name || opt.ticker)}</div>
+                <label class="ticker-option${idx === 0 ? ' selected' : ''}" data-idx="${idx}">
+                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} style="display:none" />
+                    <div>
+                        <div class="to-ticker">${escapeHTML(opt.ticker)}${typeBadge ? ` <span style="font-size:10px;color:var(--wine-light)">${escapeHTML(typeBadge)}</span>` : ''}</div>
+                        <div class="to-exchange">${escapeHTML(exchange)}${opt.name ? ' · ' + escapeHTML(opt.name) : ''}</div>
                     </div>
-                </label>`;
+                    <span class="to-check">✓</span>
+                </label>`
         }).join('');
 
         const overlay = document.createElement('div');
@@ -919,6 +922,16 @@ function showTickerPickerDialog(isin, primary, alternatives) {
             </div>`;
 
         document.body.appendChild(overlay);
+
+        // Click-to-select for DS .ticker-option style
+        overlay.querySelectorAll('.ticker-option').forEach(label => {
+            label.addEventListener('click', () => {
+                overlay.querySelectorAll('.ticker-option').forEach(l => l.classList.remove('selected'));
+                label.classList.add('selected');
+                const radio = label.querySelector('input[type="radio"]');
+                if (radio) radio.checked = true;
+            });
+        });
 
         overlay.querySelector('#tickerPickerConfirm').addEventListener('click', () => {
             const selected = overlay.querySelector('input[name="tickerPick"]:checked');

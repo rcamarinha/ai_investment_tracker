@@ -51,7 +51,13 @@
     --font-body:    'Instrument Sans', system-ui, sans-serif;
     --font-mono:    'DM Mono', monospace;
 
+    /* Warn / amber semantic */
+    --warn:      #E09A3A;
+    --warn-glow: rgba(224,154,58,0.15);
+    --warn-line: rgba(224,154,58,0.35);
+
     /* Radii */
+    --r-xs:  6px;
     --r-sm:  8px;
     --r-md:  12px;
     --r-lg:  16px;
@@ -2365,3 +2371,864 @@ body > #appNavbar + * {
     transition: color 0.2s;
 }
 .btn-icon-hover-danger:hover { color: var(--down); }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Design System v2 — Aliases & New Components
+   Multi-selectors alias existing names so both old and new class names work.
+   New components have no existing equivalent and are added fresh.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ── Navigation aliases ──────────────────────────────────────────────────── */
+
+/* DS: .bottom-nav → existing: .bottom-tab-nav */
+.bottom-nav,
+.bottom-tab-nav {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--ink-2);
+    border-top: 1px solid var(--border);
+    padding: 10px 0 env(safe-area-inset-bottom, 10px);
+    z-index: 90;
+    justify-content: space-around;
+}
+@media (max-width: 640px) {
+    .bottom-nav, .bottom-tab-nav { display: flex; }
+}
+
+/* DS: .bn-item → existing: .btn-nav (btn-nav already styled; just alias states) */
+.bn-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    padding: 4px 16px;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+.bn-item .bn-icon { font-size: 20px; line-height: 1; }
+.bn-item.active-hub   { color: var(--text-primary); }
+.bn-item.active-stock { color: var(--gold); }
+.bn-item.active-wine  { color: var(--wine-light); }
+.bn-item:hover        { color: var(--text-secondary); }
+
+
+/* ── Page header aliases ─────────────────────────────────────────────────── */
+
+/* DS: .page-header → existing: .header */
+.page-header,
+.header {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--gold);
+    padding: 28px 32px;
+    border-radius: var(--r-xl);
+    margin-bottom: 20px;
+}
+
+/* DS: .ph-eyebrow → existing: .header-eyebrow */
+.ph-eyebrow { /* inherits .header-eyebrow styles via shared styling below */
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+
+/* DS: .ph-title */
+.ph-title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 300;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.ph-title.stock { color: var(--gold); }
+.ph-title.wine  { color: var(--wine-light); }
+
+/* DS: .ph-sub */
+.ph-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* DS: .ph-version → existing: .header-version */
+.ph-version {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-top: 6px;
+}
+
+
+/* ── Action bar alias ────────────────────────────────────────────────────── */
+
+/* DS: .action-bar → existing: .action-buttons-row */
+.action-bar,
+.action-buttons-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+
+/* ── Currency toggle aliases ─────────────────────────────────────────────── */
+
+/* DS: .currency-toggle → existing: .currency-selector */
+.currency-toggle,
+.currency-selector {
+    display: inline-flex;
+    border-radius: 100px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--ink-3);
+    padding: 3px;
+    gap: 2px;
+    margin-left: auto;
+}
+
+/* DS: .ct-opt → existing: .currency-option */
+.ct-opt,
+.currency-option {
+    background: transparent;
+    color: var(--text-tertiary);
+    border: none;
+    padding: 5px 14px;
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.ct-opt:not(:last-child)       { border-right: none; }
+.currency-option:not(:last-child) { border-right: 1px solid var(--border-hover); }
+.ct-opt:hover,
+.currency-option:hover { background: var(--surface-2); color: var(--text-primary); }
+.ct-opt.active,
+.currency-option.active {
+    background: var(--surface-2);
+    color: var(--gold);
+    border: 1px solid var(--gold-line);
+}
+
+
+/* ── Perspective chips alias ─────────────────────────────────────────────── */
+
+/* DS: .persp-chip → existing: .perspective-tab */
+.persp-chip,
+.perspective-tab {
+    padding: 6px 12px;
+    border-radius: var(--r-md);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.persp-chip:hover,
+.perspective-tab:hover {
+    border-color: var(--border-hover);
+    color: var(--text-secondary);
+}
+.persp-chip.active,
+.perspective-tab.active {
+    background: var(--gold-glow);
+    color: var(--gold);
+    border-color: var(--gold-line);
+}
+
+
+/* ── Allocation section alias ────────────────────────────────────────────── */
+
+/* DS: .alloc-section → existing: .allocation-section */
+.alloc-section,
+.allocation-section {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 20px;
+    margin-top: 15px;
+}
+
+
+/* ── Position card aliases ───────────────────────────────────────────────── */
+
+/* DS: .pos-card → existing: .position */
+.pos-card,
+.position {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--gold-dim);
+    border-radius: var(--r-lg);
+    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    gap: 10px;
+    align-items: start;
+    transition: border-color 0.15s;
+}
+.pos-card:hover,
+.position:hover { border-color: var(--border-hover); border-left-color: var(--gold); }
+
+/* Asset-type left-border variants */
+.pos-card.stock { border-left-color: var(--gold-dim); }
+.pos-card.etf   { border-left-color: #4A7A6A; }
+.pos-card.crypto { border-left-color: #5A6AAA; }
+.pos-card.wine  { border-left-color: var(--wine-dim); }
+
+/* DS: .pos-icon → existing: .pos-icon-badge */
+.pos-icon,
+.pos-icon-badge {
+    width: 40px; height: 40px;
+    border-radius: var(--r-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -0.02em;
+    flex-shrink: 0;
+}
+.pos-icon.stock,  .pos-icon-badge.stock  { background: var(--gold-glow);  color: var(--gold); }
+.pos-icon.etf                            { background: rgba(74,122,106,0.15); color: #6AAA92; }
+.pos-icon.crypto                         { background: rgba(90,106,170,0.15); color: #8A9ACA; }
+.pos-icon.wine,   .pos-icon-badge.wine   { background: var(--wine-glow);  color: var(--wine-light); }
+
+/* DS: .pos-name → existing: .pos-card-name */
+.pos-name,
+.pos-card-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* DS: .pos-sub → existing: .pos-card-sub */
+.pos-sub,
+.pos-card-sub {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+}
+
+/* DS: .pos-platform — new element for platform badge */
+.pos-platform {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: var(--r-xs);
+    background: var(--surface);
+    color: var(--text-tertiary);
+    margin-top: 3px;
+}
+
+/* DS: .pos-value → existing: .pos-card-value */
+.pos-value,
+.pos-card-value {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+/* DS: .pos-change → existing: .pos-card-change */
+.pos-change,
+.pos-card-change {
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+.pos-change.up,   .pos-card-change.up   { color: var(--up); }
+.pos-change.down, .pos-card-change.down { color: var(--down); }
+
+
+/* ── Form aliases ────────────────────────────────────────────────────────── */
+
+/* DS: .form-group → existing: .position-form-group */
+.form-group,
+.position-form-group { margin-bottom: 16px; }
+
+/* DS: .form-label → existing: .form-label-bold */
+.form-label,
+.form-label-bold {
+    display: block;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+}
+.form-label .req { color: var(--down); margin-left: 2px; }
+
+/* DS: .form-input — standalone input style */
+.form-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--ink-3);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    font-family: var(--font-body);
+    font-size: 14px;
+    transition: border-color 0.15s;
+    outline: none;
+}
+.form-input::placeholder { color: var(--text-tertiary); }
+.form-input:focus { border-color: var(--border-hover); background: var(--surface); }
+.form-input.stock:focus { border-color: var(--gold-line); }
+.form-input.wine:focus  { border-color: var(--wine-line); }
+
+/* DS: .form-select */
+.form-select {
+    width: 100%;
+    padding: 10px 32px 10px 12px;
+    background: var(--ink-3);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    font-family: var(--font-body);
+    font-size: 14px;
+    cursor: pointer;
+    outline: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235C5870'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    transition: border-color 0.15s;
+}
+.form-select:focus { border-color: var(--border-hover); }
+
+/* DS: .form-textarea */
+.form-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--ink-3);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    font-family: var(--font-body);
+    font-size: 14px;
+    resize: vertical;
+    min-height: 80px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.form-textarea:focus { border-color: var(--border-hover); }
+
+/* DS: .form-hint → existing: .form-helper */
+.form-hint,
+.form-helper {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+    margin-top: 4px;
+}
+.form-hint a,
+.form-helper a { color: var(--gold); text-decoration: none; }
+.form-hint a:hover,
+.form-helper a:hover { text-decoration: underline; }
+
+/* DS: .form-error */
+.form-error {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--down);
+    margin-top: 2px;
+}
+
+/* DS: .import-area → existing: .textarea-code */
+.import-area,
+.textarea-code {
+    width: 100%;
+    background: var(--ink-3);
+    border: 1px dashed var(--border-hover);
+    border-radius: var(--r-lg);
+    padding: 16px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    min-height: 120px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.import-area:focus,
+.textarea-code:focus { border-color: var(--gold-line); }
+
+
+/* ── AI card aliases ─────────────────────────────────────────────────────── */
+
+/* DS: .ai-card → existing: .analysis-card */
+.ai-card,
+.analysis-card {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 16px;
+    margin-bottom: 15px;
+    position: relative;
+    overflow: hidden;
+}
+.ai-card::after {
+    content: '';
+    position: absolute;
+    top: -24px; right: -24px;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: var(--gold-glow);
+    filter: blur(28px);
+    pointer-events: none;
+}
+
+/* DS: .ai-header */
+.ai-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+/* DS: .ai-badge → existing: .perspective-badge */
+.ai-badge,
+.perspective-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--gold-glow);
+    border: 1px solid var(--gold-line);
+    color: var(--gold);
+    font-weight: 500;
+}
+.ai-badge.wine {
+    background: var(--wine-glow);
+    border-color: var(--wine-line);
+    color: var(--wine-light);
+}
+
+/* DS: .ai-perspective */
+.ai-perspective {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+}
+
+/* DS: .ai-text → existing: .analysis-content */
+.ai-text,
+.analysis-content {
+    color: var(--text-primary);
+    line-height: 1.65;
+    font-size: 13px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Design System v2 — New Components (no existing equivalent)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ── Ghost button ────────────────────────────────────────────────────────── */
+
+.btn-ghost {
+    background: var(--ink-3);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-hover);
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 16px;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.btn-ghost:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+
+/* ── Alert family ────────────────────────────────────────────────────────── */
+
+.alert {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    border-radius: var(--r-lg);
+    padding: 12px 14px;
+    border: 1px solid;
+    font-size: 13px;
+    line-height: 1.6;
+    margin-bottom: 16px;
+}
+.alert-icon  { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.alert-title { font-weight: 600; margin-bottom: 4px; }
+
+.alert-warn  { background: var(--warn-glow);  border-color: var(--warn-line);  color: var(--warn); }
+.alert-info  { background: rgba(92,88,112,0.15); border-color: rgba(92,88,112,0.3); color: var(--text-secondary); }
+.alert-error { background: rgba(224,90,90,0.1);  border-color: rgba(224,90,90,0.25); color: var(--down); }
+
+
+/* ── Stale warning ───────────────────────────────────────────────────────── */
+
+.stale-warning {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--warn-glow);
+    border: 1px solid var(--warn-line);
+    border-radius: var(--r-md);
+    padding: 8px 12px;
+    color: var(--warn);
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+
+
+/* ── Confidence badges ───────────────────────────────────────────────────── */
+
+.conf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+}
+.conf-high { background: rgba(76,175,132,0.1);  color: var(--up);   border: 1px solid rgba(76,175,132,0.25); }
+.conf-med  { background: rgba(224,154,58,0.1);  color: var(--warn); border: 1px solid var(--warn-line); }
+.conf-low  { background: rgba(224,90,90,0.1);   color: var(--down); border: 1px solid rgba(224,90,90,0.25); }
+
+
+/* ── Import mode toggle ──────────────────────────────────────────────────── */
+
+.import-mode {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+.im-option {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--border);
+    background: var(--ink-3);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.im-option.active {
+    border-color: var(--gold-line);
+    background: var(--gold-glow);
+}
+.im-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+.im-option.active .im-title { color: var(--gold); }
+.im-desc { font-size: 11px; color: var(--text-tertiary); }
+
+
+/* ── Modal / dialog structure ────────────────────────────────────────────── */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(11,12,14,0.85);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+}
+.modal {
+    background: var(--ink-2);
+    border: 1px solid var(--border-hover);
+    border-radius: var(--r-xl);
+    padding: 24px;
+    max-width: 480px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.modal-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--text-primary);
+}
+.modal-title.stock { color: var(--gold); }
+.modal-title.wine  { color: var(--wine-light); }
+.modal-close {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+}
+.modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+
+/* ── API Tier cards (redesigned) ─────────────────────────────────────────── */
+
+.api-tier {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 12px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.api-tier-badge {
+    flex-shrink: 0;
+    padding: 3px 8px;
+    border-radius: var(--r-xs);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+}
+.tier-primary  { background: rgba(76,175,132,0.15); color: var(--up);             border: 1px solid rgba(76,175,132,0.3); }
+.tier-fallback { background: var(--gold-glow);       color: var(--gold);           border: 1px solid var(--gold-line); }
+.tier-last     { background: var(--surface);         color: var(--text-secondary); border: 1px solid var(--border-hover); }
+.tier-ai       { background: rgba(130,100,200,0.12); color: #A080E0;               border: 1px solid rgba(130,100,200,0.3); }
+.api-tier-body { flex: 1; }
+.api-tier-name { font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 2px; }
+.api-tier-desc { font-size: 11px; color: var(--text-tertiary); }
+.api-tier-input { margin-top: 8px; }
+
+
+/* ── Hero metric (DS naming) ─────────────────────────────────────────────── */
+
+.hero-metric {
+    background: var(--ink-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 20px 22px;
+}
+.hm-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+.hm-value {
+    font-family: var(--font-display);
+    font-size: 42px;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+.hm-value.stock   { color: var(--gold); }
+.hm-value.wine    { color: var(--wine-light); }
+.hm-value.neutral { color: var(--text-primary); }
+.hm-delta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.hm-delta.up   { color: var(--up); }
+.hm-delta.down { color: var(--down); }
+
+
+/* ── Stat tiles ──────────────────────────────────────────────────────────── */
+
+.stat-tiles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+@media (max-width: 600px) {
+    .stat-tiles { grid-template-columns: 1fr 1fr; }
+}
+.stat-tile {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 12px 14px;
+}
+.st-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 4px;
+}
+.st-value {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+.st-value.up   { color: var(--up); }
+.st-value.down { color: var(--down); }
+.st-value.wine { color: var(--wine-light); }
+.st-value.gold { color: var(--gold); }
+
+
+/* ── History chart container ─────────────────────────────────────────────── */
+
+.chart-container {
+    background: var(--ink-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 16px;
+}
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.chart-area-box {
+    height: 80px;
+    background: var(--ink-3);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    position: relative;
+}
+.chart-area-box svg { width: 100%; height: 100%; }
+.chart-time-labels {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 4px 0;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+}
+
+
+/* ── Toast (DS naming, portfolio uses JS injection) ──────────────────────── */
+
+.toast {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-hover);
+    border-radius: 100px;
+    padding: 8px 16px;
+    font-size: 13px;
+    color: var(--text-primary);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.toast.success { border-color: rgba(76,175,132,0.4); }
+.toast-icon { flex-shrink: 0; }
+.toast-undo,
+.toast-undo-btn {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--gold);
+    cursor: pointer;
+    padding-left: 8px;
+    border-left: 1px solid var(--border-hover);
+    background: none;
+    border-top: none;
+    border-right: none;
+    border-bottom: none;
+}
+
+
+/* ── Ticker option (DS naming) ───────────────────────────────────────────── */
+
+.ticker-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 6px;
+}
+.ticker-option:hover  { border-color: var(--gold-line); background: var(--gold-glow); }
+.ticker-option.selected { border-color: var(--gold); background: var(--gold-glow); }
+.to-ticker   { font-family: var(--font-mono); font-size: 14px; font-weight: 500; color: var(--gold); }
+.to-exchange { font-size: 11px; color: var(--text-tertiary); margin-top: 1px; }
+.to-check    { color: var(--gold); font-size: 16px; opacity: 0; }
+.ticker-option.selected .to-check { opacity: 1; }
+
+
+/* ── Scan area (shared, was wine-only) ───────────────────────────────────── */
+
+.scan-area {
+    background: var(--ink-3);
+    border: 1px dashed var(--wine-line);
+    border-radius: var(--r-xl);
+    padding: 28px 20px;
+    text-align: center;
+}
+.scan-icon  { font-size: 36px; margin-bottom: 10px; }
+.scan-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-style: italic;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.scan-sub     { font-size: 12px; color: var(--text-tertiary); margin-bottom: 16px; }
+.scan-actions { display: flex; gap: 8px; justify-content: center; }
