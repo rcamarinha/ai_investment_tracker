@@ -36,6 +36,10 @@ export const TRANSLATIONS = {
         'auth.cancel':          'Cancel',
 
         // ── Hub page ─────────────────────────────────────────────────────────
+        'hub.eyebrow':          'Investment Hub',
+        'hub.total_wealth':     'Total Portfolio Wealth',
+        'hub.stock_eyebrow':    'Equities · ETFs · Crypto',
+        'hub.wine_eyebrow':     'Fine Wine · Spirits · Cellar',
         'hub.subtitle':         'Track all your investments — stocks and wine — in one place',
         'hub.stock_title':      'Stock Portfolio',
         'hub.stock_desc':       'Live market prices, AI-powered analysis, and multi-platform portfolio tracking.',
@@ -269,6 +273,10 @@ export const TRANSLATIONS = {
         'auth.cancel':          'Cancelar',
 
         // ── Hub page ─────────────────────────────────────────────────────────
+        'hub.eyebrow':          'Hub de Investimentos',
+        'hub.total_wealth':     'Riqueza Total da Carteira',
+        'hub.stock_eyebrow':    'Ações · ETFs · Cripto',
+        'hub.wine_eyebrow':     'Vinho Fino · Espirituosas · Adega',
         'hub.subtitle':         'Acompanhe todos os seus investimentos — ações e vinho — num só lugar',
         'hub.stock_title':      'Carteira de Ações',
         'hub.stock_desc':       'Preços de mercado ao vivo, análise com IA e gestão de carteira multi-plataforma.',
