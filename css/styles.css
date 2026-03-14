@@ -144,8 +144,8 @@ body {
     font-size: 15px;
     cursor: pointer;
     font-weight: 600;
-    margin-right: 10px;
-    margin-bottom: 10px;
+    margin-right: 6px;
+    margin-bottom: 6px;
     color: white;
     transition: filter 0.15s ease;
 }
@@ -159,6 +159,14 @@ body {
     cursor: not-allowed;
 }
 
+/* Buttons inside action bars — let gap handle spacing */
+.action-bar .btn,
+.action-bar .btn-sm,
+.action-buttons-row .btn,
+.action-buttons-row .btn-sm {
+    margin: 0;
+}
+
 .btn-sm {
     padding: 8px 16px;
     border: none;
@@ -167,13 +175,23 @@ body {
     cursor: pointer;
     font-weight: 600;
     color: white;
+    transition: filter 0.15s ease;
+}
+
+.btn-sm:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+.btn-sm:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* Variants */
 .btn-primary   { background: #2563eb; }
 .btn-accent    { background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%); }
 .btn-success   { background: #059669; }
-.btn-warning   { background: var(--gold); }
+.btn-warning   { background: var(--warn); }
 .btn-danger    { background: #dc2626; }
 .btn-key       { background: #7c3aed; }
 .btn-trade     { background: linear-gradient(135deg, #059669 0%, #10b981 100%); }
@@ -2587,13 +2605,26 @@ body > #appNavbar + * {
     transition: border-color 0.15s;
 }
 .pos-card:hover,
-.position:hover { border-color: var(--border-hover); border-left-color: var(--gold); }
+.position:hover { border-color: var(--border-hover); }
 
-/* Asset-type left-border variants */
-.pos-card.stock { border-left-color: var(--gold-dim); }
-.pos-card.etf   { border-left-color: #4A7A6A; }
+/* Inactive state */
+.pos-card.inactive,
+.position.inactive { opacity: 0.45; border-left-color: var(--border); }
+.pos-card.inactive:hover,
+.position.inactive:hover { opacity: 0.7; }
+
+/* Asset-type left-border variants (resting) */
+.pos-card.stock  { border-left-color: var(--gold-dim); }
+.pos-card.etf    { border-left-color: #4A7A6A; }
 .pos-card.crypto { border-left-color: #5A6AAA; }
-.pos-card.wine  { border-left-color: var(--wine-dim); }
+.pos-card.wine   { border-left-color: var(--wine-dim); }
+
+/* Asset-type hover accents */
+.pos-card.stock:hover  { border-left-color: var(--gold); }
+.pos-card.etf:hover    { border-left-color: #6AAA92; }
+.pos-card.crypto:hover { border-left-color: #8A9ACA; }
+.pos-card.wine:hover   { border-left-color: var(--wine); }
+.position:hover        { border-left-color: var(--gold); }
 
 /* DS: .pos-icon → existing: .pos-icon-badge */
 .pos-icon,
