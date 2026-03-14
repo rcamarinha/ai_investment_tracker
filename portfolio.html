@@ -15,26 +15,26 @@
     <div id="appNavbar" class="app-navbar"></div>
 
     <div class="container">
-        <div class="header" style="border-left-color: var(--gold);">
-            <div style="font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 6px;">Equities · ETFs · Crypto</div>
+        <div class="header">
+            <div class="header-eyebrow">Equities · ETFs · Crypto</div>
             <h1>
                 <span data-i18n="portfolio.title">Portfolio</span>
-                <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 400; opacity: 0.4; margin-left: 8px;">v3.13.0</span>
+                <span class="header-version">v3.13.0</span>
             </h1>
-            <p data-i18n="portfolio.subtitle" style="margin-top: 4px;">Live prices · AI analysis · 6 investment perspectives</p>
+            <p data-i18n="portfolio.subtitle">Live prices · AI analysis · 6 investment perspectives</p>
         </div>
 
         <!-- Artifact Network Warning (shown only in artifacts) -->
-        <div id="artifactWarning" style="display: none; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
-            <div style="display: flex; align-items: start; gap: 10px;">
-                <div style="font-size: 24px;">⚠️</div>
-                <div style="flex: 1;">
-                    <div style="font-weight: bold; color: #92400e; margin-bottom: 5px;">Network Restrictions Detected</div>
-                    <div style="color: #78350f; font-size: 14px; margin-bottom: 10px;">
+        <div id="artifactWarning" class="info-card-amber" style="display: none;">
+            <div class="info-card-amber-inner">
+                <div class="info-card-amber-icon">⚠️</div>
+                <div>
+                    <div class="info-card-amber-title">Network Restrictions Detected</div>
+                    <div class="info-card-amber-body">
                         Claude artifacts cannot fetch live market prices due to network security restrictions.
                     </div>
-                    <div style="color: #78350f; font-size: 13px; background: white; padding: 10px; border-radius: 5px; line-height: 1.6;">
-                        <strong>💡 Solution: Download & Open Locally</strong><br>
+                    <div class="info-card-amber-code">
+                        <strong>💡 Solution: Download &amp; Open Locally</strong><br>
                         → Right-click anywhere on this page<br>
                         → Select "Save As" → Save the HTML file<br>
                         → Open the saved file in your browser<br>
@@ -53,7 +53,7 @@
                 </div>
             </div>
 
-            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
+            <div class="action-buttons-row">
                 <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="portfolio.btn.api_keys">🔑 API Keys</button>
                 <button class="btn btn-success" onclick="showAddPositionDialog()" data-i18n="portfolio.btn.add">➕ Add Position</button>
                 <button class="btn btn-primary" onclick="showImportDialog()" data-i18n="portfolio.btn.import">📋 Import from Spreadsheet</button>
@@ -70,14 +70,14 @@
             <div class="positions" id="positions"></div>
 
             <div id="allocationSection" class="allocation-section" style="display: none;">
-                <h3 style="color: var(--text-primary); margin-bottom: 15px;" data-i18n="portfolio.allocation">📊 Portfolio Allocation</h3>
+                <h3 class="section-heading" data-i18n="portfolio.allocation">📊 Portfolio Allocation</h3>
                 <div class="allocation-charts">
                     <div class="allocation-chart-container">
-                        <h4 style="color: var(--text-secondary); font-size: 12px; text-transform: uppercase; margin-bottom: 10px;" data-i18n="portfolio.by_type">By Asset Type</h4>
+                        <h4 class="chart-label" data-i18n="portfolio.by_type">By Asset Type</h4>
                         <div id="typeAllocationChart" class="allocation-chart"></div>
                     </div>
                     <div class="allocation-chart-container">
-                        <h4 style="color: var(--text-secondary); font-size: 12px; text-transform: uppercase; margin-bottom: 10px;" data-i18n="portfolio.by_sector">By Sector</h4>
+                        <h4 class="chart-label" data-i18n="portfolio.by_sector">By Sector</h4>
                         <div id="sectorAllocationChart" class="allocation-chart"></div>
                     </div>
                 </div>
@@ -98,95 +98,105 @@
 
         <div id="apiKeyDialog" style="display: none;">
             <div class="card">
-                <h2 style="margin-bottom: 15px;">🔑 API Key Management</h2>
+                <h2 class="section-heading">🔑 API Key Management</h2>
 
-                <div style="background: var(--surface); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="color: var(--text-primary); margin-bottom: 10px; font-size: 16px;">3-Tier Strategy:</h3>
-                    <div style="color: var(--text-secondary); font-size: 13px; line-height: 1.8;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                            <span>🚀 <strong>Finnhub:</strong> 60 calls/minute (unlimited daily)</span>
-                            <span style="color: var(--up);">PRIMARY</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                            <span>⚡ <strong>FMP:</strong> 250 calls/day (no per-min limit)</span>
-                            <span style="color: var(--gold);">FALLBACK #1</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <span>🔄 <strong>Alpha Vantage:</strong> 5 calls/min, 25/day</span>
-                            <span style="color: var(--gold);">FALLBACK #2</span>
-                        </div>
+                <div class="api-info-block">
+                    <h3 class="api-info-title">3-Tier Strategy:</h3>
+                    <div class="api-tier-row">
+                        <span>🚀 <strong>Finnhub:</strong> 60 calls/minute (unlimited daily)</span>
+                        <span class="api-tier-status-primary">PRIMARY</span>
                     </div>
-                    <div style="margin-top: 10px; padding: 10px; background: var(--ink-2); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
+                    <div class="api-tier-row">
+                        <span>⚡ <strong>FMP:</strong> 250 calls/day (no per-min limit)</span>
+                        <span class="api-tier-status-fallback">FALLBACK #1</span>
+                    </div>
+                    <div class="api-tier-row">
+                        <span>🔄 <strong>Alpha Vantage:</strong> 5 calls/min, 25/day</span>
+                        <span class="api-tier-status-fallback">FALLBACK #2</span>
+                    </div>
+                    <div class="api-info-detail">
                         💡 <strong>Strategy:</strong> Finnhub primary (fast), FMP for what it misses (generous limit), Alpha Vantage last resort (strict limits)
                     </div>
                 </div>
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: var(--text-primary); margin-bottom: 8px; font-weight: bold;">🚀 Finnhub API Key (Primary - Fast & Unlimited)</label>
-                    <input type="text" id="finnhubKeyInput" placeholder="Enter your Finnhub API key" style="width: 100%; padding: 12px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-hover); border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
-                    <div style="color: var(--text-secondary); font-size: 12px;">Get free key: <a href="https://finnhub.io/register" target="_blank" style="color: var(--gold);">https://finnhub.io/register</a><br>✓ 60 calls/minute • ✓ Unlimited daily • ✓ Best for US stocks</div>
+                <div class="form-field-section">
+                    <label class="form-label-bold">🚀 Finnhub API Key (Primary - Fast &amp; Unlimited)</label>
+                    <div class="position-form-group">
+                        <input type="text" id="finnhubKeyInput" placeholder="Enter your Finnhub API key" />
+                    </div>
+                    <div class="form-helper">Get free key: <a href="https://finnhub.io/register" target="_blank">https://finnhub.io/register</a><br>✓ 60 calls/minute • ✓ Unlimited daily • ✓ Best for US stocks</div>
                 </div>
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: var(--text-primary); margin-bottom: 8px; font-weight: bold;">⚡ Financial Modeling Prep API Key (Fallback #1 - Generous Limit)</label>
-                    <input type="text" id="fmpKeyInput" placeholder="Enter your FMP API key" style="width: 100%; padding: 12px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-hover); border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
-                    <div style="color: var(--text-secondary); font-size: 12px;">Get free key: <a href="https://site.financialmodelingprep.com/developer/docs/" target="_blank" style="color: var(--gold);">https://financialmodelingprep.com</a><br>✓ 250 calls/day • ✓ Using quote-short endpoint (better free tier support)</div>
+                <div class="form-field-section">
+                    <label class="form-label-bold">⚡ Financial Modeling Prep API Key (Fallback #1 - Generous Limit)</label>
+                    <div class="position-form-group">
+                        <input type="text" id="fmpKeyInput" placeholder="Enter your FMP API key" />
+                    </div>
+                    <div class="form-helper">Get free key: <a href="https://site.financialmodelingprep.com/developer/docs/" target="_blank">https://financialmodelingprep.com</a><br>✓ 250 calls/day • ✓ Using quote-short endpoint (better free tier support)</div>
                 </div>
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: var(--text-primary); margin-bottom: 8px; font-weight: bold;">🔄 Alpha Vantage API Key (Fallback #2 - Last Resort)</label>
-                    <input type="text" id="alphaVantageKeyInput" placeholder="Enter your Alpha Vantage API key" style="width: 100%; padding: 12px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-hover); border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
-                    <div style="color: var(--text-secondary); font-size: 12px;">Get free key: <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color: var(--gold);">https://www.alphavantage.co/support/#api-key</a><br>✓ 5 calls/minute, 25/day • ✓ Good international coverage • ✓ Use sparingly</div>
+                <div class="form-field-section">
+                    <label class="form-label-bold">🔄 Alpha Vantage API Key (Fallback #2 - Last Resort)</label>
+                    <div class="position-form-group">
+                        <input type="text" id="alphaVantageKeyInput" placeholder="Enter your Alpha Vantage API key" />
+                    </div>
+                    <div class="form-helper">Get free key: <a href="https://www.alphavantage.co/support/#api-key" target="_blank">https://www.alphavantage.co/support/#api-key</a><br>✓ 5 calls/minute, 25/day • ✓ Good international coverage • ✓ Use sparingly</div>
                 </div>
 
-                <hr style="border: 1px solid var(--border); margin: 20px 0;">
+                <hr class="hr-divider">
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: var(--text-primary); margin-bottom: 8px; font-weight: bold;">🤖 Anthropic API Key (AI Analysis)</label>
-                    <input type="password" id="anthropicKeyInput" placeholder="Enter your Anthropic API key (sk-ant-...)" style="width: 100%; padding: 12px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-hover); border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
-                    <div style="color: var(--text-secondary); font-size: 12px;">Get API key: <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: var(--gold);">https://console.anthropic.com/settings/keys</a><br>Required for "Get AI Analysis" when running outside Claude.ai</div>
-                    <div style="color: #fbbf24; font-size: 12px; margin-top: 6px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; padding: 8px; line-height: 1.5;">
+                <div class="form-field-section">
+                    <label class="form-label-bold">🤖 Anthropic API Key (AI Analysis)</label>
+                    <div class="position-form-group">
+                        <input type="password" id="anthropicKeyInput" placeholder="Enter your Anthropic API key (sk-ant-...)" />
+                    </div>
+                    <div class="form-helper">Get API key: <a href="https://console.anthropic.com/settings/keys" target="_blank">https://console.anthropic.com/settings/keys</a><br>Required for "Get AI Analysis" when running outside Claude.ai</div>
+                    <div class="security-notice">
                         ⚠️ <strong>Security notice:</strong> This key is sent directly from your browser and is visible in DevTools → Network tab. Only use a key you're comfortable exposing client-side, or connect Supabase to use server-side AI calls instead.
                     </div>
                 </div>
 
-                <hr style="border: 1px solid var(--border); margin: 20px 0;">
+                <hr class="hr-divider">
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: var(--text-primary); margin-bottom: 8px; font-weight: bold;">☁️ Supabase Project URL (Cloud Database)</label>
-                    <input type="text" id="supabaseUrlInput" placeholder="https://your-project.supabase.co" style="width: 100%; padding: 12px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-hover); border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
-                    <div style="color: var(--text-secondary); font-size: 12px;">Get from: <a href="https://supabase.com/dashboard" target="_blank" style="color: var(--gold);">Supabase Dashboard</a> &gt; Settings &gt; API</div>
+                <div class="form-field-section">
+                    <label class="form-label-bold">☁️ Supabase Project URL (Cloud Database)</label>
+                    <div class="position-form-group">
+                        <input type="text" id="supabaseUrlInput" placeholder="https://your-project.supabase.co" />
+                    </div>
+                    <div class="form-helper">Get from: <a href="https://supabase.com/dashboard" target="_blank">Supabase Dashboard</a> &gt; Settings &gt; API</div>
                 </div>
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: var(--text-primary); margin-bottom: 8px; font-weight: bold;">🔑 Supabase Anon Key (Public)</label>
-                    <input type="text" id="supabaseAnonKeyInput" placeholder="eyJhbGciOiJIUzI1NiIs..." style="width: 100%; padding: 12px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-hover); border-radius: 8px; font-family: monospace; font-size: 13px; margin-bottom: 8px;" />
-                    <div style="color: var(--text-secondary); font-size: 12px;">This is the <strong>anon/public</strong> key (safe for browser use). Row Level Security protects your data.</div>
+                <div class="form-field-section">
+                    <label class="form-label-bold">🔑 Supabase Anon Key (Public)</label>
+                    <div class="position-form-group">
+                        <input type="text" id="supabaseAnonKeyInput" placeholder="eyJhbGciOiJIUzI1NiIs..." />
+                    </div>
+                    <div class="form-helper">This is the <strong>anon/public</strong> key (safe for browser use). Row Level Security protects your data.</div>
                 </div>
 
-                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
-                    <div style="color: #92400e; font-size: 13px;">
+                <div class="info-card-amber">
+                    <div class="info-card-amber-body">
                         <strong>🔒 Security:</strong> API keys saved in your browser only (localStorage). Supabase anon key is safe for public use.
                         <br><br>
                         <strong>📊 Coverage:</strong> All 3 price APIs combined = ~98%+ success rate. Finnhub ~85%, FMP ~10%, Alpha Vantage ~5%.
                     </div>
                 </div>
 
-                <div style="display: flex; gap: 10px;">
+                <div class="action-buttons-row">
                     <button class="btn btn-accent" onclick="saveApiKeys()">💾 Save Keys</button>
                     <button class="btn btn-primary" onclick="closeApiKeyDialog()">Cancel</button>
-                    <button class="btn btn-danger" onclick="clearApiKeys()" style="margin-left: auto;">🗑️ Clear All Keys</button>
+                    <button class="btn btn-danger btn-push-right" onclick="clearApiKeys()">🗑️ Clear All Keys</button>
                 </div>
             </div>
         </div>
 
         <div id="importDialog" style="display: none;">
             <div class="card">
-                <h2 style="margin-bottom: 15px;">📋 Import Positions</h2>
-                <p style="color: var(--text-primary); margin-bottom: 12px;">
+                <h2 class="section-heading">📋 Import Positions</h2>
+                <p style="margin-bottom: 12px;">
                     Paste your positions from any spreadsheet or broker export. The app will auto-detect column layout.
                 </p>
-                <div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 12px; line-height: 1.6;">
+                <div class="form-helper" style="margin-bottom: 12px;">
                     <div style="margin-bottom: 6px;"><strong style="color: var(--gold);">Required columns:</strong> Ticker/Symbol/ISIN + Quantity/Shares</div>
                     <div style="margin-bottom: 6px;"><strong style="color: var(--gold);">Optional columns:</strong> Avg Price, Name, Platform, Type, Total Amount</div>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px;">
@@ -196,19 +206,21 @@
                         <span>✅ Missing price → uses current market price</span>
                     </div>
                 </div>
-                <textarea id="importText" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10" style="width: 100%; height: 200px; padding: 15px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border-hover); border-radius: 8px; font-family: monospace; font-size: 12px; margin-bottom: 10px;"></textarea>
-                <div style="display: flex; gap: 16px; margin-bottom: 12px; padding: 10px 14px; background: var(--ink-2); border-radius: 8px; font-size: 13px;">
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-primary);">
+                <div class="position-form-group">
+                    <textarea id="importText" class="textarea-code" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10"></textarea>
+                </div>
+                <div class="radio-group-row">
+                    <label class="radio-group-label">
                         <input type="radio" name="importMode" value="add" checked style="accent-color: var(--up);" />
                         <span><strong>Add</strong> to existing portfolio</span>
                     </label>
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-primary);">
+                    <label class="radio-group-label">
                         <input type="radio" name="importMode" value="replace" style="accent-color: var(--gold);" />
                         <span><strong>Replace</strong> entire portfolio</span>
                     </label>
                 </div>
                 <div id="importReportArea"></div>
-                <div style="display: flex; gap: 10px;">
+                <div class="action-buttons-row">
                     <button class="btn btn-accent" onclick="importPositions()">Import Positions</button>
                     <button class="btn btn-primary" onclick="closeImportDialog()">Cancel</button>
                 </div>
@@ -218,7 +230,7 @@
         <!-- Position Management Dialog (Add / Buy More / Sell) -->
         <div id="positionDialog" style="display: none;">
             <div class="card">
-                <h2 id="positionDialogTitle" style="margin-bottom: 15px;">Add New Position</h2>
+                <h2 id="positionDialogTitle" class="section-heading">Add New Position</h2>
 
                 <!-- Search section (visible for new positions) -->
                 <div id="positionSearchSection" class="position-form-group">
@@ -236,7 +248,7 @@
                 <div class="position-form-row">
                     <div id="positionSymbolGroup" class="position-form-group">
                         <label>Ticker Symbol *</label>
-                        <input type="text" id="positionSymbol" placeholder="e.g. AAPL" style="text-transform: uppercase;" />
+                        <input type="text" id="positionSymbol" class="input-uppercase" placeholder="e.g. AAPL" />
                     </div>
                     <div id="positionNameGroup" class="position-form-group">
                         <label>Asset Name</label>
@@ -262,7 +274,7 @@
                     </div>
                 </div>
 
-                <hr style="border: 1px solid var(--border); margin: 16px 0;">
+                <hr class="hr-divider">
 
                 <!-- Shares and Amount (always visible) -->
                 <div class="position-form-row">
@@ -283,7 +295,7 @@
                     <input type="date" id="positionDate" />
                 </div>
 
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <div class="action-buttons-row">
                     <button id="positionDialogSubmit" class="btn btn-success" onclick="submitPosition()">Add Position</button>
                     <button class="btn btn-primary" onclick="closePositionDialog()">Cancel</button>
                 </div>
@@ -294,7 +306,7 @@
 
         <div id="historySection" style="display: none;">
             <div class="card">
-                <h2 style="margin-bottom: 15px;">📈 Portfolio History</h2>
+                <h2 class="section-heading">📈 Portfolio History</h2>
                 <div id="historyChart" style="margin-bottom: 20px;"></div>
                 <div id="historyLog"></div>
             </div>

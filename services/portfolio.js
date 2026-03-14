@@ -134,17 +134,7 @@ export function renderPortfolio() {
         displayPositions = displayPositions.filter(p => getSector(p.symbol) === state.selectedSector);
     }
 
-    let html = `
-        <div class="position-header-row">
-            <div>Symbol</div>
-            <div>Asset</div>
-            <div class="pos-hide-mobile">Type</div>
-            <div class="pos-right">Position</div>
-            <div class="pos-right">Market Value</div>
-            <div class="pos-right pos-hide-mobile">P&L</div>
-            <div>Actions</div>
-        </div>
-    `;
+    let html = '';
 
     html += displayPositions.map((pos) => {
         const isActive = pos.shares > 0;
@@ -158,7 +148,7 @@ export function renderPortfolio() {
         // Weight uses base currency conversion
         const marketValueBase = toBaseCurrency(marketValue, currency);
         const weight = totalMarketValueBase > 0 ? (marketValueBase / totalMarketValueBase) * 100 : 0;
-        const color = gainLoss >= 0 ? 'var(--up)' : 'var(--down)';
+        const pnlClass = gainLoss >= 0 ? 'up' : 'down';
 
         // Price metadata
         const metadata = state.priceMetadata[pos.symbol];
@@ -192,7 +182,21 @@ export function renderPortfolio() {
 
         const escapedSymbol = escapeHTML(pos.symbol).replace(/'/g, "\\'");
         const sector = getSector(pos.symbol);
-        const typeColor = ({ 'ETF': '#8b5cf6', 'REIT': '#ec4899', 'Stock': '#3b82f6', 'Crypto': 'var(--gold-dim)' }[pos.type] || '#94a3b8');
+        const tickerBadge = escapeHTML(pos.symbol.substring(0, 5));
+        const displayName = pos.name
+            ? escapeHTML(pos.name.length > 35 ? pos.name.substring(0, 32) + '...' : pos.name)
+            : escapeHTML(pos.symbol);
+        const subParts = [];
+        if (pos.platform && pos.platform !== 'Unknown') subParts.push(escapeHTML(pos.platform));
+        if (pos.type) subParts.push(escapeHTML(pos.type));
+        if (sector !== 'Other') subParts.push(escapeHTML(sector));
+        const cardSub = subParts.join(' \u00B7 ');
+        const positionSub = isActive
+            ? `${pos.shares} shs \u00B7 avg ${formatCurrency(pos.avgPrice, currency)}`
+            : 'Closed';
+        const priceSub = isActive
+            ? (hasPrice ? `${formatCurrency(currentPrice, currency)} \u00B7 ${weight.toFixed(1)}%` : '\u23F3 Pending')
+            : '';
 
         // Action buttons: active positions get refresh/buy/sell/delete; inactive get just delete
         const actionButtons = isActive
@@ -203,44 +207,21 @@ export function renderPortfolio() {
             : `<button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
 
         return `
-        <div class="position${isActive ? '' : ' inactive'}">
-            <div class="pos-cell position-symbol">
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="color: ${statusColor}; font-size: 12px;" title="${escapeHTML(statusText)}">${statusFlag}</span>
-                    <span>${escapeHTML(pos.symbol)}</span>
+        <div class="position${isActive ? '' : ' inactive'}" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
+            <div class="pos-icon-badge stock">${tickerBadge}</div>
+            <div class="pos-card-body">
+                <div class="pos-card-name">
+                    <span class="pos-status-dot" style="color:${statusColor}" title="${escapeHTML(statusText)}">${statusFlag}</span>
+                    ${displayName}
                 </div>
-                <div class="pos-secondary">${timestampText ? escapeHTML(timestampText) : ''}</div>
+                <div class="pos-card-sub">${cardSub}</div>
+                <div class="pos-card-sub">${positionSub}${timestampText ? ' \u00B7 ' + escapeHTML(timestampText) : ''}</div>
+                <div class="position-actions">${actionButtons}</div>
             </div>
-            <div class="pos-cell" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
-                <div style="font-size: 12px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${pos.name ? escapeHTML(pos.name.length > 35 ? pos.name.substring(0, 32) + '...' : pos.name) : escapeHTML(pos.symbol)}
-                </div>
-                <div class="pos-secondary">${pos.platform && pos.platform !== 'Unknown' ? escapeHTML(pos.platform) : ''}${pos.platform && pos.platform !== 'Unknown' && sector !== 'Other' ? ' \u2022 ' : ''}${sector !== 'Other' ? escapeHTML(sector) : ''}</div>
-            </div>
-            <div class="pos-cell pos-hide-mobile">
-                <div style="font-size: 11px; color: ${typeColor}; font-weight: 600;">${escapeHTML(pos.type || 'Stock')}</div>
-                <div class="pos-secondary">${escapeHTML(currency)}</div>
-            </div>
-            <div class="pos-cell pos-right">
-                <div>${isActive ? pos.shares + ' shares' : '\u2014'}</div>
-                <div class="pos-secondary">${isActive ? 'avg ' + formatCurrency(pos.avgPrice, currency) : 'Closed'}</div>
-            </div>
-            <div class="pos-cell pos-right">
-                <div style="color: ${hasPrice ? 'var(--gold)' : 'var(--gold-dim)'}; font-weight: bold;">
-                    ${isActive ? formatCurrency(marketValue, currency) : '\u2014'}
-                </div>
-                <div class="pos-secondary">${isActive ? (hasPrice ? formatCurrency(currentPrice, currency) + ' \u2022 ' + weight.toFixed(1) + '%' : '\u23F3 Pending') : ''}</div>
-            </div>
-            <div class="pos-cell pos-right pos-hide-mobile">
-                <div style="color: ${isActive ? color : 'var(--text-tertiary)'}; font-weight: bold;">
-                    ${isActive ? `${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss, currency)}` : '\u2014'}
-                </div>
-                <div class="pos-secondary" style="color: ${isActive ? color : 'var(--text-tertiary)'};">
-                    ${isActive ? formatPercent(gainLossPct) : ''}
-                </div>
-            </div>
-            <div class="position-actions">
-                ${actionButtons}
+            <div class="pos-card-right">
+                <div class="pos-card-value">${isActive ? formatCurrency(marketValue, currency) : '\u2014'}</div>
+                ${isActive ? `<div class="pos-card-change ${pnlClass}">${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss, currency)} (${formatPercent(gainLossPct)})</div>` : ''}
+                ${priceSub ? `<div class="pos-card-sub">${priceSub}</div>` : ''}
             </div>
         </div>
         `;
@@ -912,30 +893,27 @@ function showTickerPickerDialog(isin, primary, alternatives) {
             const exchange = opt.exchange || detectStockExchange(opt.ticker);
             const typeBadge = opt.type && opt.type !== 'Stock' ? opt.type : '';
             return `
-                <label class="ticker-picker-option" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 6px; background: ${idx === 0 ? 'var(--gold-glow)' : 'var(--surface)'}; border: 2px solid ${idx === 0 ? 'var(--gold)' : 'var(--border)'}; border-radius: 8px; cursor: pointer; transition: border-color 0.15s;"
-                    onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='${idx === 0 ? 'var(--gold)' : 'var(--border)'}'">
-                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} style="accent-color: var(--gold); width: 16px; height: 16px;" />
-                    <div style="flex: 1; min-width: 0;">
-                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <span style="font-weight: 700; color: var(--text-primary); font-size: 15px;">${escapeHTML(opt.ticker)}</span>
-                            <span style="color: var(--gold); font-size: 12px; background: var(--gold-glow); padding: 1px 8px; border-radius: 4px;">${escapeHTML(exchange)}</span>
-                            ${typeBadge ? `<span style="color: var(--gold); font-size: 11px; background: var(--wine-glow); padding: 1px 6px; border-radius: 4px;">${escapeHTML(typeBadge)}</span>` : ''}
+                <label class="ticker-picker-option${idx === 0 ? ' is-first' : ''}">
+                    <input type="radio" name="tickerPick" value="${idx}" ${idx === 0 ? 'checked' : ''} />
+                    <div class="ticker-option-content">
+                        <div class="ticker-option-header">
+                            <span class="ticker-option-ticker">${escapeHTML(opt.ticker)}</span>
+                            <span class="ticker-option-badge">${escapeHTML(exchange)}</span>
+                            ${typeBadge ? `<span class="ticker-option-badge type-badge">${escapeHTML(typeBadge)}</span>` : ''}
                         </div>
-                        <div style="color: var(--text-secondary); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHTML(opt.name || opt.ticker)}</div>
+                        <div class="ticker-option-name">${escapeHTML(opt.name || opt.ticker)}</div>
                     </div>
                 </label>`;
         }).join('');
 
         const overlay = document.createElement('div');
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:10000;';
+        overlay.className = 'ticker-picker-overlay';
         overlay.innerHTML = `
-            <div style="background: #0f172a; border: 1px solid #334155; border-radius: 14px; padding: 24px; max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
-                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">Multiple listings found</div>
-                <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
-                    <span style="color: var(--gold); font-weight: 600;">${escapeHTML(isin)}</span> is listed on multiple exchanges. Select the one you want to track:
-                </div>
-                <div style="margin-bottom: 16px;">${optionsHTML}</div>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <div class="ticker-picker-dialog">
+                <h3>Multiple listings found</h3>
+                <p><span style="color: var(--gold); font-weight: 600;">${escapeHTML(isin)}</span> is listed on multiple exchanges. Select the one you want to track:</p>
+                <div class="ticker-picker-options">${optionsHTML}</div>
+                <div class="ticker-picker-footer">
                     <button class="btn btn-primary" id="tickerPickerConfirm">Confirm Selection</button>
                 </div>
             </div>`;
@@ -1468,7 +1446,7 @@ export function updateHistoryDisplay() {
                                 <div style="font-size: 13px; color: var(--text-secondary);">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <div style="font-size: 12px; color: var(--text-secondary);">${snapshot.positionCount} positions \u2022 ${snapshot.pricesAvailable} with prices</div>
-                                    <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" style="background: none; border: none; cursor: pointer; color: var(--text-secondary); font-size: 14px; padding: 2px 4px; border-radius: 4px; transition: color 0.2s;" onmouseover="this.style.color='var(--down)'" onmouseout="this.style.color='var(--text-secondary)'">\u{1F5D1}\u{FE0F}</button>
+                                    <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" class="btn-icon-hover-danger">\u{1F5D1}\u{FE0F}</button>
                                 </div>
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
