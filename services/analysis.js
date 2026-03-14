@@ -342,7 +342,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
             throw new Error('Could not parse trade ideas response as JSON. Raw: ' + cleanText.slice(0, 200));
         }
 
-        const actionColors = { 'BUY': '#10b981', 'SELL': '#ef4444', 'TRIM': '#f59e0b', 'ADD': '#3b82f6', 'REBALANCE': '#f59e0b', 'WATCH': '#8b5cf6', 'HOLD': '#6366f1' };
+        const actionColors = { 'BUY': '#4CAF84', 'SELL': '#E05A5A', 'TRIM': '#E09A3A', 'ADD': '#4CAF84', 'REBALANCE': '#E09A3A', 'WATCH': '#7A8099', 'HOLD': '#7A8099' };
         const actionIcons = { 'BUY': '\uD83D\uDFE2', 'SELL': '\uD83D\uDD34', 'TRIM': '\uD83D\uDFE1', 'ADD': '\uD83D\uDD35', 'REBALANCE': '\uD83D\uDCCA', 'WATCH': '\uD83D\uDC41\uFE0F', 'HOLD': '\u23F8\uFE0F' };
 
         analysisSection.innerHTML = `
@@ -359,7 +359,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
                 <h3 style="color: var(--text-primary); font-size: 18px; margin-bottom: 15px;">${t('analysis.trade_ideas')}</h3>
                 ${(ideas.trades || ideas.ideas || []).map((trade, idx) => {
                     const action = (trade.action || 'WATCH').toUpperCase();
-                    const color = actionColors[action] || '#6366f1';
+                    const color = actionColors[action] || '#7A8099';
                     const icon = actionIcons[action] || '\uD83D\uDCCB';
                     return `
                     <div class="trade-idea-card ${action.toLowerCase()}">

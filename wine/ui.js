@@ -17,8 +17,8 @@ function fmt(value) {
 // ── Allocation Charts ────────────────────────────────────────────────────────
 
 const REGION_COLORS = [
-    '#9f1239', '#c2410c', '#b45309', '#15803d', '#0369a1',
-    '#6d28d9', '#be185d', '#0f766e', '#1d4ed8', '#7c3aed',
+    '#9B3A5A', '#C4607C', '#C9A84C', '#4CAF84', '#7A8099',
+    '#5A2035', '#E09A3A', '#6BCF9E', '#7A6430', '#E05A5A',
 ];
 
 export function renderAllocationCharts() {
