@@ -314,7 +314,7 @@ export function renderCellar() {
         bottlesDiv.innerHTML = `
             <div class="no-results">
                 ${t('cellar.no_results')}<br>
-                <span style="font-size:12px;color:#475569;">${hint}</span>
+                <span class="no-results-hint">${hint}</span>
             </div>`;
     } else {
         bottlesDiv.innerHTML = result.map(b => renderBottleCard(b)).join('');
@@ -386,7 +386,7 @@ function renderBottleCard(b) {
     <div class="bottle-card" id="bottle-${escapeHTML(b.id)}">
         <div class="bottle-header">
             <div style="flex: 1; min-width: 0;">
-                <div class="bottle-name">${escapeHTML(b.name || 'Unknown Wine')}${b.vintage ? ` <span style="color: #fda4af;">${b.vintage}</span>` : ''}</div>
+                <div class="bottle-name">${escapeHTML(b.name || 'Unknown Wine')}${b.vintage ? ` <span class="bottle-vintage">${b.vintage}</span>` : ''}</div>
                 <div class="bottle-meta">${escapeHTML(b.winery || '')}${b.region && b.winery ? ' · ' : ''}${escapeHTML(b.region || '')}</div>
             </div>
             <div class="bottle-actions">
@@ -401,11 +401,11 @@ function renderBottleCard(b) {
             ${hasPurchasePrice ? `
             <div class="bottle-fin-row">
                 <span>${b.qty} ${b.qty !== 1 ? t('bottle.card.bottles') : t('bottle.card.bottle')} × ${fmt(b.purchasePrice)}</span>
-                <span style="color: #cbd5e1;">${fmt(totalInvested)} ${t('bottle.card.invested')}</span>
+                <span class="bottle-fin-value">${fmt(totalInvested)} ${t('bottle.card.invested')}</span>
             </div>` : `
             <div class="bottle-fin-row">
                 <span>${b.qty} ${b.qty !== 1 ? t('bottle.card.bottles') : t('bottle.card.bottle')}</span>
-                <span style="color: #64748b; font-size: 12px;">${t('bottle.card.no_price')}</span>
+                <span class="bottle-fin-muted">${t('bottle.card.no_price')}</span>
             </div>`}
             ${hasValuation ? `
             <div class="bottle-fin-row">
@@ -414,7 +414,7 @@ function renderBottleCard(b) {
                     ${rangeHtml}
                     ${usdHtml}
                 </div>
-                <span style="color: #d97706;">${fmt(b.estimatedValue)}/bottle · ${fmt(totalEstimated)}</span>
+                <span class="bottle-fin-est">${fmt(b.estimatedValue)}/bottle · ${fmt(totalEstimated)}</span>
             </div>
             ${hasPurchasePrice ? `
             <div class="bottle-gain ${gainClass}">
@@ -422,8 +422,8 @@ function renderBottleCard(b) {
                 <span>${gainSign}${fmt(gain)} (${gainSign}${gainPct.toFixed(1)}%)</span>
             </div>` : ''}` : `
             <div class="bottle-fin-row">
-                <span style="color: #64748b; font-size: 12px;">${t('bottle.card.no_valuation')}</span>
-                <span><button class="btn btn-sm" style="background: #451a03; color: #d97706; padding: 2px 8px; font-size: 11px;" onclick="valuateSingleBottle('${escapeHTML(b.id)}')">${t('bottle.card.get_estimate')}</button></span>
+                <span class="bottle-fin-muted">${t('bottle.card.no_valuation')}</span>
+                <span><button class="btn btn-sm btn-warning" onclick="valuateSingleBottle('${escapeHTML(b.id)}')">${t('bottle.card.get_estimate')}</button></span>
             </div>`}
         </div>
 
@@ -822,17 +822,17 @@ export function updateHistoryDisplay() {
         const gain    = (s.totalEstimatedValue || 0) - (s.totalInvested || 0);
         const gainPct = s.totalInvested > 0 ? ((gain / s.totalInvested) * 100).toFixed(1) : '—';
         const gainStr = gain >= 0
-            ? `<span style="color:#4ade80;">+${fmt(gain)} (+${gainPct}%)</span>`
-            : `<span style="color:#f87171;">${fmt(gain)} (${gainPct}%)</span>`;
+            ? `<span class="gain-up">+${fmt(gain)} (+${gainPct}%)</span>`
+            : `<span class="gain-down">${fmt(gain)} (${gainPct}%)</span>`;
         const deleteBtn = s.id
-            ? `<button class="btn btn-sm btn-danger" style="padding: 2px 8px; font-size: 11px;" onclick="deleteSnapshot('${escapeHTML(String(s.id))}')">✕</button>`
+            ? `<button class="btn btn-sm btn-danger" onclick="deleteSnapshot('${escapeHTML(String(s.id))}')">✕</button>`
             : '';
         return `
         <div class="history-log-item">
             <span>${new Date(s.timestamp).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</span>
             <span>${s.bottleCount} bottles</span>
             <span>${gainStr}</span>
-            <span style="color: #94a3b8;">${fmt(s.totalEstimatedValue)}</span>
+            <span class="history-snap-value">${fmt(s.totalEstimatedValue)}</span>
             ${deleteBtn}
         </div>`;
     }).join('');

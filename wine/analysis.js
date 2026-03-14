@@ -66,8 +66,8 @@ export async function analyzeCellar() {
 
     if (analyzeBtn) { analyzeBtn.disabled = true; analyzeBtn.textContent = t('analysis.analyzing'); }
     analysisSection.innerHTML = `
-        <div class="card" style="background: #1e1b4b; border-color: #3730a3;">
-            <div style="display: flex; align-items: center; gap: 10px; color: #a5b4fc; padding: 10px 0;">
+        <div class="wine-analysis-section">
+            <div class="wine-analysis-loading">
                 <div class="spinner"></div>
                 Analyzing your cellar with AI...
             </div>
@@ -109,7 +109,7 @@ export async function analyzeCellar() {
         showToast('Analysis failed: ' + err.message, 'error', 6000);
         analysisSection.innerHTML = `
             <div class="card">
-                <div style="color: #f87171; font-size: 14px;">❌ Analysis failed: ${escapeHTML(err.message)}</div>
+                <div class="wine-analysis-error">❌ Analysis failed: ${escapeHTML(err.message)}</div>
             </div>`;
     } finally {
         if (analyzeBtn) { analyzeBtn.disabled = false; analyzeBtn.textContent = t('wine.btn.analyze_done'); }
@@ -128,14 +128,14 @@ function renderAnalysis(analysis) {
         `<li>${escapeHTML(h)}</li>`).join('');
 
     const drinkNow = (analysis.drinkNow || []).map(d =>
-        `<li><strong style="color: #fda4af;">${escapeHTML(d.wine)}</strong> — ${escapeHTML(d.reason)}</li>`).join('');
+        `<li><strong class="wine-highlight-drink">${escapeHTML(d.wine)}</strong> — ${escapeHTML(d.reason)}</li>`).join('');
 
     const hold = (analysis.holdBottles || []).map(h =>
-        `<li><strong style="color: #d97706;">${escapeHTML(h.wine)}</strong> — ${escapeHTML(h.reason)}</li>`).join('');
+        `<li><strong class="wine-highlight-hold">${escapeHTML(h.wine)}</strong> — ${escapeHTML(h.reason)}</li>`).join('');
 
     analysisSection.innerHTML = `
-        <div class="card" style="background: #1e1b4b; border-color: #3730a3;">
-            <h2 style="color: #a5b4fc; margin-bottom: 20px;">${t('wine.analysis.title')}</h2>
+        <div class="wine-analysis-section">
+            <h2>${t('wine.analysis.title')}</h2>
 
             <div class="wine-analysis-card">
                 <div class="wine-analysis-title">${t('wine.analysis.overview')}</div>
@@ -155,14 +155,14 @@ function renderAnalysis(analysis) {
             </div>` : ''}
 
             ${drinkNow ? `
-            <div class="wine-analysis-card" style="border-color: #9f1239;">
-                <div class="wine-analysis-title" style="color: #fda4af;">${t('wine.analysis.drink_now')}</div>
+            <div class="wine-analysis-card wine-analysis-drink-card">
+                <div class="wine-analysis-title">${t('wine.analysis.drink_now')}</div>
                 <ul class="wine-analysis-list">${drinkNow}</ul>
             </div>` : ''}
 
             ${hold ? `
-            <div class="wine-analysis-card" style="border-color: #d97706;">
-                <div class="wine-analysis-title" style="color: #d97706;">${t('wine.analysis.hold')}</div>
+            <div class="wine-analysis-card wine-analysis-hold-card">
+                <div class="wine-analysis-title">${t('wine.analysis.hold')}</div>
                 <ul class="wine-analysis-list">${hold}</ul>
             </div>` : ''}
 
@@ -172,7 +172,7 @@ function renderAnalysis(analysis) {
                 <ul class="wine-analysis-list">${recommendations}</ul>
             </div>` : ''}
 
-            <div style="margin-top: 15px; padding: 12px; background: #0f172a; border-radius: 8px; font-size: 12px; color: #64748b; line-height: 1.6;">
+            <div class="wine-analysis-disclaimer">
                 <strong>Disclaimer:</strong> ${escapeHTML(t('wine.analysis.disclaimer'))}
             </div>
         </div>`;

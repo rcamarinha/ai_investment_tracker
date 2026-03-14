@@ -1871,10 +1871,12 @@ body > #appNavbar + * {
 .hub-chart-labels {
     display: flex;
     justify-content: space-between;
+    width: 100%;
     padding: 4px 10px 8px;
     font-family: var(--font-mono);
     font-size: 9px;
     color: var(--text-tertiary);
+    box-sizing: border-box;
 }
 
 /* Hub card stack: column on mobile, row on tablet+ */

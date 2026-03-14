@@ -43,7 +43,7 @@ export async function analyzeMarkets() {
                 <h3 style="color: var(--text-primary); margin-bottom: 10px;">\uD83E\uDD16 AI Analysis</h3>
                 <p style="color: var(--text-secondary); margin-bottom: 15px;">AI analysis requires either a Supabase connection or your own Anthropic API key.</p>
                 <ol style="color: var(--text-secondary); margin-left: 20px; line-height: 1.8;">
-                    <li>Get an API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: #60a5fa;">console.anthropic.com</a></li>
+                    <li>Get an API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color: var(--gold);">console.anthropic.com</a></li>
                     <li>Click the <strong style="color: var(--text-primary);">\uD83D\uDD11 API Keys</strong> button above</li>
                     <li>Enter your Anthropic key and save</li>
                     <li>Click "Get AI Analysis" again</li>

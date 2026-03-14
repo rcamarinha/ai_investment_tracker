@@ -1029,3 +1029,74 @@
     color: var(--wine-light);
 }
 .filter-chip input { display: none; }
+
+
+/* ── Bottle card — inline-style replacements ────────────────────────────── */
+
+/* Vintage year next to bottle name */
+.bottle-vintage     { color: #fda4af; }
+
+/* Financial row text helpers */
+.bottle-fin-value   { color: var(--text-secondary); }
+.bottle-fin-muted   { color: var(--text-tertiary); font-size: 12px; }
+.bottle-fin-est     { color: var(--gold); }
+
+/* Gain / loss in history log */
+.gain-up            { color: var(--up); }
+.gain-down          { color: var(--down); }
+
+/* Snapshot value in history log */
+.history-snap-value { color: var(--text-tertiary); }
+
+/* No-results hint line */
+.no-results-hint    { font-size: 12px; color: var(--text-tertiary); }
+
+
+/* ── AI Analysis section ─────────────────────────────────────────────────── */
+
+.wine-analysis-section {
+    background: #1e1b4b;
+    border: 1px solid #3730a3;
+    border-radius: var(--r-lg);
+    padding: 20px;
+}
+
+.wine-analysis-section h2 {
+    color: #a5b4fc;
+    margin-bottom: 20px;
+}
+
+.wine-analysis-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #a5b4fc;
+    padding: 10px 0;
+}
+
+.wine-analysis-error {
+    color: var(--down);
+    font-size: 14px;
+}
+
+/* Drink-now and hold-for-value card variants */
+.wine-analysis-drink-card { border-color: #9f1239; }
+.wine-analysis-drink-card .wine-analysis-title { color: #fda4af; }
+
+.wine-analysis-hold-card  { border-color: var(--gold); }
+.wine-analysis-hold-card  .wine-analysis-title { color: var(--gold); }
+
+/* Wine name highlights inside analysis lists */
+.wine-highlight-drink { color: #fda4af; }
+.wine-highlight-hold  { color: var(--gold); }
+
+/* Disclaimer at the bottom of the analysis card */
+.wine-analysis-disclaimer {
+    margin-top: 15px;
+    padding: 12px;
+    background: var(--ink);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.6;
+}
