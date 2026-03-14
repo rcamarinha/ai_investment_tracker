@@ -53,15 +53,15 @@
                 </div>
             </div>
 
-            <div class="action-buttons-row">
+            <div class="action-bar" id="mainActionBar">
                 <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="portfolio.btn.api_keys">🔑 API Keys</button>
                 <button class="btn btn-success" onclick="showAddPositionDialog()" data-i18n="portfolio.btn.add">➕ Add Position</button>
                 <button class="btn btn-primary" onclick="showImportDialog()" data-i18n="portfolio.btn.import">📋 Import from Spreadsheet</button>
                 <button class="btn btn-success" onclick="fetchMarketPrices()" id="refreshBtn" data-i18n="portfolio.btn.prices">🔄 Update Prices</button>
                 <button class="btn btn-warning" onclick="savePortfolioSnapshot()" data-i18n="portfolio.btn.snapshot">💾 Save Snapshot</button>
-                <div class="currency-selector" id="currencySelector">
-                    <button class="currency-option active" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
-                    <button class="currency-option" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
+                <div class="currency-toggle" id="currencySelector">
+                    <button class="ct-opt active" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
+                    <button class="ct-opt" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
                 </div>
             </div>
 
@@ -102,17 +102,26 @@
 
                 <div class="api-info-block">
                     <h3 class="api-info-title">3-Tier Strategy:</h3>
-                    <div class="api-tier-row">
-                        <span>🚀 <strong>Finnhub:</strong> 60 calls/minute (unlimited daily)</span>
-                        <span class="api-tier-status-primary">PRIMARY</span>
+                    <div class="api-tier">
+                        <span class="api-tier-badge tier-primary">PRIMARY</span>
+                        <div class="api-tier-body">
+                            <div class="api-tier-name">🚀 Finnhub — 60 calls/min, unlimited daily</div>
+                            <div class="api-tier-desc">Fast and reliable. Best for US & EU stocks.</div>
+                        </div>
                     </div>
-                    <div class="api-tier-row">
-                        <span>⚡ <strong>FMP:</strong> 250 calls/day (no per-min limit)</span>
-                        <span class="api-tier-status-fallback">FALLBACK #1</span>
+                    <div class="api-tier">
+                        <span class="api-tier-badge tier-fallback">FALLBACK #1</span>
+                        <div class="api-tier-body">
+                            <div class="api-tier-name">⚡ Financial Modeling Prep — 250/day</div>
+                            <div class="api-tier-desc">Generous daily limit. Covers what Finnhub misses.</div>
+                        </div>
                     </div>
-                    <div class="api-tier-row">
-                        <span>🔄 <strong>Alpha Vantage:</strong> 5 calls/min, 25/day</span>
-                        <span class="api-tier-status-fallback">FALLBACK #2</span>
+                    <div class="api-tier">
+                        <span class="api-tier-badge tier-last">FALLBACK #2</span>
+                        <div class="api-tier-body">
+                            <div class="api-tier-name">🔄 Alpha Vantage — 5/min, 25/day</div>
+                            <div class="api-tier-desc">Last resort. Good international coverage. Use sparingly.</div>
+                        </div>
                     </div>
                     <div class="api-info-detail">
                         💡 <strong>Strategy:</strong> Finnhub primary (fast), FMP for what it misses (generous limit), Alpha Vantage last resort (strict limits)
@@ -174,15 +183,16 @@
                     <div class="form-helper">This is the <strong>anon/public</strong> key (safe for browser use). Row Level Security protects your data.</div>
                 </div>
 
-                <div class="info-card-amber">
-                    <div class="info-card-amber-body">
+                <div class="alert alert-info">
+                    <div class="alert-icon">ℹ️</div>
+                    <div>
                         <strong>🔒 Security:</strong> API keys saved in your browser only (localStorage). Supabase anon key is safe for public use.
                         <br><br>
                         <strong>📊 Coverage:</strong> All 3 price APIs combined = ~98%+ success rate. Finnhub ~85%, FMP ~10%, Alpha Vantage ~5%.
                     </div>
                 </div>
 
-                <div class="action-buttons-row">
+                <div class="action-bar">
                     <button class="btn btn-accent" onclick="saveApiKeys()">💾 Save Keys</button>
                     <button class="btn btn-primary" onclick="closeApiKeyDialog()">Cancel</button>
                     <button class="btn btn-danger btn-push-right" onclick="clearApiKeys()">🗑️ Clear All Keys</button>
@@ -206,21 +216,21 @@
                         <span>✅ Missing price → uses current market price</span>
                     </div>
                 </div>
-                <div class="position-form-group">
-                    <textarea id="importText" class="textarea-code" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10"></textarea>
+                <div class="import-mode">
+                    <div class="im-option active" onclick="document.querySelector('[name=importMode][value=add]').checked=true; this.classList.add('active'); this.nextElementSibling.classList.remove('active')">
+                        <div class="im-title">Add to existing</div>
+                        <div class="im-desc">Merge new positions into portfolio</div>
+                        <input type="radio" name="importMode" value="add" checked style="display:none" />
+                    </div>
+                    <div class="im-option" onclick="document.querySelector('[name=importMode][value=replace]').checked=true; this.classList.add('active'); this.previousElementSibling.classList.remove('active')">
+                        <div class="im-title">Replace all</div>
+                        <div class="im-desc">Clear and reload from scratch</div>
+                        <input type="radio" name="importMode" value="replace" style="display:none" />
+                    </div>
                 </div>
-                <div class="radio-group-row">
-                    <label class="radio-group-label">
-                        <input type="radio" name="importMode" value="add" checked style="accent-color: var(--up);" />
-                        <span><strong>Add</strong> to existing portfolio</span>
-                    </label>
-                    <label class="radio-group-label">
-                        <input type="radio" name="importMode" value="replace" style="accent-color: var(--gold);" />
-                        <span><strong>Replace</strong> entire portfolio</span>
-                    </label>
-                </div>
+                <textarea id="importText" class="import-area" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10"></textarea>
                 <div id="importReportArea"></div>
-                <div class="action-buttons-row">
+                <div class="action-bar" style="margin-top:12px">
                     <button class="btn btn-accent" onclick="importPositions()">Import Positions</button>
                     <button class="btn btn-primary" onclick="closeImportDialog()">Cancel</button>
                 </div>
@@ -295,7 +305,7 @@
                     <input type="date" id="positionDate" />
                 </div>
 
-                <div class="action-buttons-row">
+                <div class="action-bar">
                     <button id="positionDialogSubmit" class="btn btn-success" onclick="submitPosition()">Add Position</button>
                     <button class="btn btn-primary" onclick="closePositionDialog()">Cancel</button>
                 </div>
@@ -318,10 +328,10 @@
     </div>
 
     <!-- ── Mobile bottom tab nav ──────────────────────────────────────────── -->
-    <nav class="bottom-tab-nav">
-        <a href="index.html"     class="btn-nav"><span class="bn-icon">⊞</span>Hub</a>
-        <a href="portfolio.html" class="btn-nav active"><span class="bn-icon">📈</span>Stocks</a>
-        <a href="wine.html"      class="btn-nav"><span class="bn-icon">🍷</span>Cellar</a>
+    <nav class="bottom-nav">
+        <a href="index.html"     class="bn-item"><span class="bn-icon">⊞</span>Hub</a>
+        <a href="portfolio.html" class="bn-item active-stock"><span class="bn-icon">📈</span>Stocks</a>
+        <a href="wine.html"      class="bn-item"><span class="bn-icon">🍷</span>Cellar</a>
     </nav>
 
     <!--

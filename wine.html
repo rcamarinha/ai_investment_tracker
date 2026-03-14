@@ -58,7 +58,7 @@
             <div id="liveCameraContainer" style="display: none; margin-top: 18px;">
                 <video id="cameraFeed" autoplay playsinline></video>
                 <canvas id="captureCanvas" style="display: none;"></canvas>
-                <div class="action-buttons-row" style="margin-top: 10px;">
+                <div class="action-bar" style="margin-top: 10px;">
                     <button class="btn btn-success" onclick="captureFromCamera()">✓ Capture &amp; Scan</button>
                     <button class="btn btn-danger" onclick="stopCamera()">✕ Close Camera</button>
                 </div>
@@ -75,27 +75,27 @@
         <div class="card">
             <div class="card-header-row">
                 <h2 data-i18n="wine.cellar_title">🍾 Your Cellar</h2>
-                <div class="cellar-stats">
-                    <div class="cellar-stat">
+                <div class="stat-tiles">
+                    <div class="stat-tile">
                         <div class="stat-value" id="totalBottlesDisplay">0</div>
                         <div class="stat-label" data-i18n="wine.bottles">Bottles</div>
                     </div>
-                    <div class="cellar-stat">
+                    <div class="stat-tile">
                         <div class="stat-value" id="totalInvestedDisplay">€0</div>
                         <div class="stat-label" data-i18n="wine.invested">Invested</div>
                     </div>
-                    <div class="cellar-stat">
+                    <div class="stat-tile">
                         <div class="stat-value" id="totalValueDisplay">€0</div>
                         <div class="stat-label" data-i18n="wine.est_value">Est. Value</div>
                     </div>
-                    <div class="cellar-stat">
+                    <div class="stat-tile">
                         <div class="stat-value" id="totalGainDisplay" style="color: var(--up);">+€0</div>
                         <div class="stat-label" data-i18n="wine.gain_loss">Gain / Loss</div>
                     </div>
                 </div>
             </div>
 
-            <div class="action-buttons-row">
+            <div class="action-bar">
                 <button class="btn btn-success" onclick="showAddBottleDialog()" title="Add bottle  (n)" data-i18n="wine.btn.add">➕ Add Bottle</button>
                 <button class="btn btn-accent" onclick="valuateAllBottles(true)" id="valuateBtn" data-i18n="wine.btn.valuate">💎 Update Valuations</button>
                 <button class="btn btn-warning" onclick="saveCellarSnapshot()" title="Save snapshot  (Ctrl+Shift+S)" data-i18n="wine.btn.snapshot">💾 Save Snapshot</button>
@@ -144,10 +144,10 @@
         <!-- ── Allocation Charts ────────────────────────────────────────── -->
         <div class="card" id="allocationSection" style="display: none;">
             <h2 class="section-heading" data-i18n="wine.allocation">📊 Cellar Allocation</h2>
-            <div class="allocation-tabs">
-                <button class="tab-btn active" id="tab-region"   onclick="showAllocationTab('region')" data-i18n="wine.by_region">By Region</button>
-                <button class="tab-btn"         id="tab-varietal" onclick="showAllocationTab('varietal')" data-i18n="wine.by_varietal">By Varietal</button>
-                <button class="tab-btn"         id="tab-country"  onclick="showAllocationTab('country')" data-i18n="wine.by_country">By Country</button>
+            <div class="alloc-tabs">
+                <button class="alloc-tab active" id="tab-region"   onclick="showAllocationTab('region')" data-i18n="wine.by_region">By Region</button>
+                <button class="alloc-tab"         id="tab-varietal" onclick="showAllocationTab('varietal')" data-i18n="wine.by_varietal">By Varietal</button>
+                <button class="alloc-tab"         id="tab-country"  onclick="showAllocationTab('country')" data-i18n="wine.by_country">By Country</button>
             </div>
             <div id="allocationChart" class="allocation-chart"></div>
         </div>
@@ -265,7 +265,7 @@
                 <textarea id="bottleNotes" placeholder="Awards, tasting notes, special designations..." style="height: 80px;"></textarea>
             </div>
 
-            <div class="action-buttons-row" style="margin-top: 15px;">
+            <div class="action-bar" style="margin-top: 15px;">
                 <button id="bottleDialogSubmit" class="btn btn-success" onclick="submitBottle()">Add Bottle</button>
                 <button class="btn btn-primary" onclick="closeBottleDialog()">Cancel</button>
                 <button id="bottleDeleteBtn" class="btn btn-danger" onclick="deleteCurrentBottle()" style="display: none; margin-left: auto;">🗑 Delete Bottle</button>
@@ -288,10 +288,10 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <!-- ── Mobile bottom tab nav ──────────────────────────────────────────── -->
-    <nav class="bottom-tab-nav">
-        <a href="index.html"     class="btn-nav"><span class="bn-icon">⊞</span>Hub</a>
-        <a href="portfolio.html" class="btn-nav"><span class="bn-icon">📈</span>Stocks</a>
-        <a href="wine.html"      class="btn-nav active-wine"><span class="bn-icon">🍷</span>Cellar</a>
+    <nav class="bottom-nav">
+        <a href="index.html"     class="bn-item"><span class="bn-icon">⊞</span>Hub</a>
+        <a href="portfolio.html" class="bn-item"><span class="bn-icon">📈</span>Stocks</a>
+        <a href="wine.html"      class="bn-item active-wine"><span class="bn-icon">🍷</span>Cellar</a>
     </nav>
 
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->

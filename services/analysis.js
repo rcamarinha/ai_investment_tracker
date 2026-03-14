@@ -145,23 +145,23 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
 
         analysisSection.innerHTML = `
             <div class="card analysis-section">
-                <div class="analysis-card market-news-card">
-                    <div class="analysis-title">${t('analysis.market_news')}</div>
-                    <div class="analysis-content">${escapeHTML(analysis.marketNews || analysis.marketOverview)}</div>
+                <div class="ai-card market-news-card">
+                    <div class="ai-header">${t('analysis.market_news')}</div>
+                    <div class="ai-text">${escapeHTML(analysis.marketNews || analysis.marketOverview)}</div>
                 </div>
             </div>
             <div class="card analysis-section">
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-                    <span class="perspective-badge" style="background: ${perspective.color};">${perspective.icon} ${escapeHTML(perspective.name)}</span>
-                    <span style="color: var(--text-tertiary); font-size: 12px;">Inspired by ${escapeHTML(perspective.figures)}</span>
+                    <div class="ai-badge" style="background: ${perspective.color};">${perspective.icon} ${escapeHTML(perspective.name)}</div>
+                    <div class="ai-perspective">Inspired by ${escapeHTML(perspective.figures)}</div>
                 </div>
-                <div class="analysis-card" style="border-left: 3px solid ${perspective.color};">
-                    <div class="analysis-title">${perspective.icon} ${t('analysis.market_assess')} \u2014 ${escapeHTML(perspective.name)} ${t('analysis.view')}</div>
-                    <div class="analysis-content">${escapeHTML(analysis.marketOverview)}</div>
+                <div class="ai-card" style="border-left: 3px solid ${perspective.color};">
+                    <div class="ai-header">${perspective.icon} ${t('analysis.market_assess')} \u2014 ${escapeHTML(perspective.name)} ${t('analysis.view')}</div>
+                    <div class="ai-text">${escapeHTML(analysis.marketOverview)}</div>
                 </div>
-                <div class="analysis-card" style="border-left: 3px solid ${perspective.color};">
-                    <div class="analysis-title">\uD83C\uDFAF ${t('analysis.portfolio_eval')}${escapeHTML(perspective.name)} ${t('analysis.view')}</div>
-                    <div class="analysis-content">${escapeHTML(analysis.portfolioImpact)}</div>
+                <div class="ai-card" style="border-left: 3px solid ${perspective.color};">
+                    <div class="ai-header">\uD83C\uDFAF ${t('analysis.portfolio_eval')}${escapeHTML(perspective.name)} ${t('analysis.view')}</div>
+                    <div class="ai-text">${escapeHTML(analysis.portfolioImpact)}</div>
                 </div>
                 <div class="disclaimer">
                     <strong>Disclaimer:</strong> ${escapeHTML(t('analysis.disclaimer').replace('{perspective}', perspective.name))}
@@ -172,7 +172,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
         console.error('=== ANALYZE MARKETS ERROR ===', err);
         analysisSection.innerHTML = `
             <div class="card">
-                <div class="analysis-content" style="color: var(--down);">\u274C Unable to generate analysis: ${escapeHTML(err.message)}<br><br>Check the browser console (F12) for detailed error information.</div>
+                <div class="ai-text" style="color: var(--down);">\u274C Unable to generate analysis: ${escapeHTML(err.message)}<br><br>Check the browser console (F12) for detailed error information.</div>
             </div>
         `;
     }
@@ -348,7 +348,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
         analysisSection.innerHTML = `
             <div class="card trade-ideas-section">
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-                    <span class="perspective-badge" style="background: ${perspective.color};">${perspective.icon} ${escapeHTML(perspective.name)}</span>
+                    <div class="ai-badge" style="background: ${perspective.color};">${perspective.icon} ${escapeHTML(perspective.name)}</div>
                     <span style="color: var(--text-secondary); font-size: 12px;">${escapeHTML(ideas.date || today)}</span>
                 </div>
                 <div style="background: var(--surface); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
@@ -387,7 +387,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
         `;
     } catch (err) {
         console.error('=== GET TRADE IDEAS ERROR ===', err);
-        analysisSection.innerHTML = `<div class="card"><div class="analysis-content" style="color: var(--down);">\u274C Unable to generate trade ideas: ${escapeHTML(err.message)}</div></div>`;
+        analysisSection.innerHTML = `<div class="card"><div class="ai-text" style="color: var(--down);">\u274C Unable to generate trade ideas: ${escapeHTML(err.message)}</div></div>`;
     }
 
     tradeIdeasBtn.disabled = false;
