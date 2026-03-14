@@ -78,6 +78,47 @@ export function fileToBase64(file) {
 }
 
 /**
+ * Resize and compress a File image before label scanning.
+ * Caps the longest side at 1600 px and re-encodes as JPEG at 0.85 quality,
+ * keeping the payload well under Supabase edge-function worker limits.
+ * Returns the same shape as captureVideoFrame: { base64, mediaType, dataUrl }.
+ * @param {File} file
+ * @returns {Promise<{base64: string, mediaType: string, dataUrl: string}>}
+ */
+export async function compressImageForLabel(file) {
+    const MAX_PX  = 1600;
+    const QUALITY = 0.85;
+
+    const objectUrl = URL.createObjectURL(file);
+    try {
+        const img = await new Promise((resolve, reject) => {
+            const el = new Image();
+            el.onload  = () => resolve(el);
+            el.onerror = reject;
+            el.src = objectUrl;
+        });
+
+        let { naturalWidth: w, naturalHeight: h } = img;
+        if (w > MAX_PX || h > MAX_PX) {
+            const scale = MAX_PX / Math.max(w, h);
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width  = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', QUALITY);
+        const base64  = dataUrl.split(',')[1];
+        return { base64, mediaType: 'image/jpeg', dataUrl };
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+}
+
+/**
  * Capture a frame from a <video> element into a canvas and return base64.
  * @param {HTMLVideoElement} videoEl
  * @param {HTMLCanvasElement} canvasEl

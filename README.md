@@ -287,6 +287,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.14.1
+- **Wine Cellar — fix WORKER_LIMIT error on large photo uploads** — Uploaded photos are now resized and compressed client-side before being sent to the AI edge function. Images are scaled to a maximum of 1600 px on the longest side and re-encoded as JPEG at 85% quality, reducing a typical 5–10 MB smartphone photo to under 300 KB. Camera captures were already compressed via canvas; this brings file-picker uploads to parity and prevents Supabase Deno worker memory exhaustion (`WORKER_LIMIT` / HTTP 546) with no change to recognition accuracy
+
 ### v3.13.0
 - **Full design-token audit** — systematic pass across all JS service files (`services/portfolio.js`, `services/navbar.js`, `services/analysis.js`) and `wine.html` replacing every hardcoded hex color (`#60a5fa`, `#4ade80`, `#f87171`, `#94a3b8`, `#64748b`, `#334155`, etc.) with the correct CSS custom property token (`var(--gold)`, `var(--up)`, `var(--down)`, `var(--text-secondary)`, `var(--surface-2)`, etc.)
 - **Style guide comprehensive update** — `style-guide.html` rewritten to accurately document the current premium design system: correct wine token palette, current header pattern (dark ink + coloured left border, no gradient), perspective tab gold active state, and trade-idea legend using semantic tokens
