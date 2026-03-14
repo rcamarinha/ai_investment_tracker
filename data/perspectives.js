@@ -9,7 +9,7 @@ export const INVESTMENT_PERSPECTIVES = {
     value: {
         name: 'Value Investing',
         icon: '\u{1F4DA}',
-        color: '#059669',
+        color: '#4CAF84',
         figures: 'Benjamin Graham, Warren Buffett, Charlie Munger',
         description: 'Buy securities trading below intrinsic value with a margin of safety. Seek statistical cheapness or wonderful businesses at fair prices.',
         prompt: `You are analyzing this portfolio from the perspective of Classic Value Investing (Deep Intrinsic Value).
@@ -27,7 +27,7 @@ Apply these lenses:
     garp: {
         name: 'Growth at Reasonable Price',
         icon: '\u{1F331}',
-        color: '#2563eb',
+        color: '#C9A84C',
         figures: 'Peter Lynch',
         description: 'Find companies growing earnings fast but not at absurd valuations. Buy what you understand before Wall Street catches on.',
         prompt: `You are analyzing this portfolio from the perspective of Growth at a Reasonable Price (GARP), as championed by Peter Lynch.
@@ -45,7 +45,7 @@ Apply these lenses:
     quant: {
         name: 'Quantitative & Systematic',
         icon: '\u{1F522}',
-        color: '#7c3aed',
+        color: '#C4607C',
         figures: 'Jim Simons, Cliff Asness',
         description: 'Use mathematical models, factor exposure, and statistical patterns to find edge. Data over narratives, risk-adjusted returns over raw gains.',
         prompt: `You are analyzing this portfolio from the perspective of Quantitative & Systematic Investing, as practiced by Jim Simons and Cliff Asness.
@@ -64,7 +64,7 @@ Apply these lenses:
     macro: {
         name: 'Macro Investing',
         icon: '\u{1F30D}',
-        color: '#dc2626',
+        color: '#E05A5A',
         figures: 'George Soros, Ray Dalio',
         description: 'Position for macroeconomic trends \u2014 interest rates, currencies, debt cycles, and geopolitical shifts. Think top-down, not bottom-up.',
         prompt: `You are analyzing this portfolio from the perspective of Macro Investing (Top-Down), as practiced by George Soros and Ray Dalio.
@@ -83,7 +83,7 @@ Apply these lenses:
     passive: {
         name: 'Index & Passive',
         icon: '\u{1F4C8}',
-        color: '#f59e0b',
+        color: '#E09A3A',
         figures: 'John Bogle',
         description: 'You cannot consistently beat the market \u2014 own it cheaply. Minimize costs, maximize diversification, and let compounding do the work.',
         prompt: `You are analyzing this portfolio from the perspective of Indexing & Passive Investing, as championed by John Bogle.
@@ -102,7 +102,7 @@ Apply these lenses:
     technical: {
         name: 'Technical & Momentum',
         icon: '\u{1F4C9}',
-        color: '#ec4899',
+        color: '#9B3A5A',
         figures: 'Jesse Livermore, Paul Tudor Jones',
         description: 'Price action contains information. Identify trends, ride momentum, cut losers short, and let winners run.',
         prompt: `You are analyzing this portfolio from the perspective of Technical & Momentum Investing, as practiced by Jesse Livermore and Paul Tudor Jones.

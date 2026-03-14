@@ -531,7 +531,8 @@
 .toast-success { border-left-color: var(--up); }
 .toast-error   { border-left-color: var(--down); }
 .toast-warning { border-left-color: var(--gold); }
-.toast-info    { border-left-color: #60a5fa; }
+.toast-info    { border-left-color: var(--neutral); }
+
 
 .toast-icon {
     font-size: 15px;
@@ -540,7 +541,7 @@
 .toast-success .toast-icon { color: var(--up); }
 .toast-error   .toast-icon { color: var(--down); }
 .toast-warning .toast-icon { color: var(--gold); }
-.toast-info    .toast-icon { color: #60a5fa; }
+.toast-info    .toast-icon { color: var(--neutral); }
 
 .toast-msg { line-height: 1.4; }
 
@@ -832,9 +833,9 @@
     border: 1px solid rgba(201, 168, 76, 0.3);
 }
 .drink-badge-not-ready {
-    background: rgba(96, 165, 250, 0.1);
-    color: #60a5fa;
-    border: 1px solid rgba(96, 165, 250, 0.3);
+    background: rgba(122, 128, 153, 0.1);
+    color: var(--neutral);
+    border: 1px solid rgba(122, 128, 153, 0.3);
 }
 .drink-badge-past-peak {
     background: rgba(224, 90, 90, 0.1);
@@ -1034,7 +1035,7 @@
 /* ── Bottle card — inline-style replacements ────────────────────────────── */
 
 /* Vintage year next to bottle name */
-.bottle-vintage     { color: #fda4af; }
+.bottle-vintage     { color: var(--wine-light); }
 
 /* Financial row text helpers */
 .bottle-fin-value   { color: var(--text-secondary); }
@@ -1055,14 +1056,14 @@
 /* ── AI Analysis section ─────────────────────────────────────────────────── */
 
 .wine-analysis-section {
-    background: #1e1b4b;
-    border: 1px solid #3730a3;
+    background: var(--ink-2);
+    border: 1px solid var(--wine-dim);
     border-radius: var(--r-lg);
     padding: 20px;
 }
 
 .wine-analysis-section h2 {
-    color: #a5b4fc;
+    color: var(--wine-light);
     margin-bottom: 20px;
 }
 
@@ -1070,7 +1071,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    color: #a5b4fc;
+    color: var(--wine-light);
     padding: 10px 0;
 }
 
@@ -1080,14 +1081,14 @@
 }
 
 /* Drink-now and hold-for-value card variants */
-.wine-analysis-drink-card { border-color: #9f1239; }
-.wine-analysis-drink-card .wine-analysis-title { color: #fda4af; }
+.wine-analysis-drink-card { border-color: var(--wine-dim); }
+.wine-analysis-drink-card .wine-analysis-title { color: var(--wine-light); }
 
 .wine-analysis-hold-card  { border-color: var(--gold); }
 .wine-analysis-hold-card  .wine-analysis-title { color: var(--gold); }
 
 /* Wine name highlights inside analysis lists */
-.wine-highlight-drink { color: #fda4af; }
+.wine-highlight-drink { color: var(--wine-light); }
 .wine-highlight-hold  { color: var(--gold); }
 
 /* Disclaimer at the bottom of the analysis card */

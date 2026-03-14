@@ -187,21 +187,22 @@ body {
     cursor: not-allowed;
 }
 
-/* Variants */
-.btn-primary   { background: #2563eb; }
-.btn-accent    { background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%); }
-.btn-success   { background: #059669; }
+/* Variants — all mapped to design tokens */
+.btn-primary   { background: var(--surface-2); border: 1px solid var(--border-hover); }
+.btn-secondary { background: var(--surface-2); border: 1px solid var(--border-hover); }
+.btn-accent    { background: linear-gradient(135deg, var(--gold-dim) 0%, var(--gold) 100%); }
+.btn-success   { background: var(--up); }
 .btn-warning   { background: var(--warn); }
-.btn-danger    { background: #dc2626; }
-.btn-key       { background: #7c3aed; }
-.btn-trade     { background: linear-gradient(135deg, #059669 0%, #10b981 100%); }
+.btn-danger    { background: var(--down); }
+.btn-key       { background: var(--wine); }
+.btn-trade     { background: linear-gradient(135deg, var(--up) 0%, #6BCF9E 100%); }
 .btn-trade:hover:not(:disabled) {
-    background: linear-gradient(135deg, #047857 0%, #059669 100%);
+    filter: brightness(1.1);
 }
 
 /* Legacy compat: .btn-add and .btn-analyze map to new system */
-.btn-add     { background: #2563eb; color: white; }
-.btn-analyze { background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%); color: white; }
+.btn-add     { background: var(--surface-2); border: 1px solid var(--border-hover); color: white; }
+.btn-analyze { background: linear-gradient(135deg, var(--gold-dim) 0%, var(--gold) 100%); color: white; }
 
 
 /* ── Currency Selector ───────────────────────────────────────────────────── */
@@ -226,8 +227,8 @@ body {
 .currency-option:not(:last-child) { border-right: 1px solid var(--border-hover); }
 .currency-option:hover { background: var(--surface-2); color: var(--text-primary); }
 .currency-option.active {
-    background: #2563eb;
-    color: #fff;
+    background: var(--gold);
+    color: var(--ink);
 }
 
 
@@ -467,8 +468,8 @@ body {
 .trade-idea-card.rebalance { border-left-color: var(--gold); }
 .trade-idea-card.buy       { border-left-color: var(--up); }
 .trade-idea-card.sell      { border-left-color: var(--down); }
-.trade-idea-card.hold      { border-left-color: #6366f1; }
-.trade-idea-card.watch     { border-left-color: #8b5cf6; }
+.trade-idea-card.hold      { border-left-color: var(--neutral); }
+.trade-idea-card.watch     { border-left-color: var(--neutral); }
 
 .trade-idea-header {
     display: flex;
@@ -889,10 +890,10 @@ body {
 .position-action-btn:hover {
     filter: brightness(1.2);
 }
-.position-action-btn.action-refresh { background: #2563eb; }
-.position-action-btn.action-buy  { background: #059669; }
+.position-action-btn.action-refresh { background: var(--gold-dim); }
+.position-action-btn.action-buy  { background: var(--up); }
 .position-action-btn.action-sell { background: var(--gold); }
-.position-action-btn.action-del  { background: #dc2626; }
+.position-action-btn.action-del  { background: var(--down); }
 
 /* Inactive toggle */
 .inactive-toggle {
@@ -1040,7 +1041,7 @@ body {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.6px;
-    color: #7c3aed;
+    color: var(--wine);
     margin-bottom: 8px;
     display: flex;
     align-items: center;
@@ -1185,7 +1186,7 @@ body {
     text-transform: uppercase;
 }
 .role-admin {
-    background: linear-gradient(90deg, #7c3aed 0%, #2563eb 100%);
+    background: linear-gradient(135deg, var(--wine-dim) 0%, var(--wine) 100%);
     color: #fff;
 }
 .role-user {
@@ -2077,11 +2078,11 @@ body > #appNavbar + * {
 
 /* Security / warning notice (amber tint) */
 .security-notice {
-    color: #fbbf24;
+    color: var(--warn);
     font-size: 12px;
     margin-top: 6px;
-    background: rgba(251,191,36,0.08);
-    border: 1px solid rgba(251,191,36,0.3);
+    background: var(--warn-glow);
+    border: 1px solid var(--warn-line);
     border-radius: 6px;
     padding: 8px;
     line-height: 1.5;

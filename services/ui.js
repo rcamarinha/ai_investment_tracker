@@ -97,21 +97,21 @@ export function renderAllocationCharts() {
     const sortedSectors = Object.entries(sectorAllocation).sort((a, b) => b[1] - a[1]);
 
     const typeColors = {
-        'Stock': '#3b82f6', 'ETF': '#8b5cf6', 'Crypto': '#f59e0b',
-        'Bond': '#10b981', 'REIT': '#ec4899', 'Commodity': '#f97316',
-        'Cash': '#6b7280', 'Other': '#64748b'
+        'Stock': '#C9A84C', 'ETF': '#7A6430', 'Crypto': '#E09A3A',
+        'Bond': '#4CAF84', 'REIT': '#9B3A5A', 'Commodity': '#C4607C',
+        'Cash': '#7A8099', 'Other': '#5C5870'
     };
 
     const sectorColors = {
-        'Technology': '#3b82f6', 'Healthcare': '#10b981', 'Financial': '#f59e0b',
-        'Consumer Discretionary': '#ec4899', 'Consumer Staples': '#8b5cf6',
-        'Energy': '#ef4444', 'Industrials': '#6366f1', 'Materials': '#f97316',
-        'Utilities': '#14b8a6', 'Real Estate': '#a855f7', 'Communication': '#06b6d4',
-        'Crypto': '#eab308', 'Index ETF': '#64748b', 'Tech ETF': '#60a5fa',
-        'Bond ETF': '#34d399', 'Other': '#94a3b8'
+        'Technology': '#C9A84C', 'Healthcare': '#4CAF84', 'Financial': '#E09A3A',
+        'Consumer Discretionary': '#C4607C', 'Consumer Staples': '#9A95A0',
+        'Energy': '#E05A5A', 'Industrials': '#7A8099', 'Materials': '#6BCF9E',
+        'Utilities': '#9B3A5A', 'Real Estate': '#D4B96B', 'Communication': '#C4607C',
+        'Crypto': '#E09A3A', 'Index ETF': '#7A6430', 'Tech ETF': '#C9A84C',
+        'Bond ETF': '#4CAF84', 'Other': '#5C5870'
     };
 
-    const defaultColors = ['#06b6d4', '#84cc16', '#ef4444', '#a855f7', '#14b8a6', '#eab308'];
+    const defaultColors = ['#C9A84C', '#4CAF84', '#E05A5A', '#9B3A5A', '#E09A3A', '#7A8099'];
 
     // Render type chart
     let colorIdx = 0;

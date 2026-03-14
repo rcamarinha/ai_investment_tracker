@@ -199,10 +199,10 @@ function renderFilterPanel() {
     });
 
     const readinessConfig = [
-        { status: 'ready',     icon: '🟢', label: t('cellar.ready'),     color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
-        { status: 'at-peak',   icon: '🟡', label: t('cellar.at_peak'),   color: '#fbbf24', bg: 'rgba(251,191,36,0.12)'  },
-        { status: 'not-ready', icon: '🔵', label: t('cellar.not_ready'), color: '#60a5fa', bg: 'rgba(96,165,250,0.12)'  },
-        { status: 'past-peak', icon: '🔴', label: t('cellar.past_peak'), color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+        { status: 'ready',     icon: '🟢', label: t('cellar.ready'),     color: '#4CAF84', bg: 'rgba(76,175,132,0.12)' },
+        { status: 'at-peak',   icon: '🟡', label: t('cellar.at_peak'),   color: '#C9A84C', bg: 'rgba(201,168,76,0.12)'  },
+        { status: 'not-ready', icon: '🔵', label: t('cellar.not_ready'), color: '#7A8099', bg: 'rgba(122,128,153,0.12)'  },
+        { status: 'past-peak', icon: '🔴', label: t('cellar.past_peak'), color: '#E05A5A', bg: 'rgba(224,90,90,0.12)' },
     ];
 
     const totalWithWindow = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -472,7 +472,7 @@ function updateStatsBar(totals) {
     const gain = totals.totalEstimated - totals.totalInvested;
     const gainPct = totals.totalInvested > 0 ? (gain / totals.totalInvested) * 100 : 0;
     const gainSign = gain >= 0 ? '+' : '';
-    const gainColor = gain > 0 ? '#4ade80' : gain < 0 ? '#f87171' : '#94a3b8';
+    const gainColor = gain > 0 ? '#4CAF84' : gain < 0 ? '#E05A5A' : '#7A8099';
 
     const el = id => document.getElementById(id);
     if (el('totalBottlesDisplay'))  el('totalBottlesDisplay').textContent  = totals.totalBottles;

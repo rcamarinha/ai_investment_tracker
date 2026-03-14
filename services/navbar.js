@@ -59,8 +59,8 @@ function buildAuthDropdownHTML(user, passwordRecoveryMode) {
                        onkeydown="if(event.key==='Enter') handlePasswordReset()"
                        style="width:100%;padding:8px 10px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:13px;box-sizing:border-box;" />
                 <div style="display:flex;gap:8px;">
-                    <button class="btn-sm" style="background:var(--up);" onclick="handlePasswordReset()">${t('auth.set_btn')}</button>
-                    <button class="btn-sm" style="background:var(--surface-2);" onclick="cancelPasswordRecovery()">${t('auth.cancel')}</button>
+                    <button class="btn btn-sm btn-success" onclick="handlePasswordReset()">${t('auth.set_btn')}</button>
+                    <button class="btn btn-sm btn-primary" onclick="cancelPasswordRecovery()">${t('auth.cancel')}</button>
                 </div>
             </div>`;
     }
@@ -72,7 +72,7 @@ function buildAuthDropdownHTML(user, passwordRecoveryMode) {
                     <span style="color:var(--up);font-weight:600;font-size:13px;">☁️ ${t('auth.connected')}</span>
                     <span style="color:var(--text-secondary);font-size:12px;word-break:break-all;">${esc(user.email)}</span>
                 </div>
-                <button class="btn-sm" style="background:var(--surface-2);width:100%;" onclick="handleLogout()">${t('nav.logout')}</button>
+                <button class="btn btn-sm btn-primary" style="width:100%;" onclick="handleLogout()">${t('nav.logout')}</button>
             </div>`;
     }
 
