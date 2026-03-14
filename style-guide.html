@@ -6,8 +6,8 @@
     <title>Design Library — AI Investment Tracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css?v=3.13.0">
-    <link rel="stylesheet" href="css/wine.css?v=3.13.0">
+    <link rel="stylesheet" href="css/styles.css?v=3.14.0">
+    <link rel="stylesheet" href="css/wine.css?v=3.14.0">
     <style>
         /* Style-guide-only utilities */
         .sg-section {
@@ -310,7 +310,7 @@
         <div>
             <div class="header" style="margin-bottom:6px;">
                 <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:6px;">Equities · ETFs · Crypto</div>
-                <h1>Portfolio <span style="font-family:var(--font-mono);font-size:11px;font-weight:400;opacity:0.4;margin-left:8px;">v3.13.0</span></h1>
+                <h1>Portfolio <span style="font-family:var(--font-mono);font-size:11px;font-weight:400;opacity:0.4;margin-left:8px;">v3.14.0</span></h1>
                 <p>dark ink bg · 3px gold left border · Cormorant Garamond h1</p>
             </div>
             <p class="sg-note">.header — var(--ink-3) bg, border-left: 3px solid var(--gold), font-family: var(--font-display)</p>
@@ -357,10 +357,10 @@
         <div class="sg-type-scale">
             <div style="font-size:28px;font-weight:700;color:var(--text-primary);">28px / bold — Page title</div>
             <div style="font-size:24px;font-weight:700;color:var(--up);">24px / bold — Total value highlight</div>
-            <div style="font-size:18px;font-weight:700;color:var(--text-primary);">18px / bold — Card title (.analysis-title)</div>
+            <div style="font-size:18px;font-weight:700;color:var(--text-primary);">18px / bold — Card title (.ai-header / .analysis-title)</div>
             <div style="font-size:16px;font-weight:700;color:var(--text-primary);">16px / bold — Trade idea title (.trade-idea-title)</div>
             <div style="font-size:15px;font-weight:700;color:var(--text-primary);">15px / bold — Position symbol (.position-symbol)</div>
-            <div style="font-size:14px;color:var(--text-primary);line-height:1.6;">14px / regular — Body text, descriptions (.analysis-content)</div>
+            <div style="font-size:14px;color:var(--text-primary);line-height:1.6;">14px / regular — Body text, descriptions (.ai-text / .analysis-content)</div>
             <div style="font-size:13px;color:var(--text-primary);">13px — Secondary body, form labels, buttons (.btn-sm)</div>
             <div style="font-size:12px;color:var(--text-secondary);">12px — Captions, metadata, table cells</div>
             <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.5px;">11px / uppercase / spaced — Section labels, column headers</div>
@@ -412,6 +412,10 @@
             <div>
                 <button class="btn btn-trade">💡 Trade Ideas</button>
                 <div class="sg-label">.btn-trade</div>
+            </div>
+            <div>
+                <button class="btn btn-ghost">Export CSV</button>
+                <div class="sg-label">.btn-ghost</div>
             </div>
         </div>
 
@@ -504,10 +508,12 @@
             </div>
         </div>
         <div style="flex:1;min-width:260px;">
-            <div class="analysis-card">
-                <div class="analysis-title">📊 Analysis Card</div>
-                <div class="analysis-content">Used inside the AI analysis section to group insight blocks. Slightly elevated surface.</div>
-                <p class="sg-note">.analysis-card — bg var(--surface-2), border var(--border-hover), radius 10px, padding 20px</p>
+            <div class="ai-card">
+                <div class="ai-badge" style="background:#2563eb;margin-bottom:10px;">📊 Value</div>
+                <div class="ai-perspective">Inspired by Warren Buffett</div>
+                <div class="ai-header">📊 Analysis Card</div>
+                <div class="ai-text">Used inside the AI analysis section to group insight blocks. Slightly elevated surface.</div>
+                <p class="sg-note">.ai-card · .ai-badge · .ai-perspective · .ai-header · .ai-text<br>(aliases: .analysis-card, .analysis-title, .analysis-content, .perspective-badge)</p>
             </div>
         </div>
     </div>
@@ -737,12 +743,13 @@
             <div><span class="role-badge role-user">User</span><div class="sg-label">.role-user</div></div>
         </div>
 
-        <div class="sg-subsection-title">Perspective Badge</div>
+        <div class="sg-subsection-title">AI / Perspective Badge</div>
         <div class="sg-row">
-            <div><span class="perspective-badge" style="background:#2563eb;">📊 Value</span><div class="sg-label">.perspective-badge</div></div>
-            <div><span class="perspective-badge" style="background:#7c3aed;">🤖 Quant</span></div>
-            <div><span class="perspective-badge" style="background:#059669;">🌱 GARP</span></div>
+            <div><span class="ai-badge" style="background:#2563eb;">📊 Value</span><div class="sg-label">.ai-badge</div></div>
+            <div><span class="ai-badge" style="background:#7c3aed;">🤖 Quant</span></div>
+            <div><span class="ai-badge" style="background:#059669;">🌱 GARP</span></div>
         </div>
+        <p class="sg-note">Alias: .perspective-badge</p>
 
         <div class="sg-subsection-title">Trade Action Tags</div>
         <div class="sg-row">
@@ -780,10 +787,11 @@
 
         <div class="sg-subsection-title">Confidence Badges (wine valuation)</div>
         <div class="sg-row">
-            <div><span class="confidence-badge confidence-high">HIGH</span><div class="sg-label">.confidence-high</div></div>
-            <div><span class="confidence-badge confidence-medium">MEDIUM</span><div class="sg-label">.confidence-medium</div></div>
-            <div><span class="confidence-badge confidence-low">LOW</span><div class="sg-label">.confidence-low</div></div>
+            <div><span class="conf-badge conf-high">HIGH</span><div class="sg-label">.conf-badge.conf-high</div></div>
+            <div><span class="conf-badge conf-med">MEDIUM</span><div class="sg-label">.conf-badge.conf-med</div></div>
+            <div><span class="conf-badge conf-low">LOW</span><div class="sg-label">.conf-badge.conf-low</div></div>
         </div>
+        <p class="sg-note">Aliases: .confidence-badge, .confidence-high, .confidence-medium, .confidence-low</p>
 
         <div class="sg-subsection-title">Drink-Window Badges (wine)</div>
         <div class="sg-row">
@@ -816,16 +824,17 @@
         <div class="perspective-header">
             <span class="perspective-label">Investment Lens</span>
         </div>
-        <div class="perspective-tabs">
-            <button class="perspective-tab active" style="border-color:var(--gold-line);color:var(--gold);">
-                📊 Value
-            </button>
-            <button class="perspective-tab">📈 GARP</button>
-            <button class="perspective-tab">🤖 Quant</button>
-            <button class="perspective-tab">🌐 Macro</button>
-            <button class="perspective-tab">🏖 Passive</button>
-            <button class="perspective-tab">📉 Technical</button>
+        <div class="perspective-tabs" id="perspectiveTabs">
+            <div class="persp-chip active" style="border-color:var(--gold);color:var(--gold);">
+                <span>📊</span><span>Value</span>
+            </div>
+            <div class="persp-chip"><span>📈</span><span>GARP</span></div>
+            <div class="persp-chip"><span>🤖</span><span>Quant</span></div>
+            <div class="persp-chip"><span>🌐</span><span>Macro</span></div>
+            <div class="persp-chip"><span>🏖</span><span>Passive</span></div>
+            <div class="persp-chip"><span>📉</span><span>Technical</span></div>
         </div>
+        <p class="sg-note">.persp-chip — active state uses border-color + color from perspective.color. Alias: .perspective-tab</p>
         <div class="perspective-info">
             <div class="perspective-info-icon">📊</div>
             <div class="perspective-info-text">
@@ -1006,15 +1015,36 @@
         </div>
     </div>
 
-    <div class="sg-subsection-title">Currency Selector</div>
+    <div class="sg-subsection-title">Currency Toggle</div>
     <div class="sg-box">
-        <div class="currency-selector">
-            <button class="currency-option active">USD</button>
-            <button class="currency-option">EUR</button>
-            <button class="currency-option">GBP</button>
-            <button class="currency-option">BRL</button>
+        <div class="currency-toggle">
+            <button class="ct-opt active">USD</button>
+            <button class="ct-opt">EUR</button>
+            <button class="ct-opt">GBP</button>
+            <button class="ct-opt">BRL</button>
         </div>
+        <p class="sg-note">.currency-toggle · .ct-opt — aliases: .currency-selector, .currency-option</p>
     </div>
+
+    <div class="sg-subsection-title">Action Bar</div>
+    <div class="sg-box">
+        <div class="action-bar">
+            <button class="btn btn-primary">Import</button>
+            <button class="btn btn-success">Update Prices</button>
+            <button class="btn btn-accent">✦ AI Analysis</button>
+            <button class="btn btn-warning">📸 Snapshot</button>
+            <button class="btn btn-key">🔑 API Keys</button>
+        </div>
+        <p class="sg-note">.action-bar — flex row, gap 8px, flex-wrap. Alias: .action-buttons-row</p>
+    </div>
+
+    <div class="sg-subsection-title">Alert / Notice Blocks</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">
+        <div class="alert alert-info">ℹ️ Prices are fetched via 3-tier API: Finnhub → FMP → Alpha Vantage.</div>
+        <div class="alert alert-warn">⚠️ Some prices may be stale — click Update Prices to refresh.</div>
+        <div class="alert alert-error">❌ Could not connect to Finnhub. Check your API key.</div>
+    </div>
+    <p class="sg-note">.alert.alert-info / .alert-warn / .alert-error</p>
 </div>
 
 
@@ -1138,17 +1168,18 @@
 
     <div class="sg-subsection-title">Cellar Stats Bar</div>
     <div class="card">
-        <div class="cellar-stats">
-            <div class="cellar-stat"><div class="stat-value">48</div><div class="stat-label">Bottles</div></div>
-            <div class="cellar-stat"><div class="stat-value">12</div><div class="stat-label">Regions</div></div>
-            <div class="cellar-stat"><div class="stat-value" style="color:var(--up);">$6,240</div><div class="stat-label">Est. Value</div></div>
-            <div class="cellar-stat"><div class="stat-value" style="color:var(--gold);">8</div><div class="stat-label">Drink Now</div></div>
+        <div class="stat-tiles">
+            <div class="stat-tile"><div class="stat-value">48</div><div class="stat-label">Bottles</div></div>
+            <div class="stat-tile"><div class="stat-value">12</div><div class="stat-label">Regions</div></div>
+            <div class="stat-tile"><div class="stat-value" style="color:var(--up);">$6,240</div><div class="stat-label">Est. Value</div></div>
+            <div class="stat-tile"><div class="stat-value" style="color:var(--gold);">8</div><div class="stat-label">Drink Now</div></div>
         </div>
+        <p class="sg-note">.stat-tiles · .stat-tile — aliases: .cellar-stats, .cellar-stat</p>
     </div>
 
-    <div class="sg-subsection-title">Bottle Card</div>
+    <div class="sg-subsection-title">Wine Card (Bottle Card)</div>
     <div class="bottles-grid" style="max-width:640px;">
-        <div class="bottle-card">
+        <div class="wine-card">
             <div class="bottle-header">
                 <div>
                     <div class="bottle-name">Domaine de la Romanée-Conti 2018</div>
@@ -1187,7 +1218,7 @@
             <div class="bottle-notes">Exceptional vintage. Complex nose with dark cherry and earth. Decant 2 hours.</div>
         </div>
 
-        <div class="bottle-card">
+        <div class="wine-card">
             <div class="bottle-header">
                 <div>
                     <div class="bottle-name">Château Pétrus 2015</div>
@@ -1224,15 +1255,17 @@
             </div>
         </div>
     </div>
+    <p class="sg-note">.wine-card — alias: .bottle-card</p>
 
     <div class="sg-subsection-title">Allocation Tabs (wine)</div>
     <div class="card">
-        <div class="allocation-tabs">
-            <button class="tab-btn active">By Region</button>
-            <button class="tab-btn">By Grape</button>
-            <button class="tab-btn">By Vintage</button>
-            <button class="tab-btn">By Value</button>
+        <div class="alloc-tabs">
+            <button class="alloc-tab active">By Region</button>
+            <button class="alloc-tab">By Grape</button>
+            <button class="alloc-tab">By Vintage</button>
+            <button class="alloc-tab">By Value</button>
         </div>
+        <p class="sg-note">.alloc-tabs · .alloc-tab — aliases: .allocation-tabs, .tab-btn</p>
         <div class="alloc-bar-row">
             <div class="alloc-label">Burgundy</div>
             <div class="alloc-bar-track"><div class="alloc-bar-fill" style="width:42%;background:var(--wine);"></div></div>
@@ -1455,31 +1488,55 @@
         </div>
     </div>
 
-    <div class="sg-subsection-title">Mobile Position Cards (.pos-card-mobile)</div>
-    <div class="card" style="max-width:400px;">
-        <div class="pos-card-mobile stock" style="margin-bottom:8px;">
-            <div class="pos-icon-badge stock">AAPL</div>
+    <div class="sg-subsection-title">Position Cards (.pos-card) with asset-type variants</div>
+    <div class="card" style="max-width:480px;">
+        <div class="pos-card stock" style="margin-bottom:8px;">
+            <div class="pos-icon stock">AAPL</div>
             <div>
-                <div class="pos-card-name">Apple Inc.</div>
-                <div class="pos-card-sub">7.2 sh · Fidelity</div>
+                <div class="pos-name">Apple Inc.</div>
+                <div class="pos-sub">Stock · Technology</div>
+                <div class="pos-sub">7.2 sh · $172.50 avg</div>
+                <span class="pos-platform">Fidelity</span>
             </div>
-            <div class="pos-card-right">
-                <div class="pos-card-value">€ 1,881</div>
-                <div class="pos-card-change up">+2.4%</div>
+            <div class="pos-right">
+                <div class="pos-value">€ 1,881</div>
+                <div class="pos-change up">+2.4%</div>
             </div>
         </div>
-        <div class="pos-card-mobile wine">
-            <div class="pos-icon-badge wine">DRC</div>
+        <div class="pos-card etf" style="margin-bottom:8px;">
+            <div class="pos-icon etf">VOO</div>
             <div>
-                <div class="pos-card-name">Romanée-Conti 2018</div>
-                <div class="pos-card-sub">3 btl · Burgundy</div>
+                <div class="pos-name">Vanguard S&amp;P 500</div>
+                <div class="pos-sub">ETF · Index ETF</div>
             </div>
-            <div class="pos-card-right">
-                <div class="pos-card-value">€ 1,890</div>
-                <div class="pos-card-change up">+66%</div>
+            <div class="pos-right">
+                <div class="pos-value">€ 24,200</div>
+                <div class="pos-change up">+18.3%</div>
             </div>
         </div>
-        <p class="sg-note">.pos-card-mobile.stock/.wine · .pos-icon-badge.stock/.wine</p>
+        <div class="pos-card crypto" style="margin-bottom:8px;">
+            <div class="pos-icon crypto">BTC</div>
+            <div>
+                <div class="pos-name">Bitcoin</div>
+                <div class="pos-sub">Crypto</div>
+            </div>
+            <div class="pos-right">
+                <div class="pos-value">€ 9,420</div>
+                <div class="pos-change down">−4.1%</div>
+            </div>
+        </div>
+        <div class="pos-card wine">
+            <div class="pos-icon wine">DRC</div>
+            <div>
+                <div class="pos-name">Romanée-Conti 2018</div>
+                <div class="pos-sub">3 btl · Burgundy</div>
+            </div>
+            <div class="pos-right">
+                <div class="pos-value">€ 1,890</div>
+                <div class="pos-change up">+66%</div>
+            </div>
+        </div>
+        <p class="sg-note">.pos-card.stock/.etf/.crypto/.wine — left-border accent. .pos-icon.stock/.etf/.crypto/.wine — icon badge.<br>.pos-name · .pos-sub · .pos-platform · .pos-right · .pos-value · .pos-change.up/.down</p>
     </div>
 
     <div class="sg-subsection-title">Chip Filter Row</div>
@@ -1538,7 +1595,7 @@
             <a class="btn-nav active" href="#"><span class="bn-icon">📈</span>Stocks</a>
             <a class="btn-nav active-wine" href="#"><span class="bn-icon">🍷</span>Cellar</a>
         </div>
-        <p class="sg-note">.bottom-tab-nav (fixed, display:none, shown ≤640px) · .btn-nav · .btn-nav.active (gold) · .btn-nav.active-wine (wine-light)</p>
+        <p class="sg-note">.bottom-nav (fixed, display:none, shown ≤640px) · .bn-item · .bn-item.active-hub (gold) · .bn-item.active-stock (gold) · .bn-item.active-wine (wine-light)<br>Aliases: .bottom-tab-nav, .btn-nav</p>
     </div>
 
     <div class="sg-subsection-title">Premium Button Variants</div>
@@ -1563,10 +1620,111 @@
     </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════
+     18. API TIER BADGES
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">18 · API Tier Badges</div>
+
+    <div class="card" style="max-width:560px;">
+        <div class="api-tier">
+            <div class="api-tier-badge tier-primary">1</div>
+            <div class="api-tier-body">
+                <div class="api-tier-name">Finnhub</div>
+                <div class="api-tier-desc">Primary · 60 req/min</div>
+                <input class="api-tier-input" type="password" placeholder="fh_xxxxxxxxxx" style="width:100%;">
+            </div>
+        </div>
+        <div class="api-tier">
+            <div class="api-tier-badge tier-fallback">2</div>
+            <div class="api-tier-body">
+                <div class="api-tier-name">FMP</div>
+                <div class="api-tier-desc">Fallback · 250 req/day</div>
+                <input class="api-tier-input" type="password" placeholder="xxxxxxxxxx" style="width:100%;">
+            </div>
+        </div>
+        <div class="api-tier">
+            <div class="api-tier-badge tier-last">3</div>
+            <div class="api-tier-body">
+                <div class="api-tier-name">Alpha Vantage</div>
+                <div class="api-tier-desc">Last resort · 5 req/min</div>
+                <input class="api-tier-input" type="password" placeholder="xxxxxxxxxx" style="width:100%;">
+            </div>
+        </div>
+        <div class="api-tier">
+            <div class="api-tier-badge tier-ai">AI</div>
+            <div class="api-tier-body">
+                <div class="api-tier-name">Anthropic</div>
+                <div class="api-tier-desc">Claude API for analysis</div>
+                <input class="api-tier-input" type="password" placeholder="sk-ant-xxxxxxxxxx" style="width:100%;">
+            </div>
+        </div>
+        <p class="sg-note">.api-tier · .api-tier-badge.tier-primary/.tier-fallback/.tier-last/.tier-ai · .api-tier-body · .api-tier-name · .api-tier-desc · .api-tier-input</p>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     19. IMPORT MODE SELECTOR
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">19 · Import Mode Selector</div>
+
+    <div class="card" style="max-width:520px;">
+        <div class="import-mode">
+            <div class="im-option active" onclick="this.parentNode.querySelectorAll('.im-option').forEach(o=>o.classList.remove('active'));this.classList.add('active');">
+                <div class="im-title">Replace All</div>
+                <div class="im-desc">Clear current positions and import fresh</div>
+            </div>
+            <div class="im-option" onclick="this.parentNode.querySelectorAll('.im-option').forEach(o=>o.classList.remove('active'));this.classList.add('active');">
+                <div class="im-title">Add / Merge</div>
+                <div class="im-desc">Keep existing and add new positions</div>
+            </div>
+        </div>
+        <textarea class="import-area" rows="6" placeholder="Paste tab-separated data here&#10;AAPL&#9;Apple Inc.&#9;Fidelity&#9;Stock&#9;25&#9;172.50"></textarea>
+        <p class="sg-note">.import-mode · .im-option · .im-option.active · .im-title · .im-desc · .import-area (textarea)<br>Alias: .textarea-code</p>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     20. MODAL STRUCTURE
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="sg-section">
+    <div class="sg-section-title">20 · Modal Structure (static mock)</div>
+
+    <div class="sg-box">
+        <div class="modal" style="position:static;transform:none;max-width:480px;margin:0 auto;">
+            <div class="modal-header">
+                <div class="modal-title">Import Portfolio</div>
+                <button class="modal-close" title="Close">✕</button>
+            </div>
+            <div class="modal-form">
+                <div class="import-mode">
+                    <div class="im-option active">
+                        <div class="im-title">Replace All</div>
+                        <div class="im-desc">Clear and reimport</div>
+                    </div>
+                    <div class="im-option">
+                        <div class="im-title">Add / Merge</div>
+                        <div class="im-desc">Keep existing positions</div>
+                    </div>
+                </div>
+                <textarea class="import-area" rows="4" placeholder="Paste data…"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary">Cancel</button>
+                <button class="btn btn-success">Import</button>
+            </div>
+        </div>
+        <p class="sg-note">.modal · .modal-header · .modal-title · .modal-close · .modal-form · .modal-actions<br>Shown inside a .modal-overlay (fixed, full-screen backdrop)</p>
+    </div>
+</div>
+
 <hr class="sg-divider">
 
 <div style="text-align:center;color:var(--text-tertiary);font-size:12px;padding:20px 0 40px;">
-    AI Investment Tracker Design Library · Generated 2026-03-13 · <span class="sg-code">css/styles.css?v=3.13.0</span> + <span class="sg-code">css/wine.css</span>
+    AI Investment Tracker Design Library · Updated 2026-03-14 · DS v2 · <span class="sg-code">css/styles.css?v=3.14.0</span> + <span class="sg-code">css/wine.css?v=3.14.0</span>
 </div>
 
 </div><!-- /.container -->
