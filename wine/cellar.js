@@ -354,13 +354,13 @@ function renderBottleCard(b) {
         : '';
 
     const confidenceMap = {
-        high:   { cls: 'confidence-high',   label: t('conf.high')   },
-        medium: { cls: 'confidence-medium', label: t('conf.medium') },
-        low:    { cls: 'confidence-low',    label: t('conf.low')    },
+        high:   { cls: 'conf-high', label: t('conf.high')   },
+        medium: { cls: 'conf-med',  label: t('conf.medium') },
+        low:    { cls: 'conf-low',  label: t('conf.low')    },
     };
     const confEntry = b.confidence && confidenceMap[b.confidence];
     const confidenceHtml = confEntry
-        ? `<span class="confidence-badge ${confEntry.cls}">${confEntry.label}</span>`
+        ? `<span class="conf-badge ${confEntry.cls}">${confEntry.label}</span>`
         : '';
 
     // Staleness warning: valuation older than 60 days
@@ -368,7 +368,7 @@ function renderBottleCard(b) {
         if (!b.lastValuedAt) return '';
         const ageDays = Math.floor((Date.now() - new Date(b.lastValuedAt).getTime()) / 86400000);
         return ageDays > 60
-            ? `<div class="valuation-stale">${t('bottle.card.stale').replace('{n}', ageDays)}</div>`
+            ? `<div class="stale-warning">${t('bottle.card.stale').replace('{n}', ageDays)}</div>`
             : '';
     })();
 
@@ -381,17 +381,37 @@ function renderBottleCard(b) {
 
     const badge  = drinkBadgeHtml(b.drinkWindow);
     const hasWindow = !!b.drinkWindow;
+    const metaValueClass = hasValuation ? (gain > 0 ? 'up' : gain < 0 ? 'down' : '') : '';
 
     return `
-    <div class="bottle-card" id="bottle-${escapeHTML(b.id)}">
-        <div class="bottle-header">
-            <div style="flex: 1; min-width: 0;">
-                <div class="bottle-name">${escapeHTML(b.name || 'Unknown Wine')}${b.vintage ? ` <span class="bottle-vintage">${b.vintage}</span>` : ''}</div>
-                <div class="bottle-meta">${escapeHTML(b.winery || '')}${b.region && b.winery ? ' · ' : ''}${escapeHTML(b.region || '')}</div>
+    <div class="wine-card" id="bottle-${escapeHTML(b.id)}">
+
+        <!-- Header: name + vintage + action buttons -->
+        <div class="wc-header">
+            <div style="flex:1;min-width:0;">
+                <div class="wc-name">${escapeHTML(b.name || 'Unknown Wine')}</div>
+                ${b.winery ? `<div class="wc-producer">${escapeHTML(b.winery)}</div>` : ''}
             </div>
+            ${b.vintage ? `<div class="wc-vintage">${escapeHTML(String(b.vintage))}</div>` : ''}
             <div class="bottle-actions">
                 <button class="btn btn-sm btn-primary" onclick="showEditBottleDialog('${escapeHTML(b.id)}')" title="Edit bottle">${t('bottle.card.edit')}</button>
                 <button class="btn btn-sm btn-accent" onclick="valuateSingleBottle('${escapeHTML(b.id)}')" title="Refresh AI valuation">💎</button>
+            </div>
+        </div>
+
+        <!-- Meta tiles: region · varietal · value or qty -->
+        <div class="wc-meta">
+            <div class="wc-meta-item">
+                <div class="wcm-label">Region</div>
+                <div class="wcm-value">${escapeHTML(b.region || b.country || '—')}</div>
+            </div>
+            <div class="wc-meta-item">
+                <div class="wcm-label">Varietal</div>
+                <div class="wcm-value wine">${escapeHTML(b.varietal || '—')}</div>
+            </div>
+            <div class="wc-meta-item">
+                <div class="wcm-label">${hasValuation ? t('bottle.card.est_value') : t('bottle.card.bottles')}</div>
+                <div class="wcm-value ${metaValueClass}">${hasValuation ? fmt(b.estimatedValue) : `${b.qty || 1}`}</div>
             </div>
         </div>
 
@@ -410,7 +430,7 @@ function renderBottleCard(b) {
             ${hasValuation ? `
             <div class="bottle-fin-row">
                 <div>
-                    <div>${t('bottle.card.est_value')} ${confidenceHtml}</div>
+                    <div>${t('bottle.card.est_value')}</div>
                     ${rangeHtml}
                     ${usdHtml}
                 </div>
@@ -430,14 +450,18 @@ function renderBottleCard(b) {
         ${noteHtml}
         ${staleHtml}
 
-        <div class="bottle-footer">
+        <!-- Footer: drink window + confidence + dated -->
+        <div class="wc-footer">
             <div>
                 ${badge}
                 ${hasWindow ? `<div class="drink-window-sub">${t('bottle.card.drink')} ${escapeHTML(b.drinkWindow)}</div>` : ''}
             </div>
-            ${b.lastValuedAt
-                ? `<span class="valued-at">${t('bottle.card.valued')} ${timeAgo(b.lastValuedAt)}</span>`
-                : (b.purchaseDate ? `<span class="valued-at">${t('bottle.card.bought')} ${fmtDate(b.purchaseDate)}</span>` : '<span></span>')}
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                ${confidenceHtml}
+                ${b.lastValuedAt
+                    ? `<span class="valued-at">${t('bottle.card.valued')} ${timeAgo(b.lastValuedAt)}</span>`
+                    : (b.purchaseDate ? `<span class="valued-at">${t('bottle.card.bought')} ${fmtDate(b.purchaseDate)}</span>` : '')}
+            </div>
         </div>
 
         ${b.notes ? `<div class="bottle-notes">${escapeHTML(b.notes)}</div>` : ''}
