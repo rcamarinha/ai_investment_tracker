@@ -38,6 +38,17 @@ function _parseWineJson(text) {
         try { return JSON.parse(match[0]); } catch { /* continue */ }
     }
 
+    // 3. Try to repair truncated JSON (response cut off by maxTokens)
+    const braceStart = clean.indexOf('{');
+    if (braceStart !== -1) {
+        let fragment = clean.slice(braceStart);
+        // Strip trailing incomplete key-value (e.g. `"notes": "some text` with no closing quote)
+        fragment = fragment.replace(/,\s*"[^"]*":\s*"?[^"}\]]*$/, '');
+        // Close the object
+        if (!fragment.endsWith('}')) fragment += '}';
+        try { return JSON.parse(fragment); } catch { /* continue */ }
+    }
+
     return null;
 }
 
@@ -72,7 +83,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no preamble.`;
         requestType: 'label',
         prompt,
         image: { base64: imageBase64, mediaType },
-        maxTokens: 1024,
+        maxTokens: 2048,
     });
 
     const text = data.content?.find(c => c.type === 'text')?.text || '';
