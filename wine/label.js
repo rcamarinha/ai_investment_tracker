@@ -12,6 +12,35 @@
 
 import { callWineAI } from './api.js?v=1.3.20';
 
+// ── JSON parsing helpers ────────────────────────────────────────────────────
+
+/** Strip markdown fences and common LLM JSON quirks. */
+function _sanitiseJson(s) {
+    return s
+        .replace(/```json\s*/gi, '').replace(/```\s*/g, '')   // fences (case-insensitive)
+        .replace(/\bNone\b/g, 'null')                          // Python-style None
+        .replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false')
+        .replace(/,(\s*[}\]])/g, '$1')                         // trailing commas
+        .trim();
+}
+
+/** Try to extract a JSON object from AI response text. Returns null on failure. */
+function _parseWineJson(text) {
+    if (!text) return null;
+    const clean = _sanitiseJson(text);
+
+    // 1. Try parsing the cleaned text as-is
+    try { return JSON.parse(clean); } catch { /* continue */ }
+
+    // 2. Try extracting the first {...} block (handles preamble/postamble text)
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) {
+        try { return JSON.parse(match[0]); } catch { /* continue */ }
+    }
+
+    return null;
+}
+
 // ── Label Recognition ────────────────────────────────────────────────────────
 
 /**
@@ -47,13 +76,15 @@ Return ONLY the JSON object. No markdown fences, no explanation, no preamble.`;
     });
 
     const text = data.content?.find(c => c.type === 'text')?.text || '';
-    const cleanText = text.replace(/```json\n?|```/g, '').trim();
-
-    try {
-        return JSON.parse(cleanText);
-    } catch {
-        throw new Error('Could not parse wine data from label. Try a clearer photo of the front label.');
+    const parsed = _parseWineJson(text);
+    if (!parsed) {
+        console.error('[Label] Failed to parse wine JSON. Raw AI response:', text.slice(0, 500));
+        throw new Error(
+            'Could not parse wine data from label. Try a clearer photo of the front label.\n\n' +
+            `AI returned: "${text.slice(0, 120)}${text.length > 120 ? '…' : ''}"`
+        );
     }
+    return parsed;
 }
 
 // ── File / Camera Helpers ────────────────────────────────────────────────────
