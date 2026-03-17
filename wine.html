@@ -22,7 +22,7 @@
             <div class="header-eyebrow wine-eyebrow">Fine Wine · Spirits · Cellar</div>
             <h1>
                 <span data-i18n="wine.title">Cellar</span>
-                <span class="header-version">v3.14.0</span>
+                <span class="header-version">v3.14.2</span>
             </h1>
             <p data-i18n="wine.subtitle">AI label recognition · valuations · drink windows</p>
         </div>
@@ -299,7 +299,7 @@
         // ── Imports ────────────────────────────────────────────────────────────
         import { renderNavbar } from './services/navbar.js';
         import state from './wine/state.js?v=1.3.22';
-        import { recognizeLabel, fileToBase64, captureVideoFrame, compressImageForLabel } from './wine/label.js?v=1.3.23';
+        import { recognizeLabel, fileToBase64, captureVideoFrame, compressImageForLabel } from './wine/label.js?v=1.3.24';
         import { initSupabase, updateAuthBar,
                  handleLogin, handleSignup, handleLogout, handleGoogleLogin,
                  handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=1.3.22';
@@ -467,7 +467,7 @@
             document.getElementById('recognitionResult').innerHTML = `
                 <div class="scan-loading">
                     <div class="spinner"></div>
-                    Scanning label with Gemini Vision AI...
+                    Scanning label with AI Vision (Gemini → Claude fallback)...
                 </div>`;
         }
 
@@ -505,7 +505,7 @@
 
             resultEl.innerHTML = `
                 <div class="recognition-card">
-                    <h3>✅ Wine Identified</h3>
+                    <h3>✅ Wine Identified <span style="font-size: 11px; font-weight: 400; color: var(--text-tertiary);">via ${wine._source === 'claude' ? 'Claude Vision' : wine._source === 'gemini' ? 'Gemini Vision' : 'AI Vision'}</span></h3>
                     ${fields.map(([label, value]) => `
                         <div class="recognition-field">
                             <span class="field-label">${label}</span>

@@ -38,6 +38,17 @@ function _parseWineJson(text) {
         try { return JSON.parse(match[0]); } catch { /* continue */ }
     }
 
+    // 3. Try to repair truncated JSON (response cut off by maxTokens)
+    const braceStart = clean.indexOf('{');
+    if (braceStart !== -1) {
+        let fragment = clean.slice(braceStart);
+        // Strip trailing incomplete key-value (e.g. `"notes": "some text` with no closing quote)
+        fragment = fragment.replace(/,\s*"[^"]*":\s*"?[^"}\]]*$/, '');
+        // Close the object
+        if (!fragment.endsWith('}')) fragment += '}';
+        try { return JSON.parse(fragment); } catch { /* continue */ }
+    }
+
     return null;
 }
 
@@ -72,18 +83,22 @@ Return ONLY the JSON object. No markdown fences, no explanation, no preamble.`;
         requestType: 'label',
         prompt,
         image: { base64: imageBase64, mediaType },
-        maxTokens: 1024,
+        maxTokens: 2048,
     });
 
     const text = data.content?.find(c => c.type === 'text')?.text || '';
+    const source = data._source || 'unknown';           // "gemini" or "claude"
+    console.log(`[Label] AI response from ${source} (${text.length} chars)`);
+
     const parsed = _parseWineJson(text);
     if (!parsed) {
         console.error('[Label] Failed to parse wine JSON. Raw AI response:', text.slice(0, 500));
         throw new Error(
             'Could not parse wine data from label. Try a clearer photo of the front label.\n\n' +
-            `AI returned: "${text.slice(0, 120)}${text.length > 120 ? '…' : ''}"`
+            `AI returned (${source}): "${text.slice(0, 120)}${text.length > 120 ? '…' : ''}"`
         );
     }
+    parsed._source = source;
     return parsed;
 }
 

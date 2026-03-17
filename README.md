@@ -158,18 +158,18 @@ ai_investment_tracker/
 1. Open **Wine Cellar** (`wine.html`)
 2. Click **📷 Take Photo / Upload Image** (on mobile, this opens the camera directly)
 3. Photograph the front label clearly
-4. Claude Vision AI identifies the wine and shows the result
+4. Gemini Vision AI (primary) or Claude Vision (fallback) identifies the wine and shows the result
 5. Click **➕ Add to Cellar** — the form is pre-filled; confirm and save
 
 On desktop you can also use **🎥 Live Camera** for a live-preview capture.
 
 ### Updating valuations
 
-Click **💎 Update Valuations** to ask Claude to estimate current market value for all unvalued bottles. Individual bottles can also be valuated with the 💎 button on their card.
+Click **💎 Update Valuations** to estimate current market value for all unvalued bottles (Gemini with Google Search grounding, Claude fallback). Individual bottles can also be valuated with the 💎 button on their card.
 
 Each valuation card shows:
 - **EUR price** with low–high range, plus a **USD equivalent**
-- A **confidence badge** (🟢 High / 🟡 Medium / 🔴 Low) based on whether Claude found direct listings, comparable data, or had to estimate
+- A **confidence badge** (🟢 High / 🟡 Medium / 🔴 Low) based on whether the AI found direct listings, comparable data, or had to estimate
 - **Sources** — a brief citation of the specific retailer or auction result used
 - A **staleness warning** if the valuation is over 60 days old
 
@@ -286,6 +286,12 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.14.2
+- **Wine Cellar — robust label JSON parsing** — Label recognition now uses a 3-step JSON extraction pipeline (sanitise → regex extract `{…}` → truncation repair) mirroring the battle-tested pattern from the batch valuation edge function. Fixes frequent "Could not parse wine data from label" errors, especially on the Claude Vision fallback path
+- **Increased label maxTokens** — Label recognition token limit raised from 1024 to 2048, preventing Claude's more verbose responses from being truncated mid-JSON
+- **AI source indicator** — The scanning progress message now shows "Gemini → Claude fallback" and the recognition result card displays which model actually answered (Gemini Vision or Claude Vision)
+- **Diagnostic logging** — On parse failure, the raw AI response is logged to the console and a snippet is shown in the error message for easier debugging
 
 ### v3.14.1
 - **Wine Cellar — fix WORKER_LIMIT error on large photo uploads** — Uploaded photos are now resized and compressed client-side before being sent to the AI edge function. Images are scaled to a maximum of 1600 px on the longest side and re-encoded as JPEG at 85% quality, reducing a typical 5–10 MB smartphone photo to under 300 KB. Camera captures were already compressed via canvas; this brings file-picker uploads to parity and prevents Supabase Deno worker memory exhaustion (`WORKER_LIMIT` / HTTP 546) with no change to recognition accuracy
