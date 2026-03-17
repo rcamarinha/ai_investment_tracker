@@ -87,14 +87,18 @@ Return ONLY the JSON object. No markdown fences, no explanation, no preamble.`;
     });
 
     const text = data.content?.find(c => c.type === 'text')?.text || '';
+    const source = data._source || 'unknown';           // "gemini" or "claude"
+    console.log(`[Label] AI response from ${source} (${text.length} chars)`);
+
     const parsed = _parseWineJson(text);
     if (!parsed) {
         console.error('[Label] Failed to parse wine JSON. Raw AI response:', text.slice(0, 500));
         throw new Error(
             'Could not parse wine data from label. Try a clearer photo of the front label.\n\n' +
-            `AI returned: "${text.slice(0, 120)}${text.length > 120 ? '…' : ''}"`
+            `AI returned (${source}): "${text.slice(0, 120)}${text.length > 120 ? '…' : ''}"`
         );
     }
+    parsed._source = source;
     return parsed;
 }
 
