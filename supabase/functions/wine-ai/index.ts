@@ -93,7 +93,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
  * If the ungrounded attempt also fails with 429, waits and retries once more.
  * If all attempts fail, throws — meaning the Gemini key is dead or exhausted.
  */
-async function callGemini(prompt: string, maxTokens = 4096): Promise<GeminiResult> {
+async function callGemini(prompt: string, maxTokens = 8192): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
   // Attempt 1: with Google Search grounding (default)
@@ -173,7 +173,7 @@ async function callGeminiVision(
 
 // ── Claude text helper ────────────────────────────────────────────────────────
 
-async function callClaude(prompt: string, maxTokens = 4096, useWebSearch = true): Promise<{ text: string }> {
+async function callClaude(prompt: string, maxTokens = 8192, useWebSearch = true): Promise<{ text: string }> {
   if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY_Wine secret not set on the server.");
 
   const headers: Record<string, string> = {
