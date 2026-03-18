@@ -474,12 +474,36 @@
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
+@media (max-width: 768px) {
+    #bottleDialog,
+    #apiKeyDialog {
+        padding: 12px 8px 24px;
+    }
+}
+
 @media (max-width: 600px) {
     .bottles-grid { grid-template-columns: 1fr; }
     .cellar-stats { gap: 8px; }
     .cellar-stat { min-width: 70px; padding: 8px 12px; }
     .cellar-stat .stat-value { font-size: 16px; }
     .live-camera-btn { display: none; } /* native file picker opens camera on mobile */
+
+    /* Stack form rows to single column */
+    .position-form-row { grid-template-columns: 1fr; }
+
+    /* Prevent iOS auto-zoom on input focus (requires font-size >= 16px) */
+    .position-form-group input,
+    .position-form-group select,
+    .position-form-group textarea { font-size: 16px; }
+
+    /* Stack action buttons full-width */
+    #bottleDialog .action-bar {
+        flex-direction: column;
+    }
+    #bottleDialog .action-bar .btn {
+        width: 100%;
+        margin-left: 0 !important;
+    }
 }
 
 
