@@ -32,8 +32,15 @@ export function initSupabase(onLoad) {
 
             updateAuthBar();
 
-            if (event === 'SIGNED_IN') {
-                loadFromDatabase().then(onLoad);
+            if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+                // INITIAL_SESSION fires on page load when a session already exists
+                // (navigating from another page). SIGNED_IN fires on explicit login.
+                if (state.currentUser) {
+                    loadFromDatabase().then(onLoad);
+                } else if (event === 'INITIAL_SESSION') {
+                    // No active session on load — render the empty state immediately
+                    if (onLoad) onLoad();
+                }
             } else if (event === 'SIGNED_OUT') {
                 state.cellar = [];
                 state.cellarHistory = [];
@@ -41,13 +48,17 @@ export function initSupabase(onLoad) {
             }
         });
 
+        // getSession() is kept as a backup for environments where INITIAL_SESSION
+        // may fire before the listener is registered. It only refreshes the auth
+        // display and does not trigger a second DB load.
         state.supabaseClient.auth.getSession().then(({ data: { session } }) => {
-            state.currentUser = session?.user || null;
-            updateAuthBar();
-            if (state.currentUser) {
+            if (!state.currentUser && session?.user) {
+                // INITIAL_SESSION hasn't fired yet (rare race); set user and load.
+                state.currentUser = session.user;
+                updateAuthBar();
                 loadFromDatabase().then(onLoad);
             }
-        });
+        }).catch(err => console.warn('getSession fallback error:', err));
 
         console.log('✓ Wine Supabase initialized');
         return true;
