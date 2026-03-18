@@ -103,12 +103,24 @@ export function computeTotals() {
 // ── Advanced Filter State ─────────────────────────────────────────────────────
 // Module-level Sets, persisted in memory; rebuilt on each render.
 
+const _activeTypes     = new Set();
 const _activeReadiness = new Set();
 const _activeCountries = new Set();
 const _activeRegions   = new Set();
 const _activeProducers = new Set();
 const _activeVintages  = new Set();
 const _activeVarietals = new Set();
+
+// Type chip click (toggle)
+export function onTypeFilterClick(btn) {
+    const type = btn.dataset.type;
+    if (_activeTypes.has(type)) {
+        _activeTypes.delete(type);
+    } else {
+        _activeTypes.add(type);
+    }
+    renderCellar();
+}
 
 // Readiness status chip click (toggle)
 export function onReadinessFilterClick(btn) {
@@ -126,6 +138,7 @@ export function onFilterChange(checkbox) {
     const dim = checkbox.dataset.dim;
     const val = checkbox.value;
     const setMap = {
+        type:     _activeTypes,
         country:  _activeCountries,
         region:   _activeRegions,
         producer: _activeProducers,
@@ -140,6 +153,7 @@ export function onFilterChange(checkbox) {
 }
 
 export function clearAllFilters() {
+    _activeTypes.clear();
     _activeReadiness.clear();
     _activeCountries.clear();
     _activeRegions.clear();
@@ -159,12 +173,15 @@ export function toggleMoreFilters() {
 }
 
 function _totalActiveFilters() {
-    return _activeReadiness.size + _activeCountries.size + _activeRegions.size +
+    return _activeTypes.size + _activeReadiness.size + _activeCountries.size + _activeRegions.size +
            _activeProducers.size + _activeVintages.size + _activeVarietals.size;
 }
 
 function applyAdvancedFilters(bottles) {
     let result = bottles;
+    if (_activeTypes.size > 0) {
+        result = result.filter(b => _activeTypes.has(b.type || 'Unknown'));
+    }
     if (_activeReadiness.size > 0) {
         result = result.filter(b => _activeReadiness.has(getDrinkStatus(b.drinkWindow)));
     }
@@ -186,14 +203,91 @@ function applyAdvancedFilters(bottles) {
     return result;
 }
 
+// ── Type chip configuration ──────────────────────────────────────────────────
+
+const TYPE_CONFIG = [
+    { value: 'Red Wine',       icon: '🍷', color: '#9B3A5A', bg: 'rgba(155,58,90,0.12)'  },
+    { value: 'White Wine',     icon: '🥂', color: '#C9A84C', bg: 'rgba(201,168,76,0.12)'  },
+    { value: 'Rosé',           icon: '🌸', color: '#C4607C', bg: 'rgba(196,96,124,0.12)'  },
+    { value: 'Sparkling',      icon: '🍾', color: '#A0A0A0', bg: 'rgba(160,160,160,0.12)' },
+    { value: 'Port',           icon: '🏰', color: '#5A2035', bg: 'rgba(90,32,53,0.18)'    },
+    { value: 'Dessert Wine',   icon: '🍯', color: '#E09A3A', bg: 'rgba(224,154,58,0.12)'  },
+    { value: 'Fortified Wine', icon: '🛡️', color: '#7A6430', bg: 'rgba(122,100,48,0.12)'  },
+    { value: 'Cognac',         icon: '🥃', color: '#B8860B', bg: 'rgba(184,134,11,0.12)'  },
+    { value: 'Whiskey',        icon: '🥃', color: '#8B4513', bg: 'rgba(139,69,19,0.12)'   },
+    { value: 'Other',          icon: '🍶', color: '#7A8099', bg: 'rgba(122,128,153,0.12)' },
+];
+
+/**
+ * Compute a "cascaded" subset for a given dimension by applying all active
+ * filters EXCEPT that dimension's own filter. Returns the bottles that would
+ * remain visible if dimension D had no active selections.
+ */
+function _cascadedSubset(excludeDim) {
+    let result = state.cellar;
+    if (excludeDim !== 'type' && _activeTypes.size > 0) {
+        result = result.filter(b => _activeTypes.has(b.type || 'Unknown'));
+    }
+    if (excludeDim !== 'readiness' && _activeReadiness.size > 0) {
+        result = result.filter(b => _activeReadiness.has(getDrinkStatus(b.drinkWindow)));
+    }
+    if (excludeDim !== 'country' && _activeCountries.size > 0) {
+        result = result.filter(b => _activeCountries.has(b.country || 'Unknown'));
+    }
+    if (excludeDim !== 'region' && _activeRegions.size > 0) {
+        result = result.filter(b => _activeRegions.has(b.region || 'Unknown'));
+    }
+    if (excludeDim !== 'producer' && _activeProducers.size > 0) {
+        result = result.filter(b => _activeProducers.has(b.winery || 'Unknown'));
+    }
+    if (excludeDim !== 'vintage' && _activeVintages.size > 0) {
+        result = result.filter(b => _activeVintages.has(String(b.vintage || '')));
+    }
+    if (excludeDim !== 'varietal' && _activeVarietals.size > 0) {
+        result = result.filter(b => _activeVarietals.has(b.varietal || 'Unknown'));
+    }
+    return result;
+}
+
 function renderFilterPanel() {
+    const typeRow      = document.getElementById('typeFilterRow');
     const readinessRow = document.getElementById('readinessFilterRow');
     const container    = document.getElementById('filterGroups');
     if (!readinessRow || !container) return;
 
+    // ── Type quick-filter chips ───────────────────────────────────────────────
+    if (typeRow) {
+        const typeSubset = _cascadedSubset('type');
+        const typeCounts = {};
+        typeSubset.forEach(b => {
+            const t = b.type || 'Unknown';
+            typeCounts[t] = (typeCounts[t] || 0) + 1;
+        });
+
+        const visibleTypes = TYPE_CONFIG.filter(tc => typeCounts[tc.value] > 0);
+        // Also show "Unknown" if present
+        if (typeCounts['Unknown'] > 0) {
+            visibleTypes.push({ value: 'Unknown', icon: '❓', color: '#7A8099', bg: 'rgba(122,128,153,0.12)' });
+        }
+
+        if (visibleTypes.length <= 1) {
+            typeRow.innerHTML = '';
+        } else {
+            typeRow.innerHTML = visibleTypes.map(tc => {
+                const isActive = _activeTypes.has(tc.value);
+                return `<button class="type-chip${isActive ? ' active' : ''}"
+                    data-type="${escapeHTML(tc.value)}"
+                    onclick="onTypeFilterClick(this)"
+                    style="--chip-color:${tc.color};--chip-bg:${tc.bg};"
+                    >${tc.icon} <strong>${typeCounts[tc.value]}</strong> ${escapeHTML(tc.value)}</button>`;
+            }).join('');
+        }
+    }
+
     // ── Readiness status chips ────────────────────────────────────────────────
+    const readinessSubset = _cascadedSubset('readiness');
     const counts = { 'ready': 0, 'at-peak': 0, 'not-ready': 0, 'past-peak': 0 };
-    state.cellar.forEach(b => {
+    readinessSubset.forEach(b => {
         const s = getDrinkStatus(b.drinkWindow);
         if (s in counts) counts[s]++;
     });
@@ -221,16 +315,16 @@ function renderFilterPanel() {
             }).join('');
     }
 
-    // ── Dimension filter groups ───────────────────────────────────────────────
+    // ── Dimension filter groups (cascaded) ────────────────────────────────────
     const uniq  = (arr) => [...new Set(arr.filter(Boolean))].sort();
     const uniqN = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => b - a);
 
     const groups = [
-        { dim: 'country',  label: t('filter.country'),  items: uniq(state.cellar.map(b => b.country)),         set: _activeCountries },
-        { dim: 'region',   label: t('filter.region'),   items: uniq(state.cellar.map(b => b.region)),           set: _activeRegions   },
-        { dim: 'producer', label: t('filter.producer'), items: uniq(state.cellar.map(b => b.winery)),           set: _activeProducers },
-        { dim: 'vintage',  label: t('filter.vintage'),  items: uniqN(state.cellar.map(b => b.vintage)).map(String), set: _activeVintages  },
-        { dim: 'varietal', label: t('filter.varietal'), items: uniq(state.cellar.map(b => b.varietal)),         set: _activeVarietals },
+        { dim: 'country',  label: t('filter.country'),  items: uniq(_cascadedSubset('country').map(b => b.country)),           set: _activeCountries },
+        { dim: 'region',   label: t('filter.region'),   items: uniq(_cascadedSubset('region').map(b => b.region)),             set: _activeRegions   },
+        { dim: 'producer', label: t('filter.producer'), items: uniq(_cascadedSubset('producer').map(b => b.winery)),           set: _activeProducers },
+        { dim: 'vintage',  label: t('filter.vintage'),  items: uniqN(_cascadedSubset('vintage').map(b => b.vintage)).map(String), set: _activeVintages  },
+        { dim: 'varietal', label: t('filter.varietal'), items: uniq(_cascadedSubset('varietal').map(b => b.varietal)),         set: _activeVarietals },
     ].filter(g => g.items.length > 0);
 
     if (groups.length === 0) {
@@ -337,7 +431,10 @@ function renderBottleCard(b) {
 
     const sizeLabel = b.bottleSize && b.bottleSize !== '0.75L' ? `🍾 ${escapeHTML(b.bottleSize)}` : null;
 
+    const typeIcon = b.type ? (TYPE_CONFIG.find(tc => tc.value === b.type)?.icon || '🍶') : null;
+
     const tags = [
+        b.type        ? `${typeIcon} ${escapeHTML(b.type)}` : null,
         b.country     ? `🌍 ${escapeHTML(b.country)}` : null,
         b.appellation ? escapeHTML(b.appellation) : (b.region ? escapeHTML(b.region) : null),
         b.varietal    ? escapeHTML(b.varietal) : null,
@@ -497,6 +594,7 @@ export function showAddBottleDialog(prefilled = {}) {
 
     setField('bottleName',          prefilled.name || '');
     setField('bottleWinery',        prefilled.winery || '');
+    setField('bottleType',          prefilled.type || '');
     setField('bottleVintage',       prefilled.vintage || '');
     setField('bottleVarietal',      prefilled.varietal || '');
     setField('bottleRegion',        prefilled.region || '');
@@ -526,6 +624,7 @@ export function showEditBottleDialog(id) {
 
     setField('bottleName',          bottle.name || '');
     setField('bottleWinery',        bottle.winery || '');
+    setField('bottleType',          bottle.type || '');
     setField('bottleVintage',       bottle.vintage || '');
     setField('bottleVarietal',      bottle.varietal || '');
     setField('bottleRegion',        bottle.region || '');
@@ -585,6 +684,7 @@ export async function submitBottle() {
         wineId:        existingBottle?.wineId          ?? null,
         name,
         winery:        getField('bottleWinery').trim() || null,
+        type:          getField('bottleType') || null,
         vintage:       parseInt(getField('bottleVintage'), 10) || null,
         varietal:      getField('bottleVarietal').trim() || null,
         region:        getField('bottleRegion').trim() || null,
@@ -757,7 +857,7 @@ export function exportCellarCSV() {
     }
 
     const headers = [
-        'Name', 'Winery', 'Vintage', 'Region', 'Appellation', 'Varietal',
+        'Name', 'Winery', 'Type', 'Vintage', 'Region', 'Appellation', 'Varietal',
         'Country', 'Alcohol', 'Bottle Size', 'Qty', 'Purchase Price (€)', 'Purchase Date',
         'Storage', 'Est. Value (€)', 'Drink Window', 'Notes'
     ];
@@ -769,7 +869,7 @@ export function exportCellarCSV() {
     };
 
     const rows = state.cellar.map(b => [
-        b.name, b.winery, b.vintage, b.region, b.appellation, b.varietal,
+        b.name, b.winery, b.type, b.vintage, b.region, b.appellation, b.varietal,
         b.country, b.alcohol, b.bottleSize || '0.75L', b.qty, b.purchasePrice, b.purchaseDate,
         b.storage, b.estimatedValue, b.drinkWindow, b.notes
     ].map(csvVal).join(','));

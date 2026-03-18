@@ -878,6 +878,45 @@
     /* display managed by JS */
 }
 
+/* ── Type quick-filter chips row ─────────────────────────────────────────── */
+
+.filter-type-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.type-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.type-chip:hover {
+    background: var(--chip-bg, rgba(255,255,255,0.05));
+    border-color: var(--chip-color, var(--wine));
+    color: var(--chip-color, var(--wine-light));
+}
+.type-chip.active {
+    background: var(--chip-bg, rgba(155,58,90,0.15));
+    border-color: var(--chip-color, var(--wine));
+    color: var(--chip-color, var(--wine-light));
+    font-weight: 500;
+}
+.type-chip strong {
+    font-weight: 600;
+}
+
 /* ── Readiness chips row ─────────────────────────────────────────────────── */
 
 .filter-readiness-row {

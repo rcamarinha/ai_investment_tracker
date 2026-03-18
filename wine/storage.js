@@ -171,7 +171,7 @@ async function loadBottles() {
             *,
             wines (
                 name, winery, vintage, region, appellation,
-                varietal, country, alcohol, drink_window
+                varietal, country, alcohol, type, drink_window
             )
         `)
         .eq('user_id', state.currentUser.id)
@@ -191,6 +191,7 @@ async function loadBottles() {
         varietal:       row.wines?.varietal,
         country:        row.wines?.country,
         alcohol:        row.wines?.alcohol,
+        type:           row.wines?.type,
         drinkWindow:    row.wines?.drink_window,
         // Investment data from user_wines
         qty:            row.qty,
@@ -276,6 +277,7 @@ export async function saveBottleToDB(bottle) {
         varietal:    bottle.varietal    || null,
         country:     bottle.country     || null,
         alcohol:     bottle.alcohol     || null,
+        type:        bottle.type        || null,
         drink_window: bottle.drinkWindow || null,
         updated_at:  new Date().toISOString(),
     };
