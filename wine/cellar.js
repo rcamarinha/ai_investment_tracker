@@ -1076,12 +1076,25 @@ Return ONLY a valid JSON array of objects: [{"index": 0, "type": "Red Wine"}, ..
 One entry per wine. Use the index from the list above. Return ONLY the JSON array, no markdown fences, no explanation.`;
 
         const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 2048 });
-        const text = data.content?.find(c => c.type === 'text')?.text || '';
+
+        // Extract text from response — handle both Claude and Gemini response shapes
+        let text = '';
+        if (data.content && Array.isArray(data.content)) {
+            text = data.content.find(c => c.type === 'text')?.text || '';
+        } else if (typeof data.text === 'string') {
+            text = data.text;
+        } else if (typeof data === 'string') {
+            text = data;
+        }
+        // Strip markdown code fences if present
+        text = text.replace(/```json\n?|```/g, '').trim();
+
+        console.log('[ClassifyTypes] AI response:', text.slice(0, 300));
 
         // Parse the JSON array from the response
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
-            throw new Error('AI did not return a valid JSON array.');
+            throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
         }
 
         const classifications = JSON.parse(jsonMatch[0]);
