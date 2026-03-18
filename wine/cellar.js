@@ -10,6 +10,7 @@ import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
 import { renderAllocationCharts } from './ui.js';
 import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML } from './utils.js';
 import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
+import { callWineAI } from './api.js?v=1.3.20';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
@@ -1024,6 +1025,97 @@ export async function deduplicateCellar() {
     } catch (err) {
         showToast('Failed to fix duplicates: ' + err.message, 'error');
         console.error(err);
+    }
+}
+
+// ── AI Type Classification (backfill) ─────────────────────────────────────────
+
+const VALID_TYPES = [
+    'Red Wine', 'White Wine', 'Rosé', 'Sparkling', 'Port',
+    'Dessert Wine', 'Fortified Wine', 'Cognac', 'Whiskey', 'Other',
+];
+
+/**
+ * Classify all bottles that have no type using AI.
+ * Sends a batch prompt with wine details and parses the JSON response.
+ */
+export async function classifyUntypedBottles() {
+    if (!requireAuth('classify wines')) return;
+
+    const untyped = state.cellar.filter(b => !b.type);
+    if (untyped.length === 0) {
+        showToast('All bottles already have a type assigned.', 'info');
+        return;
+    }
+
+    const btn = document.getElementById('classifyTypesBtn');
+    if (btn) { btn.disabled = true; btn.textContent = `🏷️ Classifying ${untyped.length} bottles…`; }
+
+    try {
+        // Build a compact list for the AI
+        const wineList = untyped.map((b, i) => {
+            const parts = [
+                b.name,
+                b.winery && `by ${b.winery}`,
+                b.vintage && `(${b.vintage})`,
+                b.varietal && `[${b.varietal}]`,
+                b.region && `from ${b.region}`,
+                b.country && `(${b.country})`,
+            ].filter(Boolean).join(' ');
+            return `${i}: ${parts}`;
+        }).join('\n');
+
+        const prompt = `Classify each wine/spirit below into exactly one type.
+
+Valid types: ${VALID_TYPES.join(', ')}
+
+Wines to classify:
+${wineList}
+
+Return ONLY a valid JSON array of objects: [{"index": 0, "type": "Red Wine"}, ...]
+One entry per wine. Use the index from the list above. Return ONLY the JSON array, no markdown fences, no explanation.`;
+
+        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 2048 });
+        const text = data.content?.find(c => c.type === 'text')?.text || '';
+
+        // Parse the JSON array from the response
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+            throw new Error('AI did not return a valid JSON array.');
+        }
+
+        const classifications = JSON.parse(jsonMatch[0]);
+        let updated = 0;
+
+        for (const entry of classifications) {
+            const idx = entry.index;
+            const type = entry.type;
+            if (idx == null || !type) continue;
+            if (!VALID_TYPES.includes(type)) continue;
+
+            const bottle = untyped[idx];
+            if (!bottle) continue;
+
+            bottle.type = type;
+            try {
+                await saveBottleToDB(bottle);
+                updated++;
+            } catch (err) {
+                console.warn(`Failed to save type for "${bottle.name}":`, err.message);
+            }
+        }
+
+        renderCellar();
+        showToast(
+            `Classified ${updated} of ${untyped.length} bottle${untyped.length !== 1 ? 's' : ''}.`,
+            updated > 0 ? 'success' : 'warning',
+            5000
+        );
+    } catch (err) {
+        console.error('classifyUntypedBottles error:', err);
+        showToast('Type classification failed: ' + err.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🏷️ Classify Types'; }
     }
 }
 
