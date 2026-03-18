@@ -1,10 +1,61 @@
 /**
  * Shared utilities for Wine Cellar Tracker.
+ * - repairTruncatedJSON
  * - escapeHTML
  * - showToast
  * - showConfirm (promise-based)
  * - openModal / closeModal
  */
+
+// ── JSON Repair ───────────────────────────────────────────────────────────────
+
+/**
+ * Attempt to repair JSON truncated at max_tokens by closing unclosed strings,
+ * arrays, and objects. Handles the common truncation patterns:
+ *   - mid-string value            ("title": "Buy more Borde  →  adds closing "
+ *   - trailing comma              [...item...],              →  strips the comma
+ *   - incomplete key-value pair   ,"key":                   →  strips it
+ *   - bare incomplete key         ,"key"                    →  strips it
+ * Not perfect, but recovers most real-world AI truncations.
+ *
+ * @param {string} str - Raw (possibly truncated) JSON string
+ * @returns {string}   - Repaired JSON string (may still be invalid in edge cases)
+ */
+export function repairTruncatedJSON(str) {
+    const opens = [];
+    let inString = false;
+    let escape = false;
+
+    for (const ch of str) {
+        if (escape) { escape = false; continue; }
+        if (ch === '\\' && inString) { escape = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (!inString) {
+            if (ch === '{' || ch === '[') opens.push(ch);
+            else if (ch === '}' || ch === ']') opens.pop();
+        }
+    }
+
+    let repaired = str;
+    // 1. Close an unterminated string value
+    if (inString) repaired += '"';
+    // 2. Strip trailing whitespace and trailing comma (truncation between elements)
+    repaired = repaired.trimEnd();
+    if (repaired.endsWith(',')) repaired = repaired.slice(0, -1).trimEnd();
+    // 3. Strip trailing incomplete key-value preceded by a comma: ,"key":
+    repaired = repaired.replace(/,\s*"[^"]*"\s*:\s*$/, '');
+    // 4. Strip trailing bare key preceded by a comma: ,"key"
+    repaired = repaired.replace(/,\s*"[^"]*"\s*$/, '');
+    // 5. Strip trailing incomplete key-value as the first entry in a block: {"key":
+    repaired = repaired.replace(/([\[{])\s*"[^"]*"\s*:\s*$/, '$1');
+    // 6. Strip trailing bare key as the first entry in a block: {"key"
+    repaired = repaired.replace(/([\[{])\s*"[^"]*"\s*$/, '$1');
+    // 7. Close unclosed arrays/objects in reverse order
+    for (let i = opens.length - 1; i >= 0; i--) {
+        repaired += opens[i] === '{' ? '}' : ']';
+    }
+    return repaired;
+}
 
 // ── HTML Escaping ─────────────────────────────────────────────────────────────
 

@@ -5,40 +5,10 @@
 import state from './state.js';
 import { callWineAI } from './api.js?v=1.3.20';
 import { computeTotals } from './cellar.js';
-import { showToast, escapeHTML } from './utils.js';
+import { showToast, escapeHTML, repairTruncatedJSON } from './utils.js';
 import { t } from '../data/i18n.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Attempt to repair JSON truncated at max_tokens by closing unclosed
- * strings, arrays, and objects. Not perfect, but handles the common case
- * of a response cut off mid-string or mid-object.
- */
-function repairTruncatedJSON(str) {
-    const opens = [];
-    let inString = false;
-    let escape = false;
-
-    for (const ch of str) {
-        if (escape) { escape = false; continue; }
-        if (ch === '\\' && inString) { escape = true; continue; }
-        if (ch === '"') { inString = !inString; continue; }
-        if (!inString) {
-            if (ch === '{' || ch === '[') opens.push(ch);
-            else if (ch === '}' || ch === ']') opens.pop();
-        }
-    }
-
-    let repaired = str;
-    // Close an unterminated string value
-    if (inString) repaired += '"';
-    // Close unclosed arrays/objects in reverse order
-    for (let i = opens.length - 1; i >= 0; i--) {
-        repaired += opens[i] === '{' ? '}' : ']';
-    }
-    return repaired;
-}
 
 function fmt(value) {
     if (value == null || isNaN(value)) return '—';
@@ -85,7 +55,15 @@ export async function analyzeCellar() {
             showToast(`[Debug] Gemini failed → Claude used. ${snippet}`, 'warning', 10000);
         }
 
-        const text = data.content?.find(c => c.type === 'text')?.text || '';
+        // Extract text — handle both Claude (content[]) and Gemini (text) response shapes
+        let text = '';
+        if (data.content && Array.isArray(data.content)) {
+            text = data.content.find(c => c.type === 'text')?.text || '';
+        } else if (typeof data.text === 'string') {
+            text = data.text;
+        } else if (typeof data === 'string') {
+            text = data;
+        }
         const cleanText = text.replace(/```json\n?|```/g, '').trim();
         let analysis;
         try {

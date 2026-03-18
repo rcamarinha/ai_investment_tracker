@@ -8,7 +8,7 @@ import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
          deleteSnapshotFromDB, clearSnapshotsFromDB,
          findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js';
 import { renderAllocationCharts } from './ui.js';
-import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML } from './utils.js';
+import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON } from './utils.js';
 import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
 import { callWineAI } from './api.js?v=1.3.20';
 
@@ -1091,13 +1091,22 @@ One entry per wine. Use the index from the list above. Return ONLY the JSON arra
 
         console.log('[ClassifyTypes] AI response:', text.slice(0, 300));
 
-        // Parse the JSON array from the response
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) {
+        // Parse the JSON array — try directly first, then attempt truncation repair
+        let classifications;
+        try {
+            classifications = JSON.parse(text);
+        } catch {
+            const repaired = repairTruncatedJSON(text);
+            try {
+                classifications = JSON.parse(repaired);
+                console.warn('[ClassifyTypes] JSON was truncated and repaired — response may be incomplete');
+            } catch {
+                throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
+            }
+        }
+        if (!Array.isArray(classifications)) {
             throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
         }
-
-        const classifications = JSON.parse(jsonMatch[0]);
         let updated = 0;
 
         for (const entry of classifications) {
