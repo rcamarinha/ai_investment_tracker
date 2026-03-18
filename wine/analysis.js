@@ -76,7 +76,7 @@ export async function analyzeCellar() {
     try {
         const prompt = buildAnalysisPrompt();
 
-        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 3500 });
+        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 8192 });
 
         // Debug: surface Gemini fallback so it's visible in the UI until Gemini is stable.
         if (data._source === 'claude' && data._geminiError) {
