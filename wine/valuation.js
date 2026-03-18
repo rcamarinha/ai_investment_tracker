@@ -170,6 +170,7 @@ export async function valuateAllBottles(forceAll = false) {
             name:          b.name,
             winery:        b.winery,
             vintage:       b.vintage,
+            type:          b.type,
             region:        b.region,
             appellation:   b.appellation,
             varietal:      b.varietal,
@@ -340,6 +341,7 @@ function buildValuationPrompt(bottle) {
     const details = [
         bottle.name        && `Wine name: ${bottle.name}`,
         bottle.winery      && `Winery/Producer: ${bottle.winery}`,
+        bottle.type        && `Type: ${bottle.type}`,
         bottle.vintage     && `Vintage: ${bottle.vintage}`,
         bottle.region      && `Region: ${bottle.region}`,
         bottle.appellation && `Appellation: ${bottle.appellation}`,

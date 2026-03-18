@@ -38,7 +38,7 @@ export function showAllocationTab(tab) {
     state.selectedAllocationTab = tab;
 
     // Update tab button styles
-    ['region', 'varietal', 'country'].forEach(t => {
+    ['region', 'varietal', 'country', 'type'].forEach(t => {
         const btn = document.getElementById(`tab-${t}`);
         if (btn) btn.className = t === tab ? 'tab-btn active' : 'tab-btn';
     });
@@ -54,6 +54,7 @@ export function showAllocationTab(tab) {
         if (tab === 'region')   key = b.region   || 'Unknown';
         if (tab === 'varietal') key = b.varietal  || 'Unknown';
         if (tab === 'country')  key = b.country   || 'Unknown';
+        if (tab === 'type')     key = b.type      || 'Unknown';
 
         const invested  = (b.qty || 0) * (b.purchasePrice || 0);
         const estimated = b.estimatedValue

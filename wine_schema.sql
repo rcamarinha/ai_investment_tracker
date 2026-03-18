@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS wines (
     varietal        TEXT DEFAULT NULL,
     country         TEXT DEFAULT NULL,
     alcohol         TEXT DEFAULT NULL,  -- stored as string, e.g. "13.5%"
+    type            TEXT DEFAULT NULL,  -- e.g. "Red Wine", "White Wine", "Champagne", "Cognac", "Whiskey"
 
     -- Drink window — updated by any valuation, shared best estimate
     drink_window    TEXT DEFAULT NULL,  -- e.g. "2025-2040"
@@ -75,6 +76,7 @@ CREATE INDEX IF NOT EXISTS idx_wines_name_vintage ON wines(LOWER(name), vintage)
 CREATE INDEX IF NOT EXISTS idx_wines_vintage      ON wines(vintage);
 CREATE INDEX IF NOT EXISTS idx_wines_region       ON wines(region);
 CREATE INDEX IF NOT EXISTS idx_wines_varietal     ON wines(varietal);
+CREATE INDEX IF NOT EXISTS idx_wines_type        ON wines(type);
 
 
 -- ────────────────────────────────────────────

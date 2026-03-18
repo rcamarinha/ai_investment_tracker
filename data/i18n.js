@@ -105,6 +105,7 @@ export const TRANSLATIONS = {
         'wine.by_region':       'By Region',
         'wine.by_varietal':     'By Varietal',
         'wine.by_country':      'By Country',
+        'wine.by_type':         'By Type',
         'wine.history':         '📈 Cellar History',
         'wine.clear_history':   '🗑 Clear History',
         'wine.filters':         'Filters',
@@ -214,6 +215,7 @@ export const TRANSLATIONS = {
         'cellar.past_peak': 'past peak',
 
         // ── Filter panel ──────────────────────────────────────────────────────
+        'filter.type':       'Type',
         'filter.country':    'Country',
         'filter.region':     'Region',
         'filter.producer':   'Producer',
@@ -342,6 +344,7 @@ export const TRANSLATIONS = {
         'wine.by_region':       'Por Região',
         'wine.by_varietal':     'Por Casta',
         'wine.by_country':      'Por País',
+        'wine.by_type':         'Por Tipo',
         'wine.history':         '📈 Histórico da Adega',
         'wine.clear_history':   '🗑 Limpar Histórico',
         'wine.filters':         'Filtros',
@@ -451,6 +454,7 @@ export const TRANSLATIONS = {
         'cellar.past_peak': 'pico ultrapassado',
 
         // ── Filter panel ──────────────────────────────────────────────────────
+        'filter.type':       'Tipo',
         'filter.country':    'País',
         'filter.region':     'Região',
         'filter.producer':   'Produtor',

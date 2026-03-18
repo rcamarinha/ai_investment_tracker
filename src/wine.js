@@ -78,6 +78,7 @@ export function groupBottlesByDimension(cellar, dimension) {
         if (dimension === 'region')   key = b.region   || 'Unknown';
         if (dimension === 'varietal') key = b.varietal  || 'Unknown';
         if (dimension === 'country')  key = b.country   || 'Unknown';
+        if (dimension === 'type')     key = b.type      || 'Unknown';
         if (key === undefined)        key = 'Unknown';
 
         const invested  = (b.qty || 0) * (b.purchasePrice || 0);
@@ -156,6 +157,7 @@ export function buildBottleFromScan(scanResult) {
         varietal:    scanResult.varietal    || null,
         country:     scanResult.country     || null,
         alcohol:     scanResult.alcohol     || null,
+        type:        scanResult.type        || null,
         bottleSize:  scanResult.bottleSize  || null,
         notes:       scanResult.notes       || null,
     };
@@ -218,6 +220,7 @@ export function filterBottles(cellar, searchTerm) {
         (b.varietal    || '').toLowerCase().includes(term) ||
         (b.country     || '').toLowerCase().includes(term) ||
         (b.appellation || '').toLowerCase().includes(term) ||
+        (b.type        || '').toLowerCase().includes(term) ||
         String(b.vintage || '').includes(term)
     );
 }
