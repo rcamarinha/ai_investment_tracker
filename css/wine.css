@@ -481,7 +481,7 @@
     }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
     .bottles-grid { grid-template-columns: 1fr; }
     .cellar-stats { gap: 8px; }
     .cellar-stat { min-width: 70px; padding: 8px 12px; }
@@ -495,6 +495,10 @@
     .position-form-group input,
     .position-form-group select,
     .position-form-group textarea { font-size: 16px; }
+
+    /* Push modal content above the fixed bottom nav bar (~60px) */
+    #bottleDialog,
+    #apiKeyDialog { padding-bottom: 80px; }
 
     /* Stack action buttons full-width */
     #bottleDialog .action-bar {
