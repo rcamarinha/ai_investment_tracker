@@ -216,6 +216,8 @@ const TYPE_CONFIG = [
     { value: 'Fortified Wine', icon: '🛡️', color: '#7A6430', bg: 'rgba(122,100,48,0.12)'  },
     { value: 'Cognac',         icon: '🥃', color: '#B8860B', bg: 'rgba(184,134,11,0.12)'  },
     { value: 'Whiskey',        icon: '🥃', color: '#8B4513', bg: 'rgba(139,69,19,0.12)'   },
+    { value: 'Aguardente',    icon: '🔥', color: '#B5651D', bg: 'rgba(181,101,29,0.12)' },
+    { value: 'Gin',           icon: '🍸', color: '#4A7C59', bg: 'rgba(74,124,89,0.12)'  },
     { value: 'Other',          icon: '🍶', color: '#7A8099', bg: 'rgba(122,128,153,0.12)' },
 ];
 
@@ -1032,7 +1034,8 @@ export async function deduplicateCellar() {
 
 const VALID_TYPES = [
     'Red Wine', 'White Wine', 'Rosé', 'Sparkling', 'Port',
-    'Dessert Wine', 'Fortified Wine', 'Cognac', 'Whiskey', 'Other',
+    'Dessert Wine', 'Fortified Wine', 'Cognac', 'Whiskey',
+    'Aguardente', 'Gin', 'Other',
 ];
 
 /**
@@ -1138,6 +1141,109 @@ One entry per wine. Use the index from the list above. Return ONLY the JSON arra
         showToast('Type classification failed: ' + err.message, 'error');
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = '🏷️ Classify Types'; }
+    }
+}
+
+/**
+ * Re-classify ALL bottles (including already-typed ones) using AI.
+ * Useful after adding new type categories to pick up mis-classified bottles.
+ */
+export async function reclassifyAllBottles() {
+    if (!requireAuth('reclassify wines')) return;
+
+    const bottles = state.cellar;
+    if (bottles.length === 0) {
+        showToast('No bottles in cellar to classify.', 'info');
+        return;
+    }
+
+    const btn = document.getElementById('reclassifyAllBtn');
+    if (btn) { btn.disabled = true; btn.textContent = `🔄 Reclassifying ${bottles.length} bottles…`; }
+
+    try {
+        const wineList = bottles.map((b, i) => {
+            const parts = [
+                b.name,
+                b.winery && `by ${b.winery}`,
+                b.vintage && `(${b.vintage})`,
+                b.varietal && `[${b.varietal}]`,
+                b.region && `from ${b.region}`,
+                b.country && `(${b.country})`,
+            ].filter(Boolean).join(' ');
+            return `${i}: ${parts}`;
+        }).join('\n');
+
+        const prompt = `Classify each wine/spirit below into exactly one type.
+
+Valid types: ${VALID_TYPES.join(', ')}
+
+Wines to classify:
+${wineList}
+
+Return ONLY a valid JSON array of objects: [{"index": 0, "type": "Red Wine"}, ...]
+One entry per wine. Use the index from the list above. Return ONLY the JSON array, no markdown fences, no explanation.`;
+
+        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 4096 });
+
+        let text = '';
+        if (data.content && Array.isArray(data.content)) {
+            text = data.content.find(c => c.type === 'text')?.text || '';
+        } else if (typeof data.text === 'string') {
+            text = data.text;
+        } else if (typeof data === 'string') {
+            text = data;
+        }
+        text = text.replace(/```json\n?|```/g, '').trim();
+
+        console.log('[ReclassifyAll] AI response:', text.slice(0, 300));
+
+        let classifications;
+        try {
+            classifications = JSON.parse(text);
+        } catch {
+            const repaired = repairTruncatedJSON(text);
+            try {
+                classifications = JSON.parse(repaired);
+                console.warn('[ReclassifyAll] JSON was truncated and repaired');
+            } catch {
+                throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
+            }
+        }
+        if (!Array.isArray(classifications)) {
+            throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
+        }
+
+        let updated = 0;
+        for (const entry of classifications) {
+            const idx = entry.index;
+            const type = entry.type;
+            if (idx == null || !type) continue;
+            if (!VALID_TYPES.includes(type)) continue;
+
+            const bottle = bottles[idx];
+            if (!bottle) continue;
+            if (bottle.type === type) continue; // no change needed
+
+            bottle.type = type;
+            try {
+                await saveBottleToDB(bottle);
+                updated++;
+            } catch (err) {
+                console.warn(`Failed to save type for "${bottle.name}":`, err.message);
+            }
+        }
+
+        renderCellar();
+        showToast(
+            `Reclassified ${updated} of ${bottles.length} bottle${bottles.length !== 1 ? 's' : ''}.`,
+            updated > 0 ? 'success' : 'info',
+            5000
+        );
+    } catch (err) {
+        console.error('reclassifyAllBottles error:', err);
+        showToast('Reclassification failed: ' + err.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔄 Reclassify All'; }
     }
 }
 

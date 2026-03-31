@@ -347,7 +347,7 @@ function buildValuationPrompt(bottle) {
         bottle.appellation && `Appellation: ${bottle.appellation}`,
         bottle.varietal    && `Grape variety: ${bottle.varietal}`,
         bottle.country     && `Country: ${bottle.country}`,
-        `Bottle format: ${bottleSize}${isStandardSize ? ' (standard)' : ' — price accordingly; large formats trade at a premium'}`,
+        `Bottle format: ${bottleSize}${isStandardSize ? ' (standard)' : ''}`,
         criticLine,
         bottle.purchasePrice && `Purchase price: €${bottle.purchasePrice}/bottle`,
         bottle.purchaseDate  && `Purchase date: ${bottle.purchaseDate}`,
@@ -360,13 +360,18 @@ function buildValuationPrompt(bottle) {
 
     return `You are a wine investment expert with deep knowledge of fine wine valuations.
 Use Google Search to find current retail and auction market prices for this specific wine bottle.
-Search Wine-Searcher, recent auction results (Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart), and retailer listings.
 
 Wine details:
 ${details}
 
 Today's date: ${new Date().toISOString().slice(0, 10)}
 ${vintageInstruction}
+
+Pricing rules (follow strictly, in priority order):
+1. NATIONAL PRIORITY: Search Portuguese retail sites first — Garrafeira Nacional, Garrafeira Soares, Wine.pt, Niepoort shop, JMF shop, Adega Mayor. Only use international sources (Wine-Searcher, Vivino, auction houses like Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart) if no Portuguese retailer lists this wine.
+2. VAT FILTER: If sourcing from an international ex-tax aggregator (e.g. Wine-Searcher merchant average, which is often ex-tax), multiply by 1.23 to add Portuguese IVA (23%) so the estimate reflects real replacement cost in Portugal.
+3. BOTTLE SIZE: Search for the EXACT bottle format (${bottleSize}). Do not extrapolate from 750ml pricing. If no exact-format listing exists, state this in the valuationNote.
+4. CURRENT PRICES ONLY: Use in-stock retail or recent auction hammer prices. Skip out-of-stock listings (prices are likely outdated). Never use historical launch/release prices as current value.
 
 Return a valid JSON object with exactly these fields:
 {

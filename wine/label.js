@@ -71,7 +71,7 @@ Return ONLY a valid JSON object with exactly these fields (use null for any fiel
   "region": "wine region (e.g. Bordeaux, Napa Valley, Tuscany, Rioja)",
   "appellation": "specific appellation or sub-region if visible",
   "varietal": "grape variety or blend description",
-  "type": "one of: Red Wine, White Wine, Rosé, Sparkling, Port, Dessert Wine, Fortified Wine, Cognac, Whiskey, or null if unclear",
+  "type": "one of: Red Wine, White Wine, Rosé, Sparkling, Port, Dessert Wine, Fortified Wine, Cognac, Whiskey, Aguardente, Gin, or null if unclear",
   "country": "country of origin",
   "alcohol": "alcohol percentage as string e.g. 13.5%",
   "bottleSize": "bottle format as one of: 0.375L, 0.75L, 1.5L, 3.0L, 4.5L, 6.0L, 9.0L, 12.0L, 15.0L — look for text like 75cl, 750ml, 1.5L, Magnum, Double Magnum, Jeroboam, Imperial, Methuselah on the label; return null if not visible",

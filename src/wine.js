@@ -168,11 +168,11 @@ export function buildBottleFromScan(scanResult) {
 /**
  * Determine the drinking-readiness status of a wine from its drink window string.
  *
- * Strategy: split the window into two halves.
- *   - Before window start  → 'not-ready'
- *   - First half of window → 'ready'
- *   - Second half          → 'at-peak'
- *   - After window end     → 'past-peak'
+ * Strategy: 5-year urgency window from the start of the drinking window.
+ *   - Before window start          → 'not-ready'
+ *   - First 5 years of window      → 'ready'   (drink priority)
+ *   - Remainder until window end   → 'at-peak'
+ *   - After window end             → 'past-peak'
  *
  * @param {string|null} drinkWindow  - e.g. "2024-2030" or "2028"
  * @param {number}      [currentYear] - defaults to current calendar year
@@ -192,8 +192,7 @@ export function getDrinkStatus(drinkWindow, currentYear) {
     if (year < start) return 'not-ready';
     if (year > end)   return 'past-peak';
 
-    const mid = start + Math.floor((end - start) / 2);
-    return year <= mid ? 'ready' : 'at-peak';
+    return (year <= start + 5) ? 'ready' : 'at-peak';
 }
 
 // ── Search Filter ─────────────────────────────────────────────────────────────
@@ -257,8 +256,9 @@ export function sortBottles(bottles, sortMode) {
             return arr.sort((a, b) => pct(b) - pct(a));
         }
 
-        default: // 'added' — preserve insertion order
-            return arr;
+        default: // 'added' — newest first by creation date
+            return arr.sort((a, b) =>
+                new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     }
 }
 

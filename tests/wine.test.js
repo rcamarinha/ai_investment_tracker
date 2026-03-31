@@ -487,13 +487,18 @@ describe('getDrinkStatus', () => {
         expect(getDrinkStatus('2024-2030', 2025)).toBe('ready');
     });
 
-    it('returns ready exactly at the midpoint', () => {
-        // mid of 2024-2030 = floor((2030-2024)/2)+2024 = 2027
+    it('returns ready within the 5-year urgency window', () => {
         expect(getDrinkStatus('2024-2030', 2027)).toBe('ready');
     });
 
-    it('returns at-peak in the second half of the window', () => {
-        expect(getDrinkStatus('2024-2030', 2029)).toBe('at-peak');
+    it('returns ready at the 5-year boundary', () => {
+        // 2029 = 2024 + 5 → still ready
+        expect(getDrinkStatus('2024-2030', 2029)).toBe('ready');
+    });
+
+    it('returns at-peak after the 5-year urgency window', () => {
+        // 2030 > 2024 + 5 → at-peak (still within drink window)
+        expect(getDrinkStatus('2024-2040', 2030)).toBe('at-peak');
     });
 
     it('returns past-peak after the window', () => {
@@ -519,7 +524,8 @@ describe('getDrinkStatus', () => {
     });
 
     it('handles en-dash separator', () => {
-        expect(getDrinkStatus('2024–2030', 2029)).toBe('at-peak');
+        // 2029 = 2024 + 5 → still ready
+        expect(getDrinkStatus('2024–2030', 2029)).toBe('ready');
     });
 
     it('uses current year when no override provided', () => {
@@ -655,14 +661,29 @@ describe('sortBottles', () => {
         expect(result[result.length - 1].name).toBe('Château Petrus'); // lowest gain%
     });
 
-    it('preserves original order for "added" mode', () => {
-        const result = sortBottles(bottles, 'added');
-        expect(result[0].name).toBe(bottles[0].name);
-        expect(result[1].name).toBe(bottles[1].name);
-        expect(result[2].name).toBe(bottles[2].name);
+    it('sorts by createdAt newest first for "added" mode', () => {
+        const dated = [
+            makeBottle({ name: 'Old',  createdAt: '2024-01-01T00:00:00Z' }),
+            makeBottle({ name: 'New',  createdAt: '2025-06-15T00:00:00Z' }),
+            makeBottle({ name: 'Mid',  createdAt: '2024-07-01T00:00:00Z' }),
+        ];
+        const result = sortBottles(dated, 'added');
+        expect(result[0].name).toBe('New');
+        expect(result[1].name).toBe('Mid');
+        expect(result[2].name).toBe('Old');
     });
 
-    it('preserves original order for unknown sort mode', () => {
+    it('sorts bottles without createdAt to the end for "added" mode', () => {
+        const mixed = [
+            makeBottle({ name: 'NoDate' }),
+            makeBottle({ name: 'HasDate', createdAt: '2025-01-01T00:00:00Z' }),
+        ];
+        const result = sortBottles(mixed, 'added');
+        expect(result[0].name).toBe('HasDate');
+        expect(result[1].name).toBe('NoDate');
+    });
+
+    it('returns array unchanged for unknown sort mode', () => {
         expect(sortBottles(bottles, 'unknown')[0].name).toBe(bottles[0].name);
     });
 
