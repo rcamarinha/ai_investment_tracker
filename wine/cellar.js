@@ -421,6 +421,24 @@ export function renderCellar() {
     renderAllocationCharts();
 }
 
+/**
+ * Replace a single bottle card in-place without re-rendering the full cellar.
+ * Preserves scroll position and active filters. Falls back to renderCellar()
+ * if the card element is not found in the DOM (e.g. filtered out).
+ */
+export function updateBottleCard(bottleId) {
+    const bottle = state.cellar.find(b => b.id === bottleId);
+    const cardEl = document.getElementById(`bottle-${bottleId}`);
+    if (!bottle || !cardEl) { renderCellar(); return; }
+
+    const tmp = document.createElement('div');
+    tmp.innerHTML = renderBottleCard(bottle);
+    cardEl.replaceWith(tmp.firstElementChild);
+
+    updateStatsBar(computeTotals());
+    renderAllocationCharts();
+}
+
 
 function renderBottleCard(b) {
     const hasPurchasePrice = b.purchasePrice != null && b.purchasePrice > 0;
