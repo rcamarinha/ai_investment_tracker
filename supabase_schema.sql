@@ -191,6 +191,48 @@ CREATE INDEX idx_price_history_ticker ON price_history(ticker);
 CREATE INDEX idx_price_history_ticker_fetched ON price_history(ticker, fetched_at DESC);
 
 -- ============================================
+-- Transactions table: stores buy/sell transaction history per user
+-- Used by services/storage.js for position lifecycle tracking
+-- ============================================
+
+CREATE TABLE transactions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    symbol TEXT NOT NULL,
+    type TEXT NOT NULL,
+    shares NUMERIC NOT NULL,
+    price NUMERIC NOT NULL,
+    total_amount NUMERIC,
+    date TEXT,
+    cost_basis NUMERIC,
+    realized_gain_loss NUMERIC,
+    currency TEXT,
+    exchange_rate NUMERIC,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own transactions"
+    ON transactions FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own transactions"
+    ON transactions FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own transactions"
+    ON transactions FOR UPDATE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own transactions"
+    ON transactions FOR DELETE
+    USING (auth.uid() = user_id);
+
+CREATE INDEX idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX idx_transactions_user_symbol ON transactions(user_id, symbol);
+
+-- ============================================
 -- Admin Emails: comma-separated list of admin users
 -- ============================================
 -- Users whose email is in this list get the 'admin' role and can manage API keys.
