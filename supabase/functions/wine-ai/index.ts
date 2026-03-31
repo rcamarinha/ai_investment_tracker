@@ -29,8 +29,12 @@
  *   batch-valuation  → { results: ValuationResult[] }
  */
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
+const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -573,6 +577,26 @@ Deno.serve(async (req) => {
 
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+
+  // ── Manual auth verification ─────────────────────────────────────────────
+  // Gateway verify_jwt is off (incompatible with sb_publishable_ keys / ES256),
+  // so we validate the user token ourselves via Supabase Auth.
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) {
+    return jsonResponse({ error: "Missing authorization token" }, 401);
+  }
+  {
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data, error } = await sb.auth.getUser(token);
+    if (error || !data?.user) {
+      console.warn("[wine-ai] Auth failed:", error?.message || "no user");
+      return jsonResponse({ error: "Invalid or expired token. Please log in again." }, 401);
+    }
+    console.log("[wine-ai] Authenticated user:", data.user.id);
   }
 
   let body: {
