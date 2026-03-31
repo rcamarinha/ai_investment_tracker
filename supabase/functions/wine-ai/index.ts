@@ -286,7 +286,7 @@ function buildBatchPrompt(bottles: BottleInfo[]): string {
       b.appellation && `Appellation: ${b.appellation}`,
       b.varietal    && `Grape variety: ${b.varietal}`,
       b.country     && `Country: ${b.country}`,
-      `Bottle format: ${size}${isStandard ? " (standard)" : " — price accordingly; large formats trade at a premium"}`,
+      `Bottle format: ${size}${isStandard ? " (standard)" : ""}`,
       b.purchasePrice && `Purchase price: €${b.purchasePrice}/bottle`,
     ].filter(Boolean).join(", ");
     return `${i + 1}. ${fields || "(unknown wine)"}`;
@@ -311,9 +311,14 @@ Return a JSON array with exactly ${bottles.length} objects, one per wine, in the
   "valuationNote": <1-2 sentence explanation>
 }
 
-Rules:
+Pricing rules (follow strictly, in priority order):
+1. NATIONAL PRIORITY: Search Portuguese retail sites first — Garrafeira Nacional, Garrafeira Soares, Wine.pt, Niepoort shop, JMF shop, Adega Mayor. Only use international sources (Wine-Searcher, Vivino, auction houses) if no Portuguese retailer lists the wine.
+2. VAT FILTER: If sourcing from an international ex-tax aggregator (e.g. Wine-Searcher merchant average), multiply by 1.23 to add Portuguese IVA (23%) so the estimate reflects real replacement cost in Portugal.
+3. BOTTLE SIZE: Search for the EXACT bottle format listed per wine. Do not extrapolate from 750ml pricing. If no exact-format listing exists, state this in the valuationNote.
+4. CURRENT PRICES ONLY: Use in-stock retail or recent auction hammer prices. Skip out-of-stock listings (prices are likely outdated). Never use historical launch/release prices as current value.
+
+Additional rules:
 - Be vintage-specific (do NOT average across years).
-- estimatedValue must reflect the actual bottle format listed for each wine (e.g. a Magnum is 1.5L and commands a premium over the standard 750ml price).
 - If you cannot find data for a wine, use low confidence and estimate conservatively.
 - Return ONLY the JSON array. No markdown fences, no preamble.`;
 }

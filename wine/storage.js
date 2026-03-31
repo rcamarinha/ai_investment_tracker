@@ -219,6 +219,7 @@ async function loadBottles() {
         valuationNote:     row.valuation_note,
         valuationSources:  row.valuation_sources ?? null,
         lastValuedAt:      row.last_valued_at,
+        createdAt:         row.created_at,
     }));
 }
 
