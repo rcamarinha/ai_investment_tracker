@@ -1073,78 +1073,22 @@ export async function classifyUntypedBottles() {
     if (btn) { btn.disabled = true; btn.textContent = `🏷️ Classifying ${untyped.length} bottles…`; }
 
     try {
-        // Build a compact list for the AI
-        const wineList = untyped.map((b, i) => {
-            const parts = [
-                b.name,
-                b.winery && `by ${b.winery}`,
-                b.vintage && `(${b.vintage})`,
-                b.varietal && `[${b.varietal}]`,
-                b.region && `from ${b.region}`,
-                b.country && `(${b.country})`,
-            ].filter(Boolean).join(' ');
-            return `${i}: ${parts}`;
-        }).join('\n');
-
-        const prompt = `Classify each wine/spirit below into exactly one type.
-
-Valid types: ${VALID_TYPES.join(', ')}
-
-Wines to classify:
-${wineList}
-
-Return ONLY a valid JSON array of objects: [{"index": 0, "type": "Red Wine"}, ...]
-One entry per wine. Use the index from the list above. Return ONLY the JSON array, no markdown fences, no explanation.`;
-
-        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 2048 });
-
-        // Extract text from response — handle both Claude and Gemini response shapes
-        let text = '';
-        if (data.content && Array.isArray(data.content)) {
-            text = data.content.find(c => c.type === 'text')?.text || '';
-        } else if (typeof data.text === 'string') {
-            text = data.text;
-        } else if (typeof data === 'string') {
-            text = data;
-        }
-        // Strip markdown code fences if present
-        text = text.replace(/```json\n?|```/g, '').trim();
-
-        console.log('[ClassifyTypes] AI response:', text.slice(0, 300));
-
-        // Parse the JSON array — try directly first, then attempt truncation repair
-        let classifications;
-        try {
-            classifications = JSON.parse(text);
-        } catch {
-            const repaired = repairTruncatedJSON(text);
-            try {
-                classifications = JSON.parse(repaired);
-                console.warn('[ClassifyTypes] JSON was truncated and repaired — response may be incomplete');
-            } catch {
-                throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
-            }
-        }
-        if (!Array.isArray(classifications)) {
-            throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
-        }
         let updated = 0;
+        for (let i = 0; i < untyped.length; i += CLASSIFY_BATCH_SIZE) {
+            const chunk = untyped.slice(i, i + CLASSIFY_BATCH_SIZE);
+            if (btn) btn.textContent = `🏷️ Classifying batch ${Math.floor(i / CLASSIFY_BATCH_SIZE) + 1}… (${i}/${untyped.length})`;
 
-        for (const entry of classifications) {
-            const idx = entry.index;
-            const type = entry.type;
-            if (idx == null || !type) continue;
-            if (!VALID_TYPES.includes(type)) continue;
-
-            const bottle = untyped[idx];
-            if (!bottle) continue;
-
-            bottle.type = type;
-            try {
-                await saveBottleToDB(bottle);
-                updated++;
-            } catch (err) {
-                console.warn(`Failed to save type for "${bottle.name}":`, err.message);
+            const classifications = await classifyBatch(chunk);
+            for (const entry of classifications) {
+                const idx = entry.index;
+                const type = entry.type;
+                if (idx == null || !type) continue;
+                if (!VALID_TYPES.includes(type)) continue;
+                const bottle = chunk[idx];
+                if (!bottle) continue;
+                bottle.type = type;
+                try { await saveBottleToDB(bottle); updated++; }
+                catch (err) { console.warn(`Failed to save type for "${bottle.name}":`, err.message); }
             }
         }
 
@@ -1179,75 +1123,23 @@ export async function reclassifyAllBottles() {
     if (btn) { btn.disabled = true; btn.textContent = `🔄 Reclassifying ${bottles.length} bottles…`; }
 
     try {
-        const wineList = bottles.map((b, i) => {
-            const parts = [
-                b.name,
-                b.winery && `by ${b.winery}`,
-                b.vintage && `(${b.vintage})`,
-                b.varietal && `[${b.varietal}]`,
-                b.region && `from ${b.region}`,
-                b.country && `(${b.country})`,
-            ].filter(Boolean).join(' ');
-            return `${i}: ${parts}`;
-        }).join('\n');
-
-        const prompt = `Classify each wine/spirit below into exactly one type.
-
-Valid types: ${VALID_TYPES.join(', ')}
-
-Wines to classify:
-${wineList}
-
-Return ONLY a valid JSON array of objects: [{"index": 0, "type": "Red Wine"}, ...]
-One entry per wine. Use the index from the list above. Return ONLY the JSON array, no markdown fences, no explanation.`;
-
-        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 4096 });
-
-        let text = '';
-        if (data.content && Array.isArray(data.content)) {
-            text = data.content.find(c => c.type === 'text')?.text || '';
-        } else if (typeof data.text === 'string') {
-            text = data.text;
-        } else if (typeof data === 'string') {
-            text = data;
-        }
-        text = text.replace(/```json\n?|```/g, '').trim();
-
-        console.log('[ReclassifyAll] AI response:', text.slice(0, 300));
-
-        let classifications;
-        try {
-            classifications = JSON.parse(text);
-        } catch {
-            const repaired = repairTruncatedJSON(text);
-            try {
-                classifications = JSON.parse(repaired);
-                console.warn('[ReclassifyAll] JSON was truncated and repaired');
-            } catch {
-                throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
-            }
-        }
-        if (!Array.isArray(classifications)) {
-            throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
-        }
-
         let updated = 0;
-        for (const entry of classifications) {
-            const idx = entry.index;
-            const type = entry.type;
-            if (idx == null || !type) continue;
-            if (!VALID_TYPES.includes(type)) continue;
+        for (let i = 0; i < bottles.length; i += CLASSIFY_BATCH_SIZE) {
+            const chunk = bottles.slice(i, i + CLASSIFY_BATCH_SIZE);
+            if (btn) btn.textContent = `🔄 Reclassifying batch ${Math.floor(i / CLASSIFY_BATCH_SIZE) + 1}… (${i}/${bottles.length})`;
 
-            const bottle = bottles[idx];
-            if (!bottle) continue;
-            if (bottle.type === type) continue; // no change needed
-
-            bottle.type = type;
-            try {
-                await saveBottleToDB(bottle);
-                updated++;
-            } catch (err) {
-                console.warn(`Failed to save type for "${bottle.name}":`, err.message);
+            const classifications = await classifyBatch(chunk);
+            for (const entry of classifications) {
+                const idx = entry.index;
+                const type = entry.type;
+                if (idx == null || !type) continue;
+                if (!VALID_TYPES.includes(type)) continue;
+                const bottle = chunk[idx];
+                if (!bottle) continue;
+                if (bottle.type === type) continue;
+                bottle.type = type;
+                try { await saveBottleToDB(bottle); updated++; }
+                catch (err) { console.warn(`Failed to save type for "${bottle.name}":`, err.message); }
             }
         }
 
@@ -1263,6 +1155,63 @@ One entry per wine. Use the index from the list above. Return ONLY the JSON arra
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = '🔄 Reclassify All'; }
     }
+}
+
+// ── Classification helper (batched to stay under prompt size limits) ──────────
+
+const CLASSIFY_BATCH_SIZE = 40; // ~40 bottles ≈ 4-5K chars, well under 15K limit
+
+async function classifyBatch(bottles) {
+    const wineList = bottles.map((b, i) => {
+        const parts = [
+            b.name,
+            b.winery && `by ${b.winery}`,
+            b.vintage && `(${b.vintage})`,
+            b.varietal && `[${b.varietal}]`,
+            b.region && `from ${b.region}`,
+            b.country && `(${b.country})`,
+        ].filter(Boolean).join(' ');
+        return `${i}: ${parts}`;
+    }).join('\n');
+
+    const prompt = `Classify each wine/spirit below into exactly one type.
+
+Valid types: ${VALID_TYPES.join(', ')}
+
+Wines to classify:
+${wineList}
+
+Return ONLY a valid JSON array of objects: [{"index": 0, "type": "Red Wine"}, ...]
+One entry per wine. Use the index from the list above. Return ONLY the JSON array, no markdown fences, no explanation.`;
+
+    const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 2048 });
+
+    let text = '';
+    if (data.content && Array.isArray(data.content)) {
+        text = data.content.find(c => c.type === 'text')?.text || '';
+    } else if (typeof data.text === 'string') {
+        text = data.text;
+    } else if (typeof data === 'string') {
+        text = data;
+    }
+    text = text.replace(/```json\n?|```/g, '').trim();
+
+    let classifications;
+    try {
+        classifications = JSON.parse(text);
+    } catch {
+        const repaired = repairTruncatedJSON(text);
+        try {
+            classifications = JSON.parse(repaired);
+            console.warn('[Classify] JSON was truncated and repaired');
+        } catch {
+            throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
+        }
+    }
+    if (!Array.isArray(classifications)) {
+        throw new Error('AI did not return a valid JSON array. Raw: ' + text.slice(0, 200));
+    }
+    return classifications;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
