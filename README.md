@@ -24,11 +24,11 @@ A modular browser-based investment tracking suite — **Stock Portfolio** and **
   - Mobile: standard OS picker — choose "Take Photo" or "Photo Library" (iOS & Android)
   - Desktop: file picker OR live camera via `getUserMedia`
 - **AI Valuations** — Gemini with Google Search grounding (primary, falls back to Claude on quota errors) searches Wine-Searcher, recent auction results (Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart), and retailer listings to estimate current market value per bottle. Returns: EUR + USD estimate, low–high range, confidence level (High / Medium / Low), cited sources, and an explanation note. Vintage-specific pricing — never averaged across years. Critic scores from label notes (e.g. "96/100") are passed to the prompt as anchors. A staleness warning appears when a valuation is over 60 days old. A navigation guard warns before leaving the page while valuations are running
-- **Drink-Window Status** — Each bottle shows a live status badge: 🔵 Not Ready / 🟢 Ready Now / 🟡 At Peak / 🔴 Past Peak; cellar summary line counts bottles in each state
+- **Drink-Window Status** — Each bottle shows a live status badge: 🔵 Not Ready / 🟢 Ready (first 5 years of window — drink priority) / 🟡 At Peak / 🔴 Past Peak; cellar summary line counts bottles in each state
 - **Cellar Management** — Add, edit, and delete bottles with full metadata (vintage, region, varietal, appellation, etc.)
   - Inline form validation — errors appear beside the relevant field, no blocking alerts
   - Undo delete — 5-second grace period with an Undo button before the record is removed from the database
-- **Search, Sort & Filter** — Live search bar; sort by name, vintage, value, or gain %; collapsible advanced filter chips by country and varietal; sort preference saved across sessions
+- **Search, Sort & Filter** — Live search bar; sort by name, vintage, value, gain %, or recently added; collapsible advanced filter chips by country and varietal; sort preference saved across sessions
 - **CSV Export** — Download the full cellar as a `.csv` file
 - **Value Tracking** — Total estimated collection value always shown; Gain / Loss shown per bottle only when a purchase price is provided (purchase price is optional)
 - **Allocation Charts** — Breakdown by region, varietal, or country
@@ -192,6 +192,8 @@ Click **🤖 AI Analysis** for a full assessment of your cellar:
 | **💎 Update Valuations** | AI-estimate current market value for all bottles |
 | **💾 Save Snapshot** | Save current cellar value to history |
 | **🤖 AI Analysis** | Full cellar analysis from a master-sommelier perspective |
+| **🏷️ Classify Types** | AI-classify bottles that have no type assigned |
+| **🔄 Reclassify All** | Re-classify all bottles including already-typed ones (useful after adding new categories) |
 | **🔑 API Keys** | Configure Anthropic and Supabase keys |
 
 ---
@@ -286,6 +288,13 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.14.3
+- **Wine Cellar — fix "Recently Added" sort** — Sort by "Recently Added" now correctly shows newest bottles first (was returning unsorted array because `created_at` was not mapped from the database)
+- **Drink-window "Ready" uses 5-year urgency window** — "Ready" status now means the wine is within the first 5 years of its drinking window (drink priority). After 5 years it transitions to "At Peak". Previously used the midpoint of the full window, making the "Ready" filter too broad for long-lived wines
+- **New beverage types: Aguardente & Gin** — Dedicated type categories with icons (🔥 / 🍸) and colors, added to the type dropdown, filter chips, label recognition prompt, and AI classification. Spirits no longer lumped under "Other"
+- **"Reclassify All" button** — Re-runs AI type classification on ALL bottles (including already-typed ones), useful for re-categorizing bottles after the new types were added
+- **Pricing golden rules** — Valuation prompts (single and batch) now enforce: (1) Portuguese retail sites searched first, (2) 23% IVA applied on international ex-tax prices, (3) exact bottle format pricing (no extrapolation from 750ml), (4) current in-stock prices only (stale/launch prices skipped)
 
 ### v3.14.2
 - **Wine Cellar — robust label JSON parsing** — Label recognition now uses a 3-step JSON extraction pipeline (sanitise → regex extract `{…}` → truncation repair) mirroring the battle-tested pattern from the batch valuation edge function. Fixes frequent "Could not parse wine data from label" errors, especially on the Claude Vision fallback path
