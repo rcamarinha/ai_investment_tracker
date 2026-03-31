@@ -15,7 +15,7 @@
 import state from './state.js';
 import { callWineAI } from './api.js?v=1.3.20';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
-import { renderCellar } from './cellar.js';
+import { renderCellar, updateBottleCard } from './cellar.js';
 import { showToast } from './utils.js';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
@@ -118,12 +118,12 @@ export async function valuateSingleBottle(bottleId) {
                 notes:        bottle.valuationNote || null,
             }),
         ]);
-        renderCellar();
+        updateBottleCard(bottleId);
         showToast(`Valuation updated: ${bottle.name}`);
     } catch (err) {
         console.error('Valuation error:', err);
         showToast(`Valuation failed: ${err.message}`, 'error');
-        renderCellar(); // restore button state
+        updateBottleCard(bottleId); // restore button state
     }
 }
 
