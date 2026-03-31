@@ -1181,10 +1181,10 @@ Valid types: ${VALID_TYPES.join(', ')}
 Wines to classify:
 ${wineList}
 
-Return ONLY a valid JSON array of objects: [{"index": 0, "type": "Red Wine"}, ...]
-One entry per wine. Use the index from the list above. Return ONLY the JSON array, no markdown fences, no explanation.`;
+Return ONLY a compact JSON array on a single line: [{"index":0,"type":"Red Wine"},{"index":1,"type":"White Wine"},...]
+One entry per wine. Use the index from the list above. No whitespace, no markdown fences, no explanation.`;
 
-    const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 2048 });
+    const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 4096 });
 
     let text = '';
     if (data.content && Array.isArray(data.content)) {
