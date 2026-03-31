@@ -385,13 +385,13 @@ function parseBatchText(
   return null;
 }
 
-// Optimal chunk size for Gemini grounding: small enough for focused per-wine
-// web searches, large enough to keep parallel API calls manageable.
-const CHUNK_SIZE = 5;
+// Chunk size for Gemini grounding: keep small (3) so each grounded web-search
+// completes well within the edge function timeout (60s free / 150s paid).
+const CHUNK_SIZE = 3;
 
 async function valuateChunk(chunk: BottleInfo[], chunkIdx: number): Promise<ValuationResult[]> {
   const prompt = buildBatchPrompt(chunk);
-  const maxTokens = 4096; // 5 bottles × ~500 tokens each — well within limit
+  const maxTokens = 4096; // 3 bottles × ~500 tokens each — well within limit
 
   // 1. Try Gemini
   try {
