@@ -1,4 +1,8 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
 
 // ── CORS: restrict to known origins ──────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -29,6 +33,30 @@ Deno.serve(async (req) => {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  // ── Manual auth verification ─────────────────────────────────────────────
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) {
+    return new Response(JSON.stringify({ error: "Missing authorization token" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  {
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data, error } = await sb.auth.getUser(token);
+    if (error || !data?.user) {
+      console.warn("[analyze-portfolio] Auth failed:", error?.message || "no user");
+      return new Response(JSON.stringify({ error: "Invalid or expired token. Please log in again." }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    console.log("[analyze-portfolio] Authenticated user:", data.user.id);
   }
 
   if (!ANTHROPIC_API_KEY) {
