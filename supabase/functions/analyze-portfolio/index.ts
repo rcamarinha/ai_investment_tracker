@@ -1,13 +1,24 @@
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// ── CORS: restrict to known origins ──────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  "https://cacoventures.com",
+  "https://www.cacoventures.com",
+  "https://ai-investment-tracker.vercel.app",
+];
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("origin") || "";
+  return {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -79,8 +90,16 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
       }
     }
 
+    // Cap prompt length to prevent abuse
+    if (promptContent.length > 15_000) {
+      return new Response(
+        JSON.stringify({ error: "Prompt too long (max 15000 chars)" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // For movers analysis, plain text response; otherwise JSON
-    const maxTokens = requestType === 'movers' ? 350 : 4000;
+    const maxTokens = Math.min(requestType === 'movers' ? 350 : 4000, 8192);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -98,13 +117,11 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");
+      console.error(`[analyze-portfolio] Anthropic API error ${response.status}:`, errBody.slice(0, 300));
       return new Response(
-        JSON.stringify({
-          error: `Anthropic API error: ${response.status}`,
-          details: errBody,
-        }),
+        JSON.stringify({ error: "Analysis service temporarily unavailable. Please try again later." }),
         {
-          status: response.status,
+          status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
@@ -116,8 +133,9 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
+    console.error("[analyze-portfolio] Unexpected error:", err.message || err);
     return new Response(
-      JSON.stringify({ error: err.message || "Internal server error" }),
+      JSON.stringify({ error: "Internal server error" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

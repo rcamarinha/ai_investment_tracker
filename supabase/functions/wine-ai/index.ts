@@ -37,12 +37,24 @@ const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${
 const CLAUDE_MODEL = "claude-opus-4-6";
 
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// ── CORS: restrict to known origins ──────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  "https://cacoventures.com",
+  "https://www.cacoventures.com",
+  "https://ai-investment-tracker.vercel.app",
+];
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("origin") || "";
+  return {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+// corsHeaders is set per-request in the main handler
+let corsHeaders: Record<string, string> = {};
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -233,12 +245,12 @@ async function handleValuation(prompt: string): Promise<Response> {
   try {
     const { text } = await callClaude(prompt, 4096, true);
     console.log("[wine-ai] Valuation via Claude (fallback)");
-    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude", _geminiError: geminiError });
+    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude" });
   } catch (err) {
     const claudeMsg = err instanceof Error ? err.message : String(err);
     console.error("[wine-ai] Claude fallback also failed:", claudeMsg);
     return jsonResponse(
-      { error: `Gemini failed: ${geminiError}; Claude fallback failed: ${claudeMsg}` },
+      { error: "Valuation service temporarily unavailable. Please try again later." },
       502
     );
   }
@@ -503,9 +515,10 @@ async function handleLabel(
 
   if (!anthropicRes.ok) {
     const errBody = await anthropicRes.text().catch(() => "");
+    console.error(`[wine-ai] Anthropic API error ${anthropicRes.status}:`, errBody.slice(0, 300));
     return jsonResponse(
-      { error: `Anthropic API error: ${anthropicRes.status}`, details: errBody.slice(0, 300) },
-      anthropicRes.status,
+      { error: "AI service temporarily unavailable. Please try again later." },
+      502,
     );
   }
 
@@ -538,12 +551,12 @@ async function handleAnalysis(prompt: string, maxTokens: number): Promise<Respon
   try {
     console.log("[wine-ai] Cellar analysis via Claude (fallback)");
     const { text } = await callClaude(prompt, maxTokens, false);
-    return jsonResponse({ content: [{ type: "text", text }], _source: "claude", _geminiError: geminiError || undefined });
+    return jsonResponse({ content: [{ type: "text", text }], _source: "claude" });
   } catch (err) {
     const claudeMsg = err instanceof Error ? err.message : String(err);
     console.error("[wine-ai] Claude analysis fallback also failed:", claudeMsg);
     return jsonResponse(
-      { error: `Gemini failed: ${geminiError}; Claude fallback failed: ${claudeMsg}` },
+      { error: "Analysis service temporarily unavailable. Please try again later." },
       502,
     );
   }
@@ -552,6 +565,8 @@ async function handleAnalysis(prompt: string, maxTokens: number): Promise<Respon
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -575,10 +590,24 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
 
-  const { requestType, prompt, image, maxTokens = 1024, enableWebSearch = false, bottles } = body;
+  const { requestType, prompt, image, enableWebSearch = false, bottles } = body;
+  // Cap maxTokens server-side to prevent abuse
+  const maxTokens = Math.min(body.maxTokens || 1024, 8192);
 
   if (!requestType) {
     return jsonResponse({ error: "requestType is required" }, 400);
+  }
+
+  // ── Input validation ───────────────────────────────────────────────────────
+  const MAX_PROMPT_LENGTH  = 15_000;
+  const MAX_BATCH_SIZE     = 50;
+  const MAX_IMAGE_BASE64   = 2 * 1024 * 1024; // 2 MB
+
+  if (prompt && prompt.length > MAX_PROMPT_LENGTH) {
+    return jsonResponse({ error: `Prompt too long (max ${MAX_PROMPT_LENGTH} chars)` }, 400);
+  }
+  if (image?.base64 && image.base64.length > MAX_IMAGE_BASE64) {
+    return jsonResponse({ error: "Image too large (max 2 MB)" }, 400);
   }
 
   // ── Valuation routes (Gemini primary, Claude fallback) ───────────────────
@@ -590,6 +619,9 @@ Deno.serve(async (req) => {
   if (requestType === "batch-valuation") {
     if (!Array.isArray(bottles) || bottles.length === 0) {
       return jsonResponse({ error: "bottles array is required for batch-valuation" }, 400);
+    }
+    if (bottles.length > MAX_BATCH_SIZE) {
+      return jsonResponse({ error: `Too many bottles (max ${MAX_BATCH_SIZE} per request)` }, 400);
     }
     return handleBatchValuation(bottles);
   }
