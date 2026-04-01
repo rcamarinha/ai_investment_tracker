@@ -332,6 +332,8 @@ Pricing rules (follow strictly, in priority order):
 2. VAT FILTER: If sourcing from an international ex-tax aggregator (e.g. Wine-Searcher merchant average), multiply by 1.23 to add Portuguese IVA (23%) so the estimate reflects real replacement cost in Portugal.
 3. BOTTLE SIZE: Search for the EXACT bottle format listed per wine. Do not extrapolate from 750ml pricing. If no exact-format listing exists, state this in the valuationNote.
 4. CURRENT PRICES ONLY: Use in-stock retail or recent auction hammer prices. Skip out-of-stock listings (prices are likely outdated). Never use historical launch/release prices as current value.
+5. CROSS-REFERENCE MULTIPLE SOURCES: Always check at least 3 sources. Use the MEDIAN price across found sources as the estimatedValue — do NOT anchor to the single cheapest listing. If one source is 30%+ below all others, it is likely ex-tax, an error, or a different format — exclude it or apply the VAT adjustment.
+6. RARE & COLLECTIBLE WINES: For Port, Burgundy, Bordeaux First Growths, and other collectible/investment-grade wines, weight specialist merchants and major auction houses more heavily than generic aggregators.
 
 Additional rules:
 - Be vintage-specific (do NOT average across years).
