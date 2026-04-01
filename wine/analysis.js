@@ -161,21 +161,36 @@ function renderAnalysis(analysis) {
 function buildAnalysisPrompt() {
     const totals = computeTotals();
 
-    const cellarSummary = state.cellar.map(b => {
-        const invested  = (b.qty || 0) * (b.purchasePrice || 0);
-        const estimated = b.estimatedValue ? (b.qty || 0) * b.estimatedValue : null;
+    // Compact format: one line per bottle, no bullet points, minimal whitespace
+    const cellarLines = state.cellar.map(b => {
         const parts = [
-            `${b.qty}x ${b.name || 'Unknown'}`,
+            `${b.qty}x ${b.name || '?'}`,
             b.vintage  && `(${b.vintage})`,
-            b.winery   && `by ${b.winery}`,
-            b.region   && `from ${b.region}`,
-            b.varietal && `[${b.varietal}]`,
-            `cost €${(b.purchasePrice || 0).toFixed(0)}/bottle`,
-            estimated  && `est. €${(b.estimatedValue || 0).toFixed(0)}/bottle`,
-            b.drinkWindow && `drink: ${b.drinkWindow}`,
-        ].filter(Boolean).join(' ');
-        return `• ${parts}`;
-    }).join('\n');
+            b.winery   && b.winery,
+            b.region   && b.region,
+            b.varietal && b.varietal,
+            `€${(b.purchasePrice || 0).toFixed(0)}`,
+            b.estimatedValue && `est€${b.estimatedValue.toFixed(0)}`,
+            b.drinkWindow && `drk:${b.drinkWindow}`,
+        ].filter(Boolean).join('|');
+        return parts;
+    });
+
+    // If the cellar summary exceeds ~10K chars, truncate and note it
+    const MAX_CELLAR_CHARS = 10000;
+    let cellarSummary = cellarLines.join('\n');
+    let truncatedNote = '';
+    if (cellarSummary.length > MAX_CELLAR_CHARS) {
+        const included = [];
+        let len = 0;
+        for (const line of cellarLines) {
+            if (len + line.length + 1 > MAX_CELLAR_CHARS) break;
+            included.push(line);
+            len += line.length + 1;
+        }
+        cellarSummary = included.join('\n');
+        truncatedNote = `\n(Showing ${included.length} of ${cellarLines.length} bottles — largest positions listed)`;
+    }
 
     return `You are a master sommelier and fine wine investment advisor. Analyze the following wine cellar and provide comprehensive insights.
 
@@ -186,7 +201,7 @@ Cellar summary:
 - Gain/Loss: €${(totals.totalEstimated - totals.totalInvested).toFixed(2)}
 
 Individual bottles:
-${cellarSummary}
+${cellarSummary}${truncatedNote}
 
 Today's date: ${new Date().toISOString().slice(0, 10)}
 
