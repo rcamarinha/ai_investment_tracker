@@ -28,11 +28,15 @@ ai_investment_tracker/
 ├── src/
 │   └── portfolio.js            # Pure functions for testing (kept in sync with services)
 ├── tests/                      # Vitest test suite
+├── vercel.json                 # Vercel deployment: security headers, cache rules
 ├── supabase/
+│   ├── migrations/             # SQL migrations (e.g. restrict wines UPDATE)
 │   └── functions/
-│       └── analyze-portfolio/
-│           └── index.ts        # Edge function for server-side analysis
-├── supabase_schema.sql         # Database schema
+│       ├── analyze-portfolio/
+│       │   └── index.ts        # Edge function for stock portfolio analysis
+│       └── wine-ai/
+│           └── index.ts        # Edge function for wine AI (label, valuation, analysis)
+├── supabase_schema.sql         # Database schema (positions, snapshots, assets, transactions, etc.)
 ├── vitest.config.js
 └── package.json
 ```
@@ -161,7 +165,7 @@ Sizes: `.btn` (default) or `.btn-sm` (compact).
 ## Data Persistence
 
 - **localStorage** — API keys, sector cache, portfolio history
-- **Supabase** — Positions, snapshots, assets, price history, shared config (RLS per-user)
+- **Supabase** — Positions, snapshots, assets, transactions, price history, shared config (RLS per-user)
 - **Claude cloud storage** — Portfolio state + snapshots (when running in claude.ai)
 
 ## External API Endpoints
@@ -171,6 +175,7 @@ Sizes: `.btn` (default) or `.btn-sm` (compact).
 | Finnhub | `finnhub.io/api/v1/quote` | 60/min |
 | FMP | `financialmodelingprep.com/stable/quote-short` | 250/day |
 | Alpha Vantage | `alphavantage.co/query?function=GLOBAL_QUOTE` | 5/min, 25/day |
+| Gemini | `generativelanguage.googleapis.com/v1beta/models` | Per-key limits |
 | Claude API | `api.anthropic.com/v1/messages` | Per-key limits |
 | Supabase | Project-specific URL | Per-plan limits |
 
@@ -184,7 +189,7 @@ python -m http.server 8000
 # Then open http://localhost:8000
 ```
 
-Or deploy to GitHub Pages (already configured via CNAME).
+Or deploy via **Vercel** (`vercel.json` configured) or **GitHub Pages** (CNAME configured).
 
 ### Making Changes
 
@@ -216,3 +221,5 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **FMP endpoint** — Uses `/stable/quote-short` (not `/api/v3/quote`) due to CORS/auth issues
 - **`window.storage`** — Claude-specific API, not standard Web Storage
 - **`renderPortfolio()` called multiple times** after import with setTimeout delays for UI refresh
+- **Edge function auth** — `verify_jwt` is OFF in `config.toml`; auth is handled manually via `supabase.auth.getUser()` inside each function (gateway JWT check is incompatible with `sb_publishable_` keys)
+- **Edge function prompt limits** — Server enforces 15K char max prompts; classification and analysis must batch/truncate on the client side

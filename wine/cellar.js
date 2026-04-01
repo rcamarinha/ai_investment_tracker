@@ -1159,7 +1159,7 @@ export async function reclassifyAllBottles() {
 
 // ── Classification helper (batched to stay under prompt size limits) ──────────
 
-const CLASSIFY_BATCH_SIZE = 40; // ~40 bottles ≈ 4-5K chars, well under 15K limit
+const CLASSIFY_BATCH_SIZE = 20; // ~20 bottles per batch keeps prompt + response within limits
 
 async function classifyBatch(bottles) {
     const wineList = bottles.map((b, i) => {
@@ -1195,6 +1195,10 @@ One entry per wine. Use the index from the list above. No whitespace, no markdow
         text = data;
     }
     text = text.replace(/```json\n?|```/g, '').trim();
+
+    // Extract JSON array from response — AI may add preamble text
+    const arrayMatch = text.match(/\[[\s\S]*\]/);
+    if (arrayMatch) text = arrayMatch[0];
 
     let classifications;
     try {
