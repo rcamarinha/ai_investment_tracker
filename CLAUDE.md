@@ -223,3 +223,4 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **`renderPortfolio()` called multiple times** after import with setTimeout delays for UI refresh
 - **Edge function auth** — `verify_jwt` is OFF in `config.toml`; auth is handled manually via `supabase.auth.getUser()` inside each function (gateway JWT check is incompatible with `sb_publishable_` keys)
 - **Edge function prompt limits** — Server enforces 15K char max prompts; classification and analysis must batch/truncate on the client side
+- **Valuation pricing rules** — 6 rules enforced in both single and batch prompts: (1) Portuguese retailers first, (2) 23% IVA on ex-tax sources, (3) exact bottle format, (4) current in-stock only, (5) cross-reference ≥3 sources using median, (6) weight specialist merchants for rare/collectible wines

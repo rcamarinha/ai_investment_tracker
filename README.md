@@ -289,6 +289,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.14.5
+- **Improved valuation accuracy** — New pricing rules require cross-referencing at least 3 sources and using the **median** price, not the cheapest outlier. A single listing 30%+ below all others is flagged as likely ex-tax or erroneous. Specialist merchants and auction houses are weighted more heavily for rare/collectible wines (Port, Burgundy, First Growths)
+- **Robust classification JSON parsing** — AI responses with preamble text ("Here is the classification:") and truncated arrays (no closing `]`) are now handled gracefully via partial array extraction + JSON repair
+- **Classification batch size reduced to 15** — Prevents response truncation on large cellars
+
 ### v3.14.4
 - **Security: manual auth verification on edge functions** — Replaced Supabase gateway `verify_jwt` (incompatible with newer `sb_publishable_` keys / ES256 tokens) with in-function auth via `supabase.auth.getUser()`. Both `wine-ai` and `analyze-portfolio` edge functions now validate the user token against the live auth service before processing requests
 - **Security: CORS origin allowlisting** — Edge functions restrict `Access-Control-Allow-Origin` to known domains (cacoventures.com, Vercel deploy URL) instead of `*`
@@ -297,7 +302,7 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 - **Security: Content Security Policy** — `vercel.json` adds CSP, HSTS, X-Frame-Options, and X-Content-Type-Options headers
 - **Security: restricted wines UPDATE policy** — SQL migration limits `wines` table updates to only `drink_window` and `type` fields; identity columns (name, winery, vintage) are immutable
 - **Schema: transactions table** — Added `transactions` table definition to `supabase_schema.sql` with full RLS policies (was missing from schema docs despite existing in live DB)
-- **Batched classification** — "Classify Types" and "Reclassify All" now process bottles in chunks of 20 with a shared `classifyBatch` helper, preventing prompt-too-long errors on large cellars
+- **Batched classification** — "Classify Types" and "Reclassify All" now process bottles in chunks with a shared `classifyBatch` helper, preventing prompt-too-long errors on large cellars
 - **Compact analysis prompt** — Cellar analysis uses pipe-delimited bottle format with 10K char truncation, staying within the 15K server limit
 - **Fix valuation refresh UX** — Single-bottle 💎 valuation now updates only the affected card in-place (`updateBottleCard`) instead of re-rendering the entire cellar. Filters, scroll position, and sort order are preserved
 - **Batch valuation size reduced** — Client and server batch size reduced from 5 to 3 bottles per request, preventing edge function timeouts during Gemini grounded web searches
