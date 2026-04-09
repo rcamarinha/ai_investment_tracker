@@ -16,7 +16,7 @@ import state from './state.js';
 import { callWineAI } from './api.js?v=1.3.20';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
 import { renderCellar, updateBottleCard } from './cellar.js';
-import { showToast } from './utils.js';
+import { showToast, repairTruncatedJSON } from './utils.js';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
@@ -303,7 +303,7 @@ async function fetchValuation(bottle) {
         showToast(`[Debug] Gemini failed → Claude used. ${snippet}`, 'warning', 10000);
     }
 
-    const text = data.text ?? '';
+    const text = (data.text ?? '').replace(/```json\s*|```/gi, '').trim();
 
     if (!text) {
         console.error('[Valuation] No text in Gemini response:', JSON.stringify(data).slice(0, 300));
@@ -324,7 +324,17 @@ async function fetchValuation(bottle) {
         parsed._aiSource = data._fallback === 'claude' ? 'claude_ai' : 'gemini_ai';
         return parsed;
     } catch {
-        throw new Error('Could not parse valuation JSON from Gemini.');
+        const repaired = repairTruncatedJSON(jsonMatch[0]);
+        try {
+            const parsed = JSON.parse(repaired);
+            if (!parsed.estimatedValue || isNaN(parsed.estimatedValue)) {
+                throw new Error('Invalid valuation response — estimatedValue missing or NaN');
+            }
+            parsed._aiSource = data._fallback === 'claude' ? 'claude_ai' : 'gemini_ai';
+            return parsed;
+        } catch {
+            throw new Error('Could not parse valuation JSON from Gemini.');
+        }
     }
 }
 
