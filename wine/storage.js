@@ -119,7 +119,9 @@ export async function handleForgotPassword() {
     if (!state.supabaseClient) { showToast('Supabase not configured.', 'warning'); return; }
     const email = document.getElementById('authEmail')?.value.trim();
     if (!email) { showToast('Please enter your email address first.', 'warning'); return; }
-    const redirectTo = window.location.origin + window.location.pathname;
+    // Strip .html suffix — Vercel cleanUrls serves /wine not /wine.html
+    const pathname = window.location.pathname.replace(/\.html$/, '');
+    const redirectTo = window.location.origin + pathname;
     console.log('[auth] resetPasswordForEmail →', email, 'redirect:', redirectTo);
     try {
         const { error } = await state.supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
