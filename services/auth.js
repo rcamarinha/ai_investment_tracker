@@ -145,13 +145,14 @@ export async function handleForgotPassword() {
         return;
     }
 
+    const redirectTo = window.location.origin + window.location.pathname.replace(/\.html$/, '');
+    console.log('[auth] resetPasswordForEmail →', email, 'redirect:', redirectTo);
     try {
-        const { error } = await state.supabaseClient.auth.resetPasswordForEmail(email, {
-            redirectTo: window.location.origin + window.location.pathname,
-        });
+        const { error } = await state.supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
         if (error) throw error;
         alert(`Password reset email sent to ${email}. Check your inbox and follow the link to set a new password.`);
     } catch (err) {
+        console.error('[auth] resetPasswordForEmail failed:', err);
         alert('Failed to send reset email: ' + err.message);
     }
 }
