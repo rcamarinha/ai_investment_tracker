@@ -175,13 +175,16 @@
             const emailInput = document.getElementById('authEmail');
             const email = emailInput ? emailInput.value.trim() : '';
             if (!email) { alert('Please enter your email address first.'); if (emailInput) emailInput.focus(); return; }
+            const redirectTo = window.location.origin + window.location.pathname.replace(/\.html$/, '');
+            console.log('[auth] resetPasswordForEmail →', email, 'redirect:', redirectTo);
             try {
-                const { error } = await sbClient.auth.resetPasswordForEmail(email, {
-                    redirectTo: window.location.origin + window.location.pathname,
-                });
+                const { error } = await sbClient.auth.resetPasswordForEmail(email, { redirectTo });
                 if (error) throw error;
                 alert(`Password reset email sent to ${email}. Follow the link to set a new password.`);
-            } catch (err) { alert('Failed to send reset email: ' + err.message); }
+            } catch (err) {
+                console.error('[auth] resetPasswordForEmail failed:', err);
+                alert('Failed to send reset email: ' + err.message);
+            }
         };
 
         window.handlePasswordReset = async function () {
