@@ -119,13 +119,19 @@ export async function handleForgotPassword() {
     if (!state.supabaseClient) { showToast('Supabase not configured.', 'warning'); return; }
     const email = document.getElementById('authEmail')?.value.trim();
     if (!email) { showToast('Please enter your email address first.', 'warning'); return; }
+    // Strip .html suffix — Vercel cleanUrls serves /wine not /wine.html
+    const pathname = window.location.pathname.replace(/\.html$/, '');
+    const redirectTo = window.location.origin + pathname;
+    console.log('[auth] resetPasswordForEmail →', email, 'redirect:', redirectTo);
     try {
-        const { error } = await state.supabaseClient.auth.resetPasswordForEmail(email, {
-            redirectTo: window.location.origin + window.location.pathname,
-        });
+        const { error } = await state.supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
         if (error) throw error;
+        console.log('[auth] resetPasswordForEmail: success');
         showToast(`Password reset email sent to ${email}.`, 'success', 7000);
-    } catch (err) { showToast('Failed to send reset email: ' + err.message, 'error'); }
+    } catch (err) {
+        console.error('[auth] resetPasswordForEmail failed:', err);
+        showToast('Failed to send reset email: ' + err.message, 'error', 8000);
+    }
 }
 
 export async function handlePasswordReset() {

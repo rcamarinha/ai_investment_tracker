@@ -738,54 +738,12 @@ export async function submitBottle() {
         );
 
         if (existingHoldings.length > 0) {
-            const choice = await showMergeDialog(existingHoldings, bottleData);
-
-            if (choice === 'cancel') {
-                submitBtn.disabled = false;
-                submitBtn.textContent = t('bottle.btn.add');
-                return;
-            }
-
-            if (choice === 'merge') {
-                // Merge all existing holdings + new bottle into the primary (oldest) row
-                const primary = existingHoldings[0];
-                mergeTargetIds = existingHoldings.map(h => h.id);
-
-                // Sum quantities
-                const existingQty = existingHoldings.reduce((sum, h) => sum + (h.qty || 0), 0);
-                bottleData.id     = primary.id;
-                bottleData.wineId = primary.wine_id;
-                bottleData.qty    = existingQty + qty;
-
-                // Weighted average purchase price
-                const allRows = [
-                    ...existingHoldings.map(h => ({ qty: h.qty, price: h.purchase_price })),
-                    { qty, price: purchasePrice },
-                ];
-                const withPrice = allRows.filter(r => r.price != null && r.price > 0);
-                if (withPrice.length > 0) {
-                    const totalCost = withPrice.reduce((s, r) => s + (r.qty || 0) * r.price, 0);
-                    const totalQtyP = withPrice.reduce((s, r) => s + (r.qty || 0), 0);
-                    bottleData.purchasePrice = totalQtyP > 0 ? totalCost / totalQtyP : null;
-                }
-
-                // Best valuation: most recently valued existing row
-                const withVal = [...existingHoldings]
-                    .filter(h => h.last_valued_at)
-                    .sort((a, b) => new Date(b.last_valued_at) - new Date(a.last_valued_at));
-                if (withVal.length > 0) {
-                    const bv = withVal[0];
-                    bottleData.estimatedValue    ??= bv.estimated_value;
-                    bottleData.estimatedValueUSD ??= bv.estimated_value_usd;
-                    bottleData.valueLow          ??= bv.value_low;
-                    bottleData.valueHigh         ??= bv.value_high;
-                    bottleData.confidence        ??= bv.confidence;
-                    bottleData.valuationNote     ??= bv.valuation_note;
-                    bottleData.valuationSources  ??= bv.valuation_sources;
-                    bottleData.lastValuedAt      ??= bv.last_valued_at;
-                }
-            }
-            // 'separate' → fall through and insert normally
+            submitBtn.disabled = false;
+            submitBtn.textContent = t('bottle.btn.add');
+            closeBottleDialog();
+            showEditBottleDialog(existingHoldings[0].id);
+            showToast('This wine is already in your cellar — showing existing entry.', 'info');
+            return;
         }
     }
 
