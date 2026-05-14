@@ -827,6 +827,33 @@ export async function deleteCurrentBottle() {
     );
 }
 
+// ── Drink / Consume ───────────────────────────────────────────────────────────
+
+export async function drinkBottle(bottleId, drinkQty = 1) {
+    const bottle = state.cellar.find(b => b.id === bottleId);
+    if (!bottle) return;
+    const newQty = (bottle.qty || 0) - drinkQty;
+
+    if (newQty <= 0) {
+        const confirmed = await showConfirm(
+            `Last ${drinkQty} bottle${drinkQty > 1 ? 's' : ''} of "${bottle.name}" consumed. Remove from cellar?`,
+            { confirmLabel: 'Remove', danger: true }
+        );
+        if (!confirmed) return;
+        await deleteBottleFromDB(bottleId);
+        state.cellar = state.cellar.filter(b => b.id !== bottleId);
+        renderCellar();
+        showToast(`"${bottle.name}" removed from cellar.`);
+    } else {
+        const updated = { ...bottle, qty: newQty };
+        await saveBottleToDB(updated);
+        const idx = state.cellar.findIndex(b => b.id === bottleId);
+        if (idx >= 0) state.cellar[idx] = updated;
+        renderCellar();
+        showToast(`Cheers! ${newQty} bottle${newQty !== 1 ? 's' : ''} of "${bottle.name}" remaining.`);
+    }
+}
+
 // ── CSV Export ────────────────────────────────────────────────────────────────
 
 export function exportCellarCSV() {

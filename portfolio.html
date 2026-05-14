@@ -6,8 +6,8 @@
     <title>AI Financial Advisor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.14.0"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.14.0">
+    <script src="lib/supabase.js?v=3.15.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.15.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -346,25 +346,25 @@
     -->
     <script type="module">
         // ── Import all modules ──────────────────────────────────────────────
-        import { renderNavbar } from './services/navbar.js';
-        import state from './services/state.js';
-        import { isArtifact } from './services/utils.js';
-        import { loadSectorCache } from './data/sectors.js';
+        import { renderNavbar } from './services/navbar.js?v=3.15.0';
+        import state from './services/state.js?v=3.15.0';
+        import { isArtifact } from './services/utils.js?v=3.15.0';
+        import { loadSectorCache } from './data/sectors.js?v=3.15.0';
         import { renderPerspectiveTabs, selectPerspective, toggleSectorFilter,
-                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './services/ui.js';
+                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './services/ui.js?v=3.15.0';
         import { renderPortfolio, showImportDialog, closeImportDialog,
                  importPositions, savePortfolioSnapshot, updateHistoryDisplay,
                  clearHistory, deleteSnapshot, initPositionDialog, showAddPositionDialog,
                  showEditPositionDialog, closePositionDialog, submitPosition,
                  deletePosition, toggleInactivePositions,
                  refreshSinglePrice, setBaseCurrency,
-                 loadTransactionsFromStorage } from './services/portfolio.js';
-        import { fetchMarketPrices, fetchExchangeRates } from './services/pricing.js';
-        import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
-        import { initSupabase } from './services/storage.js';
+                 loadTransactionsFromStorage } from './services/portfolio.js?v=3.15.0';
+        import { fetchMarketPrices, fetchExchangeRates } from './services/pricing.js?v=3.15.0';
+        import { analyzeMarkets, getTradeIdeas } from './services/analysis.js?v=3.15.0';
+        import { initSupabase } from './services/storage.js?v=3.15.0';
         import { handleLogin, handleSignup, handleLogout, handleGoogleLogin,
                  handleForgotPassword, handlePasswordReset, cancelPasswordRecovery,
-                 checkUserRole, updateActionVisibility } from './services/auth.js';
+                 checkUserRole, updateActionVisibility } from './services/auth.js?v=3.15.0';
 
         // ── Expose functions to onclick handlers ────────────────────────────
         window.showApiKeyDialog    = showApiKeyDialog;

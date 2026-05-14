@@ -6,9 +6,9 @@
     <title>Wine Cellar Tracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.14.0"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.14.1">
-    <link rel="stylesheet" href="css/wine.css?v=3.14.1">
+    <script src="lib/supabase.js?v=3.15.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.15.0">
+    <link rel="stylesheet" href="css/wine.css?v=3.15.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -325,7 +325,7 @@
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
         // ── Imports ────────────────────────────────────────────────────────────
-        import { renderNavbar } from './services/navbar.js';
+        import { renderNavbar } from './services/navbar.js?v=3.15.0';
         import state from './wine/state.js?v=1.3.22';
         import { recognizeLabel, fileToBase64, captureVideoFrame, compressImageForLabel } from './wine/label.js?v=1.3.24';
         import { initSupabase, updateAuthBar,
@@ -337,7 +337,7 @@
                  exportCellarCSV, onFilterChange, onReadinessFilterClick,
                  clearAllFilters, toggleMoreFilters, deduplicateCellar,
                  onTypeFilterClick, classifyUntypedBottles,
-                 reclassifyAllBottles } from './wine/cellar.js?v=1.3.28';
+                 reclassifyAllBottles, drinkBottle } from './wine/cellar.js?v=1.3.29';
         import { valuateAllBottles, valuateSingleBottle, applyValuationCache, attachValuationGuard, detachValuationGuard } from './wine/valuation.js?v=1.3.27';
         import { analyzeCellar } from './wine/analysis.js?v=1.3.26';
         import { renderAllocationCharts, showAllocationTab } from './wine/ui.js?v=1.3.22';
@@ -374,6 +374,7 @@
         window.handleForgotPassword  = handleForgotPassword;
         window.handlePasswordReset   = handlePasswordReset;
         window.cancelPasswordRecovery = cancelPasswordRecovery;
+        window.drinkBottle           = drinkBottle;
 
         // ── Camera state ───────────────────────────────────────────────────────
         let cameraStream = null;
@@ -521,9 +522,86 @@
             }
         }
 
+        // ── Cellar match helpers ───────────────────────────────────────────────
+
+        function findCellarMatches(wine) {
+            if (!wine.name) return [];
+            const nameLower  = wine.name.toLowerCase();
+            const vintage    = wine.vintage ? parseInt(wine.vintage) : null;
+            const wineryLow  = wine.winery  ? wine.winery.toLowerCase()  : null;
+            return state.cellar.filter(b => {
+                if (!b.name) return false;
+                if (b.name.toLowerCase() !== nameLower) return false;
+                // Only reject on vintage mismatch when both sides have a vintage
+                if (vintage && b.vintage && b.vintage !== vintage) return false;
+                // Only reject on winery mismatch when both sides have a winery
+                if (wineryLow && b.winery && b.winery.toLowerCase() !== wineryLow) return false;
+                return true;
+            });
+        }
+
+        // State for the drink-from-scan widget
+        window._drinkQty         = 1;
+        window._drinkMatchIdx    = 0;  // which match is currently selected (multi-lot)
+
+        window.adjustDrinkQty = function(delta) {
+            const matches  = window._scannedCellarMatches || [];
+            const bottle   = matches[window._drinkMatchIdx];
+            if (!bottle) return;
+            const max      = bottle.qty || 1;
+            window._drinkQty = Math.min(max, Math.max(1, (window._drinkQty || 1) + delta));
+            const el = document.getElementById('drinkQtyDisplay');
+            if (el) el.textContent = window._drinkQty;
+        };
+
+        window.selectDrinkMatch = function(idx) {
+            window._drinkMatchIdx = idx;
+            window._drinkQty = 1;
+            // Re-render the drink controls section only
+            const matches = window._scannedCellarMatches || [];
+            renderDrinkControls(matches, idx);
+        };
+
+        window.confirmDrink = function() {
+            const matches = window._scannedCellarMatches || [];
+            const bottle  = matches[window._drinkMatchIdx];
+            if (!bottle) return;
+            const qty = window._drinkQty || 1;
+            clearScan();
+            drinkBottle(bottle.id, qty);
+        };
+
+        function renderDrinkControls(matches, selectedIdx) {
+            const bottle = matches[selectedIdx];
+            if (!bottle) return;
+            const max = bottle.qty || 1;
+            const qty = Math.min(window._drinkQty || 1, max);
+            window._drinkQty = qty;
+            const el = document.getElementById('drinkControls');
+            if (!el) return;
+            el.innerHTML = `
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <div style="display:flex;align-items:center;gap:0;border:1px solid var(--border-hover);border-radius:6px;overflow:hidden;">
+                        <button onclick="adjustDrinkQty(-1)" style="padding:6px 12px;background:var(--ink-2);color:var(--text-primary);border:none;cursor:pointer;font-size:16px;line-height:1;">−</button>
+                        <span id="drinkQtyDisplay" style="padding:6px 14px;background:var(--ink-1);font-weight:600;min-width:32px;text-align:center;">${qty}</span>
+                        <button onclick="adjustDrinkQty(1)"  style="padding:6px 12px;background:var(--ink-2);color:var(--text-primary);border:none;cursor:pointer;font-size:16px;line-height:1;">+</button>
+                    </div>
+                    <button class="btn btn-accent" onclick="confirmDrink()">🍷 Drink</button>
+                    <button class="btn btn-sm btn-primary" onclick="showEditBottleDialog('${bottle.id}');clearScan();">✏️ Edit</button>
+                    <button class="btn btn-sm" onclick="addScannedToBottleDialog()" style="color:var(--text-secondary);">➕ Add Another</button>
+                </div>`;
+        }
+
         function showRecognitionResult(wine) {
-            const resultEl = document.getElementById('recognitionResult');
+            const resultEl    = document.getElementById('recognitionResult');
             const scannerCard = document.getElementById('scannerCard');
+
+            window._lastScannedWine      = wine;
+            window._scannedCellarMatches = findCellarMatches(wine);
+            window._drinkQty             = 1;
+            window._drinkMatchIdx        = 0;
+
+            const matches = window._scannedCellarMatches;
 
             const fields = [
                 ['Wine',        wine.name],
@@ -537,20 +615,60 @@
                 ['Alcohol',     wine.alcohol],
             ].filter(([, v]) => v != null);
 
+            const sourceLabel = wine._source === 'claude' ? 'Claude Vision'
+                              : wine._source === 'gemini' ? 'Gemini Vision' : 'AI Vision';
+
+            let actionsHTML;
+            if (matches.length === 1) {
+                const b = matches[0];
+                const locationParts = [b.storage, b.purchasePrice != null ? `€${b.purchasePrice}` : null].filter(Boolean);
+                actionsHTML = `
+                    <div style="margin-top:12px;padding:10px 12px;background:var(--ink-2);border-radius:8px;border:1px solid var(--border);">
+                        <div style="font-size:12px;color:var(--up);font-weight:600;margin-bottom:6px;">✅ Found in your cellar</div>
+                        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+                            <span style="font-weight:600;">${escapeHTML(b.name)}${b.vintage ? ' ' + b.vintage : ''}</span>
+                            <span style="font-size:13px;color:var(--text-secondary);">${b.qty} bottle${b.qty !== 1 ? 's' : ''}${locationParts.length ? ' · ' + escapeHTML(locationParts.join(' · ')) : ''}</span>
+                        </div>
+                        <div id="drinkControls"></div>
+                    </div>`;
+            } else if (matches.length > 1) {
+                const rows = matches.map((b, i) => {
+                    const locParts = [b.storage, b.purchasePrice != null ? `€${b.purchasePrice}` : null].filter(Boolean);
+                    return `
+                        <div onclick="selectDrinkMatch(${i})" id="drinkMatchRow_${i}"
+                             style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:6px;cursor:pointer;background:${i === 0 ? 'var(--ink-3)' : 'transparent'};">
+                            <span style="font-weight:600;">${escapeHTML(b.name)}${b.vintage ? ' ' + b.vintage : ''}</span>
+                            <span style="font-size:12px;color:var(--text-secondary);">${b.qty} btl${locParts.length ? ' · ' + escapeHTML(locParts.join(' · ')) : ''}</span>
+                        </div>`;
+                }).join('');
+                actionsHTML = `
+                    <div style="margin-top:12px;padding:10px 12px;background:var(--ink-2);border-radius:8px;border:1px solid var(--border);">
+                        <div style="font-size:12px;color:var(--up);font-weight:600;margin-bottom:6px;">✅ Found ${matches.length} lots in your cellar</div>
+                        <div style="margin-bottom:10px;">${rows}</div>
+                        <div id="drinkControls"></div>
+                    </div>`;
+            } else {
+                actionsHTML = `
+                    <div class="recognition-actions">
+                        <button class="btn btn-success" onclick="addScannedToBottleDialog()">➕ Add to Cellar</button>
+                        <button class="btn btn-primary btn-sm" onclick="clearScan()">✕ Dismiss</button>
+                    </div>`;
+            }
+
             resultEl.innerHTML = `
                 <div class="recognition-card">
-                    <h3>✅ Wine Identified <span style="font-size: 11px; font-weight: 400; color: var(--text-tertiary);">via ${wine._source === 'claude' ? 'Claude Vision' : wine._source === 'gemini' ? 'Gemini Vision' : 'AI Vision'}</span></h3>
+                    <h3>✅ Wine Identified <span style="font-size: 11px; font-weight: 400; color: var(--text-tertiary);">via ${sourceLabel}</span></h3>
                     ${fields.map(([label, value]) => `
                         <div class="recognition-field">
                             <span class="field-label">${label}</span>
                             <span class="field-value">${escapeHTML(String(value))}</span>
                         </div>`).join('')}
                     ${wine.notes ? `<div style="margin-top: 10px; font-size: 12px; color: var(--text-tertiary); font-style: italic;">${escapeHTML(wine.notes)}</div>` : ''}
-                    <div class="recognition-actions">
-                        <button class="btn btn-success" onclick="addScannedToBottleDialog()">➕ Add to Cellar</button>
-                        <button class="btn btn-primary btn-sm" onclick="clearScan()">✕ Dismiss</button>
-                    </div>
+                    ${actionsHTML}
                 </div>`;
+
+            // Render drink controls into the placeholder (needs the DOM to exist first)
+            if (matches.length > 0) renderDrinkControls(matches, 0);
 
             // Collapse the scanner card controls and show summary
             if (scannerCard) {
@@ -562,8 +680,6 @@
                         : 'Label scanned successfully';
                 }
             }
-
-            window._lastScannedWine = wine;
         }
 
         function showRecognitionError(message) {
@@ -596,7 +712,10 @@
             document.getElementById('scanPreview').style.display = 'none';
             document.getElementById('previewImage').src = '';
             document.getElementById('recognitionResult').innerHTML = '';
-            window._lastScannedWine = null;
+            window._lastScannedWine      = null;
+            window._scannedCellarMatches = [];
+            window._drinkQty             = 1;
+            window._drinkMatchIdx        = 0;
         };
 
         function escapeHTML(str) {
