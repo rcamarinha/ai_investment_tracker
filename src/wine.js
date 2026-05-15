@@ -263,6 +263,55 @@ export function sortBottles(bottles, sortMode) {
 }
 
 
+// ── Cellar Match (scan-to-drink) ──────────────────────────────────────────────
+
+/**
+ * Match a label-scan result against the in-memory cellar.
+ *
+ * Matching rules (all case-insensitive):
+ *   • name must match exactly
+ *   • vintage must match only when BOTH sides have a value
+ *   • winery must match only when BOTH sides have a value
+ *
+ * Returns every cellar entry that passes all applicable rules, preserving
+ * the original array order.
+ *
+ * @param {Array}  cellar     - current state.cellar
+ * @param {Object} scanResult - object with { name, winery?, vintage? }
+ * @returns {Array}
+ */
+export function findCellarMatches(cellar, scanResult) {
+    if (!scanResult || !scanResult.name) return [];
+    const nameLower = scanResult.name.toLowerCase();
+    const vintage   = scanResult.vintage ? parseInt(String(scanResult.vintage), 10) : null;
+    const wineryLow = scanResult.winery  ? scanResult.winery.toLowerCase() : null;
+
+    return (cellar || []).filter(b => {
+        if (!b.name) return false;
+        if (b.name.toLowerCase() !== nameLower) return false;
+        if (vintage   && b.vintage && b.vintage !== vintage)             return false;
+        if (wineryLow && b.winery  && b.winery.toLowerCase() !== wineryLow) return false;
+        return true;
+    });
+}
+
+// ── Drink / Consume ───────────────────────────────────────────────────────────
+
+/**
+ * Apply a drink quantity to a bottle, returning the intended action.
+ *
+ * @param {Object} bottle   - bottle object with at least { qty }
+ * @param {number} drinkQty - number of bottles consumed (>= 1)
+ * @returns {{ action: 'update', bottle: Object } | { action: 'delete' }}
+ */
+export function applyDrinkToBottle(bottle, drinkQty = 1) {
+    const newQty = (bottle.qty || 0) - (drinkQty || 0);
+    if (newQty <= 0) return { action: 'delete' };
+    return { action: 'update', bottle: { ...bottle, qty: newQty } };
+}
+
+// ── Snapshot ──────────────────────────────────────────────────────────────────
+
 /**
  * Build a snapshot record from the current cellar state.
  *

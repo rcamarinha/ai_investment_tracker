@@ -9,6 +9,8 @@ import {
     getDrinkStatus,
     filterBottles,
     sortBottles,
+    findCellarMatches,
+    applyDrinkToBottle,
 } from '../src/wine.js';
 
 // ── Shared test fixtures ──────────────────────────────────────────────────────
@@ -781,5 +783,155 @@ describe('buildBottleFromScan — bottleSize', () => {
     it('maps standard 0.75L from scan', () => {
         const bottle = buildBottleFromScan({ name: 'Margaux', bottleSize: '0.75L' });
         expect(bottle.bottleSize).toBe('0.75L');
+    });
+});
+
+// ── findCellarMatches ─────────────────────────────────────────────────────────
+
+describe('findCellarMatches', () => {
+    const cellar = [
+        makeBottle({ id: 'a', name: 'Château Margaux', winery: 'Château Margaux', vintage: 2018, qty: 6 }),
+        makeBottle({ id: 'b', name: 'Château Margaux', winery: 'Château Margaux', vintage: 2015, qty: 3 }),
+        makeBottle({ id: 'c', name: 'Penfolds Grange', winery: 'Penfolds',         vintage: 2017, qty: 2 }),
+        makeBottle({ id: 'd', name: 'Opus One',        winery: null,               vintage: null, qty: 1 }),
+    ];
+
+    it('returns empty array when scan has no name', () => {
+        expect(findCellarMatches(cellar, {})).toHaveLength(0);
+        expect(findCellarMatches(cellar, { winery: 'Penfolds' })).toHaveLength(0);
+    });
+
+    it('returns empty array for null or empty cellar', () => {
+        expect(findCellarMatches(null,  { name: 'Château Margaux' })).toHaveLength(0);
+        expect(findCellarMatches([],   { name: 'Château Margaux' })).toHaveLength(0);
+    });
+
+    it('returns empty array for null scan', () => {
+        expect(findCellarMatches(cellar, null)).toHaveLength(0);
+    });
+
+    it('matches by name only when scan has no vintage or winery', () => {
+        const matches = findCellarMatches(cellar, { name: 'Château Margaux' });
+        expect(matches).toHaveLength(2);
+        expect(matches.map(b => b.id)).toEqual(['a', 'b']);
+    });
+
+    it('matches case-insensitively on name', () => {
+        expect(findCellarMatches(cellar, { name: 'château margaux' })).toHaveLength(2);
+        expect(findCellarMatches(cellar, { name: 'CHÂTEAU MARGAUX' })).toHaveLength(2);
+    });
+
+    it('narrows to one lot when scan has matching vintage', () => {
+        const matches = findCellarMatches(cellar, { name: 'Château Margaux', vintage: 2018 });
+        expect(matches).toHaveLength(1);
+        expect(matches[0].id).toBe('a');
+    });
+
+    it('narrows to one lot when scan vintage is a string (converted to int)', () => {
+        const matches = findCellarMatches(cellar, { name: 'Château Margaux', vintage: '2015' });
+        expect(matches).toHaveLength(1);
+        expect(matches[0].id).toBe('b');
+    });
+
+    it('does not filter on vintage when scan vintage is absent', () => {
+        // Both 2018 and 2015 lots must be returned
+        expect(findCellarMatches(cellar, { name: 'Château Margaux', vintage: null })).toHaveLength(2);
+    });
+
+    it('does not filter on vintage when cellar bottle has no vintage', () => {
+        // Opus One has null vintage — scan with any vintage must still match
+        expect(findCellarMatches(cellar, { name: 'Opus One', vintage: 2020 })).toHaveLength(1);
+    });
+
+    it('matches case-insensitively on winery', () => {
+        const matches = findCellarMatches(cellar, { name: 'Penfolds Grange', winery: 'penfolds' });
+        expect(matches).toHaveLength(1);
+        expect(matches[0].id).toBe('c');
+    });
+
+    it('does not filter on winery when scan winery is absent', () => {
+        expect(findCellarMatches(cellar, { name: 'Château Margaux', winery: null })).toHaveLength(2);
+    });
+
+    it('does not filter on winery when cellar bottle has no winery', () => {
+        // Opus One has null winery — scan with any winery must still match
+        expect(findCellarMatches(cellar, { name: 'Opus One', winery: 'Unknown' })).toHaveLength(1);
+    });
+
+    it('returns empty array when name does not match anything', () => {
+        expect(findCellarMatches(cellar, { name: 'Petrus' })).toHaveLength(0);
+    });
+
+    it('returns empty array when vintage mismatches', () => {
+        expect(findCellarMatches(cellar, { name: 'Château Margaux', vintage: 1990 })).toHaveLength(0);
+    });
+
+    it('returns empty array when winery mismatches', () => {
+        expect(findCellarMatches(cellar, { name: 'Château Margaux', winery: 'Wrong Winery' })).toHaveLength(0);
+    });
+
+    it('returns multiple lots when a wine has several cellar entries', () => {
+        const twoLots = [
+            makeBottle({ id: 'x', name: 'Opus One', winery: 'Opus One Winery', vintage: 2019, qty: 3 }),
+            makeBottle({ id: 'y', name: 'Opus One', winery: 'Opus One Winery', vintage: 2019, qty: 2 }),
+        ];
+        expect(findCellarMatches(twoLots, { name: 'Opus One', vintage: 2019 })).toHaveLength(2);
+    });
+});
+
+// ── applyDrinkToBottle ────────────────────────────────────────────────────────
+
+describe('applyDrinkToBottle', () => {
+    const bottle = makeBottle({ id: 'drink-test', name: 'Château Margaux', qty: 6 });
+
+    it('returns update action with decremented qty', () => {
+        const result = applyDrinkToBottle(bottle, 1);
+        expect(result.action).toBe('update');
+        expect(result.bottle.qty).toBe(5);
+    });
+
+    it('decrements by more than one', () => {
+        const result = applyDrinkToBottle(bottle, 4);
+        expect(result.action).toBe('update');
+        expect(result.bottle.qty).toBe(2);
+    });
+
+    it('returns delete action when drinking exactly the remaining qty', () => {
+        const result = applyDrinkToBottle(bottle, 6);
+        expect(result.action).toBe('delete');
+        expect(result.bottle).toBeUndefined();
+    });
+
+    it('returns delete action when drinking more than remaining', () => {
+        const result = applyDrinkToBottle(bottle, 10);
+        expect(result.action).toBe('delete');
+    });
+
+    it('defaults drinkQty to 1', () => {
+        const result = applyDrinkToBottle(bottle);
+        expect(result.action).toBe('update');
+        expect(result.bottle.qty).toBe(5);
+    });
+
+    it('does not mutate the original bottle', () => {
+        applyDrinkToBottle(bottle, 3);
+        expect(bottle.qty).toBe(6);
+    });
+
+    it('carries all other bottle fields onto the updated bottle', () => {
+        const result = applyDrinkToBottle(bottle, 1);
+        expect(result.bottle.name).toBe(bottle.name);
+        expect(result.bottle.winery).toBe(bottle.winery);
+        expect(result.bottle.purchasePrice).toBe(bottle.purchasePrice);
+    });
+
+    it('returns delete when bottle has null qty', () => {
+        const result = applyDrinkToBottle({ ...bottle, qty: null }, 1);
+        expect(result.action).toBe('delete');
+    });
+
+    it('returns delete when bottle has qty of 1 and drinkQty is 1', () => {
+        const result = applyDrinkToBottle({ ...bottle, qty: 1 }, 1);
+        expect(result.action).toBe('delete');
     });
 });
