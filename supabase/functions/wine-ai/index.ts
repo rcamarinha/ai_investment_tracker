@@ -83,10 +83,14 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
     body.tools = [{ google_search: {} }];
   }
 
+  // 20s hard limit per Gemini call so Claude fallback can still run within the
+  // 55s client timeout. Grounded searches occasionally stall; without this the
+  // whole edge-function invocation hangs until the client aborts the request.
   const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20000),
   });
 
   if (!res.ok) {
@@ -237,19 +241,26 @@ async function handleValuation(prompt: string): Promise<Response> {
   // 1. Try Gemini (with Google Search grounding)
   try {
     const { text, groundingChunks } = await callGemini(prompt, 4096);
-    console.log("[wine-ai] Valuation via Gemini");
-    return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null });
+    if (text.trim()) {
+      console.log("[wine-ai] Valuation via Gemini");
+      return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null });
+    }
+    // Gemini returned empty content (can happen when grounding search stalls or
+    // candidates[0].content.parts is empty) — treat as failure and use Claude.
+    geminiError = "Gemini returned empty response (no text content)";
+    console.warn("[wine-ai] Gemini valuation returned empty text, falling back to Claude");
   } catch (err) {
     geminiError = err instanceof Error ? err.message : String(err);
     const is429 = geminiError.includes("429");
-    console.warn(`[wine-ai] Gemini valuation ${is429 ? "quota exceeded (429)" : "failed"}, falling back to Claude:`, geminiError);
+    const isTimeout = geminiError.toLowerCase().includes("timeout") || geminiError.toLowerCase().includes("abort");
+    console.warn(`[wine-ai] Gemini valuation ${is429 ? "quota (429)" : isTimeout ? "timed out" : "failed"}, falling back to Claude:`, geminiError);
   }
 
   // 2. Fallback: Claude with web search
   try {
     const { text } = await callClaude(prompt, 4096, true);
     console.log("[wine-ai] Valuation via Claude (fallback)");
-    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude" });
+    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude", _geminiError: geminiError });
   } catch (err) {
     const claudeMsg = err instanceof Error ? err.message : String(err);
     console.error("[wine-ai] Claude fallback also failed:", claudeMsg);

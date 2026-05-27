@@ -266,10 +266,43 @@ export function sortBottles(bottles, sortMode) {
 // ── Cellar Match (scan-to-drink) ──────────────────────────────────────────────
 
 /**
+ * Normalize a wine name for comparison: strip diacritics, collapse whitespace, lowercase.
+ * "Château Margaux" → "chateau margaux", "PENFOLDS  GRANGE" → "penfolds grange"
+ *
+ * @param {string|null|undefined} s
+ * @returns {string}
+ */
+export function normalizeWineName(s) {
+    if (!s) return '';
+    return s
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')  // strip combining diacritics (é→e, â→a, ç→c, …)
+        .replace(/['']/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+}
+
+/** Levenshtein edit distance between two strings. */
+function _levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            dp[i][j] = a[i - 1] === b[j - 1]
+                ? dp[i - 1][j - 1]
+                : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+    }
+    return dp[m][n];
+}
+
+/**
  * Match a label-scan result against the in-memory cellar.
  *
- * Matching rules (all case-insensitive):
- *   • name must match exactly
+ * Matching rules (diacritic-insensitive, case-insensitive):
+ *   • name must match after normalization (strips accents, trims, lowercases)
  *   • vintage must match only when BOTH sides have a value
  *   • winery must match only when BOTH sides have a value
  *
@@ -282,17 +315,51 @@ export function sortBottles(bottles, sortMode) {
  */
 export function findCellarMatches(cellar, scanResult) {
     if (!scanResult || !scanResult.name) return [];
-    const nameLower = scanResult.name.toLowerCase();
-    const vintage   = scanResult.vintage ? parseInt(String(scanResult.vintage), 10) : null;
-    const wineryLow = scanResult.winery  ? scanResult.winery.toLowerCase() : null;
+    const nameNorm   = normalizeWineName(scanResult.name);
+    const vintage    = scanResult.vintage ? parseInt(String(scanResult.vintage), 10) : null;
+    const wineryNorm = scanResult.winery  ? normalizeWineName(scanResult.winery) : null;
 
     return (cellar || []).filter(b => {
         if (!b.name) return false;
-        if (b.name.toLowerCase() !== nameLower) return false;
-        if (vintage   && b.vintage && b.vintage !== vintage)             return false;
-        if (wineryLow && b.winery  && b.winery.toLowerCase() !== wineryLow) return false;
+        if (normalizeWineName(b.name) !== nameNorm) return false;
+        if (vintage    && b.vintage && b.vintage !== vintage)                     return false;
+        if (wineryNorm && b.winery  && normalizeWineName(b.winery) !== wineryNorm) return false;
         return true;
     });
+}
+
+/**
+ * Find cellar bottles that are close to the scan result but not exact matches —
+ * for a "Did you mean?" UI when the AI returns a slightly different name.
+ *
+ * Uses normalized Levenshtein distance. Threshold: ≤ max(2, floor(len * 0.15))
+ * where len is the shorter of the two normalized names.
+ *
+ * @param {Array}  cellar
+ * @param {Object} scanResult - { name, winery?, vintage? }
+ * @returns {Array} candidate bottles sorted by edit distance (closest first)
+ */
+export function findFuzzyCellarMatches(cellar, scanResult) {
+    if (!scanResult || !scanResult.name) return [];
+    const scanNorm = normalizeWineName(scanResult.name);
+    if (!scanNorm) return [];
+
+    const exactIds = new Set(findCellarMatches(cellar, scanResult).map(b => b.id));
+
+    const candidates = [];
+    for (const b of (cellar || [])) {
+        if (!b.name || exactIds.has(b.id)) continue;
+        const bNorm   = normalizeWineName(b.name);
+        const minLen  = Math.min(scanNorm.length, bNorm.length);
+        const maxDist = Math.max(2, Math.floor(minLen * 0.15));
+        const dist    = _levenshtein(scanNorm, bNorm);
+        if (dist > 0 && dist <= maxDist) {
+            candidates.push({ bottle: b, distance: dist });
+        }
+    }
+
+    candidates.sort((a, b) => a.distance - b.distance);
+    return candidates.map(c => c.bottle);
 }
 
 // ── Drink / Consume ───────────────────────────────────────────────────────────

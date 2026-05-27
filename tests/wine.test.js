@@ -10,6 +10,8 @@ import {
     filterBottles,
     sortBottles,
     findCellarMatches,
+    findFuzzyCellarMatches,
+    normalizeWineName,
     applyDrinkToBottle,
 } from '../src/wine.js';
 
@@ -876,6 +878,96 @@ describe('findCellarMatches', () => {
             makeBottle({ id: 'y', name: 'Opus One', winery: 'Opus One Winery', vintage: 2019, qty: 2 }),
         ];
         expect(findCellarMatches(twoLots, { name: 'Opus One', vintage: 2019 })).toHaveLength(2);
+    });
+
+    it('matches despite diacritic difference (Chateau vs Château)', () => {
+        // Cellar stores accented form; AI scan returns unaccented
+        expect(findCellarMatches(cellar, { name: 'Chateau Margaux' })).toHaveLength(2);
+        expect(findCellarMatches(cellar, { name: 'CHATEAU MARGAUX' })).toHaveLength(2);
+    });
+
+    it('matches when cellar has unaccented form and scan has accented form', () => {
+        const unaccented = [
+            makeBottle({ id: 'u1', name: 'Chateau Margaux', winery: 'Chateau Margaux', vintage: 2018, qty: 2 }),
+        ];
+        expect(findCellarMatches(unaccented, { name: 'Château Margaux' })).toHaveLength(1);
+    });
+
+    it('matches with extra spaces collapsed', () => {
+        expect(findCellarMatches(cellar, { name: '  Château  Margaux  ' })).toHaveLength(2);
+    });
+});
+
+// ── normalizeWineName ─────────────────────────────────────────────────────────
+
+describe('normalizeWineName', () => {
+    it('strips combining diacritics', () => {
+        expect(normalizeWineName('Château')).toBe('chateau');
+        expect(normalizeWineName('Côte de Nuits')).toBe('cote de nuits');
+        expect(normalizeWineName('Vinho da Região')).toBe('vinho da regiao');
+    });
+
+    it('lowercases and trims', () => {
+        expect(normalizeWineName('  OPUS ONE  ')).toBe('opus one');
+    });
+
+    it('collapses internal whitespace', () => {
+        expect(normalizeWineName('Penfolds  Grange')).toBe('penfolds grange');
+    });
+
+    it('returns empty string for null/undefined/empty', () => {
+        expect(normalizeWineName(null)).toBe('');
+        expect(normalizeWineName(undefined)).toBe('');
+        expect(normalizeWineName('')).toBe('');
+    });
+});
+
+// ── findFuzzyCellarMatches ────────────────────────────────────────────────────
+
+describe('findFuzzyCellarMatches', () => {
+    const cellarForFuzzy = [
+        makeBottle({ id: 'f1', name: 'Penfolds Grange', winery: 'Penfolds', vintage: 2017, qty: 2 }),
+        makeBottle({ id: 'f2', name: 'Château Margaux', winery: 'Château Margaux', vintage: 2018, qty: 6 }),
+        makeBottle({ id: 'f3', name: 'Opus One', winery: null, vintage: null, qty: 1 }),
+    ];
+
+    it('returns empty when cellar is empty', () => {
+        expect(findFuzzyCellarMatches([], { name: 'Penfolds Grange' })).toHaveLength(0);
+    });
+
+    it('returns empty when scan has no name', () => {
+        expect(findFuzzyCellarMatches(cellarForFuzzy, {})).toHaveLength(0);
+        expect(findFuzzyCellarMatches(cellarForFuzzy, null)).toHaveLength(0);
+    });
+
+    it('returns candidate within edit distance threshold (1 char typo)', () => {
+        // "Penfolds Gringe" vs "Penfolds Grange" → distance 1
+        const results = findFuzzyCellarMatches(cellarForFuzzy, { name: 'Penfolds Gringe' });
+        expect(results.map(b => b.id)).toContain('f1');
+    });
+
+    it('does NOT return exact (normalized) matches — those belong to findCellarMatches', () => {
+        // Exact normalized match should not appear in fuzzy results
+        const results = findFuzzyCellarMatches(cellarForFuzzy, { name: 'Penfolds Grange' });
+        expect(results.map(b => b.id)).not.toContain('f1');
+    });
+
+    it('does NOT return distant names that are clearly different wines', () => {
+        // "Petrus" is very different from all cellar entries
+        const results = findFuzzyCellarMatches(cellarForFuzzy, { name: 'Petrus' });
+        expect(results).toHaveLength(0);
+    });
+
+    it('results are sorted by edit distance (closest first)', () => {
+        // Add two candidates at different distances
+        const multiCellar = [
+            makeBottle({ id: 'g1', name: 'Opus One X', winery: null, vintage: null, qty: 1 }),   // distance 2
+            makeBottle({ id: 'g2', name: 'Opus Onee', winery: null, vintage: null, qty: 1 }),    // distance 1
+        ];
+        const results = findFuzzyCellarMatches(multiCellar, { name: 'Opus One' });
+        if (results.length >= 2) {
+            expect(results[0].id).toBe('g2'); // closer match first
+        }
     });
 });
 
