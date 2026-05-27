@@ -7,6 +7,7 @@
 
 import state from './state.js';
 import { showToast, escapeHTML } from './utils.js';
+import { normalizeWineName } from '../src/wine.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
 
@@ -500,24 +501,33 @@ export async function logAssetMovement({
 export async function findExistingUserWineHoldings(name, winery, vintage) {
     if (!state.supabaseClient || !state.currentUser || !name) return [];
 
-    // Step 1: find wine in shared catalog
-    let query = state.supabaseClient
-        .from('wines')
-        .select('id')
-        .ilike('name', name);
-
-    if (vintage) {
-        query = query.eq('vintage', vintage);
-    } else {
-        query = query.is('vintage', null);
+    async function _queryWineCatalog(nameToSearch) {
+        let q = state.supabaseClient
+            .from('wines')
+            .select('id')
+            .ilike('name', nameToSearch);
+        if (vintage) {
+            q = q.eq('vintage', vintage);
+        } else {
+            q = q.is('vintage', null);
+        }
+        if (winery) {
+            q = q.ilike('winery', winery);
+        } else {
+            q = q.is('winery', null);
+        }
+        const { data } = await q.maybeSingle();
+        return data;
     }
-    if (winery) {
-        query = query.ilike('winery', winery);
-    } else {
-        query = query.is('winery', null);
-    }
 
-    const { data: wineData } = await query.maybeSingle();
+    // Step 1: find wine in shared catalog — try original name first, then normalized (strips diacritics)
+    let wineData = await _queryWineCatalog(name);
+    if (!wineData) {
+        const normalized = normalizeWineName(name);
+        if (normalized && normalized !== name.toLowerCase()) {
+            wineData = await _queryWineCatalog(normalized);
+        }
+    }
     if (!wineData) return [];
 
     // Step 2: find all user holdings for this wine
