@@ -4,6 +4,19 @@ A modular browser-based investment tracking suite — **Stock Portfolio** and **
 
 ---
 
+## Hub Dashboard (`index.html`)
+
+The hub page shows a **cross-asset net worth summary** when logged in:
+
+- **Total Portfolio Wealth** — combined stock cost basis + wine cellar estimated value in EUR
+- **Per-asset-class values** — Stocks (cost basis) and Wine Cellar (AI-estimated × qty) shown separately on each hub card
+- **Wine gain/loss delta** — estimated value vs. purchase price across all holdings; shows valuation age (e.g. "valued 14d ago") when no purchase price is recorded
+- **Stock delta label** — "cost basis" indicator (live prices not fetched on the hub page)
+- Values load automatically after login via two parallel Supabase queries; revert to `— —` on logout
+- Not logged in: hub cards show `— —` placeholders — no value-prop landing, login is in the navbar
+
+---
+
 ## Trackers
 
 ### 📈 Stock Portfolio Tracker (`portfolio.html`)
@@ -89,7 +102,7 @@ Both trackers share the same Supabase project and user account.
 ```
 ai_investment_tracker/
 │
-├── index.html              # Hub: landing page linking to both trackers
+├── index.html              # Hub: cross-asset net worth dashboard + auth; links to both trackers
 ├── portfolio.html          # Stock Portfolio Tracker
 ├── wine.html               # Wine Cellar Tracker
 │
@@ -216,7 +229,7 @@ Click **🤖 AI Analysis** for a full assessment of your cellar:
 | Layer | Stock Tracker | Wine Cellar |
 |-------|--------------|-------------|
 | **localStorage** | API keys, sector cache, history | API keys |
-| **Supabase** | positions, snapshots, assets, price history | wine_bottles, wine_snapshots |
+| **Supabase** | positions, snapshots, assets, price history | user_wines, wine_snapshots |
 | **Claude cloud** | Portfolio state (inside claude.ai) | — |
 
 ---
@@ -288,6 +301,13 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.15.0
+- **Hub dashboard — cross-asset net worth** — The hub page now populates real values after login: stock cost-basis (positions × avg_price from Supabase) and wine cellar value (SUM of estimated_value × qty from user_wines) are fetched in parallel and shown in the existing hub cards alongside `#hubTotalValue`. No new API calls — data comes from already-stored Supabase records only
+- **Wine gain/loss delta on hub** — `#hubWineDelta` shows % gain vs. purchase price where available; falls back to "valued Xd ago" staleness label when no purchase price is recorded
+- **Stock delta label** — `#hubStockDelta` shows "cost basis" in neutral grey to signal live prices are not fetched on the hub page
+- **Hub values clear on logout** — All three value elements revert to `— —` when the user signs out
+- **`.hub-card-delta.neutral`** — New CSS variant for muted grey delta labels (uses `var(--neutral)`)
 
 ### v3.14.5
 - **Improved valuation accuracy** — New pricing rules require cross-referencing at least 3 sources and using the **median** price, not the cheapest outlier. A single listing 30%+ below all others is flagged as likely ex-tax or erroneous. Specialist merchants and auction houses are weighted more heavily for rare/collectible wines (Port, Burgundy, First Growths)

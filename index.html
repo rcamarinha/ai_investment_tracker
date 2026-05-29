@@ -207,6 +207,76 @@
             refreshNavbarAuth();
         };
 
+        // ── Hub dashboard helpers ────────────────────────────────────────────
+        function hubFmt(val) {
+            if (!val || val < 0.01) return '— —';
+            return '€ ' + Math.round(val).toLocaleString('en-US');
+        }
+
+        async function loadHubValues(userId) {
+            try {
+                const [{ data: positions, error: posErr }, { data: wines, error: wineErr }] = await Promise.all([
+                    sbClient.from('positions').select('shares, avg_price').eq('user_id', userId),
+                    sbClient.from('user_wines').select('qty, estimated_value, purchase_price, last_valued_at').eq('user_id', userId)
+                ]);
+                if (posErr)  console.warn('[hub] positions query:', posErr.message);
+                if (wineErr) console.warn('[hub] user_wines query:', wineErr.message);
+
+                const stockValue = (positions || []).reduce((s, p) => s + (p.shares * p.avg_price), 0);
+
+                const wineRows  = wines || [];
+                const wineValue = wineRows.reduce((s, w) => s + ((w.estimated_value || 0) * (w.qty || 1)), 0);
+                const wineCost  = wineRows.reduce((s, w) => s + ((w.purchase_price  || 0) * (w.qty || 1)), 0);
+
+                document.getElementById('hubTotalValue').textContent = hubFmt(stockValue + wineValue);
+                document.getElementById('hubStockValue').textContent = hubFmt(stockValue);
+                document.getElementById('hubWineValue').textContent  = hubFmt(wineValue);
+
+                const stockDeltaEl = document.getElementById('hubStockDelta');
+                if (stockDeltaEl) {
+                    stockDeltaEl.textContent = stockValue > 0 ? 'cost basis' : '';
+                    stockDeltaEl.className   = 'hub-card-delta neutral';
+                }
+
+                const wineDeltaEl = document.getElementById('hubWineDelta');
+                if (wineDeltaEl) {
+                    if (wineValue > 0 && wineCost > 0) {
+                        const pct  = (wineValue - wineCost) / wineCost * 100;
+                        const sign = pct >= 0 ? '+' : '';
+                        wineDeltaEl.textContent = `${sign}${pct.toFixed(1)}%`;
+                        wineDeltaEl.className   = 'hub-card-delta ' + (pct >= 0 ? 'up' : 'down');
+                    } else if (wineValue > 0) {
+                        const lastValued = wineRows
+                            .filter(w => w.last_valued_at)
+                            .map(w => new Date(w.last_valued_at))
+                            .sort((a, b) => b - a)[0];
+                        if (lastValued) {
+                            const daysAgo = Math.round((Date.now() - lastValued) / 86400000);
+                            wineDeltaEl.textContent = `valued ${daysAgo}d ago`;
+                            wineDeltaEl.className   = 'hub-card-delta neutral';
+                        } else {
+                            wineDeltaEl.textContent = '';
+                        }
+                    } else {
+                        wineDeltaEl.textContent = '';
+                    }
+                }
+            } catch (err) {
+                console.error('[hub] loadHubValues failed:', err);
+            }
+        }
+
+        function clearHubValues() {
+            ['hubTotalValue', 'hubStockValue', 'hubWineValue'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = '— —';
+            });
+            ['hubStockDelta', 'hubWineDelta'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = '';
+            });
+        }
+
         // ── Boot Supabase ────────────────────────────────────────────────────
         if (typeof supabase !== 'undefined') {
             try {
@@ -216,10 +286,15 @@
                     if (event === 'PASSWORD_RECOVERY') passwordRecoveryMode = true;
                     else if (event === 'USER_UPDATED' && passwordRecoveryMode) passwordRecoveryMode = false;
                     refreshNavbarAuth();
+                    if (currentUser) loadHubValues(currentUser.id);
+                    else clearHubValues();
                 });
                 sbClient.auth.getSession().then(({ data: { session } }) => {
                     currentUser = session?.user || null;
-                    if (currentUser) refreshNavbarAuth();
+                    if (currentUser) {
+                        refreshNavbarAuth();
+                        loadHubValues(currentUser.id);
+                    }
                 }).catch(err => console.error('getSession failed:', err));
             } catch (err) {
                 console.error('Supabase init failed:', err);

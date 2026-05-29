@@ -1542,8 +1542,9 @@ body > #appNavbar + * {
     font-family: var(--font-mono);
     font-size: 11px;
 }
-.hub-card-delta.up   { color: var(--up); }
-.hub-card-delta.down { color: var(--down); }
+.hub-card-delta.up      { color: var(--up); }
+.hub-card-delta.down    { color: var(--down); }
+.hub-card-delta.neutral { color: var(--neutral); }
 
 
 /* ── Mobile Position Cards ──────────────────────────────────────────────── */

@@ -10,7 +10,7 @@ A **modular browser-based portfolio management application** that allows users t
 
 ```
 ai_investment_tracker/
-├── index.html                  # Entry point: HTML structure + module init (~350 lines)
+├── index.html                  # Hub: cross-asset net worth dashboard + auth (~310 lines)
 ├── css/
 │   └── styles.css              # All styles + button style guide (~480 lines)
 ├── data/
@@ -58,6 +58,18 @@ index.html (init)
 ```
 
 Note: Several services have circular imports (e.g., pricing ↔ portfolio, storage ↔ portfolio). This works with ES modules because functions are called at runtime, not at module evaluation time.
+
+### Hub Dashboard (index.html)
+
+After login, `loadHubValues(userId)` runs two parallel Supabase queries and populates the existing hub card DOM elements:
+
+- `#hubTotalValue` — stock cost basis + wine cellar value
+- `#hubStockValue` — SUM(shares × avg_price) from `positions`
+- `#hubStockDelta` — always shows `"cost basis"` (neutral grey); no live prices on hub page
+- `#hubWineValue` — SUM(estimated_value × qty) from `user_wines`
+- `#hubWineDelta` — % gain vs purchase price, or staleness label ("valued Xd ago")
+
+`clearHubValues()` resets all to `"— —"` on logout. No service module imports in index.html — queries are inline to avoid pulling in the full service dependency graph.
 
 ### Key HTML Element IDs
 
@@ -224,3 +236,4 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **Edge function auth** — `verify_jwt` is OFF in `config.toml`; auth is handled manually via `supabase.auth.getUser()` inside each function (gateway JWT check is incompatible with `sb_publishable_` keys)
 - **Edge function prompt limits** — Server enforces 15K char max prompts; classification and analysis must batch/truncate on the client side
 - **Valuation pricing rules** — 6 rules enforced in both single and batch prompts: (1) Portuguese retailers first, (2) 23% IVA on ex-tax sources, (3) exact bottle format, (4) current in-stock only, (5) cross-reference ≥3 sources using median, (6) weight specialist merchants for rare/collectible wines
+- **index.html must not import service modules** — `services/storage.js` pulls in the full service graph (pricing, portfolio, etc.). Hub dashboard queries are written inline in the `<script>` block to avoid this dependency chain
