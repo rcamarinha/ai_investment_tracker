@@ -57,10 +57,7 @@ function getCorsHeaders(req: Request) {
   };
 }
 
-// corsHeaders is set per-request in the main handler
-let corsHeaders: Record<string, string> = {};
-
-function jsonResponse(data: unknown, status = 200) {
+function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -235,7 +232,7 @@ async function callClaude(prompt: string, maxTokens = 8192, useWebSearch = true)
 
 // ── Single-bottle valuation: Gemini → Claude fallback ─────────────────────────
 
-async function handleValuation(prompt: string): Promise<Response> {
+async function handleValuation(prompt: string, corsHeaders: Record<string, string>): Promise<Response> {
   let geminiError = "";
 
   // 1. Try Gemini (with Google Search grounding)
@@ -243,7 +240,7 @@ async function handleValuation(prompt: string): Promise<Response> {
     const { text, groundingChunks } = await callGemini(prompt, 4096);
     if (text.trim()) {
       console.log("[wine-ai] Valuation via Gemini");
-      return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null });
+      return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null }, 200, corsHeaders);
     }
     // Gemini returned empty content (can happen when grounding search stalls or
     // candidates[0].content.parts is empty) — treat as failure and use Claude.
@@ -260,13 +257,13 @@ async function handleValuation(prompt: string): Promise<Response> {
   try {
     const { text } = await callClaude(prompt, 4096, true);
     console.log("[wine-ai] Valuation via Claude (fallback)");
-    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude", _geminiError: geminiError });
+    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude", _geminiError: geminiError }, 200, corsHeaders);
   } catch (err) {
     const claudeMsg = err instanceof Error ? err.message : String(err);
     console.error("[wine-ai] Claude fallback also failed:", claudeMsg);
     return jsonResponse(
       { error: "Valuation service temporarily unavailable. Please try again later." },
-      502
+      502, corsHeaders
     );
   }
 }
@@ -433,9 +430,9 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number): Promise<Valu
   return chunk.map(b => ({ id: b.id, error: "No valid JSON from Gemini or Claude" } as ValuationResult));
 }
 
-async function handleBatchValuation(bottles: BottleInfo[]): Promise<Response> {
+async function handleBatchValuation(bottles: BottleInfo[], corsHeaders: Record<string, string>): Promise<Response> {
   if (!bottles || bottles.length === 0) {
-    return jsonResponse({ error: "bottles array is empty" }, 400);
+    return jsonResponse({ error: "bottles array is empty" }, 400, corsHeaders);
   }
 
   // Split into fixed-size chunks
@@ -467,7 +464,7 @@ async function handleBatchValuation(bottles: BottleInfo[]): Promise<Response> {
     }
   }
 
-  return jsonResponse({ results });
+  return jsonResponse({ results }, 200, corsHeaders);
 }
 
 // ── Label recognition: Gemini Vision primary, Claude Vision fallback ──────────
@@ -484,6 +481,7 @@ async function handleLabel(
   prompt: string,
   image: { base64: string; mediaType: string } | undefined,
   maxTokens: number,
+  corsHeaders: Record<string, string>,
 ): Promise<Response> {
   // 1. Try Gemini Vision (primary)
   if (GEMINI_API_KEY && image?.base64) {
@@ -497,7 +495,7 @@ async function handleLabel(
       );
       console.log("[wine-ai] Label: Gemini Vision OK");
       // Normalise to the same shape as the Claude response so the client needs no changes
-      return jsonResponse({ content: [{ type: "text", text }], _source: "gemini" });
+      return jsonResponse({ content: [{ type: "text", text }], _source: "gemini" }, 200, corsHeaders);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("[wine-ai] Gemini Vision failed, falling back to Claude Vision:", msg);
@@ -506,7 +504,7 @@ async function handleLabel(
 
   // 2. Fallback: Claude Vision
   if (!ANTHROPIC_API_KEY) {
-    return jsonResponse({ error: "ANTHROPIC_API_KEY_Wine is not set on the server." }, 500);
+    return jsonResponse({ error: "ANTHROPIC_API_KEY_Wine is not set on the server." }, 500, corsHeaders);
   }
 
   console.log("[wine-ai] Label recognition via Claude Vision (fallback)");
@@ -535,17 +533,17 @@ async function handleLabel(
     console.error(`[wine-ai] Anthropic API error ${anthropicRes.status}:`, errBody.slice(0, 300));
     return jsonResponse(
       { error: "AI service temporarily unavailable. Please try again later." },
-      502,
+      502, corsHeaders,
     );
   }
 
   const data = await anthropicRes.json();
-  return jsonResponse({ ...data, _source: "claude" });
+  return jsonResponse({ ...data, _source: "claude" }, 200, corsHeaders);
 }
 
 // ── Cellar analysis: Gemini primary (grounded), Claude fallback ───────────────
 
-async function handleAnalysis(prompt: string, maxTokens: number): Promise<Response> {
+async function handleAnalysis(prompt: string, maxTokens: number, corsHeaders: Record<string, string>): Promise<Response> {
   let geminiError = "";
 
   // 1. Try Gemini with Google Search grounding
@@ -553,7 +551,7 @@ async function handleAnalysis(prompt: string, maxTokens: number): Promise<Respon
     try {
       console.log("[wine-ai] Cellar analysis via Gemini (primary)");
       const { text } = await callGemini(prompt, maxTokens);
-      return jsonResponse({ content: [{ type: "text", text }], _source: "gemini" });
+      return jsonResponse({ content: [{ type: "text", text }], _source: "gemini" }, 200, corsHeaders);
     } catch (err) {
       geminiError = err instanceof Error ? err.message : String(err);
       console.warn("[wine-ai] Gemini analysis failed, falling back to Claude:", geminiError);
@@ -562,19 +560,19 @@ async function handleAnalysis(prompt: string, maxTokens: number): Promise<Respon
 
   // 2. Fallback: Claude
   if (!ANTHROPIC_API_KEY) {
-    return jsonResponse({ error: "Neither GEMINI_WINE nor ANTHROPIC_API_KEY_Wine is available." }, 500);
+    return jsonResponse({ error: "Neither GEMINI_WINE nor ANTHROPIC_API_KEY_Wine is available." }, 500, corsHeaders);
   }
 
   try {
     console.log("[wine-ai] Cellar analysis via Claude (fallback)");
     const { text } = await callClaude(prompt, maxTokens, false);
-    return jsonResponse({ content: [{ type: "text", text }], _source: "claude" });
+    return jsonResponse({ content: [{ type: "text", text }], _source: "claude" }, 200, corsHeaders);
   } catch (err) {
     const claudeMsg = err instanceof Error ? err.message : String(err);
     console.error("[wine-ai] Claude analysis fallback also failed:", claudeMsg);
     return jsonResponse(
       { error: "Analysis service temporarily unavailable. Please try again later." },
-      502,
+      502, corsHeaders,
     );
   }
 }
@@ -582,14 +580,14 @@ async function handleAnalysis(prompt: string, maxTokens: number): Promise<Respon
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
-  corsHeaders = getCorsHeaders(req);
+  const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
-    return jsonResponse({ error: "Method not allowed" }, 405);
+    return jsonResponse({ error: "Method not allowed" }, 405, corsHeaders);
   }
 
   // ── Manual auth verification ─────────────────────────────────────────────
@@ -598,7 +596,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) {
-    return jsonResponse({ error: "Missing authorization token" }, 401);
+    return jsonResponse({ error: "Missing authorization token" }, 401, corsHeaders);
   }
   {
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -607,7 +605,7 @@ Deno.serve(async (req) => {
     const { data, error } = await sb.auth.getUser(token);
     if (error || !data?.user) {
       console.warn("[wine-ai] Auth failed:", error?.message || "no user");
-      return jsonResponse({ error: "Invalid or expired token. Please log in again." }, 401);
+      return jsonResponse({ error: "Invalid or expired token. Please log in again." }, 401, corsHeaders);
     }
     console.log("[wine-ai] Authenticated user:", data.user.id);
   }
@@ -624,7 +622,7 @@ Deno.serve(async (req) => {
   try {
     body = await req.json();
   } catch {
-    return jsonResponse({ error: "Invalid JSON body" }, 400);
+    return jsonResponse({ error: "Invalid JSON body" }, 400, corsHeaders);
   }
 
   const { requestType, prompt, image, enableWebSearch = false, bottles } = body;
@@ -632,7 +630,7 @@ Deno.serve(async (req) => {
   const maxTokens = Math.min(body.maxTokens || 1024, 8192);
 
   if (!requestType) {
-    return jsonResponse({ error: "requestType is required" }, 400);
+    return jsonResponse({ error: "requestType is required" }, 400, corsHeaders);
   }
 
   // ── Input validation ───────────────────────────────────────────────────────
@@ -641,39 +639,39 @@ Deno.serve(async (req) => {
   const MAX_IMAGE_BASE64   = 2 * 1024 * 1024; // 2 MB
 
   if (prompt && prompt.length > MAX_PROMPT_LENGTH) {
-    return jsonResponse({ error: `Prompt too long (max ${MAX_PROMPT_LENGTH} chars)` }, 400);
+    return jsonResponse({ error: `Prompt too long (max ${MAX_PROMPT_LENGTH} chars)` }, 400, corsHeaders);
   }
   if (image?.base64 && image.base64.length > MAX_IMAGE_BASE64) {
-    return jsonResponse({ error: "Image too large (max 2 MB)" }, 400);
+    return jsonResponse({ error: "Image too large (max 2 MB)" }, 400, corsHeaders);
   }
 
   // ── Valuation routes (Gemini primary, Claude fallback) ───────────────────
   if (requestType === "valuation") {
-    if (!prompt) return jsonResponse({ error: "prompt is required for valuation" }, 400);
-    return handleValuation(prompt);
+    if (!prompt) return jsonResponse({ error: "prompt is required for valuation" }, 400, corsHeaders);
+    return handleValuation(prompt, corsHeaders);
   }
 
   if (requestType === "batch-valuation") {
     if (!Array.isArray(bottles) || bottles.length === 0) {
-      return jsonResponse({ error: "bottles array is required for batch-valuation" }, 400);
+      return jsonResponse({ error: "bottles array is required for batch-valuation" }, 400, corsHeaders);
     }
     if (bottles.length > MAX_BATCH_SIZE) {
-      return jsonResponse({ error: `Too many bottles (max ${MAX_BATCH_SIZE} per request)` }, 400);
+      return jsonResponse({ error: `Too many bottles (max ${MAX_BATCH_SIZE} per request)` }, 400, corsHeaders);
     }
-    return handleBatchValuation(bottles);
+    return handleBatchValuation(bottles, corsHeaders);
   }
 
   // ── Label route (Gemini Vision primary, Claude Vision fallback) ───────────
   if (requestType === "label") {
-    if (!prompt) return jsonResponse({ error: "prompt is required for label" }, 400);
-    return handleLabel(prompt, image, maxTokens);
+    if (!prompt) return jsonResponse({ error: "prompt is required for label" }, 400, corsHeaders);
+    return handleLabel(prompt, image, maxTokens, corsHeaders);
   }
 
   // ── Analysis route (Gemini primary, Claude fallback) ─────────────────────
   if (requestType === "analysis") {
-    if (!prompt) return jsonResponse({ error: "prompt is required for analysis" }, 400);
-    return handleAnalysis(prompt, maxTokens);
+    if (!prompt) return jsonResponse({ error: "prompt is required for analysis" }, 400, corsHeaders);
+    return handleAnalysis(prompt, maxTokens, corsHeaders);
   }
 
-  return jsonResponse({ error: `Unknown requestType: ${requestType}` }, 400);
+  return jsonResponse({ error: `Unknown requestType: ${requestType}` }, 400, corsHeaders);
 });
