@@ -143,6 +143,80 @@ describe('parseBatchText — array strategy', () => {
   });
 });
 
+// ── parseBatchText — partial results (fewer items than chunk) ──────────────────
+//
+// When the AI returns fewer items than requested, parseBatchText maps IDs
+// positionally from the chunk. The CLIENT must then use result.id (not array
+// index) to match results back to bottles — otherwise a misalignment cascades
+// across all subsequent bottles, writing wrong valuations to the database.
+// This was fixed in the valuateAllBottles function (wine/valuation.js).
+
+describe('parseBatchText — partial results cause ID-positional mismatch', () => {
+  const chunk = [
+    { id: 'bottle-A', name: 'Wine A' },
+    { id: 'bottle-B', name: 'Wine B' },
+    { id: 'bottle-C', name: 'Wine C' },
+  ];
+
+  it('returns fewer results than chunk size when AI omits items', () => {
+    // AI only returned 2 results for a 3-bottle chunk
+    const text = JSON.stringify([
+      { estimatedValue: 100, confidence: 'high' },
+      { estimatedValue: 200, confidence: 'medium' },
+    ]);
+    const result = parseBatchText(text, chunk, 0, 'Gemini');
+    // parseBatchText returns only 2 items — bottle-C gets no result
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe('bottle-A');
+    expect(result[1].id).toBe('bottle-B');
+    // bottle-C is absent — client must detect this via ID matching
+  });
+
+  it('object fallback for 3-bottle chunk returns only 1 result', () => {
+    // AI returned a bare object instead of an array for a 3-bottle chunk
+    const text = '{"estimatedValue": 500, "confidence": "high"}';
+    const result = parseBatchText(text, chunk, 0, 'Gemini');
+    // Only 1 result for chunk[0], bottles B and C are missing
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('bottle-A');
+    expect(result[0].estimatedValue).toBe(500);
+  });
+
+  it('result IDs enable correct matching even when count mismatches', () => {
+    // Simulate concatenating results from two batches where batch 1 is short
+    const batch1Text = JSON.stringify([{ estimatedValue: 10 }]); // 1 of 3
+    const batch1 = parseBatchText(batch1Text, chunk, 0, 'Gemini');
+
+    const chunk2 = [
+      { id: 'bottle-D', name: 'Wine D' },
+      { id: 'bottle-E', name: 'Wine E' },
+    ];
+    const batch2Text = JSON.stringify([
+      { estimatedValue: 40 },
+      { estimatedValue: 50 },
+    ]);
+    const batch2 = parseBatchText(batch2Text, chunk2, 1, 'Gemini');
+
+    // Concatenated results: IDs are [A, D, E] — not [A, B, C]
+    const allResults = [...batch1, ...batch2];
+    expect(allResults).toHaveLength(3);
+    expect(allResults[0].id).toBe('bottle-A');
+    expect(allResults[1].id).toBe('bottle-D');
+    expect(allResults[2].id).toBe('bottle-E');
+
+    // Positional mapping would INCORRECTLY assign:
+    //   allResults[1] (id=bottle-D, value=40) → toValueate[1] = bottle-B ✗
+    // ID-based matching correctly assigns:
+    //   allResults[1] (id=bottle-D) → find bottle with id=bottle-D ✓
+    const allBottles = [...chunk, ...chunk2];
+    // ID-based lookup (the fix)
+    const matched = allResults.map(r => allBottles.find(b => b.id === r.id));
+    expect(matched[0].name).toBe('Wine A');
+    expect(matched[1].name).toBe('Wine D');
+    expect(matched[2].name).toBe('Wine E');
+  });
+});
+
 // ── parseBatchText — strategy 2: object fallback ──────────────────────────────
 
 describe('parseBatchText — object fallback (single-bottle Gemini quirk)', () => {
