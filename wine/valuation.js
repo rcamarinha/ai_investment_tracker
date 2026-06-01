@@ -201,13 +201,19 @@ export async function valuateAllBottles(forceAll = false) {
 
         if (btn) btn.textContent = `💎 Saving results...`;
 
-        // Apply results and persist — run DB saves in parallel
+        // Apply results and persist — run DB saves in parallel.
+        // Match by result.id (injected server-side) to avoid misalignment when
+        // an AI response returns fewer items than the chunk size.
         const errors = [];
         const savePromises = [];
+        const matchedIds = new Set();
 
-        allResults.forEach((result, idx) => {
-            const bottle = toValueate[idx];
+        allResults.forEach((result) => {
+            const bottle = (result.id && toValueate.find(b => b.id === result.id))
+                || null;
             if (!bottle) return;
+            if (matchedIds.has(bottle.id)) return;
+            matchedIds.add(bottle.id);
 
             if (result.error) {
                 errors.push(`${bottle.name || bottle.id}: ${result.error}`);
@@ -239,11 +245,15 @@ export async function valuateAllBottles(forceAll = false) {
 
         await Promise.all(savePromises);
 
-        const done = toValueate.length - errors.length;
+        const done = matchedIds.size - errors.length;
+        const unmatched = toValueate.length - matchedIds.size;
         renderCellar();
 
+        if (unmatched > 0) {
+            errors.push(`${unmatched} bottle(s) received no valuation result`);
+        }
         if (errors.length > 0) {
-            showToast(`Valuations done: ${done} succeeded, ${errors.length} failed. Check console.`, 'warning', 6000);
+            showToast(`Valuations done: ${done} succeeded, ${errors.length} issue(s). Check console.`, 'warning', 6000);
         } else {
             showToast(`Valued ${done} bottle${done !== 1 ? 's' : ''} successfully.`);
         }
