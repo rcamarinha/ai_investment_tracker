@@ -80,13 +80,13 @@ function clearFieldErrors() {
 
 // ── Totals ────────────────────────────────────────────────────────────────────
 
-export function computeTotals() {
+export function computeTotals(bottles = state.cellar) {
     let totalInvested = 0;
     let totalEstimated = 0;
     let totalBottles = 0;
     let valuedBottles = 0;
 
-    state.cellar.forEach(b => {
+    bottles.forEach(b => {
         const invested = (b.qty || 0) * (b.purchasePrice || 0);
         totalInvested += invested;
         totalBottles  += (b.qty || 0);
@@ -391,15 +391,12 @@ export function renderCellar() {
     // Rebuild the filter panel (readiness chips + dimension groups)
     renderFilterPanel();
 
-    const totals = computeTotals();
-    updateStatsBar(totals);
-
-    // Apply text search
+    // Apply filters first so stats reflect the visible subset
     const searchTerm = document.getElementById('bottleSearch')?.value || '';
     let result = filterBottles(state.cellar, searchTerm);
-
-    // Apply advanced filters (country / varietal chips)
     result = applyAdvancedFilters(result);
+
+    updateStatsBar(computeTotals(result));
 
     // Apply sort
     const sortMode = document.getElementById('bottleSort')?.value || 'added';
@@ -435,7 +432,9 @@ export function updateBottleCard(bottleId) {
     tmp.innerHTML = renderBottleCard(bottle);
     cardEl.replaceWith(tmp.firstElementChild);
 
-    updateStatsBar(computeTotals());
+    const searchTerm = document.getElementById('bottleSearch')?.value || '';
+    const filtered = applyAdvancedFilters(filterBottles(state.cellar, searchTerm));
+    updateStatsBar(computeTotals(filtered));
     renderAllocationCharts();
 }
 
