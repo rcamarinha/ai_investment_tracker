@@ -71,6 +71,14 @@ After login, `loadHubValues(userId)` runs two parallel Supabase queries and popu
 
 `clearHubValues()` resets all to `"— —"` on logout. No service module imports in index.html — queries are inline to avoid pulling in the full service dependency graph.
 
+### Filter-scoped summary stats
+
+**Wine Cellar (`wine/cellar.js`):** `computeTotals(bottles = state.cellar)` accepts an optional array. `renderCellar()` runs filters first, then calls `computeTotals(result)` so the stats bar reflects the visible subset. `updateBottleCard()` re-derives the filtered list the same way. Snapshots call `computeTotals()` with no args (full cellar).
+
+**Stock Portfolio (`services/portfolio.js`):** `filteredActivePositions` is derived from `activePositions` filtered by `state.selectedSector` (or equal to `activePositions` when no filter). The totals loop iterates `filteredActivePositions`. The header shows "X of Y positions" when a sector filter is active. The snapshot function has its own local `activePositions` loop and is unaffected.
+
+**Rule for both:** snapshots must always use full totals. Never pass a filtered array to a snapshot save path.
+
 ### Key HTML Element IDs
 
 - `positions` - Portfolio positions grid container

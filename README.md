@@ -29,7 +29,7 @@ The hub page shows a **cross-asset net worth summary** when logged in:
 - **Portfolio History** — Save snapshots over time with visual bar chart tracking
 - **AI Analysis** — Personalized portfolio insights via Claude with 6 investment perspectives
 - **Trade Ideas** — Concrete daily trade suggestions with execution plans
-- **Allocation Charts** — Interactive type and sector allocation breakdowns
+- **Allocation Charts** — Interactive type and sector allocation breakdowns with sector slicer; summary stats (invested, market value, gain) scope to the selected sector when a filter is active
 
 ### 🍷 Wine Cellar Tracker (`wine.html`)
 
@@ -41,7 +41,7 @@ The hub page shows a **cross-asset net worth summary** when logged in:
 - **Cellar Management** — Add, edit, and delete bottles with full metadata (vintage, region, varietal, appellation, etc.)
   - Inline form validation — errors appear beside the relevant field, no blocking alerts
   - Undo delete — 5-second grace period with an Undo button before the record is removed from the database
-- **Search, Sort & Filter** — Live search bar; sort by name, vintage, value, gain %, or recently added; collapsible advanced filter chips by country and varietal; sort preference saved across sessions
+- **Search, Sort & Filter** — Live search bar; sort by name, vintage, value, gain %, or recently added; collapsible advanced filter chips by country and varietal; sort preference saved across sessions. Summary stats (bottles, invested, value, gain) update to reflect only the filtered subset when any filter or search is active
 - **CSV Export** — Download the full cellar as a `.csv` file
 - **Value Tracking** — Total estimated collection value always shown; Gain / Loss shown per bottle only when a purchase price is provided (purchase price is optional)
 - **Allocation Charts** — Breakdown by region, varietal, or country
@@ -303,6 +303,8 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ## Changelog
 
 ### v3.15.0
+- **Filter-scoped stats — Wine Cellar** — Summary bar (bottles, invested, estimated value, gain %) now reflects only the filtered subset when search or filter chips are active. Snapshots always save full-cellar totals regardless of active filters. `computeTotals()` accepts an optional bottles array (defaults to full cellar)
+- **Filter-scoped stats — Stock Portfolio** — Summary header (invested, market value, gain/loss) scopes to the selected sector when the sector slicer is active. Position count shows "X of Y" when filtered. Snapshots remain full-portfolio
 - **Hub dashboard — cross-asset net worth** — The hub page now populates real values after login: stock cost-basis (positions × avg_price from Supabase) and wine cellar value (SUM of estimated_value × qty from user_wines) are fetched in parallel and shown in the existing hub cards alongside `#hubTotalValue`. No new API calls — data comes from already-stored Supabase records only
 - **Wine gain/loss delta on hub** — `#hubWineDelta` shows % gain vs. purchase price where available; falls back to "valued Xd ago" staleness label when no purchase price is recorded
 - **Stock delta label** — `#hubStockDelta` shows "cost basis" in neutral grey to signal live prices are not fetched on the hub page
