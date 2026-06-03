@@ -399,6 +399,20 @@ function parseBatchText(
 // completes well within the edge function timeout (60s free / 150s paid).
 const CHUNK_SIZE = 3;
 
+/** Ensure results array has exactly chunk.length entries, padding with error stubs if the AI returned fewer. */
+function padResults(results: ValuationResult[], chunk: BottleInfo[], chunkIdx: number, source: string): ValuationResult[] {
+  if (results.length >= chunk.length) return results.slice(0, chunk.length);
+  console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): AI returned ${results.length}/${chunk.length} results — padding missing entries with error stubs`);
+  const padded = [...results];
+  const returnedIds = new Set(results.map(r => r.id));
+  for (const b of chunk) {
+    if (!returnedIds.has(b.id)) {
+      padded.push({ id: b.id, error: `AI did not return a valuation for this bottle (${source})` } as ValuationResult);
+    }
+  }
+  return padded.slice(0, chunk.length);
+}
+
 async function valuateChunk(chunk: BottleInfo[], chunkIdx: number): Promise<ValuationResult[]> {
   const prompt = buildBatchPrompt(chunk);
   const maxTokens = 4096; // 3 bottles × ~500 tokens each — well within limit
@@ -409,7 +423,7 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number): Promise<Valu
     const parsed = parseBatchText(text, chunk, chunkIdx, "Gemini");
     if (parsed) {
       console.log(`[wine-ai] Chunk ${chunkIdx}: Gemini OK (${parsed.length} results)`);
-      return parsed;
+      return padResults(parsed, chunk, chunkIdx, "Gemini");
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -422,7 +436,7 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number): Promise<Valu
   const parsed = parseBatchText(text, chunk, chunkIdx, "Claude");
   if (parsed) {
     console.log(`[wine-ai] Chunk ${chunkIdx}: Claude fallback OK (${parsed.length} results)`);
-    return parsed;
+    return padResults(parsed, chunk, chunkIdx, "Claude");
   }
 
   // Both failed — return error stubs so other chunks still succeed
