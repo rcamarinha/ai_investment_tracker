@@ -36,12 +36,17 @@ export function renderPortfolio() {
     const activePositions = state.portfolio.filter(p => p.shares > 0);
     const inactivePositions = state.portfolio.filter(p => p.shares <= 0);
 
+    // Scope totals to the active sector filter (if any)
+    const filteredActivePositions = state.selectedSector
+        ? activePositions.filter(p => getSector(p.symbol) === state.selectedSector)
+        : activePositions;
+
     const base = state.baseCurrency || 'EUR';
     let totalInvestedBase = 0;  // In base currency (EUR)
     let totalMarketValueBase = 0;
     let positionsWithPrices = 0;
 
-    activePositions.forEach(p => {
+    filteredActivePositions.forEach(p => {
         const currency = getAssetCurrency(p.symbol);
         const investedNative = p.shares * p.avgPrice;
 
@@ -100,7 +105,7 @@ export function renderPortfolio() {
         <div>
             <h2 style="margin-bottom: 5px;">\uD83D\uDCBC Your Portfolio</h2>
             <div style="font-size: 13px; color: var(--text-secondary);">
-                ${activePositions.length} active position${activePositions.length !== 1 ? 's' : ''}
+                ${filteredActivePositions.length} position${filteredActivePositions.length !== 1 ? 's' : ''}${state.selectedSector ? ` of ${activePositions.length}` : ''}
                 ${Object.keys(state.marketPrices).length > 0 ? ` \u2022 ${positionsWithPrices} with live prices` : ' \u2022 Click "Update Prices" for live market data'}
                 ${hasRates ? ` \u2022 FX rates loaded` : ''}
                 ${inactiveToggle}
