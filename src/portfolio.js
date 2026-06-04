@@ -807,3 +807,39 @@ export function aggregateByType(portfolio, marketPrices = {}) {
 
   return { allocations, totalMarketValue };
 }
+
+// ── Sector Filter Helpers ────────────────────────────────────────────────────
+
+/**
+ * Filter active positions by sector. Returns all positions when sector is null/undefined.
+ *
+ * Mirrors the filteredActivePositions logic in services/portfolio.js renderPortfolio().
+ *
+ * @param {Array}       positions   - Array of active positions (shares > 0)
+ * @param {Function}    getSectorFn - Function that maps a symbol to a sector string
+ * @param {string|null} sector      - Sector to filter by, or null for all
+ * @returns {Array} Filtered positions
+ */
+export function filterBySector(positions, getSectorFn, sector) {
+  if (!sector) return positions;
+  return positions.filter(p => getSectorFn(p.symbol) === sector);
+}
+
+/**
+ * Format the position count label shown in the portfolio header.
+ *
+ * When a sector filter is active, shows "X of Y positions".
+ * When no filter, shows "X positions" (or "1 position" when singular).
+ *
+ * @param {number}      filteredCount  - Number of positions currently visible
+ * @param {number}      totalCount     - Total number of active positions (before filter)
+ * @param {string|null} selectedSector - Active sector filter (null = no filter)
+ * @returns {string}
+ */
+export function formatSectorPositionCount(filteredCount, totalCount, selectedSector) {
+  const noun = filteredCount === 1 ? 'position' : 'positions';
+  if (selectedSector) {
+    return `${filteredCount} ${noun} of ${totalCount}`;
+  }
+  return `${filteredCount} ${noun}`;
+}
