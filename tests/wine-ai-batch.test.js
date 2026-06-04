@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText } from '../src/wine-ai-utils.js';
+import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText, padResults } from '../src/wine-ai-utils.js';
 
 // ── sanitiseJson ─────────────────────────────────────────────────────────────
 
@@ -369,5 +369,75 @@ describe('isValidGeminiText', () => {
 
   it('a single visible character is valid', () => {
     expect(isValidGeminiText('x')).toBe(true);
+  });
+});
+
+// ── padResults — prevents positional misalignment in batch results ─────────
+
+describe('padResults — prevents batch misalignment data corruption', () => {
+  const chunk = [
+    { id: 'bottle-1', name: 'Wine A' },
+    { id: 'bottle-2', name: 'Wine B' },
+    { id: 'bottle-3', name: 'Wine C' },
+  ];
+
+  it('returns results unchanged when length matches chunk.length', () => {
+    const results = [
+      { id: 'bottle-1', estimatedValue: 100 },
+      { id: 'bottle-2', estimatedValue: 200 },
+      { id: 'bottle-3', estimatedValue: 300 },
+    ];
+    const padded = padResults(results, chunk, 0, 'Gemini');
+    expect(padded).toHaveLength(3);
+    expect(padded[0].estimatedValue).toBe(100);
+    expect(padded[2].estimatedValue).toBe(300);
+  });
+
+  it('pads with error stubs when AI returns fewer results', () => {
+    const results = [
+      { id: 'bottle-1', estimatedValue: 100 },
+    ];
+    const padded = padResults(results, chunk, 0, 'Gemini');
+    expect(padded).toHaveLength(3);
+    expect(padded[0].estimatedValue).toBe(100);
+    expect(padded[1].error).toContain('AI did not return');
+    expect(padded[1].id).toBe('bottle-2');
+    expect(padded[2].error).toContain('AI did not return');
+    expect(padded[2].id).toBe('bottle-3');
+  });
+
+  it('truncates when AI returns more results than chunk.length', () => {
+    const results = [
+      { id: 'bottle-1', estimatedValue: 100 },
+      { id: 'bottle-2', estimatedValue: 200 },
+      { id: 'bottle-3', estimatedValue: 300 },
+      { id: 'bottle-extra', estimatedValue: 999 },
+    ];
+    const padded = padResults(results, chunk, 0, 'Claude');
+    expect(padded).toHaveLength(3);
+    expect(padded.find(r => r.id === 'bottle-extra')).toBeUndefined();
+  });
+
+  it('handles empty results array — all stubs', () => {
+    const padded = padResults([], chunk, 0, 'Gemini');
+    expect(padded).toHaveLength(3);
+    padded.forEach((r, i) => {
+      expect(r.id).toBe(chunk[i].id);
+      expect(r.error).toContain('AI did not return');
+    });
+  });
+
+  it('preserves existing IDs and only pads missing ones', () => {
+    const results = [
+      { id: 'bottle-2', estimatedValue: 200 },
+    ];
+    const padded = padResults(results, chunk, 0, 'Claude');
+    expect(padded).toHaveLength(3);
+    expect(padded[0].id).toBe('bottle-2');
+    expect(padded[0].estimatedValue).toBe(200);
+    const stubs = padded.filter(r => r.error);
+    expect(stubs).toHaveLength(2);
+    const stubIds = stubs.map(r => r.id).sort();
+    expect(stubIds).toEqual(['bottle-1', 'bottle-3']);
   });
 });

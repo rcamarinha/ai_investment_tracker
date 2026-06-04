@@ -139,6 +139,31 @@ Additional rules:
 }
 
 /**
+ * Ensure a parsed results array has exactly chunk.length entries.
+ *
+ * If the AI returned fewer results than bottles in the chunk, missing bottles
+ * are filled with error stubs. If more were returned, the array is truncated.
+ * This prevents positional misalignment when multiple chunks are concatenated.
+ *
+ * @param {Array}  results   Parsed ValuationResult objects from parseBatchText
+ * @param {Array}  chunk     Original bottle list for the chunk
+ * @param {number} chunkIdx  Chunk index (for logging)
+ * @param {string} source    "Gemini" or "Claude"
+ * @returns {Array}          Results array with exactly chunk.length entries
+ */
+export function padResults(results, chunk, chunkIdx, source) {
+  if (results.length >= chunk.length) return results.slice(0, chunk.length);
+  const padded = [...results];
+  const returnedIds = new Set(results.map(r => r.id));
+  for (const b of chunk) {
+    if (!returnedIds.has(b.id)) {
+      padded.push({ id: b.id, error: `AI did not return a valuation for this bottle (${source})` });
+    }
+  }
+  return padded.slice(0, chunk.length);
+}
+
+/**
  * Check whether a Gemini (or Claude) text response is meaningful.
  *
  * Gemini occasionally returns HTTP 200 with an empty or whitespace-only text
