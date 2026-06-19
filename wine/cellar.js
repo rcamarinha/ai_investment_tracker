@@ -10,7 +10,7 @@ import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
 import { renderAllocationCharts } from './ui.js';
 import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON } from './utils.js';
 import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
-import { callWineAI } from './api.js?v=1.3.20';
+import { callWineAI } from './api.js?v=3.15.0';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 

@@ -10,7 +10,7 @@
  *   → Caller pre-fills the Add Bottle dialog
  */
 
-import { callWineAI } from './api.js?v=1.3.20';
+import { callWineAI } from './api.js?v=3.15.0';
 
 // ── JSON parsing helpers ────────────────────────────────────────────────────
 
