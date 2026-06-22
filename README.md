@@ -122,6 +122,7 @@ ai_investment_tracker/
 │   ├── storage.js
 │   ├── auth.js
 │   ├── portfolio.js
+│   ├── import-brokers.js   # Pure DeGiro/Revolut CSV parsers + ledger helpers
 │   ├── analysis.js
 │   └── ui.js
 │
@@ -154,8 +155,10 @@ ai_investment_tracker/
 │
 ├── supabase/
 │   └── functions/
-│       └── analyze-portfolio/
-│           └── index.ts    # Edge function for server-side stock analysis
+│       ├── analyze-portfolio/
+│       │   └── index.ts    # Edge function for server-side stock analysis
+│       └── extract-trades/
+│           └── index.ts    # Edge function: AI trade extraction from unstructured text
 │
 ├── supabase_schema.sql     # Stock tracker DB schema
 ├── wine_schema.sql         # Wine cellar DB schema
@@ -303,6 +306,13 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.16.0
+- **Trade / broker import** — Import buys & sells directly from a DeGiro Transactions CSV or Revolut statement CSV. Builds a full transaction ledger; positions and cost basis are derived automatically. Unstructured text (Revolut PDF, BancoBest confirmations) falls back to AI extraction via the new `extract-trades` edge function. Re-importing the same export is safe — already-imported moves are skipped via fingerprint deduplication
+- **`services/import-brokers.js`** — Pure parsers for DeGiro and Revolut CSV formats; `normalizeTrades`, `dedupeTrades`, `computePositionsFromLedger` helpers. No DOM or network dependencies — fully unit-testable
+- **`supabase/functions/extract-trades/`** — New edge function: extracts structured trades from unstructured statement text (Revolut PDF text, BancoBest option confirmations) via Claude
+- **Wine module version alignment** — All `wine/` module imports in `wine.html` and cross-imports within `wine/` now use a unified `?v=` query string, eliminating dual module-instance issues that caused `window._wineState` to be a different object than the `state` inside `cellar.js`
+- **Version bump to 3.16.0** — All cache-busting query strings and visible version labels updated
 
 ### v3.15.0
 - **Filter-scoped stats — Wine Cellar** — Summary bar (bottles, invested, estimated value, gain %) now reflects only the filtered subset when search or filter chips are active. Snapshots always save full-cellar totals regardless of active filters. `computeTotals()` accepts an optional bottles array (defaults to full cellar)
