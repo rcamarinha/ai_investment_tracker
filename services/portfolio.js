@@ -11,6 +11,9 @@ import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
 import { fetchMarketPrices, fetchStockPrice, getExchangeRate } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
+import { parseBrokerExport, normalizeTrades,
+         buildExistingFingerprints, dedupeTrades,
+         computePositionsFromLedger } from './import-brokers.js';
 
 // ── Auth Guard ──────────────────────────────────────────────────────────────
 
@@ -339,9 +342,15 @@ export function closeImportDialog() {
         if (dialog) dialog.style.display = 'none';
         if (textarea) textarea.value = '';
         if (reportArea) reportArea.innerHTML = '';
+        const fileInput = document.getElementById('tradeFileInput');
+        if (fileInput) fileInput.value = '';
         // Reset import mode to default
         const addRadio = document.querySelector('input[name="importMode"][value="add"]');
         if (addRadio) addRadio.checked = true;
+        // Reset top-level import type back to Trades (the default)
+        if (typeof window !== 'undefined' && typeof window.setImportType === 'function') {
+            window.setImportType('trades');
+        }
     } catch (err) {
         console.error('=== CLOSE IMPORT DIALOG ERROR ===', err);
     }
@@ -1336,6 +1345,318 @@ export async function importPositions() {
         console.error('=== IMPORT ERROR ===', err);
         alert(`\u274C Import failed: ${err.message}\n\nCheck the browser console (F12) for details.`);
     }
+}
+
+// ── Import Trades / Moves (ledger) ───────────────────────────────────────────
+
+/** Human-readable platform label for a broker key. */
+function brokerLabel(broker) {
+    switch (broker) {
+        case 'degiro': return 'DeGiro';
+        case 'revolut': return 'Revolut';
+        case 'bancobest': return 'BancoBest';
+        default: return null;
+    }
+}
+
+/** Split long text into <= maxLen chunks on line boundaries (for the AI fallback). */
+function chunkText(text, maxLen) {
+    if (text.length <= maxLen) return [text];
+    const lines = text.split('\n');
+    const chunks = [];
+    let cur = '';
+    for (const line of lines) {
+        if (cur.length + line.length + 1 > maxLen && cur) { chunks.push(cur); cur = ''; }
+        cur += line + '\n';
+    }
+    if (cur.trim()) chunks.push(cur);
+    return chunks;
+}
+
+/**
+ * Extract trades from unstructured statement text via the extract-trades edge
+ * function (used for Revolut PDF text and BancoBest option confirmations).
+ * Returns an array of loose trade rows for normalizeTrades().
+ */
+async function extractTradesViaAI(text) {
+    if (!state.supabaseUrl || !state.supabaseClient) {
+        throw new Error('AI extraction needs Supabase configured. Use a DeGiro/Revolut CSV instead, or paste structured columns (Ticker, Side, Quantity, Price).');
+    }
+    const chunks = chunkText(text, 12000);
+    const all = [];
+    const { data: { session } } = await state.supabaseClient.auth.getSession();
+    const reportArea = document.getElementById('importReportArea');
+
+    for (let i = 0; i < chunks.length; i++) {
+        if (reportArea) reportArea.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">⏳ AI extracting trades… (part ${i + 1}/${chunks.length})</div>`;
+        const response = await fetch(`${state.supabaseUrl}/functions/v1/extract-trades`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': state.supabaseAnonKey,
+                ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+            },
+            body: JSON.stringify({ text: chunks[i] }),
+        });
+        const body = await response.text();
+        if (!response.ok) throw new Error(`AI extraction failed (${response.status}): ${body.slice(0, 200)}`);
+        const data = JSON.parse(body);
+        const out = data.content?.find(c => c.type === 'text')?.text || '';
+        const clean = out.replace(/```json|```/g, '').trim();
+        let rows;
+        try { rows = JSON.parse(clean); } catch { rows = []; }
+        if (Array.isArray(rows)) all.push(...rows);
+        else if (rows && Array.isArray(rows.trades)) all.push(...rows.trades);
+    }
+    return all;
+}
+
+/** Render the trade-import review report (new vs duplicate vs skipped). */
+function showTradeReport(container, { trades, duplicates, errors, broker, usedAi }) {
+    if (!container) return;
+    let html = `<div class="import-report" style="background: var(--surface); border-radius: 10px; padding: 18px; margin-bottom: 15px; font-size: 13px; max-height: 350px; overflow-y: auto;">`;
+    html += `<div style="font-weight: 700; font-size: 15px; color: var(--text-primary); margin-bottom: 10px;">Trade Import Report</div>`;
+    const source = usedAi ? 'AI extraction' : (brokerLabel(broker) || 'CSV');
+    html += `<div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 8px;">Source: ${escapeHTML(source)}</div>`;
+    html += `<div style="color: var(--up); margin-bottom: 4px;">✓ New trades: ${trades.length}</div>`;
+    if (duplicates.length > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">↻ Already imported (skipped): ${duplicates.length}</div>`;
+    if (errors.length > 0) html += `<div style="color: var(--down); margin-bottom: 4px;">✗ Issues: ${errors.length}</div>`;
+
+    if (errors.length > 0) {
+        html += `<div style="margin-top: 10px; padding: 10px; background: rgba(224,90,90,0.08); border-radius: 6px; border-left: 3px solid var(--down);">`;
+        errors.slice(0, 12).forEach(e => { html += `<div style="color: var(--down); font-size: 12px; margin-bottom: 3px;">${escapeHTML(e)}</div>`; });
+        if (errors.length > 12) html += `<div style="color: var(--down); font-size: 11px;">... and ${errors.length - 12} more</div>`;
+        html += `</div>`;
+    }
+
+    if (trades.length > 0) {
+        html += `<div style="margin-top: 12px;"><div style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">New trades (first 12)</div>`;
+        trades.slice(0, 12).forEach(t => {
+            const sideColor = t.side === 'buy' ? 'var(--up)' : 'var(--down)';
+            const label = (t.symbol && t.symbol !== t.identifier) ? `${escapeHTML(t.symbol)} <span style="color:var(--text-tertiary);">(${escapeHTML(t.identifier)})</span>` : escapeHTML(t.symbol || t.identifier);
+            html += `<div style="color: var(--text-primary); font-size: 12px; margin-bottom: 2px;">${escapeHTML(t.date || '')} • <span style="color:${sideColor};font-weight:600;text-transform:uppercase;">${t.side}</span> ${t.shares} ${label} @ ${t.price.toFixed(2)} ${escapeHTML(t.currency || '')}</div>`;
+        });
+        if (trades.length > 12) html += `<div style="color: var(--text-secondary); font-size: 11px;">... and ${trades.length - 12} more</div>`;
+        html += `</div>`;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+/**
+ * Recompute state.portfolio holdings from the full transactions ledger
+ * (average-cost basis). Updates existing positions in place, adds new active
+ * ones, and zeroes out fully-closed positions (kept as inactive).
+ */
+export function rebuildPositionsFromLedger() {
+    const computed = computePositionsFromLedger(state.transactions);
+    for (const [symbol, data] of Object.entries(computed)) {
+        const existing = state.portfolio.find(p => p.symbol === symbol);
+        if (existing) {
+            existing.shares = data.shares;
+            if (data.shares > 0) existing.avgPrice = data.avgPrice;
+        } else if (data.shares > 0) {
+            const meta = state.assetDatabase[symbol] || {};
+            const txs = state.transactions[symbol] || [];
+            const broker = txs.length ? txs[txs.length - 1].broker : null;
+            state.portfolio.push({
+                name: meta.name || symbol,
+                symbol,
+                platform: brokerLabel(broker) || 'Imported',
+                type: meta.assetType || 'Stock',
+                shares: data.shares,
+                avgPrice: data.avgPrice,
+            });
+        }
+    }
+}
+
+/**
+ * Import a broker trade export into the transaction ledger.
+ * Pipeline: parse (CSV or AI) → resolve ISINs → dedupe → review → commit →
+ * rebuild positions → persist → fetch prices.
+ */
+export async function importTrades() {
+    if (!requireAuth('import trades')) return;
+    console.log('=== IMPORT TRADES STARTED ===');
+
+    const textarea = document.getElementById('importText');
+    const text = (textarea?.value || '').trim();
+    const reportArea = document.getElementById('importReportArea');
+    if (!text) {
+        alert('Paste a broker export (or choose a CSV/PDF file) first.');
+        return;
+    }
+
+    try {
+        // ── Step 1: Parse to normalized trades (structured CSV or AI fallback) ──
+        let parsed = parseBrokerExport(text);
+        let usedAi = false;
+        if (!parsed.broker) {
+            if (reportArea) reportArea.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">⏳ No broker CSV detected — extracting trades with AI…</div>`;
+            const aiRows = await extractTradesViaAI(text);
+            parsed = normalizeTrades(aiRows, 'generic');
+            usedAi = true;
+        }
+
+        let trades = parsed.trades;
+        let errors = [...parsed.errors];
+
+        if (trades.length === 0) {
+            showTradeReport(reportArea, { trades: [], duplicates: [], errors: errors.length ? errors : ['No trades found in the input.'], broker: parsed.broker, usedAi });
+            alert('❌ No trades could be parsed from the input.');
+            return;
+        }
+
+        // ── Step 2: Resolve ISIN identifiers → tickers ─────────────────────
+        const isins = [...new Set(trades.filter(t => t.isISIN).map(t => t.identifier))];
+        if (isins.length > 0) {
+            if (reportArea) reportArea.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">⏳ Resolving ${isins.length} ISIN(s)…</div>`;
+            const resolved = await resolveIdentifiers(isins);
+            const unresolved = [];
+            for (const t of trades) {
+                if (!t.isISIN) continue;
+                const r = resolved[t.identifier];
+                if (!r) { unresolved.push(t.identifier); continue; }
+                if (r.alternatives && r.alternatives.length) {
+                    const chosen = await showTickerPickerDialog(
+                        t.identifier,
+                        { ticker: r.ticker, name: r.name, type: r.type, exchange: r.exchange },
+                        r.alternatives
+                    );
+                    t.symbol = chosen.ticker.toUpperCase();
+                    t.name = t.name || chosen.name;
+                    if (chosen.type) t.assetType = normalizeAssetType(chosen.type);
+                } else {
+                    t.symbol = r.ticker.toUpperCase();
+                    t.name = t.name || r.name;
+                    if (r.type) t.assetType = normalizeAssetType(r.type);
+                }
+            }
+            // Drop trades whose ISIN never resolved
+            trades = trades.filter(t => !(t.isISIN && !t.symbol));
+            if (unresolved.length) {
+                errors.push(`Could not resolve ISIN(s): ${[...new Set(unresolved)].join(', ')}. Those trades were skipped.`);
+            }
+        }
+        // Non-ISIN trades use the identifier directly as the ticker
+        trades.forEach(t => { if (!t.symbol) t.symbol = t.identifier.toUpperCase(); });
+
+        // ── Step 3: Dedupe against the existing ledger ─────────────────────
+        const existing = buildExistingFingerprints(state.transactions);
+        const { fresh, duplicates } = dedupeTrades(trades, existing);
+
+        // ── Step 4: Review and confirm ─────────────────────────────────────
+        showTradeReport(reportArea, { trades: fresh, duplicates, errors, broker: parsed.broker, usedAi });
+
+        if (fresh.length === 0) {
+            alert(duplicates.length
+                ? `✓ All ${duplicates.length} trade(s) are already in your ledger — nothing new to import.`
+                : '❌ No new trades to import.');
+            return;
+        }
+
+        let confirmMsg = `Import ${fresh.length} new trade(s) into your ledger?`;
+        if (duplicates.length) confirmMsg += `\n\n↻ ${duplicates.length} duplicate(s) already imported will be skipped.`;
+        if (errors.length) confirmMsg += `\n\n✗ ${errors.length} issue(s) — see the report.`;
+        if (!confirm(confirmMsg)) return;
+
+        // ── Step 5: Commit fresh trades to the ledger ──────────────────────
+        fresh.forEach(t => {
+            if (!state.transactions[t.symbol]) state.transactions[t.symbol] = [];
+            const gross = t.shares * t.price;
+            state.transactions[t.symbol].push({
+                type: t.side,
+                shares: t.shares,
+                price: t.price,
+                date: t.date,
+                totalAmount: t.side === 'buy' ? gross + t.fees : gross - t.fees,
+                currency: t.currency,
+                exchangeRate: getExchangeRate(t.currency),
+                timestamp: new Date().toISOString(),
+                broker: t.broker,
+            });
+            if (!state.assetDatabase[t.symbol]) {
+                const rec = buildAssetRecord({
+                    name: t.name || t.symbol, symbol: t.symbol,
+                    platform: brokerLabel(t.broker) || 'Imported',
+                    type: t.assetType || 'Stock', shares: t.shares, avgPrice: t.price,
+                });
+                if (rec) state.assetDatabase[rec.ticker] = {
+                    name: rec.name, ticker: rec.ticker, stockExchange: rec.stock_exchange,
+                    sector: rec.sector, currency: rec.currency, assetType: rec.asset_type,
+                };
+            }
+        });
+
+        // ── Step 6: Rebuild positions from the full ledger ─────────────────
+        rebuildPositionsFromLedger();
+
+        // ── Step 7: Persist ───────────────────────────────────────────────
+        await saveTransactionsToDB();
+        saveTransactionsToStorage();
+        await savePortfolioDB();
+        closeImportDialog();
+        renderPortfolio();
+
+        // ── Step 8: Fetch current prices ───────────────────────────────────
+        setTimeout(async () => {
+            await fetchMarketPrices();
+            renderPortfolio();
+        }, 300);
+        setTimeout(() => {
+            alert(`✓ Imported ${fresh.length} trade(s) into your ledger.${duplicates.length ? `\n↻ ${duplicates.length} duplicate(s) skipped.` : ''}\n\nFetching current market prices…`);
+        }, 200);
+
+    } catch (err) {
+        console.error('=== IMPORT TRADES ERROR ===', err);
+        alert(`❌ Trade import failed: ${err.message}\n\nCheck the browser console (F12) for details.`);
+    }
+}
+
+/**
+ * Read an uploaded broker file into the import textarea.
+ * CSV/TSV/text → loaded as-is. PDF → text extracted via pdf.js for the AI path.
+ */
+export async function handleTradeFile(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    const textarea = document.getElementById('importText');
+    const reportArea = document.getElementById('importReportArea');
+    try {
+        const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+        if (isPdf) {
+            if (reportArea) reportArea.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">⏳ Reading PDF — ${escapeHTML(file.name)}…</div>`;
+            const text = await extractPdfText(file);
+            if (textarea) textarea.value = text;
+            if (reportArea) reportArea.innerHTML = `<div style="color: var(--text-secondary); padding: 10px; font-size: 13px;">✓ Extracted ${text.length} characters from PDF. Click <strong>Import Trades</strong> to parse with AI.</div>`;
+        } else {
+            const text = await file.text();
+            if (textarea) textarea.value = text;
+            const { detectBroker } = await import('./import-brokers.js');
+            const broker = detectBroker(text);
+            if (reportArea) reportArea.innerHTML = `<div style="color: var(--text-secondary); padding: 10px; font-size: 13px;">✓ Loaded ${escapeHTML(file.name)}${broker ? ` (detected: ${brokerLabel(broker)})` : ''}. Click <strong>Import Trades</strong>.</div>`;
+        }
+    } catch (err) {
+        console.error('=== TRADE FILE READ ERROR ===', err);
+        alert(`❌ Could not read file: ${err.message}`);
+    }
+}
+
+/** Extract text from a PDF File using pdf.js loaded from CDN. */
+async function extractPdfText(file) {
+    const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.min.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.worker.min.mjs';
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    let out = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        out += content.items.map(it => it.str).join(' ') + '\n';
+    }
+    return out;
 }
 
 // ── Snapshots ───────────────────────────────────────────────────────────────

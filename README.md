@@ -21,7 +21,8 @@ The hub page shows a **cross-asset net worth summary** when logged in:
 
 ### 📈 Stock Portfolio Tracker (`portfolio.html`)
 
-- **Portfolio Import** — Paste data from any spreadsheet or broker export (tab, comma, semicolon, pipe separated). Choose to **add to** or **replace** your existing portfolio
+- **Trade / Moves Import** — Import buys & sells directly from a **DeGiro Transactions CSV** or **Revolut statement CSV** (upload or paste). Builds a full transaction ledger; positions and cost basis are derived automatically. Revolut PDFs and BancoBest confirmations fall back to AI extraction. Re-importing the same export is safe — already-imported moves are skipped
+- **Portfolio Import (snapshot)** — Paste current holdings from any spreadsheet or broker export (tab, comma, semicolon, pipe separated). Choose to **add to** or **replace** your existing portfolio
 - **ISIN Resolution** — Automatic ISIN-to-ticker resolution via a 4-tier strategy (local DB → Finnhub → FMP → Claude AI)
 - **Asset Type Normalization** — Imported asset types normalized to Stock, ETF, Crypto, REIT, Bond, Commodity, Cash, Other
 - **Live Market Prices** — 3-tier API fallback (Finnhub → FMP → Alpha Vantage) for ~98% fetch success
@@ -268,6 +269,7 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 | `calculations.test.js` | Portfolio gain/loss, totals |
 | `allocation.test.js` | Portfolio weight calculations, type aggregation |
 | `import-parsing.test.js` | Flexible CSV/TSV import, ISIN detection, column mapping |
+| `import-trades.test.js` | Broker trade-export parsers (DeGiro/Revolut), dedupe, ledger→positions rebuild |
 | `position-management.test.js` | Add/buy/sell/remove positions, transactions, realized P&L |
 | `price-fetching.test.js` | 3-tier API fallback, rate limiting |
 | `snapshots.test.js` | Snapshot build and merge |

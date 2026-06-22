@@ -23,6 +23,7 @@ ai_investment_tracker/
 │   ├── storage.js              # Supabase DB, localStorage, Claude cloud storage
 │   ├── auth.js                 # Supabase authentication (login, signup, logout)
 │   ├── portfolio.js            # Render, import, snapshots, history
+│   ├── import-brokers.js       # Pure broker-export parsers (DeGiro/Revolut CSV) + dedupe + ledger rebuild
 │   ├── analysis.js             # AI analysis & trade ideas via Claude API
 │   └── ui.js                   # Allocation charts, perspective tabs, dialogs
 ├── src/
@@ -34,6 +35,8 @@ ai_investment_tracker/
 │   └── functions/
 │       ├── analyze-portfolio/
 │       │   └── index.ts        # Edge function for stock portfolio analysis
+│       ├── extract-trades/
+│       │   └── index.ts        # Edge function: extract trades from unstructured statement text (Revolut PDF / BancoBest)
 │       └── wine-ai/
 │           └── index.ts        # Edge function for wine AI (label, valuation, analysis)
 ├── supabase_schema.sql         # Database schema (positions, snapshots, assets, transactions, etc.)
@@ -130,9 +133,33 @@ const state = {
 
 ### Portfolio Service (`services/portfolio.js`)
 - **`renderPortfolio()`** - Renders portfolio grid with gains/losses, status icons
-- **`importPositions()`** - Parses tab-separated data (full 8+ column or simple 3 column)
+- **`importPositions()`** - Parses tab-separated data (full 8+ column or simple 3 column) → **positions snapshot**
+- **`importTrades()`** - Imports a broker export into the **transaction ledger** (see below)
+- **`handleTradeFile(input)`** - Reads an uploaded CSV/PDF into the import textarea (PDF text via pdf.js CDN)
+- **`rebuildPositionsFromLedger()`** - Recomputes `state.portfolio` (net shares + weighted-avg cost) from `state.transactions`
 - **`savePortfolioSnapshot()`** - Saves to localStorage + Supabase + Claude cloud
 - **`updateHistoryDisplay()`** / **`clearHistory()`** - History management
+
+### Broker Trade Import (`services/import-brokers.js` + `importTrades()`)
+
+The import dialog (`#importDialog`) has a top-level toggle: **Trades / Moves (ledger)** (default) vs
+**Positions (snapshot)**. The trades path solves the manual re-entry problem for DeGiro / Revolut /
+BancoBest by feeding broker exports into the **existing** transaction ledger.
+
+`services/import-brokers.js` is **pure** (no DOM, no network, no service imports) so tests import it
+directly — there is **no `src/` mirror** for it. Key exports:
+- **`parseBrokerExport(text)`** → `detectBroker()` then dispatches to `parseDegiroCsv()` / `parseRevolutCsv()`
+- **`parseDegiroCsv(text)`** - DeGiro Transactions.csv; **sign of Quantity = buy/sell**; ISIN identifier; currency is the unnamed column right after Price
+- **`parseRevolutCsv(text)`** - Revolut statement; only `BUY*`/`SELL*` rows (dividends/top-ups/fees/splits skipped)
+- **`normalizeTrades(rows, broker)`** - normalizes loose rows from the AI fallback
+- **`tradeFingerprint()` / `buildExistingFingerprints()` / `dedupeTrades()`** - dedupe by `date|symbol|side|shares|price` (symbol = **resolved ticker**, so re-imports are safe)
+- **`computePositionsFromLedger(transactions)`** - average-cost net shares / avgPrice / realized P&L
+
+`importTrades()` pipeline: parse (CSV or AI) → resolve ISINs via `resolveIdentifiers()` → dedupe
+against `state.transactions` → review report → commit to ledger → `rebuildPositionsFromLedger()` →
+`saveTransactionsToDB()` + `savePortfolioDB()` → `fetchMarketPrices()`. Unstructured input (Revolut
+PDF text, BancoBest confirmations) has no detectable broker → falls back to the `extract-trades` edge
+function (client chunks to ≤12K chars).
 
 ### Storage Service (`services/storage.js`)
 - **`initSupabase()`** - Initialize Supabase client with auth listener
@@ -242,6 +269,7 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **`window.storage`** — Claude-specific API, not standard Web Storage
 - **`renderPortfolio()` called multiple times** after import with setTimeout delays for UI refresh
 - **Edge function auth** — `verify_jwt` is OFF in `config.toml`; auth is handled manually via `supabase.auth.getUser()` inside each function (gateway JWT check is incompatible with `sb_publishable_` keys)
-- **Edge function prompt limits** — Server enforces 15K char max prompts; classification and analysis must batch/truncate on the client side
+- **Edge function prompt limits** — Server enforces 15K char max prompts; classification, analysis, and `extract-trades` must batch/truncate on the client side (`importTrades()` chunks statement text to ≤12K)
+- **Trades vs positions imports** — `importTrades()` writes the **transaction ledger** (every buy/sell) and then derives positions; `importPositions()` writes a **positions snapshot** only. Re-importing a broker export is safe because `dedupeTrades()` skips already-imported moves. `services/import-brokers.js` must stay **pure** (no DOM/network) — tests import it directly, so don't add a `src/` mirror for it
 - **Valuation pricing rules** — 6 rules enforced in both single and batch prompts: (1) Portuguese retailers first, (2) 23% IVA on ex-tax sources, (3) exact bottle format, (4) current in-stock only, (5) cross-reference ≥3 sources using median, (6) weight specialist merchants for rare/collectible wines
 - **index.html must not import service modules** — `services/storage.js` pulls in the full service graph (pricing, portfolio, etc.). Hub dashboard queries are written inline in the `<script>` block to avoid this dependency chain

@@ -207,36 +207,79 @@
 
         <div id="importDialog" style="display: none;">
             <div class="card">
-                <h2 class="section-heading">📋 Import Positions</h2>
-                <p style="margin-bottom: 12px;">
-                    Paste your positions from any spreadsheet or broker export. The app will auto-detect column layout.
-                </p>
-                <div class="form-helper" style="margin-bottom: 12px;">
-                    <div style="margin-bottom: 6px;"><strong style="color: var(--gold);">Required columns:</strong> Ticker/Symbol/ISIN + Quantity/Shares</div>
-                    <div style="margin-bottom: 6px;"><strong style="color: var(--gold);">Optional columns:</strong> Avg Price, Name, Platform, Type, Total Amount</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px;">
-                        <span>✅ Tab, comma, semicolon, or pipe separated</span>
-                        <span>✅ ISINs resolved via AI</span>
-                        <span>✅ European number formats (1.234,56)</span>
-                        <span>✅ Missing price → uses current market price</span>
+                <h2 class="section-heading">📥 Import</h2>
+
+                <!-- Top-level mode: Trades (ledger) vs Positions (snapshot) -->
+                <div class="import-mode" style="margin-bottom: 14px;">
+                    <div class="im-option active" id="importTypeTrades" onclick="window.setImportType('trades')">
+                        <div class="im-title">📈 Trades / Moves</div>
+                        <div class="im-desc">Import buys &amp; sells — builds the ledger</div>
+                    </div>
+                    <div class="im-option" id="importTypePositions" onclick="window.setImportType('positions')">
+                        <div class="im-title">📋 Positions</div>
+                        <div class="im-desc">Import current holdings snapshot only</div>
                     </div>
                 </div>
-                <div class="import-mode">
-                    <div class="im-option active" onclick="document.querySelector('[name=importMode][value=add]').checked=true; this.classList.add('active'); this.nextElementSibling.classList.remove('active')">
-                        <div class="im-title">Add to existing</div>
-                        <div class="im-desc">Merge new positions into portfolio</div>
-                        <input type="radio" name="importMode" value="add" checked style="display:none" />
+
+                <!-- ── Trades / Moves block ──────────────────────────────── -->
+                <div id="tradesBlock">
+                    <p style="margin-bottom: 12px;">
+                        Upload a broker export or paste it below. Every buy &amp; sell becomes a transaction;
+                        your positions and cost basis are recalculated automatically. Re-importing the same
+                        export is safe — already-imported moves are skipped.
+                    </p>
+                    <div class="form-helper" style="margin-bottom: 12px;">
+                        <div style="display: flex; flex-wrap: wrap; gap: 4px 12px;">
+                            <span>✅ DeGiro Transactions CSV</span>
+                            <span>✅ Revolut statement CSV</span>
+                            <span>✅ Revolut PDF / BancoBest → AI extraction</span>
+                            <span>✅ ISINs resolved automatically</span>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+                            <strong style="color: var(--gold);">Where to export:</strong>
+                            DeGiro → Activity → Transactions → Export.&nbsp; Revolut → Stocks → Statement.
+                        </div>
                     </div>
-                    <div class="im-option" onclick="document.querySelector('[name=importMode][value=replace]').checked=true; this.classList.add('active'); this.previousElementSibling.classList.remove('active')">
-                        <div class="im-title">Replace all</div>
-                        <div class="im-desc">Clear and reload from scratch</div>
-                        <input type="radio" name="importMode" value="replace" style="display:none" />
+                    <label class="btn btn-primary btn-sm" style="display:inline-block; cursor:pointer; margin-bottom:10px;">
+                        📎 Choose file (CSV or PDF)
+                        <input type="file" id="tradeFileInput" accept=".csv,.tsv,.txt,.pdf" style="display:none" onchange="window.handleTradeFile(this)" />
+                    </label>
+                </div>
+
+                <!-- ── Positions snapshot block ──────────────────────────── -->
+                <div id="positionsBlock" style="display:none;">
+                    <p style="margin-bottom: 12px;">
+                        Paste your current holdings from any spreadsheet or broker export. The app auto-detects the column layout.
+                    </p>
+                    <div class="form-helper" style="margin-bottom: 12px;">
+                        <div style="margin-bottom: 6px;"><strong style="color: var(--gold);">Required columns:</strong> Ticker/Symbol/ISIN + Quantity/Shares</div>
+                        <div style="margin-bottom: 6px;"><strong style="color: var(--gold);">Optional columns:</strong> Avg Price, Name, Platform, Type, Total Amount</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px;">
+                            <span>✅ Tab, comma, semicolon, or pipe separated</span>
+                            <span>✅ ISINs resolved via AI</span>
+                            <span>✅ European number formats (1.234,56)</span>
+                            <span>✅ Missing price → uses current market price</span>
+                        </div>
+                    </div>
+                    <div class="import-mode">
+                        <div class="im-option active" onclick="document.querySelector('[name=importMode][value=add]').checked=true; this.classList.add('active'); this.nextElementSibling.classList.remove('active')">
+                            <div class="im-title">Add to existing</div>
+                            <div class="im-desc">Merge new positions into portfolio</div>
+                            <input type="radio" name="importMode" value="add" checked style="display:none" />
+                        </div>
+                        <div class="im-option" onclick="document.querySelector('[name=importMode][value=replace]').checked=true; this.classList.add('active'); this.previousElementSibling.classList.remove('active')">
+                            <div class="im-title">Replace all</div>
+                            <div class="im-desc">Clear and reload from scratch</div>
+                            <input type="radio" name="importMode" value="replace" style="display:none" />
+                        </div>
                     </div>
                 </div>
-                <textarea id="importText" class="import-area" placeholder="Paste your spreadsheet data here (with or without headers)...&#10;&#10;Examples:&#10;  Ticker  Shares  Avg Price&#10;  AAPL    10      150.50&#10;  MSFT    5       380.00&#10;&#10;  Or just:  AAPL  10"></textarea>
+
+                <textarea id="importText" class="import-area" placeholder="Paste a broker export here, or use “Choose file” above…"></textarea>
                 <div id="importReportArea"></div>
                 <div class="action-bar" style="margin-top:12px">
-                    <button class="btn btn-accent" onclick="importPositions()">Import Positions</button>
+                    <button class="btn btn-accent" id="importTradesBtn" onclick="importTrades()">Import Trades</button>
+                    <button class="btn btn-accent" id="importPositionsBtn" onclick="importPositions()" style="display:none;">Import Positions</button>
                     <button class="btn btn-primary" onclick="closeImportDialog()">Cancel</button>
                 </div>
             </div>
@@ -353,7 +396,8 @@
         import { renderPerspectiveTabs, selectPerspective, toggleSectorFilter,
                  showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './services/ui.js?v=3.15.0';
         import { renderPortfolio, showImportDialog, closeImportDialog,
-                 importPositions, savePortfolioSnapshot, updateHistoryDisplay,
+                 importPositions, importTrades, handleTradeFile,
+                 savePortfolioSnapshot, updateHistoryDisplay,
                  clearHistory, deleteSnapshot, initPositionDialog, showAddPositionDialog,
                  showEditPositionDialog, closePositionDialog, submitPosition,
                  deletePosition, toggleInactivePositions,
@@ -374,6 +418,17 @@
         window.showImportDialog    = showImportDialog;
         window.closeImportDialog   = closeImportDialog;
         window.importPositions     = importPositions;
+        window.importTrades        = importTrades;
+        window.handleTradeFile     = handleTradeFile;
+        window.setImportType       = function (type) {
+            const isTrades = type === 'trades';
+            document.getElementById('tradesBlock').style.display = isTrades ? 'block' : 'none';
+            document.getElementById('positionsBlock').style.display = isTrades ? 'none' : 'block';
+            document.getElementById('importTradesBtn').style.display = isTrades ? '' : 'none';
+            document.getElementById('importPositionsBtn').style.display = isTrades ? 'none' : '';
+            document.getElementById('importTypeTrades').classList.toggle('active', isTrades);
+            document.getElementById('importTypePositions').classList.toggle('active', !isTrades);
+        };
         window.fetchMarketPrices   = fetchMarketPrices;
         window.savePortfolioSnapshot = savePortfolioSnapshot;
         window.analyzeMarkets      = analyzeMarkets;
