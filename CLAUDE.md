@@ -27,7 +27,9 @@ ai_investment_tracker/
 │   ├── analysis.js             # AI analysis & trade ideas via Claude API
 │   └── ui.js                   # Allocation charts, perspective tabs, dialogs
 ├── src/
-│   └── portfolio.js            # Pure functions for testing (kept in sync with services)
+│   ├── portfolio.js            # Pure functions for testing (kept in sync with services)
+│   ├── hub.js                  # Pure hub dashboard helpers (hubFmt, computeStockValue, etc.)
+│   └── wine.js                 # Pure wine functions for testing
 ├── tests/                      # Vitest test suite
 ├── vercel.json                 # Vercel deployment: security headers, cache rules
 ├── supabase/
@@ -271,6 +273,7 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **Edge function auth** — `verify_jwt` is OFF in `config.toml`; auth is handled manually via `supabase.auth.getUser()` inside each function (gateway JWT check is incompatible with `sb_publishable_` keys)
 - **Edge function prompt limits** — Server enforces 15K char max prompts; classification, analysis, and `extract-trades` must batch/truncate on the client side (`importTrades()` chunks statement text to ≤12K)
 - **Trades vs positions imports** — `importTrades()` writes the **transaction ledger** (every buy/sell) and then derives positions; `importPositions()` writes a **positions snapshot** only. Re-importing a broker export is safe because `dedupeTrades()` skips already-imported moves. `services/import-brokers.js` must stay **pure** (no DOM/network) — tests import it directly, so don't add a `src/` mirror for it
+- **Batch valuation result matching** — Results from the AI must be matched to bottles by `result.id` (a `Map` keyed by bottle ID), never by positional index. The AI can return fewer items than requested; index-based matching silently applies the wrong valuation to the wrong bottle
 - **Valuation pricing rules** — 6 rules enforced in both single and batch prompts: (1) Portuguese retailers first, (2) 23% IVA on ex-tax sources, (3) exact bottle format, (4) current in-stock only, (5) cross-reference ≥3 sources using median, (6) weight specialist merchants for rare/collectible wines
 - **index.html must not import service modules** — `services/storage.js` pulls in the full service graph (pricing, portfolio, etc.). Hub dashboard queries are written inline in the `<script>` block to avoid this dependency chain
 - **Wine module `?v=` strings must all match** — The browser module cache uses the full URL (including query string) as the cache key. If `wine.html` imports `state.js?v=X` and `cellar.js` imports `state.js?v=Y`, they become two separate module instances — mutations to one don't affect the other. Always keep all `?v=` strings in `wine.html` and within `wine/` in sync with the project version

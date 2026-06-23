@@ -307,6 +307,13 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.17.0
+- **Fix batch valuation misalignment** — Results from the AI were applied to bottles by positional index; if the AI returned fewer items than the chunk size, valuations were silently written to the wrong bottles. Fix matches each result to its bottle by ID (`Map` lookup), skipping any result whose ID is not found in the batch
+- **Test coverage: hub dashboard** — `src/hub.js` pure-function mirror + `tests/hub.test.js` (238 tests) covering `hubFmt`, `computeStockValue`, `computeWineValue`, `computeWineCost`, `computeWineDelta`
+- **Test coverage: sector filter scoping** — `tests/calculations.test.js` extended with `filterBySector` and `formatSectorPositionCount` tests; `src/portfolio.js` gains those two testable pure helpers
+- **Test coverage: cellar filtered totals** — `tests/wine.test.js` extended with `computeTotals(filtered)` coverage verifying scoped stats match the filtered subset
+- **Version bump to 3.17.0**
+
 ### v3.16.0
 - **Trade / broker import** — Import buys & sells directly from a DeGiro Transactions CSV or Revolut statement CSV. Builds a full transaction ledger; positions and cost basis are derived automatically. Unstructured text (Revolut PDF, BancoBest confirmations) falls back to AI extraction via the new `extract-trades` edge function. Re-importing the same export is safe — already-imported moves are skipped via fingerprint deduplication
 - **`services/import-brokers.js`** — Pure parsers for DeGiro and Revolut CSV formats; `normalizeTrades`, `dedupeTrades`, `computePositionsFromLedger` helpers. No DOM or network dependencies — fully unit-testable
