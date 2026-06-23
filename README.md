@@ -307,6 +307,12 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.18.0
+- **Fix DeGiro CSV import** — Portuguese exports failed to parse: the accented `Preços` header was stripped to `preos` and never matched (now diacritic-insensitive), and European numbers ≥ 1000 without thousands separators (`1208,8800`) parsed wrong (number parser rewritten with a "last separator wins" heuristic). Zero-price corporate actions (transfers, ISIN changes) are now skipped silently
+- **Fix dedupe of identical fills** — Genuine same-day/same-price partial fills of one order were collapsed, undercounting shares. Dedupe now matches by occurrence count (multiset), so identical fills are kept on first import while re-imports are still fully skipped
+- **PDF import under strict CSP** — pdf.js is now vendored locally in `lib/` (loaded on demand) instead of from a CDN, so PDF trade extraction works with the app's `script-src 'self'` Content-Security-Policy
+- **Version bump to 3.18.0** — All cache-busting query strings and visible version labels updated
+
 ### v3.17.0
 - **Fix batch valuation misalignment** — Results from the AI were applied to bottles by positional index; if the AI returned fewer items than the chunk size, valuations were silently written to the wrong bottles. Fix matches each result to its bottle by ID (`Map` lookup), skipping any result whose ID is not found in the batch
 - **Test coverage: hub dashboard** — `src/hub.js` pure-function mirror + `tests/hub.test.js` (238 tests) covering `hubFmt`, `computeStockValue`, `computeWineValue`, `computeWineCost`, `computeWineDelta`
