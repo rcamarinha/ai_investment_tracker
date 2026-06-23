@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText } from '../src/wine-ai-utils.js';
+import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText, padResults } from '../src/wine-ai-utils.js';
 
 // ── sanitiseJson ─────────────────────────────────────────────────────────────
 
@@ -369,5 +369,85 @@ describe('isValidGeminiText', () => {
 
   it('a single visible character is valid', () => {
     expect(isValidGeminiText('x')).toBe(true);
+  });
+});
+
+// ── padResults — prevents positional misalignment in batch results ─────────
+//
+// Critical bug fix: if the AI returns fewer results than the chunk size,
+// `valuateChunk` previously returned a short array. When multiple chunks'
+// results are concatenated client-side and mapped by index, a short chunk
+// causes all subsequent valuations to be written to the WRONG bottles.
+// padResults ensures the results array always has exactly chunk.length entries.
+
+describe('padResults — prevents batch misalignment data corruption', () => {
+  const chunk = [
+    { id: 'bottle-1', name: 'Wine A' },
+    { id: 'bottle-2', name: 'Wine B' },
+    { id: 'bottle-3', name: 'Wine C' },
+  ];
+
+  it('returns results unchanged when length matches chunk.length', () => {
+    const results = [
+      { id: 'bottle-1', estimatedValue: 100 },
+      { id: 'bottle-2', estimatedValue: 200 },
+      { id: 'bottle-3', estimatedValue: 300 },
+    ];
+    const padded = padResults(results, chunk, 0, 'Gemini');
+    expect(padded).toHaveLength(3);
+    expect(padded[0].estimatedValue).toBe(100);
+    expect(padded[2].estimatedValue).toBe(300);
+  });
+
+  it('pads with error stubs when AI returns fewer results', () => {
+    const results = [
+      { id: 'bottle-1', estimatedValue: 100 },
+      { id: 'bottle-2', estimatedValue: 200 },
+    ];
+    const padded = padResults(results, chunk, 0, 'Gemini');
+    expect(padded).toHaveLength(3);
+    expect(padded[0].estimatedValue).toBe(100);
+    expect(padded[1].estimatedValue).toBe(200);
+    expect(padded[2].id).toBe('bottle-3');
+    expect(padded[2].error).toContain('AI did not return a valuation');
+  });
+
+  it('pads when AI returns only 1 result for a 3-bottle chunk', () => {
+    const results = [{ id: 'bottle-1', estimatedValue: 50 }];
+    const padded = padResults(results, chunk, 0, 'Claude');
+    expect(padded).toHaveLength(3);
+    expect(padded[0].id).toBe('bottle-1');
+    expect(padded[1].id).toBe('bottle-2');
+    expect(padded[1].error).toContain('Claude');
+    expect(padded[2].id).toBe('bottle-3');
+    expect(padded[2].error).toContain('Claude');
+  });
+
+  it('truncates when AI returns more results than chunk.length', () => {
+    const results = [
+      { id: 'bottle-1', estimatedValue: 100 },
+      { id: 'bottle-2', estimatedValue: 200 },
+      { id: 'bottle-3', estimatedValue: 300 },
+      { id: 'bottle-4', estimatedValue: 400 },
+    ];
+    const padded = padResults(results, chunk, 0, 'Gemini');
+    expect(padded).toHaveLength(3);
+    expect(padded[2].id).toBe('bottle-3');
+  });
+
+  it('error stubs include the source name', () => {
+    const results = [{ id: 'bottle-1', estimatedValue: 100 }];
+    const padded = padResults(results, chunk, 0, 'Gemini');
+    expect(padded[1].error).toContain('Gemini');
+    expect(padded[2].error).toContain('Gemini');
+  });
+
+  it('handles empty results array gracefully', () => {
+    const padded = padResults([], chunk, 0, 'Gemini');
+    expect(padded).toHaveLength(3);
+    expect(padded[0].id).toBe('bottle-1');
+    expect(padded[1].id).toBe('bottle-2');
+    expect(padded[2].id).toBe('bottle-3');
+    padded.forEach(r => expect(r.error).toBeDefined());
   });
 });

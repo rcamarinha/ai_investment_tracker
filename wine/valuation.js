@@ -201,13 +201,19 @@ export async function valuateAllBottles(forceAll = false) {
 
         if (btn) btn.textContent = `💎 Saving results...`;
 
-        // Apply results and persist — run DB saves in parallel
+        // Apply results and persist — run DB saves in parallel.
+        // Match results to bottles by ID (not positional index) as a safeguard
+        // against AI responses that return fewer items than requested.
         const errors = [];
         const savePromises = [];
+        const bottleById = new Map(toValueate.map(b => [b.id, b]));
 
-        allResults.forEach((result, idx) => {
-            const bottle = toValueate[idx];
-            if (!bottle) return;
+        allResults.forEach((result) => {
+            const bottle = result.id ? bottleById.get(result.id) : null;
+            if (!bottle) {
+                if (result.id) console.warn('[Valuation] Result ID not found in batch:', result.id);
+                return;
+            }
 
             if (result.error) {
                 errors.push(`${bottle.name || bottle.id}: ${result.error}`);
