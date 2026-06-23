@@ -1027,3 +1027,86 @@ describe('applyDrinkToBottle', () => {
         expect(result.action).toBe('delete');
     });
 });
+
+// ── filter-scoped totals vs full-cellar snapshots ─────────────────────────────
+//
+// Regression suite for the change that made computeTotals() accept an optional
+// bottles array so the summary bar reflects the current filter subset while
+// snapshots continue to use the full cellar.
+//
+// computeCellarTotals in src/wine.js mirrors wine/cellar.js computeTotals().
+
+describe('computeCellarTotals — filtered subset vs full cellar', () => {
+    const fullCellar = [
+        makeBottle({ qty: 6,  purchasePrice: 100, estimatedValue: 150, varietal: 'Cabernet Sauvignon' }),
+        makeBottle({ qty: 3,  purchasePrice: 200, estimatedValue: 250, varietal: 'Cabernet Sauvignon' }),
+        makeBottle({ qty: 12, purchasePrice: 50,  estimatedValue: 80,  varietal: 'Chardonnay' }),
+        makeBottle({ qty: 1,  purchasePrice: 300,                       varietal: 'Pinot Noir' }),
+    ];
+
+    it('full-cellar totals include all four lots', () => {
+        const result = computeCellarTotals(fullCellar);
+        expect(result.totalBottles).toBe(6 + 3 + 12 + 1);  // 22
+        expect(result.totalInvested).toBe(6 * 100 + 3 * 200 + 12 * 50 + 1 * 300);  // 2100
+        expect(result.totalEstimated).toBe(6 * 150 + 3 * 250 + 12 * 80 + 1 * 300); // 2610
+        expect(result.valuedBottles).toBe(3); // Pinot Noir has no estimatedValue
+    });
+
+    it('filtered subset (Cabernet only) yields smaller totals', () => {
+        const cabernet = fullCellar.filter(b => b.varietal === 'Cabernet Sauvignon');
+        const result = computeCellarTotals(cabernet);
+        expect(result.totalBottles).toBe(6 + 3);  // 9
+        expect(result.totalInvested).toBe(6 * 100 + 3 * 200);  // 1200
+        expect(result.totalEstimated).toBe(6 * 150 + 3 * 250); // 1650
+        expect(result.valuedBottles).toBe(2);
+    });
+
+    it('filtered subset (Chardonnay only) yields correct stats', () => {
+        const chardonnay = fullCellar.filter(b => b.varietal === 'Chardonnay');
+        const result = computeCellarTotals(chardonnay);
+        expect(result.totalBottles).toBe(12);
+        expect(result.totalInvested).toBe(600);
+        expect(result.totalEstimated).toBe(960);
+        expect(result.valuedBottles).toBe(1);
+    });
+
+    it('filtered subset never equals full-cellar totals when filter removes bottles', () => {
+        const filtered = fullCellar.slice(0, 2); // first 2 lots only
+        const filteredResult = computeCellarTotals(filtered);
+        const fullResult    = computeCellarTotals(fullCellar);
+        expect(filteredResult.totalBottles).toBeLessThan(fullResult.totalBottles);
+        expect(filteredResult.totalInvested).toBeLessThan(fullResult.totalInvested);
+    });
+
+    it('snapshot (buildCellarSnapshot) always uses the full array passed to it', () => {
+        // Simulate snapshot path: always call with full cellar, never the filtered subset
+        const filtered = fullCellar.filter(b => b.varietal === 'Chardonnay');
+
+        const snapshotFull     = buildCellarSnapshot(fullCellar,  '2026-01-01T00:00:00.000Z');
+        const snapshotFiltered = buildCellarSnapshot(filtered,    '2026-01-01T00:00:00.000Z');
+
+        // Snapshot from full cellar has more bottles
+        expect(snapshotFull.bottleCount).toBeGreaterThan(snapshotFiltered.bottleCount);
+        // Snapshot does NOT reflect filter — both timestamps can be the same
+        expect(snapshotFull.timestamp).toBe(snapshotFiltered.timestamp);
+        // Values differ
+        expect(snapshotFull.totalInvested).toBeGreaterThan(snapshotFiltered.totalInvested);
+    });
+
+    it('empty filter result produces zero totals without throwing', () => {
+        const result = computeCellarTotals([]);
+        expect(result.totalBottles).toBe(0);
+        expect(result.totalInvested).toBe(0);
+        expect(result.totalEstimated).toBe(0);
+        expect(result.valuedBottles).toBe(0);
+    });
+
+    it('single-bottle filter keeps qty and values for that bottle only', () => {
+        const single = [fullCellar[3]]; // Pinot Noir, no estimatedValue
+        const result = computeCellarTotals(single);
+        expect(result.totalBottles).toBe(1);
+        expect(result.totalInvested).toBe(300);
+        expect(result.totalEstimated).toBe(300); // falls back to cost
+        expect(result.valuedBottles).toBe(0);
+    });
+});
