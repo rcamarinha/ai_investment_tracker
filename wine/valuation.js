@@ -12,11 +12,11 @@
  * (not in the DB schema) and applied to in-memory bottle state on load.
  */
 
-import state from './state.js';
-import { callWineAI } from './api.js?v=3.17.0';
-import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js';
-import { renderCellar, updateBottleCard } from './cellar.js';
-import { showToast, repairTruncatedJSON } from './utils.js';
+import state from './state.js?v=3.18.0';
+import { callWineAI } from './api.js?v=3.18.0';
+import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.18.0';
+import { renderCellar, updateBottleCard } from './cellar.js?v=3.18.0';
+import { showToast, repairTruncatedJSON } from './utils.js?v=3.18.0';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 

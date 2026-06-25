@@ -1644,10 +1644,11 @@ export async function handleTradeFile(input) {
     }
 }
 
-/** Extract text from a PDF File using pdf.js loaded from CDN. */
+/** Extract text from a PDF File using pdf.js (vendored locally in /lib to
+ *  satisfy the strict `script-src 'self'` CSP). */
 async function extractPdfText(file) {
-    const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.min.mjs');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.worker.min.mjs';
+    const pdfjsLib = await import('../lib/pdf.min.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../lib/pdf.worker.min.mjs', import.meta.url).href;
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
     let out = '';

@@ -27,7 +27,11 @@ export function isISIN(value) {
     return /^[A-Z]{2}[A-Z0-9]{10}$/.test(String(value || '').toUpperCase());
 }
 
-/** Parse a number that may use US (1,234.56) or European (1.234,56) formatting. */
+/**
+ * Parse a number that may use US (1,234.56) or European (1.234,56 / 1208,88)
+ * formatting. Uses a "last separator wins" heuristic so it handles broker
+ * exports that omit thousands separators (e.g. DeGiro's "1208,8800").
+ */
 export function parseFlexibleNumber(raw) {
     if (raw === null || raw === undefined) return NaN;
     let s = String(raw).trim();
@@ -35,15 +39,32 @@ export function parseFlexibleNumber(raw) {
     // Strip currency symbols, codes and whitespace, keep digits . , ( ) -
     s = s.replace(/[^0-9.,()\-]/g, '').trim();
     s = s.replace(/^\((.+)\)$/, '-$1');
-    if (/^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(s)) {
-        // European: dot thousands, comma decimal
-        s = s.replace(/\./g, '').replace(',', '.');
-    } else if (/^-?\d+(,\d{1,2})$/.test(s)) {
-        // Simple European decimal, e.g. 12,50
-        s = s.replace(',', '.');
+    const neg = s.startsWith('-');
+    s = s.replace(/-/g, '');
+    if (!s) return NaN;
+
+    const lastDot = s.lastIndexOf('.');
+    const lastComma = s.lastIndexOf(',');
+    if (lastDot !== -1 && lastComma !== -1) {
+        // Both present — the later one is the decimal separator.
+        if (lastComma > lastDot) s = s.replace(/\./g, '').replace(',', '.'); // European
+        else s = s.replace(/,/g, '');                                       // US
+    } else if (lastComma !== -1) {
+        // Only commas. A single comma is a decimal separator unless it looks
+        // like a thousands group ("1,234"); multiple commas are thousands.
+        const commaCount = (s.match(/,/g) || []).length;
+        const decimals = s.length - lastComma - 1;
+        if (commaCount === 1 && decimals !== 3) s = s.replace(',', '.');
+        else s = s.replace(/,/g, '');
+    } else {
+        // Only dots (or none). Multiple dots → thousands separators.
+        const dotCount = (s.match(/\./g) || []).length;
+        if (dotCount > 1) s = s.replace(/\./g, '');
+        // A single dot is treated as a decimal point (US prices, e.g. 150.50).
     }
-    s = s.replace(/,/g, '');
-    return parseFloat(s);
+    const n = parseFloat(s);
+    if (isNaN(n)) return NaN;
+    return neg ? -n : n;
 }
 
 /** Like parseFlexibleNumber but preserves a leading minus / parentheses sign. */
@@ -136,9 +157,19 @@ function parseCsv(text) {
     return { header, rows, sep };
 }
 
+/** Normalize a header cell: strip diacritics + punctuation, lowercase.
+ *  e.g. "Preços" → "precos", "Quantidade" → "quantidade". */
+function normHeader(h) {
+    return String(h)
+        .normalize('NFD').replace(/[̀-ͯ]/g, '') // drop accents (ç→c, ê→e)
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]/g, '')
+        .trim();
+}
+
 /** Find the index of the first header cell matching any of the given aliases. */
 function findCol(header, aliases) {
-    const lower = header.map(h => h.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim());
+    const lower = header.map(normHeader);
     for (let i = 0; i < lower.length; i++) {
         if (aliases.some(a => lower[i] === a || lower[i].includes(a))) return i;
     }
@@ -198,7 +229,9 @@ export function parseDegiroCsv(text) {
 
         const price = parseFlexibleNumber(row[cPrice]);
         if (isNaN(price) || price <= 0) {
-            errors.push(`Line ${lineNum}: invalid price "${row[cPrice]}" for ${identifier}`);
+            // Zero/blank price rows are corporate actions (transfers, ISIN
+            // changes, non-tradeable conversions) — not buys/sells. Skip silently.
+            skipped++;
             return;
         }
 
@@ -371,28 +404,45 @@ export function tradeFingerprint(t) {
     return [date, symbol, side, shares, price].join('|');
 }
 
-/** Build a Set of fingerprints from an existing transactions ledger. */
+/**
+ * Build a multiset (Map of fingerprint → count) from an existing transactions
+ * ledger. Counts matter so that genuine identical fills (same day, symbol,
+ * side, shares, price) are not over-collapsed on re-import.
+ */
 export function buildExistingFingerprints(transactions) {
-    const set = new Set();
+    const counts = new Map();
     for (const [symbol, txs] of Object.entries(transactions || {})) {
-        (txs || []).forEach(tx => set.add(tradeFingerprint({ ...tx, symbol })));
+        (txs || []).forEach(tx => {
+            const fp = tradeFingerprint({ ...tx, symbol });
+            counts.set(fp, (counts.get(fp) || 0) + 1);
+        });
     }
-    return set;
+    return counts;
 }
 
 /**
- * Partition trades into new vs duplicate against an existing fingerprint set.
- * Also dedupes within the incoming batch itself.
+ * Partition trades into new vs already-imported against the existing ledger,
+ * matching by occurrence count. Identical fills within a single fresh import
+ * are all kept (the broker file is authoritative); re-importing the same file
+ * marks every row as a duplicate because the ledger now holds the same counts.
+ *
+ * Accepts either a Map<fp,count> (preferred) or a Set<fp> for compatibility.
  */
-export function dedupeTrades(trades, existingFingerprints = new Set()) {
-    const seen = new Set(existingFingerprints);
+export function dedupeTrades(trades, existing = new Map()) {
+    const remaining = existing instanceof Map
+        ? new Map(existing)
+        : new Map([...existing].map(fp => [fp, Infinity]));
     const fresh = [];
     const duplicates = [];
     for (const t of trades) {
         const fp = tradeFingerprint(t);
-        if (seen.has(fp)) { duplicates.push(t); continue; }
-        seen.add(fp);
-        fresh.push(t);
+        const left = remaining.get(fp) || 0;
+        if (left > 0) {
+            remaining.set(fp, left - 1);
+            duplicates.push(t);
+        } else {
+            fresh.push(t);
+        }
     }
     return { fresh, duplicates };
 }

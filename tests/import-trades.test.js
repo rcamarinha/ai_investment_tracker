@@ -99,6 +99,57 @@ describe('parseDegiroCsv', () => {
     expect(trades).toHaveLength(0);
     expect(skipped).toBeGreaterThanOrEqual(1);
   });
+
+  // Real-world DeGiro export: Portuguese headers, comma-separated, quoted
+  // European numbers, currency in the unnamed column after "Preços".
+  const ptHeader = 'Data,Hora,Produto,ISIN,Bolsa de referência,Bolsa,Quantidade,Preços,,Valor local,,Valor EUR,Taxa de Câmbio,Taxa Autofx,Custos de transação e/ou taxas de terceiros,Total EUR,ID da Ordem,';
+
+  it('parses the real Portuguese DeGiro format (accented headers)', () => {
+    const csv = [ptHeader, '16-06-2026,21:10,SPACE EXPLORATION,US84615Q1031,NDQ,EDGX,4,"205,0000",USD,"-820,00",USD,"-706,17","1,1612","-1,77","-2,00","-709,94",,abc'].join('\n');
+    const { trades, errors } = parseDegiroCsv(csv);
+    expect(errors).toHaveLength(0);
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({ identifier: 'US84615Q1031', side: 'buy', shares: 4, price: 205, currency: 'USD' });
+    expect(trades[0].date).toBe('2026-06-16');
+    expect(trades[0].fees).toBeCloseTo(2.0);
+  });
+
+  it('handles European prices >= 1000 without thousands separators', () => {
+    const csv = [ptHeader, '10-06-2024,00:00,NVIDIA CORP,US67066G1040,NDQ,,-3,"1208,8800",USD,"3626,64",USD,"3368,79","1,0765","0,00",,"3368,79",,x'].join('\n');
+    const { trades } = parseDegiroCsv(csv);
+    expect(trades[0].price).toBeCloseTo(1208.88);
+    expect(trades[0].side).toBe('sell');
+    expect(trades[0].shares).toBe(3);
+  });
+
+  it('silently skips zero-price corporate actions', () => {
+    const csv = [ptHeader, '31-07-2025,07:49,BYD CO LTD - NON TRADEABLE,CNE100000296,DEG,,-43,"0,0000",EUR,"0,00",EUR,"0,00",,"0,00",,"0,00",'].join('\n');
+    const { trades, errors, skipped } = parseDegiroCsv(csv);
+    expect(trades).toHaveLength(0);
+    expect(errors).toHaveLength(0);
+    expect(skipped).toBe(1);
+  });
+
+  it('detects the Portuguese DeGiro header as degiro', () => {
+    expect(detectBroker(ptHeader)).toBe('degiro');
+  });
+});
+
+describe('parseFlexibleNumber (broker)', () => {
+  it('parses European decimals without thousands sep', () => {
+    expect(parseFlexibleNumber('1208,8800')).toBeCloseTo(1208.88);
+    expect(parseFlexibleNumber('205,0000')).toBeCloseTo(205);
+    expect(parseFlexibleNumber('-2497,06')).toBeCloseTo(-2497.06);
+  });
+  it('parses European with dot thousands + comma decimal', () => {
+    expect(parseFlexibleNumber('1.234,56')).toBeCloseTo(1234.56);
+  });
+  it('parses US with comma thousands + dot decimal', () => {
+    expect(parseFlexibleNumber('$1,234.56')).toBeCloseTo(1234.56);
+  });
+  it('treats a lone comma group as thousands (1,234 → 1234)', () => {
+    expect(parseFlexibleNumber('1,234')).toBeCloseTo(1234);
+  });
 });
 
 // ── Revolut ──────────────────────────────────────────────────────────────────
@@ -225,11 +276,25 @@ describe('tradeFingerprint + dedupe', () => {
     expect(duplicates).toHaveLength(1);
   });
 
-  it('dedupes within the incoming batch', () => {
-    const t = { date: '2024-01-02', identifier: 'AAPL', side: 'buy', shares: 10, price: 150 };
+  it('keeps genuine identical fills on a fresh import', () => {
+    // Two identical partial fills of one order in the same file are both real.
+    const t = { date: '2024-01-02', identifier: 'AAPL', side: 'buy', shares: 3, price: 32.18 };
     const { fresh, duplicates } = dedupeTrades([t, { ...t }]);
-    expect(fresh).toHaveLength(1);
-    expect(duplicates).toHaveLength(1);
+    expect(fresh).toHaveLength(2);
+    expect(duplicates).toHaveLength(0);
+  });
+
+  it('marks both copies as duplicate when re-importing identical fills', () => {
+    const existing = buildExistingFingerprints({
+      AAPL: [
+        { type: 'buy', shares: 3, price: 32.18, date: '2024-01-02' },
+        { type: 'buy', shares: 3, price: 32.18, date: '2024-01-02' },
+      ],
+    });
+    const t = { date: '2024-01-02', identifier: 'AAPL', symbol: 'AAPL', side: 'buy', shares: 3, price: 32.18 };
+    const { fresh, duplicates } = dedupeTrades([t, { ...t }], existing);
+    expect(fresh).toHaveLength(0);
+    expect(duplicates).toHaveLength(2);
   });
 });
 
