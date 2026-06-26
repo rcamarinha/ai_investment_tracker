@@ -24,8 +24,11 @@ const state = {
     selectedSector: null,
     sectorCache: {},
     assetDatabase: {},
-    transactions: {},          // {SYMBOL: [{type, shares, price, date, totalAmount, costBasis?, realizedGainLoss?}]}
+    transactions: {},          // {SYMBOL: [{type, shares, price, date, totalAmount, costBasis?, realizedGainLoss?, fee?, tax?, ratio?, note?}]}
     showInactivePositions: false,
+    ledgerNeedsReview: false,  // true when a holding went share-negative (unhandled split/ISIN change)
+    txFilter: { type: 'all', q: '' }, // transaction-ledger view filter (type + symbol search)
+    _ledgerRows: [],           // transient: rows shown in the ledger table (for index-based delete)
     baseCurrency: 'EUR',       // User's home currency for portfolio totals
     exchangeRates: {},         // {USD: 0.92, GBP: 1.17, ...} — rates TO baseCurrency (1 foreign = X base)
     exchangeRatesTimestamp: null, // When rates were last fetched

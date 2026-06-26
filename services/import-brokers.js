@@ -205,8 +205,9 @@ const DEGIRO_ALIASES = {
  */
 export function parseDegiroCsv(text) {
     const { header, rows } = parseCsv(text);
-    const trades = [];
+    let trades = [];
     const errors = [];
+    const review = [];
     let skipped = 0;
 
     const cDate = findCol(header, DEGIRO_ALIASES.date);
@@ -218,42 +219,90 @@ export function parseDegiroCsv(text) {
 
     if (cIsin === -1 || cQty === -1 || cPrice === -1) {
         errors.push('DeGiro export missing required ISIN / Quantity / Price columns.');
-        return { broker: 'degiro', trades, errors, skipped };
+        return { broker: 'degiro', trades, income: [], review, errors, skipped };
     }
 
-    rows.forEach((row, idx) => {
-        const lineNum = idx + 2;
+    rows.forEach((row) => {
         const identifier = (row[cIsin] || '').toUpperCase().trim();
         const qty = parseSignedNumber(row[cQty]);
+        const name = cProduct !== -1 ? (row[cProduct] || '') : '';
+        const date = normalizeDate(row[cDate]);
+        // Truly empty rows (no instrument / no quantity) are dropped silently.
         if (!identifier || isNaN(qty) || qty === 0) { skipped++; return; }
 
         const price = parseFlexibleNumber(row[cPrice]);
+        const currency = detectCurrency(row[cPrice + 1] || row[cPrice], 'EUR');
+
         if (isNaN(price) || price <= 0) {
-            // Zero/blank price rows are corporate actions (transfers, ISIN
-            // changes, non-tradeable conversions) — not buys/sells. Skip silently.
-            skipped++;
+            // Zero/blank-price rows are corporate actions (transfers, ISIN
+            // changes, non-tradeable conversions). Surface for review instead
+            // of silently dropping — they affect share counts.
+            review.push({
+                reason: 'corporate_action', identifier, isISIN: isISIN(identifier),
+                name, date, signedShares: qty, currency, broker: 'degiro',
+            });
             return;
         }
 
-        // Currency lives in the (usually unnamed) column right after price.
-        const currency = detectCurrency(row[cPrice + 1] || row[cPrice], 'EUR');
         const fees = cFees !== -1 ? Math.abs(parseFlexibleNumber(row[cFees]) || 0) : 0;
-
         trades.push({
-            date: normalizeDate(row[cDate]),
-            identifier,
-            isISIN: isISIN(identifier),
-            side: qty < 0 ? 'sell' : 'buy',
-            shares: Math.abs(qty),
-            price,
-            fees: isNaN(fees) ? 0 : fees,
-            currency,
-            broker: 'degiro',
-            name: cProduct !== -1 ? (row[cProduct] || '') : '',
+            date, identifier, isISIN: isISIN(identifier),
+            side: qty < 0 ? 'sell' : 'buy', shares: Math.abs(qty), price,
+            fees: isNaN(fees) ? 0 : fees, currency, broker: 'degiro', name,
         });
     });
 
-    return { broker: 'degiro', trades, errors, skipped };
+    // Detect likely splits / ISIN-changes (same instrument & date, a buy + sell
+    // at wildly different prices) and move them out of trades into review.
+    const { kept, flagged } = detectSplitPairs(trades);
+    trades = kept;
+    flagged.forEach(f => review.push(f));
+
+    return { broker: 'degiro', trades, income: [], review, errors, skipped };
+}
+
+/**
+ * Detect buy/sell pairs that look like a stock split or ISIN/ticker change:
+ * same instrument, same date, one buy + one sell whose prices differ by ≥3×.
+ * Returns { kept: trades[], flagged: reviewItems[] } with the suspect pairs
+ * removed from `kept`. Pure & testable.
+ */
+export function detectSplitPairs(trades) {
+    const byKey = new Map(); // identifier|date → trade indices
+    trades.forEach((t, i) => {
+        const key = `${t.identifier}|${t.date}`;
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key).push(i);
+    });
+
+    const flaggedIdx = new Set();
+    const flagged = [];
+    for (const idxs of byKey.values()) {
+        if (idxs.length < 2) continue;
+        const buys = idxs.filter(i => trades[i].side === 'buy');
+        const sells = idxs.filter(i => trades[i].side === 'sell');
+        for (const bi of buys) {
+            for (const si of sells) {
+                if (flaggedIdx.has(bi) || flaggedIdx.has(si)) continue;
+                const b = trades[bi], s = trades[si];
+                const hi = Math.max(b.price, s.price), lo = Math.min(b.price, s.price);
+                if (lo > 0 && hi / lo >= 3) {
+                    flaggedIdx.add(bi); flaggedIdx.add(si);
+                    const fromShares = s.shares, toShares = b.shares; // old sold, new bought
+                    flagged.push({
+                        reason: 'possible_split',
+                        identifier: b.identifier, isISIN: b.isISIN,
+                        name: b.name || s.name, date: b.date,
+                        currency: b.currency, broker: b.broker,
+                        fromShares, toShares,
+                        ratio: fromShares > 0 ? toShares / fromShares : 1,
+                    });
+                }
+            }
+        }
+    }
+    const kept = trades.filter((_, i) => !flaggedIdx.has(i));
+    return { kept, flagged };
 }
 
 // ── Revolut trade statement (CSV) ────────────────────────────────────────────
@@ -266,15 +315,18 @@ const REVOLUT_ALIASES = {
     price:    ['price per share', 'price'],
     total:    ['total amount', 'total', 'amount'],
     currency: ['currency', 'ccy'],
+    tax:      ['withholding tax', 'tax'],
 };
 
 /**
  * Parse a Revolut trading statement export.
- * Only BUY/SELL rows become trades; dividends, top-ups, fees, splits are skipped.
+ * BUY/SELL rows become trades; DIVIDEND and FEE/CUSTODY rows become income
+ * entries; top-ups and other cash movements are skipped.
  */
 export function parseRevolutCsv(text) {
     const { header, rows } = parseCsv(text);
     const trades = [];
+    const income = [];
     const errors = [];
     let skipped = 0;
 
@@ -285,11 +337,16 @@ export function parseRevolutCsv(text) {
     const cPrice = findCol(header, REVOLUT_ALIASES.price);
     const cTotal = findCol(header, REVOLUT_ALIASES.total);
     const cCurrency = findCol(header, REVOLUT_ALIASES.currency);
+    const cTax = findCol(header, REVOLUT_ALIASES.tax);
 
     if (cTicker === -1 || cType === -1 || cQty === -1) {
         errors.push('Revolut export missing required Ticker / Type / Quantity columns.');
-        return { broker: 'revolut', trades, errors, skipped };
+        return { broker: 'revolut', trades, income, review: [], errors, skipped };
     }
+
+    const ccyOf = (row) => cCurrency !== -1
+        ? detectCurrency(row[cCurrency], 'USD')
+        : detectCurrency(cTotal !== -1 ? row[cTotal] : '', 'USD');
 
     rows.forEach((row, idx) => {
         const lineNum = idx + 2;
@@ -297,7 +354,32 @@ export function parseRevolutCsv(text) {
         let side = null;
         if (/^BUY/.test(typeRaw)) side = 'buy';
         else if (/^SELL/.test(typeRaw)) side = 'sell';
-        if (!side) { skipped++; return; } // dividend, top-up, fee, split, etc.
+        if (!side) {
+            // Non-trade rows: capture dividends and fees as income, skip the rest.
+            const amount = cTotal !== -1 ? Math.abs(parseFlexibleNumber(row[cTotal]) || 0) : 0;
+            if (/DIVIDEND/.test(typeRaw)) {
+                const identifier = (row[cTicker] || '').toUpperCase().trim();
+                if (!identifier || !amount) { skipped++; return; }
+                income.push({
+                    type: 'dividend', identifier, isISIN: isISIN(identifier),
+                    date: normalizeDate(row[cDate]), amount,
+                    tax: cTax !== -1 ? Math.abs(parseFlexibleNumber(row[cTax]) || 0) : 0,
+                    currency: ccyOf(row), broker: 'revolut', name: '',
+                });
+                return;
+            }
+            if (/FEE|CUSTODY/.test(typeRaw)) {
+                if (!amount) { skipped++; return; }
+                const identifier = (row[cTicker] || '').toUpperCase().trim() || 'CASH';
+                income.push({
+                    type: 'fee', identifier, isISIN: false,
+                    date: normalizeDate(row[cDate]), amount,
+                    currency: ccyOf(row), broker: 'revolut', name: '',
+                });
+                return;
+            }
+            skipped++; return; // top-up, transfer, stock split (handled via review), etc.
+        }
 
         const identifier = (row[cTicker] || '').toUpperCase().trim();
         const shares = parseFlexibleNumber(row[cQty]);
@@ -334,7 +416,7 @@ export function parseRevolutCsv(text) {
         });
     });
 
-    return { broker: 'revolut', trades, errors, skipped };
+    return { broker: 'revolut', trades, income, review: [], errors, skipped };
 }
 
 // ── AI-fallback normalization ────────────────────────────────────────────────
@@ -376,7 +458,7 @@ export function normalizeTrades(rawRows, broker = 'generic') {
             name: String(r.name || ''),
         });
     });
-    return { broker, trades, errors, skipped };
+    return { broker, trades, income: [], review: [], errors, skipped };
 }
 
 /** Dispatch a raw text export to the right parser based on detected broker. */
@@ -384,7 +466,7 @@ export function parseBrokerExport(text) {
     const broker = detectBroker(text);
     if (broker === 'degiro') return parseDegiroCsv(text);
     if (broker === 'revolut') return parseRevolutCsv(text);
-    return { broker: null, trades: [], errors: ['Unrecognized export format. Use a DeGiro Transactions CSV, a Revolut statement CSV, or the AI paste fallback.'], skipped: 0 };
+    return { broker: null, trades: [], errors: ['Unrecognized export format. Use a DeGiro Transactions CSV, a Revolut statement CSV, or the AI paste fallback.'], skipped: 0, review: [], income: [] };
 }
 
 // ── Dedupe + position rebuild ────────────────────────────────────────────────
@@ -398,10 +480,16 @@ export function tradeFingerprint(t) {
     // Prefer the resolved ticker (symbol) so a re-imported ISIN trade matches
     // the ledger row that was stored under its ticker.
     const symbol = String(t.symbol || t.identifier || '').toUpperCase();
-    const side = String(t.side || t.type || '').toLowerCase();
-    const shares = Number(t.shares || 0).toFixed(6);
-    const price = Number(t.price || 0).toFixed(4);
-    return [date, symbol, side, shares, price].join('|');
+    const type = String(t.side || t.type || '').toLowerCase();
+    if (type === 'buy' || type === 'sell' || type === '') {
+        const shares = Number(t.shares || 0).toFixed(6);
+        const price = Number(t.price || 0).toFixed(4);
+        return [date, symbol, type, shares, price].join('|');
+    }
+    // Non-trade rows (dividend / fee / split / isin_change) carry no shares/price,
+    // so fingerprint on the monetary amount (or split ratio) instead.
+    const amount = Number(t.amount ?? t.totalAmount ?? t.ratio ?? 0).toFixed(4);
+    return [date, symbol, type, amount].join('|');
 }
 
 /**
@@ -448,11 +536,17 @@ export function dedupeTrades(trades, existing = new Map()) {
 }
 
 /**
- * Recompute holdings from a transactions ledger using average-cost basis
- * (matching the app's existing sell cost-basis model).
+ * Recompute holdings from a transactions ledger using average-cost basis,
+ * across the full transaction taxonomy (buy/sell/split/isin_change/dividend/fee).
  *
- * @param {Object} transactions - { SYMBOL: [{type, shares, price, date}, ...] }
- * @returns {Object} { SYMBOL: { shares, avgPrice, realizedPnL } }
+ * - buy:  shares += q; cost basis += q×price + fee (fees increase cost basis)
+ * - sell: realized += (q×price − fee) − avg×q; reduce shares/cost at avg
+ * - split / isin_change: shares ×= ratio; cost unchanged (avg ÷= ratio)
+ * - dividend: income only (amount, tax); no effect on shares
+ * - fee: cost/expense only; no effect on shares
+ *
+ * @param {Object} transactions - { SYMBOL: [{type, shares, price, date, fee?, tax?, amount?, ratio?}, ...] }
+ * @returns {Object} { SYMBOL: { shares, avgPrice, realizedPnL, dividends, taxWithheld, feesPaid, needsReview } }
  */
 export function computePositionsFromLedger(transactions) {
     const out = {};
@@ -461,22 +555,54 @@ export function computePositionsFromLedger(transactions) {
         let shares = 0;
         let costTotal = 0; // native-currency cost of currently-held shares
         let realized = 0;
+        let dividends = 0;
+        let taxWithheld = 0;
+        let feesPaid = 0;
+        let needsReview = false;
         for (const tx of sorted) {
-            if (tx.type === 'buy') {
-                shares += tx.shares;
-                costTotal += tx.shares * tx.price;
-            } else if (tx.type === 'sell') {
-                const avg = shares > 0 ? costTotal / shares : 0;
-                realized += (tx.price - avg) * tx.shares;
-                costTotal -= avg * tx.shares;
-                shares -= tx.shares;
-                if (shares < 1e-9) { shares = 0; costTotal = 0; }
+            const fee = Number(tx.fee) || 0;
+            switch (tx.type) {
+                case 'buy':
+                    shares += tx.shares;
+                    costTotal += tx.shares * tx.price + fee;
+                    feesPaid += fee;
+                    break;
+                case 'sell': {
+                    const avg = shares > 0 ? costTotal / shares : 0;
+                    realized += (tx.price * tx.shares - fee) - avg * tx.shares;
+                    costTotal -= avg * tx.shares;
+                    shares -= tx.shares;
+                    feesPaid += fee;
+                    if (shares < -1e-9) needsReview = true; // sold more than held
+                    if (shares < 1e-9) { shares = 0; costTotal = 0; }
+                    break;
+                }
+                case 'split':
+                case 'isin_change': {
+                    const ratio = Number(tx.ratio) || 1;
+                    // Guard against corrupt ratios (e.g. 1e100 → Infinity shares).
+                    if (ratio > 0 && ratio <= 1000) shares *= ratio; // cost unchanged → avg ÷ ratio
+                    break;
+                }
+                case 'dividend':
+                    dividends += Number(tx.amount ?? tx.totalAmount) || 0;
+                    taxWithheld += Number(tx.tax) || 0;
+                    break;
+                case 'fee':
+                    feesPaid += Number(tx.amount ?? tx.totalAmount) || 0;
+                    break;
+                default:
+                    break; // unknown type — ignored for position math
             }
         }
         out[symbol] = {
             shares: shares < 1e-9 ? 0 : shares,
             avgPrice: shares > 1e-9 ? costTotal / shares : 0,
             realizedPnL: realized,
+            dividends,
+            taxWithheld,
+            feesPaid,
+            needsReview,
         };
     }
     return out;

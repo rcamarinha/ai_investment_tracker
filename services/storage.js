@@ -452,14 +452,20 @@ export async function saveTransactionsToDB() {
                     user_id: state.currentUser.id,
                     symbol,
                     type: tx.type,
-                    shares: tx.shares,
-                    price: tx.price,
-                    total_amount: tx.totalAmount,
+                    // shares/price are NOT NULL in the schema; non-trade rows
+                    // (dividend/fee/split) carry 0 here and use the typed columns.
+                    shares: tx.shares ?? 0,
+                    price: tx.price ?? 0,
+                    total_amount: tx.totalAmount ?? tx.amount ?? null,
                     date: tx.date,
-                    cost_basis: tx.costBasis || null,
-                    realized_gain_loss: tx.realizedGainLoss || null,
+                    cost_basis: tx.costBasis ?? null,
+                    realized_gain_loss: tx.realizedGainLoss ?? null,
                     currency: tx.currency || null,
-                    exchange_rate: tx.exchangeRate || null
+                    exchange_rate: tx.exchangeRate || null,
+                    fee: tx.fee ?? null,
+                    tax: tx.tax ?? null,
+                    ratio: tx.ratio ?? null,
+                    note: tx.note ?? null
                 });
             }
         }
@@ -500,7 +506,7 @@ export async function loadTransactionsFromDB() {
                     shares: Number(row.shares),
                     price: Number(row.price),
                     date: row.date,
-                    totalAmount: Number(row.total_amount),
+                    totalAmount: row.total_amount !== null ? Number(row.total_amount) : null,
                     currency: row.currency || null,
                     exchangeRate: row.exchange_rate ? Number(row.exchange_rate) : null,
                     timestamp: row.created_at
@@ -509,6 +515,11 @@ export async function loadTransactionsFromDB() {
                     if (row.cost_basis !== null) tx.costBasis = Number(row.cost_basis);
                     if (row.realized_gain_loss !== null) tx.realizedGainLoss = Number(row.realized_gain_loss);
                 }
+                // Full-taxonomy columns (nullable; absent on older buy/sell rows)
+                if (row.fee !== null && row.fee !== undefined) tx.fee = Number(row.fee);
+                if (row.tax !== null && row.tax !== undefined) tx.tax = Number(row.tax);
+                if (row.ratio !== null && row.ratio !== undefined) tx.ratio = Number(row.ratio);
+                if (row.note) tx.note = row.note;
                 grouped[row.symbol].push(tx);
             });
             state.transactions = grouped;

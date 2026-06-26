@@ -104,6 +104,14 @@ export function renderPortfolio() {
         ? `<span class="inactive-toggle" onclick="toggleInactivePositions()">${state.showInactivePositions ? 'Hide' : 'Show'} ${inactivePositions.length} closed position${inactivePositions.length !== 1 ? 's' : ''}</span>`
         : '';
 
+    // Portfolio-wide income & fees (base currency), from the full ledger.
+    const inc = computeIncomeTotalsBase();
+    const incomeFeesRow = (inc.netIncome > 0 || inc.fees > 0) ? `
+        <div style="margin-top: 8px; display: flex; gap: 16px; justify-content: flex-end; font-size: 12px;">
+            ${inc.netIncome > 0 ? `<div><span style="color: var(--text-secondary);">Income</span> <span style="color: var(--up); font-weight: 600;">+${formatCurrency(inc.netIncome, base)}</span></div>` : ''}
+            ${inc.fees > 0 ? `<div><span style="color: var(--text-secondary);">Fees</span> <span style="color: var(--down); font-weight: 600;">−${formatCurrency(inc.fees, base)}</span></div>` : ''}
+        </div>` : '';
+
     portfolioHeader.innerHTML = `
         <div>
             <h2 style="margin-bottom: 5px;">\uD83D\uDCBC Your Portfolio</h2>
@@ -125,6 +133,7 @@ export function renderPortfolio() {
                     ${formatCurrency(totalGainLoss, base)} (${formatPercent(totalGainLossPct)})
                 </div>
             ` : ''}
+            ${incomeFeesRow}
         </div>
     `;
 
@@ -229,6 +238,7 @@ export function renderPortfolio() {
                 </div>
                 <div class="pos-sub">${cardSub}</div>
                 <div class="pos-sub">${positionSub}${timestampText ? ' \u00B7 ' + escapeHTML(timestampText) : ''}</div>
+                ${(pos.dividends > 0) ? `<div class="pos-sub" style="color: var(--up);">\uD83D\uDCB0 ${formatCurrency(pos.dividends - (pos.taxWithheld || 0), currency)} income${(pos.avgPrice > 0 && pos.shares > 0) ? ` \u00B7 ${formatPercent((pos.dividends - (pos.taxWithheld || 0)) / (pos.avgPrice * pos.shares) * 100)} yld/cost` : ''}</div>` : ''}
                 ${platformBadge}
                 <div class="position-actions">${actionButtons}</div>
             </div>
@@ -241,9 +251,17 @@ export function renderPortfolio() {
         `;
     }).join('');
 
-    positionsDiv.innerHTML = html;
+    // Safety banner: a sell drove some holding's share count negative — a sign of
+    // an unhandled split, ISIN change, or a missing buy. Surface it rather than
+    // showing silently-corrupted numbers.
+    const reviewBanner = state.ledgerNeedsReview
+        ? `<div style="background: var(--gold-glow); border-left: 3px solid var(--gold); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; color: var(--gold);">⚠ Some holdings show more sold than bought — likely an unhandled split or ISIN change. Re-import the broker export and use the review step to mark splits, or adjust the transactions in the ledger.</div>`
+        : '';
+    positionsDiv.innerHTML = reviewBanner + html;
     renderAllocationCharts();
     renderSalesHistory();
+    renderIncomeHistory();
+    renderTransactionsLedger();
     console.log('Portfolio rendered successfully');
 }
 
@@ -957,6 +975,84 @@ function showTickerPickerDialog(isin, primary, alternatives) {
     });
 }
 
+/**
+ * Show a modal to classify ambiguous corporate-action / split rows surfaced by
+ * the parser. Returns a promise resolving to an array of split records
+ * ({ type:'split', symbol, identifier, date, ratio, name, currency, broker })
+ * for the items the user chose to apply; ignored items are omitted.
+ */
+function showReviewDialog(reviewItems) {
+    return new Promise(resolve => {
+        const rowsHTML = reviewItems.map((r, idx) => {
+            const isSplit = r.reason === 'possible_split';
+            const label = isSplit
+                ? `Looks like a <strong>split</strong> (${r.fromShares} → ${r.toShares})`
+                : `Corporate action${r.signedShares ? ` (${r.signedShares > 0 ? '+' : ''}${r.signedShares} sh)` : ''}`;
+            const ratioVal = isSplit && r.ratio ? Number(r.ratio).toFixed(4).replace(/\.?0+$/, '') : '';
+            return `
+                <tr data-idx="${idx}">
+                    <td style="padding:6px 8px;">${escapeHTML(r.date || '')}</td>
+                    <td style="padding:6px 8px;">${escapeHTML(r.symbol || r.identifier || '')}<div style="font-size:11px;color:var(--text-tertiary);">${escapeHTML(r.name || '')}</div></td>
+                    <td style="padding:6px 8px;font-size:12px;">${label}</td>
+                    <td style="padding:6px 8px;">
+                        <select class="rv-action" style="font-size:12px;padding:3px;">
+                            <option value="ignore" ${isSplit ? '' : 'selected'}>Ignore</option>
+                            <option value="split" ${isSplit ? 'selected' : ''}>Apply as split</option>
+                        </select>
+                    </td>
+                    <td style="padding:6px 8px;">
+                        <input class="rv-ratio" type="number" step="any" min="0" placeholder="ratio" value="${ratioVal}" style="width:70px;font-size:12px;padding:3px;" />
+                    </td>
+                </tr>`;
+        }).join('');
+
+        const overlay = document.createElement('div');
+        overlay.className = 'ticker-picker-overlay';
+        overlay.innerHTML = `
+            <div class="ticker-picker-dialog" style="max-width:640px;">
+                <h3>⚠ Review ${reviewItems.length} non-trade row(s)</h3>
+                <p style="font-size:13px;">These rows aren't plain buys/sells. Splits adjust your share count without changing cost basis. Choose how to handle each — <strong>Ignore</strong> is safe for cosmetic transfers/conversions.</p>
+                <div style="max-height:320px;overflow-y:auto;margin:10px 0;">
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead><tr style="text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">
+                            <th style="padding:6px 8px;">Date</th><th style="padding:6px 8px;">Asset</th>
+                            <th style="padding:6px 8px;">Detected</th><th style="padding:6px 8px;">Action</th><th style="padding:6px 8px;">Ratio</th>
+                        </tr></thead>
+                        <tbody>${rowsHTML}</tbody>
+                    </table>
+                </div>
+                <div class="ticker-picker-footer" style="display:flex; gap:8px; justify-content:flex-end;">
+                    <button class="btn btn-primary" id="reviewCancel">Cancel import</button>
+                    <button class="btn btn-accent" id="reviewConfirm">Apply selections</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#reviewCancel').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(null); // signal: abort the whole import
+        });
+
+        overlay.querySelector('#reviewConfirm').addEventListener('click', () => {
+            const out = [];
+            overlay.querySelectorAll('tbody tr').forEach(tr => {
+                const idx = Number(tr.dataset.idx);
+                const r = reviewItems[idx];
+                const action = tr.querySelector('.rv-action').value;
+                const ratio = parseFloat(tr.querySelector('.rv-ratio').value);
+                if (action === 'split' && ratio > 0) {
+                    out.push({
+                        type: 'split', symbol: r.symbol, identifier: r.identifier,
+                        date: r.date, ratio, name: r.name, currency: r.currency, broker: r.broker,
+                    });
+                }
+            });
+            document.body.removeChild(overlay);
+            resolve(out);
+        });
+    });
+}
+
 export async function importPositions() {
     if (!requireAuth('import positions')) return;
     console.log('=== IMPORT POSITIONS STARTED ===');
@@ -1412,13 +1508,15 @@ async function extractTradesViaAI(text) {
 }
 
 /** Render the trade-import review report (new vs duplicate vs skipped). */
-function showTradeReport(container, { trades, duplicates, errors, broker, usedAi }) {
+function showTradeReport(container, { trades, duplicates, errors, broker, usedAi, splits = 0, income = 0 }) {
     if (!container) return;
     let html = `<div class="import-report" style="background: var(--surface); border-radius: 10px; padding: 18px; margin-bottom: 15px; font-size: 13px; max-height: 350px; overflow-y: auto;">`;
     html += `<div style="font-weight: 700; font-size: 15px; color: var(--text-primary); margin-bottom: 10px;">Trade Import Report</div>`;
     const source = usedAi ? 'AI extraction' : (brokerLabel(broker) || 'CSV');
     html += `<div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 8px;">Source: ${escapeHTML(source)}</div>`;
     html += `<div style="color: var(--up); margin-bottom: 4px;">✓ New trades: ${trades.length}</div>`;
+    if (splits > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">↪ Splits / adjustments: ${splits}</div>`;
+    if (income > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">💰 Dividends / fees: ${income}</div>`;
     if (duplicates.length > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">↻ Already imported (skipped): ${duplicates.length}</div>`;
     if (errors.length > 0) html += `<div style="color: var(--down); margin-bottom: 4px;">✗ Issues: ${errors.length}</div>`;
 
@@ -1451,12 +1549,23 @@ function showTradeReport(container, { trades, duplicates, errors, broker, usedAi
  */
 export function rebuildPositionsFromLedger() {
     const computed = computePositionsFromLedger(state.transactions);
+    let needsReview = false;
     for (const [symbol, data] of Object.entries(computed)) {
+        if (data.needsReview) needsReview = true;
+        // Reserved cash/fee bucket — not a real holding; income totals read the
+        // ledger directly, so don't materialize it as a position card.
+        if (symbol === 'CASH') continue;
+        // Per-asset income/cost aggregates derived from the ledger (used by the UI)
+        const agg = {
+            dividends: data.dividends, taxWithheld: data.taxWithheld,
+            feesPaid: data.feesPaid, realizedPnL: data.realizedPnL,
+        };
         const existing = state.portfolio.find(p => p.symbol === symbol);
         if (existing) {
             existing.shares = data.shares;
             if (data.shares > 0) existing.avgPrice = data.avgPrice;
-        } else if (data.shares > 0) {
+            Object.assign(existing, agg);
+        } else if (data.shares > 0 || data.dividends || data.realizedPnL || data.feesPaid) {
             const meta = state.assetDatabase[symbol] || {};
             const txs = state.transactions[symbol] || [];
             const broker = txs.length ? txs[txs.length - 1].broker : null;
@@ -1467,9 +1576,11 @@ export function rebuildPositionsFromLedger() {
                 type: meta.assetType || 'Stock',
                 shares: data.shares,
                 avgPrice: data.avgPrice,
+                ...agg,
             });
         }
     }
+    state.ledgerNeedsReview = needsReview;
 }
 
 /**
@@ -1501,16 +1612,18 @@ export async function importTrades() {
         }
 
         let trades = parsed.trades;
+        let reviewItems = parsed.review || [];
+        let incomeItems = parsed.income || [];
         let errors = [...parsed.errors];
 
-        if (trades.length === 0) {
+        if (trades.length === 0 && reviewItems.length === 0 && incomeItems.length === 0) {
             showTradeReport(reportArea, { trades: [], duplicates: [], errors: errors.length ? errors : ['No trades found in the input.'], broker: parsed.broker, usedAi });
             alert('❌ No trades could be parsed from the input.');
             return;
         }
 
-        // ── Step 2: Resolve ISIN identifiers → tickers ─────────────────────
-        const isins = [...new Set(trades.filter(t => t.isISIN).map(t => t.identifier))];
+        // ── Step 2: Resolve ISIN identifiers → tickers (trades + review + income) ───
+        const isins = [...new Set([...trades, ...reviewItems, ...incomeItems].filter(x => x.isISIN).map(x => x.identifier))];
         if (isins.length > 0) {
             if (reportArea) reportArea.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">⏳ Resolving ${isins.length} ISIN(s)…</div>`;
             const resolved = await resolveIdentifiers(isins);
@@ -1534,54 +1647,94 @@ export async function importTrades() {
                     if (r.type) t.assetType = normalizeAssetType(r.type);
                 }
             }
+            // Apply resolution to review + income items too (primary match, no picker)
+            for (const x of [...reviewItems, ...incomeItems]) {
+                if (!x.isISIN) continue;
+                const r = resolved[x.identifier];
+                if (r) { x.symbol = r.ticker.toUpperCase(); x.name = x.name || r.name; }
+            }
             // Drop trades whose ISIN never resolved
             trades = trades.filter(t => !(t.isISIN && !t.symbol));
             if (unresolved.length) {
                 errors.push(`Could not resolve ISIN(s): ${[...new Set(unresolved)].join(', ')}. Those trades were skipped.`);
             }
         }
-        // Non-ISIN trades use the identifier directly as the ticker
+        // Non-ISIN items use the identifier directly as the ticker
         trades.forEach(t => { if (!t.symbol) t.symbol = t.identifier.toUpperCase(); });
+        reviewItems = reviewItems.filter(rv => !(rv.isISIN && !rv.symbol));
+        reviewItems.forEach(rv => { if (!rv.symbol) rv.symbol = (rv.identifier || '').toUpperCase(); });
+        incomeItems = incomeItems.filter(it => !(it.isISIN && !it.symbol));
+        incomeItems.forEach(it => { if (!it.symbol) it.symbol = (it.identifier || '').toUpperCase(); });
 
         // ── Step 3: Dedupe against the existing ledger ─────────────────────
         const existing = buildExistingFingerprints(state.transactions);
         const { fresh, duplicates } = dedupeTrades(trades, existing);
+        const { fresh: freshIncome } = dedupeTrades(incomeItems, existing);
+
+        // ── Step 3b: Classify ambiguous corporate-action / split rows ──────
+        let freshExtra = [];
+        if (reviewItems.length > 0) {
+            const decisions = await showReviewDialog(reviewItems);
+            if (decisions === null) {
+                if (reportArea) reportArea.innerHTML = `<div style="color: var(--text-secondary); padding: 10px; font-size: 13px;">Import cancelled.</div>`;
+                return; // user aborted from the review step
+            }
+            ({ fresh: freshExtra } = dedupeTrades(decisions, existing));
+        }
 
         // ── Step 4: Review and confirm ─────────────────────────────────────
-        showTradeReport(reportArea, { trades: fresh, duplicates, errors, broker: parsed.broker, usedAi });
+        showTradeReport(reportArea, { trades: fresh, duplicates, errors, broker: parsed.broker, usedAi, splits: freshExtra.length, income: freshIncome.length });
 
-        if (fresh.length === 0) {
+        if (fresh.length === 0 && freshExtra.length === 0 && freshIncome.length === 0) {
             alert(duplicates.length
                 ? `✓ All ${duplicates.length} trade(s) are already in your ledger — nothing new to import.`
                 : '❌ No new trades to import.');
             return;
         }
 
-        let confirmMsg = `Import ${fresh.length} new trade(s) into your ledger?`;
+        const incomeBits = [];
+        if (freshExtra.length) incomeBits.push(`${freshExtra.length} split/adjustment(s)`);
+        if (freshIncome.length) incomeBits.push(`${freshIncome.length} dividend/fee row(s)`);
+        let confirmMsg = `Import ${fresh.length} new trade(s)${incomeBits.length ? ` + ${incomeBits.join(' + ')}` : ''} into your ledger?`;
         if (duplicates.length) confirmMsg += `\n\n↻ ${duplicates.length} duplicate(s) already imported will be skipped.`;
         if (errors.length) confirmMsg += `\n\n✗ ${errors.length} issue(s) — see the report.`;
         if (!confirm(confirmMsg)) return;
 
-        // ── Step 5: Commit fresh trades to the ledger ──────────────────────
-        fresh.forEach(t => {
+        // ── Step 5: Commit fresh items to the ledger ───────────────────────
+        // Handles the full taxonomy: buy/sell trades plus dividend/fee/split/
+        // isin_change rows (totalAmount = gross for trades, the amount for
+        // dividend/fee; fees are stored separately, not folded into cost basis).
+        [...fresh, ...freshExtra, ...freshIncome].forEach(t => {
             if (!state.transactions[t.symbol]) state.transactions[t.symbol] = [];
-            const gross = t.shares * t.price;
-            state.transactions[t.symbol].push({
-                type: t.side,
-                shares: t.shares,
-                price: t.price,
+            const kind = (t.side || t.type || '').toLowerCase();
+            const base = {
                 date: t.date,
-                totalAmount: t.side === 'buy' ? gross + t.fees : gross - t.fees,
                 currency: t.currency,
                 exchangeRate: getExchangeRate(t.currency),
                 timestamp: new Date().toISOString(),
                 broker: t.broker,
-            });
-            if (!state.assetDatabase[t.symbol]) {
+            };
+            let tx;
+            if (kind === 'buy' || kind === 'sell') {
+                tx = { ...base, type: kind, shares: t.shares, price: t.price,
+                       totalAmount: t.shares * t.price, fee: t.fees || 0 };
+            } else if (kind === 'dividend') {
+                tx = { ...base, type: 'dividend', shares: 0, price: 0,
+                       totalAmount: t.amount ?? 0, tax: t.tax || 0 };
+            } else if (kind === 'fee') {
+                tx = { ...base, type: 'fee', shares: 0, price: 0, totalAmount: t.amount ?? 0 };
+            } else if (kind === 'split' || kind === 'isin_change') {
+                tx = { ...base, type: kind, shares: 0, price: 0, ratio: t.ratio || 1, note: t.note || '' };
+            } else {
+                return; // unknown kind — skip
+            }
+            state.transactions[t.symbol].push(tx);
+
+            if (t.symbol && !state.assetDatabase[t.symbol]) {
                 const rec = buildAssetRecord({
                     name: t.name || t.symbol, symbol: t.symbol,
                     platform: brokerLabel(t.broker) || 'Imported',
-                    type: t.assetType || 'Stock', shares: t.shares, avgPrice: t.price,
+                    type: t.assetType || 'Stock', shares: t.shares || 0, avgPrice: t.price || 0,
                 });
                 if (rec) state.assetDatabase[rec.ticker] = {
                     name: rec.name, ticker: rec.ticker, stockExchange: rec.stock_exchange,
@@ -2331,7 +2484,7 @@ export function toggleInactivePositions() {
 
 // ── Transaction Recording & Persistence ────────────────────────────────────
 
-function recordTransaction(symbol, type, shares, price, date, totalAmount, costBasis, realizedGainLoss) {
+function recordTransaction(symbol, type, shares, price, date, totalAmount, costBasis, realizedGainLoss, extra = {}) {
     if (!state.transactions[symbol]) {
         state.transactions[symbol] = [];
     }
@@ -2351,6 +2504,11 @@ function recordTransaction(symbol, type, shares, price, date, totalAmount, costB
         tx.costBasis = costBasis;
         tx.realizedGainLoss = realizedGainLoss;
     }
+    // Full-taxonomy extras (fee / tax / ratio / note) — only set when provided.
+    if (extra.fee != null) tx.fee = extra.fee;
+    if (extra.tax != null) tx.tax = extra.tax;
+    if (extra.ratio != null) tx.ratio = extra.ratio;
+    if (extra.note != null) tx.note = extra.note;
     state.transactions[symbol].push(tx);
 }
 
@@ -2378,6 +2536,205 @@ export function loadTransactionsFromStorage() {
 }
 
 // ── Sales History Display ──────────────────────────────────────────────────
+
+/**
+ * Sum portfolio-wide income & fees from the full ledger, in base currency.
+ * Returns { dividends, tax, netIncome, fees } (all base-currency).
+ */
+function computeIncomeTotalsBase() {
+    const base = state.baseCurrency || 'EUR';
+    let dividends = 0, tax = 0, fees = 0;
+    for (const txs of Object.values(state.transactions || {})) {
+        for (const tx of txs) {
+            const rate = tx.exchangeRate || getExchangeRate(tx.currency || base);
+            if (tx.type === 'dividend') {
+                dividends += (Number(tx.totalAmount) || 0) * rate;
+                tax += (Number(tx.tax) || 0) * rate;
+            } else if (tx.type === 'fee') {
+                fees += (Number(tx.totalAmount) || 0) * rate;
+            } else if (tx.type === 'buy' || tx.type === 'sell') {
+                fees += (Number(tx.fee) || 0) * rate;
+            }
+        }
+    }
+    return { dividends, tax, netIncome: dividends - tax, fees };
+}
+
+/** Render the Income & Fees history table (dividends + standalone fee rows). */
+function renderIncomeHistory() {
+    const section = document.getElementById('incomeHistorySection');
+    if (!section) return;
+
+    const rows = [];
+    let hasDividendRow = false;
+    for (const [symbol, txs] of Object.entries(state.transactions || {})) {
+        txs.forEach(t => {
+            if (t.type === 'dividend' || t.type === 'fee') rows.push({ symbol, ...t });
+            if (t.type === 'dividend') hasDividendRow = true;
+        });
+    }
+
+    // DeGiro dividends live in a separate Account.csv we don't parse yet, so income
+    // can be incomplete for a DeGiro-heavy portfolio. Warn rather than silently
+    // showing a partial (or zero) figure the user might trust.
+    const hasDegiro = state.portfolio.some(p => p.platform === 'DeGiro');
+    const degiroNote = (hasDegiro && !hasDividendRow)
+        ? `<div style="margin-bottom: 12px; padding: 10px 12px; background: var(--gold-glow); border-left: 3px solid var(--gold); border-radius: 6px; font-size: 12px; color: var(--gold);">⚠ DeGiro dividends &amp; fees aren't imported yet (they live in DeGiro's separate Account statement). Figures here reflect other brokers only.</div>`
+        : '';
+
+    if (rows.length === 0 && !degiroNote) { section.style.display = 'none'; return; }
+    rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const totals = computeIncomeTotalsBase();
+    const base = state.baseCurrency || 'EUR';
+
+    section.style.display = 'block';
+    const content = section.querySelector('.card') || section;
+    content.innerHTML = `
+        <h2 style="margin-bottom: 15px;">💰 Income &amp; Fees</h2>
+        ${degiroNote}
+        ${rows.length > 0 ? `<div style="margin-bottom: 15px; font-size: 14px; color: var(--text-secondary);">
+            Net income: <span style="color: var(--up); font-weight: bold;">+${formatCurrency(totals.netIncome, base)}</span>
+            &bull; Fees: <span style="color: var(--down); font-weight: bold;">−${formatCurrency(totals.fees, base)}</span>
+            ${totals.tax > 0 ? ` &bull; Tax withheld: ${formatCurrency(totals.tax, base)}` : ''}
+        </div>` : ''}
+        ${rows.length > 0 ? `<div style="overflow-x: auto;">
+            <table class="sales-history-table">
+                <thead>
+                    <tr><th>Date</th><th>Symbol</th><th>Type</th><th>Gross</th><th>Tax</th><th>Net</th><th>Ccy</th></tr>
+                </thead>
+                <tbody>
+                    ${rows.map(r => {
+                        const gross = Number(r.totalAmount) || 0;
+                        const txTax = Number(r.tax) || 0;
+                        const net = r.type === 'dividend' ? gross - txTax : -gross;
+                        const netColor = net >= 0 ? 'var(--up)' : 'var(--down)';
+                        const label = r.type === 'dividend' ? 'Dividend' : 'Fee';
+                        return `<tr>
+                            <td>${escapeHTML(r.date || '')}</td>
+                            <td style="font-weight: 600; color: var(--gold);">${escapeHTML(r.symbol)}</td>
+                            <td>${label}</td>
+                            <td>${formatCurrency(gross, r.currency)}</td>
+                            <td>${txTax ? formatCurrency(txTax, r.currency) : '—'}</td>
+                            <td style="color: ${netColor}; font-weight: bold;">${net >= 0 ? '+' : ''}${formatCurrency(net, r.currency)}</td>
+                            <td>${escapeHTML(r.currency || '')}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>` : ''}
+    `;
+}
+
+/** Render the full transaction ledger with search + type filter and per-row delete. */
+function renderTransactionsLedger() {
+    const section = document.getElementById('transactionsSection');
+    if (!section) return;
+
+    const all = [];
+    for (const [symbol, txs] of Object.entries(state.transactions || {})) {
+        txs.forEach(t => all.push({ symbol, ...t }));
+    }
+    if (all.length === 0) { section.style.display = 'none'; return; }
+
+    if (!state.txFilter) state.txFilter = { type: 'all', q: '' };
+    const { type: fType, q } = state.txFilter;
+    const qLower = (q || '').toLowerCase();
+    const rows = all
+        .filter(t => (fType === 'all' || t.type === fType) && (!qLower || (t.symbol || '').toLowerCase().includes(qLower)))
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    section.style.display = 'block';
+    // Stash the displayed rows so the delete button can reference a row by index
+    // (avoids interpolating broker-derived strings into an onclick attribute).
+    state._ledgerRows = rows;
+    const content = section.querySelector('.card') || section;
+    const typeLabel = ty => ty === 'isin_change' ? 'ISIN change' : ty[0].toUpperCase() + ty.slice(1);
+    const types = ['all', 'buy', 'sell', 'dividend', 'fee', 'split', 'isin_change'];
+    const filterBtns = types.map(ty =>
+        `<button class="btn btn-sm ${fType === ty ? 'btn-accent' : 'btn-primary'}" onclick="setTxFilter('${ty}')">${typeLabel(ty)}</button>`
+    ).join(' ');
+
+    content.innerHTML = `
+        <h2 style="margin-bottom: 12px;">📒 Transactions <span style="font-size: 13px; color: var(--text-secondary);">(${rows.length})</span></h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;">
+            <input id="txSearch" type="text" placeholder="Filter by symbol…" value="${escapeHTML(q || '')}" oninput="setTxSearch(this.value)" style="padding: 6px 10px; flex: 1; min-width: 160px; border-radius: 6px;" />
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">${filterBtns}</div>
+        </div>
+        <div style="overflow-x: auto;">
+            <table class="sales-history-table">
+                <thead><tr><th>Date</th><th>Symbol</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th>Fee/Tax</th><th></th></tr></thead>
+                <tbody>
+                    ${rows.map((t, i) => {
+                        const isTrade = t.type === 'buy' || t.type === 'sell';
+                        const qty = isTrade ? t.shares : (t.type === 'split' ? `×${t.ratio}` : '—');
+                        const price = isTrade ? formatCurrency(t.price, t.currency) : '—';
+                        const amount = t.totalAmount != null ? formatCurrency(t.totalAmount, t.currency) : '—';
+                        const feeTax = t.type === 'dividend'
+                            ? (t.tax ? `tax ${formatCurrency(t.tax, t.currency)}` : '—')
+                            : (t.fee ? formatCurrency(t.fee, t.currency) : '—');
+                        const typeColor = t.type === 'buy' ? 'var(--up)' : t.type === 'sell' ? 'var(--down)' : t.type === 'dividend' ? 'var(--up)' : 'var(--text-secondary)';
+                        return `<tr>
+                            <td>${escapeHTML(t.date || '')}</td>
+                            <td style="font-weight: 600; color: var(--gold);">${escapeHTML(t.symbol)}</td>
+                            <td style="color: ${typeColor};">${escapeHTML(typeLabel(t.type))}</td>
+                            <td>${qty}</td><td>${price}</td><td>${amount}</td><td>${feeTax}</td>
+                            <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+/** Set the transaction-ledger type filter and re-render just that section. */
+export function setTxFilter(type) {
+    if (!state.txFilter) state.txFilter = { type: 'all', q: '' };
+    state.txFilter.type = type;
+    renderTransactionsLedger();
+}
+
+/** Set the transaction-ledger symbol search, re-render, and keep input focus. */
+export function setTxSearch(value) {
+    if (!state.txFilter) state.txFilter = { type: 'all', q: '' };
+    state.txFilter.q = value;
+    renderTransactionsLedger();
+    const input = document.getElementById('txSearch');
+    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+}
+
+/**
+ * Delete a single ledger transaction (referenced by its index in the currently
+ * displayed `state._ledgerRows`), then re-derive positions and persist.
+ * Index-based to avoid interpolating broker-derived strings into onclick.
+ */
+export function deleteTransactionRow(rowIndex) {
+    const row = (state._ledgerRows || [])[Number(rowIndex)];
+    if (!row) return;
+    const { symbol, timestamp, date, type } = row;
+    const txs = state.transactions[symbol];
+    if (!txs) return;
+
+    const safeSymbol = String(symbol || '').slice(0, 24);
+    const safeType = String(type || '').slice(0, 16);
+    const safeDate = String(date || '').slice(0, 10);
+    if (!confirm(`Delete this ${safeType} transaction for ${safeSymbol} (${safeDate})?\n\nPositions and totals will be recalculated.`)) return;
+
+    let idx = -1;
+    if (timestamp) idx = txs.findIndex(t => (t.timestamp || '') === timestamp);
+    if (idx < 0) idx = txs.findIndex(t => (t.date || '') === date && t.type === type); // fallback
+    if (idx < 0) return;
+
+    txs.splice(idx, 1);
+    if (txs.length === 0) delete state.transactions[symbol];
+
+    rebuildPositionsFromLedger();
+    saveTransactionsToStorage();
+    saveTransactionsToDB();
+    savePortfolioDB();
+    renderPortfolio();
+}
 
 function renderSalesHistory() {
     const section = document.getElementById('salesHistorySection');

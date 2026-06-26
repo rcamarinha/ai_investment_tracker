@@ -5,8 +5,8 @@
  * stock-portfolio-specific logic. Auth UI is handled here independently.
  */
 
-import state from './state.js?v=3.18.0';
-import { showToast, escapeHTML } from './utils.js?v=3.18.0';
+import state from './state.js?v=3.19.0';
+import { showToast, escapeHTML } from './utils.js?v=3.19.0';
 import { normalizeWineName } from '../src/wine.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
