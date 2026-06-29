@@ -138,6 +138,7 @@ CREATE TABLE assets (
     currency TEXT DEFAULT '',
     asset_type TEXT DEFAULT 'Stock',
     isin TEXT DEFAULT NULL,
+    source TEXT DEFAULT NULL,         -- ISIN→ticker mapping provenance: 'user' (manual) | 'api' | null
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );

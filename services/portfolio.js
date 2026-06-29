@@ -13,7 +13,8 @@ import { fetchMarketPrices, fetchStockPrice, getExchangeRate } from './pricing.j
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
 import { parseBrokerExport, normalizeTrades,
          buildExistingFingerprints, dedupeTrades,
-         computePositionsFromLedger } from './import-brokers.js';
+         computePositionsFromLedger,
+         collectUnresolved, applyUnresolvedDecisions } from './import-brokers.js';
 
 // ── Auth Guard ──────────────────────────────────────────────────────────────
 
@@ -238,6 +239,7 @@ export function renderPortfolio() {
                 </div>
                 <div class="pos-sub">${cardSub}</div>
                 <div class="pos-sub">${positionSub}${timestampText ? ' \u00B7 ' + escapeHTML(timestampText) : ''}</div>
+                ${(pos.untracked || isISIN(pos.symbol)) ? `<div class="pos-sub" style="color: var(--gold);" title="No ticker mapping \u2014 live price disabled. Re-import and map a ticker, or it stays cost-only.">\u26A0 untracked \u00B7 no live price</div>` : ''}
                 ${(pos.dividends > 0) ? `<div class="pos-sub" style="color: var(--up);">\uD83D\uDCB0 ${formatCurrency(pos.dividends - (pos.taxWithheld || 0), currency)} income${(pos.avgPrice > 0 && pos.shares > 0) ? ` \u00B7 ${formatPercent((pos.dividends - (pos.taxWithheld || 0)) / (pos.avgPrice * pos.shares) * 100)} yld/cost` : ''}</div>` : ''}
                 ${platformBadge}
                 <div class="position-actions">${actionButtons}</div>
@@ -619,14 +621,15 @@ function pickBestTicker(candidates) {
 /**
  * Persist an ISIN→ticker mapping to the asset database and Supabase.
  */
-async function persistISINMapping(isin, resolved) {
+async function persistISINMapping(isin, resolved, source = 'api') {
     const ticker = resolved.ticker;
     state.assetDatabase[ticker] = {
         ...(state.assetDatabase[ticker] || {}),
         name: resolved.name || ticker,
         ticker,
         assetType: resolved.type || 'Stock',
-        isin
+        isin,
+        source
     };
 
     try {
@@ -637,7 +640,8 @@ async function persistISINMapping(isin, resolved) {
             isin,
             stock_exchange: resolved.exchange || '',
             sector: 'Other',
-            currency: 'USD'
+            currency: 'USD',
+            source
         }]);
     } catch (err) {
         console.warn(`Failed to persist ISIN mapping ${isin} → ${ticker}:`, err.message);
@@ -1049,6 +1053,66 @@ function showReviewDialog(reviewItems) {
             });
             document.body.removeChild(overlay);
             resolve(out);
+        });
+    });
+}
+
+/**
+ * Show a modal to manually map ISINs that auto-resolution couldn't handle.
+ * Returns a promise resolving to { ISIN: { action:'map'|'untracked'|'skip', ticker?, type? } }.
+ * Default is "map"; a blank ticker on "map" is treated as "skip".
+ */
+function showUnresolvedDialog(items) {
+    return new Promise(resolve => {
+        const rowsHTML = items.map((it, idx) => `
+            <tr data-idx="${idx}" data-isin="${escapeHTML(it.identifier)}">
+                <td style="padding:6px 8px;">
+                    <div style="font-weight:600;">${escapeHTML(it.name || '—')}</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono,monospace);">${escapeHTML(it.identifier)}</div>
+                </td>
+                <td style="padding:6px 8px;">
+                    <input class="ur-ticker" type="text" placeholder="e.g. IUSQ.DE" style="width:110px;font-size:12px;padding:4px;text-transform:uppercase;" />
+                </td>
+                <td style="padding:6px 8px;">
+                    <select class="ur-action" style="font-size:12px;padding:4px;">
+                        <option value="map" selected>Map to ticker</option>
+                        <option value="untracked">Keep untracked</option>
+                        <option value="skip">Skip</option>
+                    </select>
+                </td>
+            </tr>`).join('');
+
+        const overlay = document.createElement('div');
+        overlay.className = 'ticker-picker-overlay';
+        overlay.innerHTML = `
+            <div class="ticker-picker-dialog" style="max-width:620px;">
+                <h3>🔎 ${items.length} symbol(s) couldn't be auto-resolved</h3>
+                <p style="font-size:13px;">Enter the ticker each instrument trades under (include an exchange suffix if needed, e.g. <code>IUSQ.DE</code>). Mapped tickers are remembered, so you'll only do this once per instrument. Nothing is dropped unless you choose <strong>Skip</strong>.</p>
+                <div style="max-height:320px;overflow-y:auto;margin:10px 0;">
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead><tr style="text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">
+                            <th style="padding:6px 8px;">Instrument</th><th style="padding:6px 8px;">Ticker</th><th style="padding:6px 8px;">Action</th>
+                        </tr></thead>
+                        <tbody>${rowsHTML}</tbody>
+                    </table>
+                </div>
+                <div class="ticker-picker-footer">
+                    <button class="btn btn-accent" id="urConfirm">Apply</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#urConfirm').addEventListener('click', () => {
+            const decisions = {};
+            overlay.querySelectorAll('tbody tr').forEach(tr => {
+                const isin = tr.dataset.isin;
+                let action = tr.querySelector('.ur-action').value;
+                const ticker = (tr.querySelector('.ur-ticker').value || '').trim().toUpperCase();
+                if (action === 'map' && !ticker) action = 'skip'; // blank ticker → skip
+                decisions[isin] = { action, ticker };
+            });
+            document.body.removeChild(overlay);
+            resolve(decisions);
         });
     });
 }
@@ -1576,8 +1640,15 @@ export function rebuildPositionsFromLedger() {
                 type: meta.assetType || 'Stock',
                 shares: data.shares,
                 avgPrice: data.avgPrice,
+                isin: meta.isin || null,
+                untracked: !!meta.untracked,
                 ...agg,
             });
+        }
+        // Keep isin/untracked current on existing positions too (from the asset DB)
+        if (existing) {
+            const meta = state.assetDatabase[symbol];
+            if (meta) { existing.isin = meta.isin || existing.isin || null; existing.untracked = !!meta.untracked; }
         }
     }
     state.ledgerNeedsReview = needsReview;
@@ -1627,11 +1698,10 @@ export async function importTrades() {
         if (isins.length > 0) {
             if (reportArea) reportArea.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">⏳ Resolving ${isins.length} ISIN(s)…</div>`;
             const resolved = await resolveIdentifiers(isins);
-            const unresolved = [];
             for (const t of trades) {
                 if (!t.isISIN) continue;
                 const r = resolved[t.identifier];
-                if (!r) { unresolved.push(t.identifier); continue; }
+                if (!r) continue; // handled by the unresolved dialog below
                 if (r.alternatives && r.alternatives.length) {
                     const chosen = await showTickerPickerDialog(
                         t.identifier,
@@ -1653,10 +1723,40 @@ export async function importTrades() {
                 const r = resolved[x.identifier];
                 if (r) { x.symbol = r.ticker.toUpperCase(); x.name = x.name || r.name; }
             }
-            // Drop trades whose ISIN never resolved
-            trades = trades.filter(t => !(t.isISIN && !t.symbol));
-            if (unresolved.length) {
-                errors.push(`Could not resolve ISIN(s): ${[...new Set(unresolved)].join(', ')}. Those trades were skipped.`);
+
+            // ── Step 2b: Manually map whatever couldn't be auto-resolved ────
+            // Don't silently drop — surface each unresolved ISIN so the user can
+            // map it to a ticker (persisted for next time), keep it untracked, or skip.
+            const allItems = [...trades, ...reviewItems, ...incomeItems];
+            const unresolvedList = collectUnresolved(allItems, resolved);
+            if (unresolvedList.length > 0) {
+                const decisions = await showUnresolvedDialog(unresolvedList);
+                applyUnresolvedDecisions(allItems, decisions);
+                // Persist user ticker maps so the ISIN auto-resolves on future imports.
+                for (const u of unresolvedList) {
+                    const d = decisions[u.identifier];
+                    if (d && d.action === 'map' && d.ticker) {
+                        await persistISINMapping(
+                            u.identifier,
+                            { ticker: d.ticker.toUpperCase(), name: u.name || d.ticker, type: 'Stock' },
+                            'user'
+                        );
+                    } else if (d && d.action === 'untracked') {
+                        // Register the untracked instrument so pricing skips it and the ISIN is recoverable.
+                        const sym = u.identifier.toUpperCase();
+                        state.assetDatabase[sym] = {
+                            ...(state.assetDatabase[sym] || {}),
+                            name: u.name || sym, ticker: sym, isin: u.identifier.toUpperCase(),
+                            assetType: 'Other', untracked: true, source: 'user',
+                        };
+                    }
+                }
+            }
+            // Drop only trades the user explicitly skipped (still no symbol)
+            const skippedSyms = new Set();
+            trades = trades.filter(t => { if (t.isISIN && !t.symbol) { skippedSyms.add(t.identifier); return false; } return true; });
+            if (skippedSyms.size) {
+                errors.push(`Skipped ${skippedSyms.size} unresolved instrument(s): ${[...skippedSyms].join(', ')}.`);
             }
         }
         // Non-ISIN items use the identifier directly as the ticker

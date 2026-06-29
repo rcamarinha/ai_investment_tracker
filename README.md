@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.21.0
+- **Unresolvable symbols — manual ticker mapping (no silent drops)** — when an ISIN can't be auto-resolved on import (e.g. some European UCITS ETFs), the trade is no longer silently dropped. A dialog lets you map it to the correct ticker (remembered for next time, flagged `source:'user'`), keep it as an untracked cost-only holding, or explicitly skip it. Mapped ISINs auto-resolve on future imports via the existing asset-DB lookup. Untracked holdings (symbol = ISIN) are excluded from price fetching and badged in the UI. Migration `20260628_assets_source.sql` adds the `assets.source` column.
+
 ### v3.20.2
 - **Fix transaction save (CHECK constraint)** — the deployed `transactions` table limited `type` to buy/sell, so dividend/fee/split/isin_change rows were rejected (error 23514), aborting cloud sync during imports. Migration `20260627_transactions_type_constraint.sql` widens the `type` allow-list to the full taxonomy.
 

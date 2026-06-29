@@ -630,3 +630,49 @@ export function computePositionsFromLedger(transactions) {
     }
     return out;
 }
+
+// ── Unresolved-symbol handling ───────────────────────────────────────────────
+
+/**
+ * From a list of normalized items (trades/income/review), return the distinct
+ * ISIN identifiers that still have no ticker after auto-resolution — i.e. items
+ * that are `isISIN` and have no `symbol` and aren't in `resolvedMap`.
+ * Each entry: { identifier, name, broker }. Pure & testable.
+ */
+export function collectUnresolved(items, resolvedMap = {}) {
+    const seen = new Map();
+    for (const it of (items || [])) {
+        if (!it.isISIN || it.symbol) continue;
+        const id = it.identifier;
+        if (resolvedMap[id]) continue;
+        if (!seen.has(id)) seen.set(id, { identifier: id, name: it.name || '', broker: it.broker });
+    }
+    return [...seen.values()];
+}
+
+/**
+ * Apply user decisions for unresolved ISINs onto the items in place.
+ * decisions: { ISIN: { action: 'map'|'untracked'|'skip', ticker?, type? } }.
+ * - map:       item.symbol = ticker (applies to every item sharing that ISIN)
+ * - untracked: item.symbol = ISIN, item.untracked = true
+ * - skip:      left unresolved (caller drops items with no symbol)
+ * Returns the set of ISINs the user skipped. Pure & testable.
+ */
+export function applyUnresolvedDecisions(items, decisions = {}) {
+    const skipped = new Set();
+    for (const it of (items || [])) {
+        if (!it.isISIN || it.symbol) continue;
+        const d = decisions[it.identifier];
+        if (!d) continue;
+        if (d.action === 'map' && d.ticker) {
+            it.symbol = String(d.ticker).toUpperCase();
+            if (d.type) it.assetType = d.type;
+        } else if (d.action === 'untracked') {
+            it.symbol = String(it.identifier).toUpperCase();
+            it.untracked = true;
+        } else {
+            skipped.add(it.identifier);
+        }
+    }
+    return { skipped };
+}
