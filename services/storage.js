@@ -456,7 +456,9 @@ export async function saveTransactionsToDB() {
                     // (dividend/fee/split) carry 0 here and use the typed columns.
                     shares: tx.shares ?? 0,
                     price: tx.price ?? 0,
-                    total_amount: tx.totalAmount ?? tx.amount ?? null,
+                    // total_amount is NOT NULL in the deployed schema; split/isin_change
+                    // rows move no cash, so default to 0 rather than null.
+                    total_amount: tx.totalAmount ?? tx.amount ?? 0,
                     date: tx.date,
                     cost_basis: tx.costBasis ?? null,
                     realized_gain_loss: tx.realizedGainLoss ?? null,
