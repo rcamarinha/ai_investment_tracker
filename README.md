@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.20.2
+- **Fix transaction save (CHECK constraint)** — the deployed `transactions` table limited `type` to buy/sell, so dividend/fee/split/isin_change rows were rejected (error 23514), aborting cloud sync during imports. Migration `20260627_transactions_type_constraint.sql` widens the `type` allow-list to the full taxonomy.
+
 ### v3.20.1
 - **Fix transaction save failure** — split/corporate-action rows were writing `total_amount = null`, violating the deployed DB's NOT NULL constraint and aborting the whole transaction save during DeGiro imports. These rows move no cash, so `total_amount` now defaults to 0.
 
