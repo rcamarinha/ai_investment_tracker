@@ -151,17 +151,35 @@ BancoBest by feeding broker exports into the **existing** transaction ledger.
 `services/import-brokers.js` is **pure** (no DOM, no network, no service imports) so tests import it
 directly — there is **no `src/` mirror** for it. Key exports:
 - **`parseBrokerExport(text)`** → `detectBroker()` then dispatches to `parseDegiroCsv()` / `parseRevolutCsv()`
-- **`parseDegiroCsv(text)`** - DeGiro Transactions.csv; **sign of Quantity = buy/sell**; ISIN identifier; currency is the unnamed column right after Price
-- **`parseRevolutCsv(text)`** - Revolut statement; only `BUY*`/`SELL*` rows (dividends/top-ups/fees/splits skipped)
+- **`parseDegiroCsv(text)`** - DeGiro Transactions.csv; **sign of Quantity = buy/sell**; ISIN identifier; currency is the unnamed column right after Price. Zero-price corporate-action rows and detected split pairs go to a `review[]` array (not silently dropped)
+- **`parseRevolutCsv(text)`** - Revolut statement; `BUY*`/`SELL*` → trades; `DIVIDEND`/`FEE`/`CUSTODY` → an `income[]` array (with withholding `tax`); top-ups/transfers skipped
+- **`detectSplitPairs(trades)`** - flags same-instrument, same-date buy/sell pairs with ≥3× price gap as `possible_split` (with inferred ratio)
 - **`normalizeTrades(rows, broker)`** - normalizes loose rows from the AI fallback
-- **`tradeFingerprint()` / `buildExistingFingerprints()` / `dedupeTrades()`** - dedupe by `date|symbol|side|shares|price` (symbol = **resolved ticker**, so re-imports are safe)
-- **`computePositionsFromLedger(transactions)`** - average-cost net shares / avgPrice / realized P&L
+- **`tradeFingerprint()` / `buildExistingFingerprints()` / `dedupeTrades()`** - multiset dedupe; trades keyed `date|symbol|side|shares|price`, non-trade rows (dividend/fee/split) keyed `date|symbol|type|amount` (symbol = **resolved ticker**, so re-imports are safe)
+- **`computePositionsFromLedger(transactions)`** - average-cost engine over the **full taxonomy** (`buy/sell/split/isin_change/dividend/fee`): fees fold into cost basis; splits multiply shares (cost unchanged); dividends/fees aggregate as `dividends/taxWithheld/feesPaid`; returns `needsReview` when a sell drives shares negative
 
-`importTrades()` pipeline: parse (CSV or AI) → resolve ISINs via `resolveIdentifiers()` → dedupe
-against `state.transactions` → review report → commit to ledger → `rebuildPositionsFromLedger()` →
-`saveTransactionsToDB()` + `savePortfolioDB()` → `fetchMarketPrices()`. Unstructured input (Revolut
-PDF text, BancoBest confirmations) has no detectable broker → falls back to the `extract-trades` edge
+#### Transaction taxonomy
+
+`type` is free text in the DB. Supported: `buy`, `sell`, `dividend`, `fee`, `split`, `isin_change`.
+Extra columns (migration `20260626_transactions_income_fields.sql`): `fee`, `tax`, `ratio`, `note`.
+Non-trade rows carry `shares=0, price=0`; their monetary value lives in `total_amount`. `CASH` is a
+reserved symbol for account-level custody fees (never materialized as a position card).
+
+`importTrades()` pipeline: parse (CSV or AI) → resolve ISINs (trades + review + income) → dedupe
+against `state.transactions` → **`showReviewDialog()`** to classify splits/corporate actions → commit
+full taxonomy to ledger → `rebuildPositionsFromLedger()` (also computes per-asset dividends/fees and
+sets `state.ledgerNeedsReview`) → `saveTransactionsToDB()` + `savePortfolioDB()` → `fetchMarketPrices()`.
+Unstructured input (Revolut PDF text, BancoBest confirmations) falls back to the `extract-trades` edge
 function (client chunks to ≤12K chars).
+
+**UI surfaces** (in `renderPortfolio()`): summary-bar Income/Fees (`computeIncomeTotalsBase()`),
+per-card dividend badge + yield-on-cost, an **Income & Fees** table (`renderIncomeHistory()` →
+`#incomeHistorySection`), a **Transactions** ledger with search + type filter + per-row delete
+(`renderTransactionsLedger()` → `#transactionsSection`; `setTxFilter`/`setTxSearch`/`deleteTransactionRow`),
+and a safety banner when `state.ledgerNeedsReview`.
+
+**Not yet built**: DeGiro `Account.csv` parser (DeGiro dividends/fees source — dividend handling is
+broker-agnostic via the `income[]` stream, so it slots in); cash-balance modeling; first-class options.
 
 ### Storage Service (`services/storage.js`)
 - **`initSupabase()`** - Initialize Supabase client with auth listener

@@ -307,6 +307,20 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.20.0
+- **Revolut real-world hardening** — fixes three accuracy bugs found in a full 7-year Revolut export:
+  - **Stock splits** are now captured. Revolut reports a split as a signed share delta (e.g. AAPL +3 for a 4:1, HYZN −78.4 for a reverse split); these were silently dropped, leaving wrong share counts. `computePositionsFromLedger` now applies additive (delta) splits alongside the existing multiplicative (ratio) splits.
+  - **"DIVIDEND TAX (CORRECTION)"** rows are no longer mis-counted as dividends (they net ~0 and now skip).
+  - **"CUSTODY FEE REVERSAL"** is stored as a negative fee so refunds reduce total fees instead of increasing them.
+- **Version bump to 3.20.0**
+
+### v3.19.0
+- **Full transaction taxonomy** — the ledger now models `buy / sell / dividend / fee / split / isin_change`. `computePositionsFromLedger` folds fees into cost basis, applies splits (shares ×ratio, cost unchanged), and aggregates per-asset dividends/fees/withholding tax. Migration `20260626_transactions_income_fields.sql` adds `fee/tax/ratio/note` columns
+- **Split / corporate-action review** — importing surfaces zero-price corporate actions and auto-detected split pairs (e.g. DeGiro's 10:1 NVIDIA buy/sell pair) in a review dialog so share counts and cost basis stay correct instead of being silently corrupted. A safety banner flags any holding that goes share-negative
+- **Dividends & fees** — Revolut `DIVIDEND` and `CUSTODY FEE` rows are captured (with withholding tax) into the ledger; account-level fees use a reserved `CASH` bucket
+- **Income UI** — summary-bar Income/Fees, per-card dividend badge + yield-on-cost, an **Income & Fees** table (gross/tax/net), and a searchable, filterable **Transactions** ledger with per-row delete that re-derives positions
+- **Version bump to 3.19.0**
+
 ### v3.18.0
 - **Fix DeGiro CSV import** — Portuguese exports failed to parse: the accented `Preços` header was stripped to `preos` and never matched (now diacritic-insensitive), and European numbers ≥ 1000 without thousands separators (`1208,8800`) parsed wrong (number parser rewritten with a "last separator wins" heuristic). Zero-price corporate actions (transfers, ISIN changes) are now skipped silently
 - **Fix dedupe of identical fills** — Genuine same-day/same-price partial fills of one order were collapsed, undercounting shares. Dedupe now matches by occurrence count (multiset), so identical fills are kept on first import while re-imports are still fully skipped

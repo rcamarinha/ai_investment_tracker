@@ -7,6 +7,7 @@ import {
   normalizeDate,
   detectBroker,
   parseDegiroCsv,
+  detectSplitPairs,
   parseRevolutCsv,
   normalizeTrades,
   parseBrokerExport,
@@ -122,16 +123,61 @@ describe('parseDegiroCsv', () => {
     expect(trades[0].shares).toBe(3);
   });
 
-  it('silently skips zero-price corporate actions', () => {
+  it('does not error on zero-price corporate actions (routes them to review)', () => {
     const csv = [ptHeader, '31-07-2025,07:49,BYD CO LTD - NON TRADEABLE,CNE100000296,DEG,,-43,"0,0000",EUR,"0,00",EUR,"0,00",,"0,00",,"0,00",'].join('\n');
-    const { trades, errors, skipped } = parseDegiroCsv(csv);
+    const { trades, errors, review } = parseDegiroCsv(csv);
     expect(trades).toHaveLength(0);
     expect(errors).toHaveLength(0);
-    expect(skipped).toBe(1);
+    expect(review).toHaveLength(1);
   });
 
   it('detects the Portuguese DeGiro header as degiro', () => {
     expect(detectBroker(ptHeader)).toBe('degiro');
+  });
+
+  it('surfaces zero-price corporate-action rows for review (not silent drop)', () => {
+    const csv = [ptHeader, '31-07-2025,07:49,BYD CO LTD - NON TRADEABLE,CNE100000296,DEG,,-43,"0,0000",EUR,"0,00",EUR,"0,00",,"0,00",,"0,00",'].join('\n');
+    const { trades, review } = parseDegiroCsv(csv);
+    expect(trades).toHaveLength(0);
+    expect(review).toHaveLength(1);
+    expect(review[0]).toMatchObject({ reason: 'corporate_action', identifier: 'CNE100000296', signedShares: -43 });
+  });
+
+  it('flags a split pair (buy 30 / sell 3 at 10x price) for review', () => {
+    const csv = [
+      ptHeader,
+      '10-06-2024,00:00,NVIDIA CORP,US67066G1040,NDQ,,30,"120,8880",USD,"-3626,64",USD,"-3368,79","1,0765","0,00",,"-3368,79",,a',
+      '10-06-2024,00:00,NVIDIA CORP,US67066G1040,NDQ,,-3,"1208,8800",USD,"3626,64",USD,"3368,79","1,0765","0,00",,"3368,79",,b',
+    ].join('\n');
+    const { trades, review } = parseDegiroCsv(csv);
+    expect(trades).toHaveLength(0); // both rows pulled out of trades
+    const split = review.find(r => r.reason === 'possible_split');
+    expect(split).toBeTruthy();
+    expect(split.ratio).toBeCloseTo(10);
+    expect(split.identifier).toBe('US67066G1040');
+  });
+});
+
+describe('detectSplitPairs', () => {
+  it('leaves ordinary same-day trades alone', () => {
+    const trades = [
+      { identifier: 'AAPL', date: '2024-01-02', side: 'buy', shares: 10, price: 150 },
+      { identifier: 'AAPL', date: '2024-01-02', side: 'sell', shares: 5, price: 152 },
+    ];
+    const { kept, flagged } = detectSplitPairs(trades);
+    expect(kept).toHaveLength(2);
+    expect(flagged).toHaveLength(0);
+  });
+
+  it('flags an extreme-price buy/sell pair as a possible split', () => {
+    const trades = [
+      { identifier: 'NVDA', date: '2024-06-10', side: 'buy', shares: 30, price: 120.88, isISIN: false },
+      { identifier: 'NVDA', date: '2024-06-10', side: 'sell', shares: 3, price: 1208.88, isISIN: false },
+    ];
+    const { kept, flagged } = detectSplitPairs(trades);
+    expect(kept).toHaveLength(0);
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0].ratio).toBeCloseTo(10);
   });
 });
 
@@ -170,17 +216,19 @@ describe('parseRevolutCsv', () => {
     expect(trades[1]).toMatchObject({ side: 'sell', shares: 4, price: 170 });
   });
 
-  it('skips dividend / top-up / fee rows', () => {
+  it('routes dividends to income, skips top-ups, keeps buys', () => {
     const csv = [
       header,
       '2024-01-03,AAPL,DIVIDEND,0,$0.00,$2.50,USD',
       '2024-01-04,,CASH TOP-UP,0,,$100.00,USD',
       '2024-01-05,VUSA,BUY - MARKET,2,$80.00,$160.00,USD',
     ].join('\n');
-    const { trades, skipped } = parseRevolutCsv(csv);
+    const { trades, income, skipped } = parseRevolutCsv(csv);
     expect(trades).toHaveLength(1);
     expect(trades[0].identifier).toBe('VUSA');
-    expect(skipped).toBe(2);
+    expect(income).toHaveLength(1);
+    expect(income[0]).toMatchObject({ type: 'dividend', identifier: 'AAPL', amount: 2.5 });
+    expect(skipped).toBe(1); // only the cash top-up
   });
 
   it('derives price from total when price column missing', () => {
@@ -199,6 +247,116 @@ describe('parseRevolutCsv', () => {
     ].join('\n');
     const { trades } = parseRevolutCsv(csv);
     expect(trades[0].price).toBeCloseTo(1234.56);
+  });
+
+  it('captures dividend rows as income (not trades)', () => {
+    const csv = [
+      'Date,Ticker,Type,Quantity,Price per share,Total Amount,Currency,Withholding tax',
+      '2024-03-01,KO,DIVIDEND,0,,$44.00,USD,$6.60',
+      '2024-03-02,KO,BUY - MARKET,10,$50.00,$500.00,USD,',
+    ].join('\n');
+    const { trades, income } = parseRevolutCsv(csv);
+    expect(trades).toHaveLength(1);
+    expect(income).toHaveLength(1);
+    expect(income[0]).toMatchObject({ type: 'dividend', identifier: 'KO', amount: 44, tax: 6.6, currency: 'USD' });
+  });
+
+  it('captures custody fees as income with a CASH symbol when no ticker', () => {
+    const csv = [
+      header,
+      '2024-03-31,,CUSTODY FEE,0,,$1.50,USD',
+    ].join('\n');
+    const { income } = parseRevolutCsv(csv);
+    expect(income).toHaveLength(1);
+    expect(income[0]).toMatchObject({ type: 'fee', identifier: 'CASH', amount: 1.5 });
+  });
+
+  it('still skips top-ups and transfers', () => {
+    const csv = [
+      header,
+      '2024-01-04,,CASH TOP-UP,0,,$100.00,USD',
+    ].join('\n');
+    const { trades, income, skipped } = parseRevolutCsv(csv);
+    expect(trades).toHaveLength(0);
+    expect(income).toHaveLength(0);
+    expect(skipped).toBe(1);
+  });
+
+  it('captures STOCK SPLIT rows as a signed share-delta split', () => {
+    const csv = [
+      header,
+      '2020-08-31,AAPL,STOCK SPLIT,3,,USD 0,USD',     // 4:1 → +3
+      '2024-09-11,HYZN,STOCK SPLIT,-78.4,,USD 0,USD',  // reverse → negative
+    ].join('\n');
+    const { income, skipped } = parseRevolutCsv(csv);
+    const splits = income.filter(i => i.type === 'split');
+    expect(splits).toHaveLength(2);
+    expect(splits[0]).toMatchObject({ identifier: 'AAPL', type: 'split', shares: 3 });
+    expect(splits[1].shares).toBeCloseTo(-78.4);
+    expect(skipped).toBe(0);
+  });
+
+  it('excludes DIVIDEND TAX (CORRECTION) rows from income', () => {
+    const csv = [
+      header,
+      '2025-07-02,MSFT,DIVIDEND TAX (CORRECTION),,,USD -0.25,USD',
+      '2025-07-02,MSFT,DIVIDEND TAX (CORRECTION),,,USD 0.25,USD',
+      '2025-06-13,MSFT,DIVIDEND,,,USD 1.41,USD',
+    ].join('\n');
+    const { income, skipped } = parseRevolutCsv(csv);
+    const divs = income.filter(i => i.type === 'dividend');
+    expect(divs).toHaveLength(1);
+    expect(divs[0].amount).toBeCloseTo(1.41);
+    expect(skipped).toBe(2); // the two tax-correction rows
+  });
+
+  it('treats CUSTODY FEE REVERSAL as a negative (refunded) fee', () => {
+    const csv = [
+      header,
+      '2022-12-14,,CUSTODY FEE,,,USD -1.01,USD',
+      '2022-12-14,,CUSTODY FEE REVERSAL,,,USD 1.01,USD',
+    ].join('\n');
+    const { income } = parseRevolutCsv(csv);
+    const fees = income.filter(i => i.type === 'fee');
+    expect(fees).toHaveLength(2);
+    expect(fees[0].amount).toBeCloseTo(1.01);   // a real fee
+    expect(fees[1].amount).toBeCloseTo(-1.01);  // the reversal nets it out
+  });
+});
+
+describe('computePositionsFromLedger — additive (Revolut) splits', () => {
+  it('applies a positive share delta with cost unchanged', () => {
+    const txs = {
+      AAPL: [
+        { type: 'buy', shares: 1, price: 400, date: '2020-01-01' },
+        { type: 'split', shares: 3, date: '2020-08-31' }, // 4:1 → +3, no ratio
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.AAPL.shares).toBe(4);
+    expect(pos.AAPL.avgPrice).toBeCloseTo(100); // 400 cost / 4 shares
+  });
+
+  it('applies a reverse (negative) share delta', () => {
+    const txs = {
+      HYZN: [
+        { type: 'buy', shares: 80, price: 5, date: '2022-01-01' },
+        { type: 'split', shares: -78.4, date: '2024-09-11' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.HYZN.shares).toBeCloseTo(1.6);
+    expect(pos.HYZN.avgPrice).toBeCloseTo(250); // 400 cost / 1.6 shares
+  });
+
+  it('dedupes a re-imported delta split via its share fingerprint', () => {
+    const existing = buildExistingFingerprints({
+      AAPL: [{ type: 'split', shares: 3, date: '2020-08-31' }],
+    });
+    const incoming = [{ type: 'split', symbol: 'AAPL', identifier: 'AAPL', date: '2020-08-31', shares: 3 }];
+    const { fresh, duplicates } = dedupeTrades(incoming, existing);
+    expect(fresh).toHaveLength(0);
+    expect(duplicates).toHaveLength(1);
   });
 });
 
@@ -338,5 +496,93 @@ describe('computePositionsFromLedger', () => {
     expect(pos.TSLA.shares).toBe(0);
     expect(pos.TSLA.avgPrice).toBe(0);
     expect(pos.TSLA.realizedPnL).toBeCloseTo(250);
+  });
+
+  it('applies a split: shares ×ratio, avg ÷ratio, cost basis unchanged', () => {
+    const txs = {
+      NVDA: [
+        { type: 'buy', shares: 3, price: 425, date: '2023-09-26' },
+        { type: 'split', ratio: 10, date: '2024-06-10' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.NVDA.shares).toBeCloseTo(30);
+    expect(pos.NVDA.avgPrice).toBeCloseTo(42.5);
+  });
+
+  it('folds buy/sell fees into cost basis and realized P&L', () => {
+    const txs = {
+      AAPL: [
+        { type: 'buy', shares: 10, price: 100, fee: 5, date: '2024-01-01' },   // cost 1005
+        { type: 'sell', shares: 10, price: 120, fee: 5, date: '2024-02-01' },  // proceeds 1195
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.AAPL.shares).toBe(0);
+    expect(pos.AAPL.realizedPnL).toBeCloseTo(1195 - 1005); // 190
+    expect(pos.AAPL.feesPaid).toBeCloseTo(10);
+  });
+
+  it('aggregates dividends (with tax) and fees without affecting shares', () => {
+    const txs = {
+      KO: [
+        { type: 'buy', shares: 100, price: 50, date: '2024-01-01' },
+        { type: 'dividend', amount: 44, tax: 6.6, date: '2024-03-01' },
+        { type: 'dividend', amount: 44, tax: 6.6, date: '2024-06-01' },
+        { type: 'fee', amount: 2.5, date: '2024-06-30' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.KO.shares).toBe(100);
+    expect(pos.KO.avgPrice).toBeCloseTo(50);
+    expect(pos.KO.dividends).toBeCloseTo(88);
+    expect(pos.KO.taxWithheld).toBeCloseTo(13.2);
+    expect(pos.KO.feesPaid).toBeCloseTo(2.5);
+  });
+
+  it('ignores corrupt out-of-range split ratios (no Infinity shares)', () => {
+    const txs = {
+      Z: [
+        { type: 'buy', shares: 10, price: 5, date: '2024-01-01' },
+        { type: 'split', ratio: 1e100, date: '2024-02-01' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(Number.isFinite(pos.Z.shares)).toBe(true);
+    expect(pos.Z.shares).toBe(10); // ratio rejected → unchanged
+  });
+
+  it('flags needsReview when a sell drives shares negative', () => {
+    const txs = {
+      X: [
+        { type: 'buy', shares: 2, price: 10, date: '2024-01-01' },
+        { type: 'sell', shares: 5, price: 12, date: '2024-02-01' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.X.needsReview).toBe(true);
+  });
+});
+
+describe('tradeFingerprint (non-trade rows)', () => {
+  it('fingerprints dividends by date|symbol|type|amount', () => {
+    const a = tradeFingerprint({ date: '2024-03-01', symbol: 'KO', type: 'dividend', amount: 44 });
+    const b = tradeFingerprint({ date: '2024-03-01', symbol: 'KO', type: 'dividend', amount: 44 });
+    expect(a).toBe(b);
+    expect(a).toBe('2024-03-01|KO|dividend|44.0000');
+  });
+
+  it('dedupes re-imported dividends but keeps distinct amounts', () => {
+    const existing = buildExistingFingerprints({
+      KO: [{ type: 'dividend', amount: 44, date: '2024-03-01' }],
+    });
+    const incoming = [
+      { date: '2024-03-01', symbol: 'KO', type: 'dividend', amount: 44 },  // dup
+      { date: '2024-06-01', symbol: 'KO', type: 'dividend', amount: 44 },  // new (different date)
+    ];
+    const { fresh, duplicates } = dedupeTrades(incoming, existing);
+    expect(fresh).toHaveLength(1);
+    expect(duplicates).toHaveLength(1);
+    expect(fresh[0].date).toBe('2024-06-01');
   });
 });

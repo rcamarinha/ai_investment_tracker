@@ -6,7 +6,7 @@
  * Users must be logged in to use AI features.
  */
 
-import state from './state.js?v=3.18.0';
+import state from './state.js?v=3.20.0';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
