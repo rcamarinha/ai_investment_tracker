@@ -214,6 +214,8 @@ export async function saveAssetsToDB(assets) {
             };
             // Include ISIN if available (for ISIN→ticker lookup on future imports)
             if (asset.isin) upsertData.isin = asset.isin;
+            // Provenance of the ISIN→ticker mapping ('user' = manually entered)
+            if (asset.source) upsertData.source = asset.source;
 
             const { error } = await state.supabaseClient
                 .from('assets')
@@ -253,7 +255,8 @@ export async function loadAssetsFromDB() {
                     sector: a.sector,
                     currency: a.currency,
                     assetType: a.asset_type,
-                    isin: a.isin || null
+                    isin: a.isin || null,
+                    source: a.source || null
                 };
             });
             console.log('\u2713 Loaded', data.length, 'assets from DB into assetDatabase');

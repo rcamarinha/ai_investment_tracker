@@ -8,6 +8,8 @@ import {
   detectBroker,
   parseDegiroCsv,
   detectSplitPairs,
+  collectUnresolved,
+  applyUnresolvedDecisions,
   parseRevolutCsv,
   normalizeTrades,
   parseBrokerExport,
@@ -584,5 +586,46 @@ describe('tradeFingerprint (non-trade rows)', () => {
     expect(fresh).toHaveLength(1);
     expect(duplicates).toHaveLength(1);
     expect(fresh[0].date).toBe('2024-06-01');
+  });
+});
+
+describe('unresolved-symbol handling', () => {
+  const items = () => ([
+    { identifier: 'IE00BYXVGX24', isISIN: true, name: 'Fidelity US Quality ETF', broker: 'degiro' },
+    { identifier: 'AAPL', isISIN: false, symbol: 'AAPL' },                 // not an ISIN
+    { identifier: 'US0378331005', isISIN: true, symbol: 'AAPL' },          // already resolved
+    { identifier: 'IE00B1XNHC34', isISIN: true, name: 'iShares Clean Energy', broker: 'degiro' },
+  ]);
+
+  it('collects only the still-unresolved ISINs', () => {
+    const resolved = { US0378331005: { ticker: 'AAPL' } };
+    const out = collectUnresolved(items(), resolved);
+    expect(out.map(o => o.identifier).sort()).toEqual(['IE00B1XNHC34', 'IE00BYXVGX24']);
+    expect(out[0].name).toBeTruthy();
+  });
+
+  it('maps an ISIN to a ticker for every item sharing it', () => {
+    const list = [
+      { identifier: 'IE00BYXVGX24', isISIN: true },
+      { identifier: 'IE00BYXVGX24', isISIN: true },
+    ];
+    const { skipped } = applyUnresolvedDecisions(list, { IE00BYXVGX24: { action: 'map', ticker: 'iusq.de' } });
+    expect(list[0].symbol).toBe('IUSQ.DE');
+    expect(list[1].symbol).toBe('IUSQ.DE');
+    expect(skipped.size).toBe(0);
+  });
+
+  it('keeps an untracked item under its ISIN', () => {
+    const list = [{ identifier: 'XS1234567890', isISIN: true }];
+    applyUnresolvedDecisions(list, { XS1234567890: { action: 'untracked' } });
+    expect(list[0].symbol).toBe('XS1234567890');
+    expect(list[0].untracked).toBe(true);
+  });
+
+  it('skips an item left without a ticker', () => {
+    const list = [{ identifier: 'XS9999999999', isISIN: true }];
+    const { skipped } = applyUnresolvedDecisions(list, { XS9999999999: { action: 'skip' } });
+    expect(list[0].symbol).toBeUndefined();
+    expect(skipped.has('XS9999999999')).toBe(true);
   });
 });

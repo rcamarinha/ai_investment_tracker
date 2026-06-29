@@ -313,7 +313,10 @@ export async function fetchMarketPrices() {
     state.pricesLoading = true;
     // Snapshot prices before update so we can compute movers afterwards
     const previousPrices = { ...state.marketPrices };
-    const symbols = [...new Set(state.portfolio.map(p => p.symbol))];
+    // Skip untracked holdings (manually kept under their ISIN, no live price).
+    // A bare ISIN as the symbol means no ticker was mapped → never price-fetch it.
+    const isIsinSymbol = s => /^[A-Z]{2}[A-Z0-9]{10}$/.test(String(s || ''));
+    const symbols = [...new Set(state.portfolio.filter(p => !p.untracked && !isIsinSymbol(p.symbol)).map(p => p.symbol))];
 
     // Determine rate limiting
     let delayBetweenCalls = 1000;
