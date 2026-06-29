@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.20.1
+- **Fix transaction save failure** — split/corporate-action rows were writing `total_amount = null`, violating the deployed DB's NOT NULL constraint and aborting the whole transaction save during DeGiro imports. These rows move no cash, so `total_amount` now defaults to 0.
+
 ### v3.20.0
 - **Revolut real-world hardening** — fixes three accuracy bugs found in a full 7-year Revolut export:
   - **Stock splits** are now captured. Revolut reports a split as a signed share delta (e.g. AAPL +3 for a 4:1, HYZN −78.4 for a reverse split); these were silently dropped, leaving wrong share counts. `computePositionsFromLedger` now applies additive (delta) splits alongside the existing multiplicative (ratio) splits.
