@@ -199,10 +199,10 @@ CREATE TABLE transactions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     symbol TEXT NOT NULL,
-    type TEXT NOT NULL,              -- buy | sell | dividend | fee | split | isin_change
+    type TEXT NOT NULL CHECK (type IN ('buy', 'sell', 'dividend', 'fee', 'split', 'isin_change')),
     shares NUMERIC NOT NULL,         -- 0 for non-trade rows (dividend/fee/split)
     price NUMERIC NOT NULL,          -- 0 for non-trade rows
-    total_amount NUMERIC,            -- trade gross (shares×price); for dividend/fee = the amount
+    total_amount NUMERIC NOT NULL DEFAULT 0,  -- trade gross (shares×price); 0 for split/isin_change
     date TEXT,
     cost_basis NUMERIC,              -- sells only
     realized_gain_loss NUMERIC,      -- sells only
