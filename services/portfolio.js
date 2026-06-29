@@ -1516,7 +1516,7 @@ function showTradeReport(container, { trades, duplicates, errors, broker, usedAi
     html += `<div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 8px;">Source: ${escapeHTML(source)}</div>`;
     html += `<div style="color: var(--up); margin-bottom: 4px;">✓ New trades: ${trades.length}</div>`;
     if (splits > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">↪ Splits / adjustments: ${splits}</div>`;
-    if (income > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">💰 Dividends / fees: ${income}</div>`;
+    if (income > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">💰 Dividends / fees / splits: ${income}</div>`;
     if (duplicates.length > 0) html += `<div style="color: var(--gold); margin-bottom: 4px;">↻ Already imported (skipped): ${duplicates.length}</div>`;
     if (errors.length > 0) html += `<div style="color: var(--down); margin-bottom: 4px;">✗ Issues: ${errors.length}</div>`;
 
@@ -1724,7 +1724,8 @@ export async function importTrades() {
             } else if (kind === 'fee') {
                 tx = { ...base, type: 'fee', shares: 0, price: 0, totalAmount: t.amount ?? 0 };
             } else if (kind === 'split' || kind === 'isin_change') {
-                tx = { ...base, type: kind, shares: 0, price: 0, ratio: t.ratio || 1, note: t.note || '' };
+                // Two forms: DeGiro review → ratio (multiplicative); Revolut → shares delta (additive).
+                tx = { ...base, type: kind, shares: t.shares || 0, price: 0, ratio: t.ratio ?? null, note: t.note || '' };
             } else {
                 return; // unknown kind — skip
             }

@@ -355,9 +355,25 @@ export function parseRevolutCsv(text) {
         if (/^BUY/.test(typeRaw)) side = 'buy';
         else if (/^SELL/.test(typeRaw)) side = 'sell';
         if (!side) {
-            // Non-trade rows: capture dividends and fees as income, skip the rest.
+            // Non-trade rows: capture stock splits, dividends and fees; skip the rest.
             const amount = cTotal !== -1 ? Math.abs(parseFlexibleNumber(row[cTotal]) || 0) : 0;
-            if (/DIVIDEND/.test(typeRaw)) {
+
+            // Stock split — Revolut reports a signed SHARE DELTA in Quantity
+            // (e.g. +3 for a 4:1, −78.4 for a reverse split). Unambiguous → commit directly.
+            if (/STOCK SPLIT/.test(typeRaw)) {
+                const identifier = (row[cTicker] || '').toUpperCase().trim();
+                const delta = parseSignedNumber(row[cQty]);
+                if (!identifier || isNaN(delta) || delta === 0) { skipped++; return; }
+                income.push({
+                    type: 'split', identifier, isISIN: isISIN(identifier),
+                    date: normalizeDate(row[cDate]), shares: delta,
+                    currency: ccyOf(row), broker: 'revolut', name: '',
+                });
+                return;
+            }
+            // Dividend — plain DIVIDEND only. "DIVIDEND TAX (CORRECTION)" rows are
+            // tiny withholding true-ups that net ~0; skip them (don't count as income).
+            if (/^DIVIDEND/.test(typeRaw) && !/TAX/.test(typeRaw)) {
                 const identifier = (row[cTicker] || '').toUpperCase().trim();
                 if (!identifier || !amount) { skipped++; return; }
                 income.push({
@@ -371,14 +387,16 @@ export function parseRevolutCsv(text) {
             if (/FEE|CUSTODY/.test(typeRaw)) {
                 if (!amount) { skipped++; return; }
                 const identifier = (row[cTicker] || '').toUpperCase().trim() || 'CASH';
+                // A reversal/refund reduces fees paid → store a negative amount.
+                const signed = /REVERSAL|REFUND/.test(typeRaw) ? -amount : amount;
                 income.push({
                     type: 'fee', identifier, isISIN: false,
-                    date: normalizeDate(row[cDate]), amount,
+                    date: normalizeDate(row[cDate]), amount: signed,
                     currency: ccyOf(row), broker: 'revolut', name: '',
                 });
                 return;
             }
-            skipped++; return; // top-up, transfer, stock split (handled via review), etc.
+            skipped++; return; // top-up, withdrawal, entity transfer, tax correction, etc.
         }
 
         const identifier = (row[cTicker] || '').toUpperCase().trim();
@@ -486,9 +504,9 @@ export function tradeFingerprint(t) {
         const price = Number(t.price || 0).toFixed(4);
         return [date, symbol, type, shares, price].join('|');
     }
-    // Non-trade rows (dividend / fee / split / isin_change) carry no shares/price,
-    // so fingerprint on the monetary amount (or split ratio) instead.
-    const amount = Number(t.amount ?? t.totalAmount ?? t.ratio ?? 0).toFixed(4);
+    // Non-trade rows (dividend / fee / split / isin_change) carry no buy/sell price,
+    // so fingerprint on the monetary amount, split ratio, or share delta instead.
+    const amount = Number(t.amount ?? t.totalAmount ?? t.ratio ?? t.shares ?? 0).toFixed(4);
     return [date, symbol, type, amount].join('|');
 }
 
@@ -579,9 +597,14 @@ export function computePositionsFromLedger(transactions) {
                 }
                 case 'split':
                 case 'isin_change': {
-                    const ratio = Number(tx.ratio) || 1;
-                    // Guard against corrupt ratios (e.g. 1e100 → Infinity shares).
-                    if (ratio > 0 && ratio <= 1000) shares *= ratio; // cost unchanged → avg ÷ ratio
+                    const ratio = Number(tx.ratio) || 0;
+                    if (ratio > 0 && ratio <= 1000) {
+                        // Multiplicative (DeGiro review) — guard corrupt ratios (1e100 → Infinity).
+                        shares *= ratio; // cost unchanged → avg ÷ ratio
+                    } else if (tx.shares) {
+                        // Additive share delta (Revolut STOCK SPLIT) — cost unchanged.
+                        shares += Number(tx.shares);
+                    }
                     break;
                 }
                 case 'dividend':

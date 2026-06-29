@@ -281,6 +281,83 @@ describe('parseRevolutCsv', () => {
     expect(income).toHaveLength(0);
     expect(skipped).toBe(1);
   });
+
+  it('captures STOCK SPLIT rows as a signed share-delta split', () => {
+    const csv = [
+      header,
+      '2020-08-31,AAPL,STOCK SPLIT,3,,USD 0,USD',     // 4:1 → +3
+      '2024-09-11,HYZN,STOCK SPLIT,-78.4,,USD 0,USD',  // reverse → negative
+    ].join('\n');
+    const { income, skipped } = parseRevolutCsv(csv);
+    const splits = income.filter(i => i.type === 'split');
+    expect(splits).toHaveLength(2);
+    expect(splits[0]).toMatchObject({ identifier: 'AAPL', type: 'split', shares: 3 });
+    expect(splits[1].shares).toBeCloseTo(-78.4);
+    expect(skipped).toBe(0);
+  });
+
+  it('excludes DIVIDEND TAX (CORRECTION) rows from income', () => {
+    const csv = [
+      header,
+      '2025-07-02,MSFT,DIVIDEND TAX (CORRECTION),,,USD -0.25,USD',
+      '2025-07-02,MSFT,DIVIDEND TAX (CORRECTION),,,USD 0.25,USD',
+      '2025-06-13,MSFT,DIVIDEND,,,USD 1.41,USD',
+    ].join('\n');
+    const { income, skipped } = parseRevolutCsv(csv);
+    const divs = income.filter(i => i.type === 'dividend');
+    expect(divs).toHaveLength(1);
+    expect(divs[0].amount).toBeCloseTo(1.41);
+    expect(skipped).toBe(2); // the two tax-correction rows
+  });
+
+  it('treats CUSTODY FEE REVERSAL as a negative (refunded) fee', () => {
+    const csv = [
+      header,
+      '2022-12-14,,CUSTODY FEE,,,USD -1.01,USD',
+      '2022-12-14,,CUSTODY FEE REVERSAL,,,USD 1.01,USD',
+    ].join('\n');
+    const { income } = parseRevolutCsv(csv);
+    const fees = income.filter(i => i.type === 'fee');
+    expect(fees).toHaveLength(2);
+    expect(fees[0].amount).toBeCloseTo(1.01);   // a real fee
+    expect(fees[1].amount).toBeCloseTo(-1.01);  // the reversal nets it out
+  });
+});
+
+describe('computePositionsFromLedger — additive (Revolut) splits', () => {
+  it('applies a positive share delta with cost unchanged', () => {
+    const txs = {
+      AAPL: [
+        { type: 'buy', shares: 1, price: 400, date: '2020-01-01' },
+        { type: 'split', shares: 3, date: '2020-08-31' }, // 4:1 → +3, no ratio
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.AAPL.shares).toBe(4);
+    expect(pos.AAPL.avgPrice).toBeCloseTo(100); // 400 cost / 4 shares
+  });
+
+  it('applies a reverse (negative) share delta', () => {
+    const txs = {
+      HYZN: [
+        { type: 'buy', shares: 80, price: 5, date: '2022-01-01' },
+        { type: 'split', shares: -78.4, date: '2024-09-11' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.HYZN.shares).toBeCloseTo(1.6);
+    expect(pos.HYZN.avgPrice).toBeCloseTo(250); // 400 cost / 1.6 shares
+  });
+
+  it('dedupes a re-imported delta split via its share fingerprint', () => {
+    const existing = buildExistingFingerprints({
+      AAPL: [{ type: 'split', shares: 3, date: '2020-08-31' }],
+    });
+    const incoming = [{ type: 'split', symbol: 'AAPL', identifier: 'AAPL', date: '2020-08-31', shares: 3 }];
+    const { fresh, duplicates } = dedupeTrades(incoming, existing);
+    expect(fresh).toHaveLength(0);
+    expect(duplicates).toHaveLength(1);
+  });
 });
 
 // ── Dispatch ─────────────────────────────────────────────────────────────────
