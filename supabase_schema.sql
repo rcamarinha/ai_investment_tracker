@@ -139,6 +139,7 @@ CREATE TABLE assets (
     asset_type TEXT DEFAULT 'Stock',
     isin TEXT DEFAULT NULL,
     source TEXT DEFAULT NULL,         -- ISIN→ticker mapping provenance: 'user' (manual) | 'api' | null
+    pricing_ticker TEXT DEFAULT NULL, -- learned ticker that actually returns a price (EU remap / ADR)
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );

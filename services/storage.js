@@ -216,6 +216,8 @@ export async function saveAssetsToDB(assets) {
             if (asset.isin) upsertData.isin = asset.isin;
             // Provenance of the ISIN→ticker mapping ('user' = manually entered)
             if (asset.source) upsertData.source = asset.source;
+            // Learned ticker that actually returns a price (e.g. EU suffix remap)
+            if (asset.pricing_ticker) upsertData.pricing_ticker = asset.pricing_ticker;
 
             const { error } = await state.supabaseClient
                 .from('assets')
@@ -256,7 +258,8 @@ export async function loadAssetsFromDB() {
                     currency: a.currency,
                     assetType: a.asset_type,
                     isin: a.isin || null,
-                    source: a.source || null
+                    source: a.source || null,
+                    pricingTicker: a.pricing_ticker || null
                 };
             });
             console.log('\u2713 Loaded', data.length, 'assets from DB into assetDatabase');

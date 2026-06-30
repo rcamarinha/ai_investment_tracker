@@ -39,6 +39,8 @@ ai_investment_tracker/
 │       │   └── index.ts        # Edge function for stock portfolio analysis
 │       ├── extract-trades/
 │       │   └── index.ts        # Edge function: extract trades from unstructured statement text (Revolut PDF / BancoBest)
+│       ├── resolve-tickers/
+│       │   └── index.ts        # Edge function: AI fallback that suggests a priceable ticker for symbols all price APIs reject (validated client-side)
 │       └── wine-ai/
 │           └── index.ts        # Edge function for wine AI (label, valuation, analysis)
 ├── supabase_schema.sql         # Database schema (positions, snapshots, assets, transactions, etc.)
