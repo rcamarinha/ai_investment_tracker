@@ -148,6 +148,11 @@ body {
     margin-bottom: 6px;
     color: white;
     transition: filter 0.15s ease;
+    /* Touch-target standard: keep buttons tappable on mobile */
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn:hover:not(:disabled) {
@@ -176,6 +181,10 @@ body {
     font-weight: 600;
     color: white;
     transition: filter 0.15s ease;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-sm:hover:not(:disabled) {
@@ -874,8 +883,8 @@ body {
 }
 
 .position-action-btn {
-    width: 28px;
-    height: 28px;
+    width: 36px;
+    height: 36px;
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -930,6 +939,12 @@ body {
 .sales-history-table tr:last-child td {
     border-bottom: none;
 }
+/* Shared responsive-table wrapper — replaces inline overflow-x:auto in render code */
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+/* .col-hide-mobile cells are hidden on phones (see the 480px block) */
 
 /* ── Top Movers Section ──────────────────────────────────────────────────── */
 
@@ -3032,7 +3047,7 @@ body > #appNavbar + * {
 .modal-title.stock { color: var(--gold); }
 .modal-title.wine  { color: var(--wine-light); }
 .modal-close {
-    width: 28px; height: 28px;
+    width: 40px; height: 40px;
     border-radius: 50%;
     background: var(--ink-3);
     border: 1px solid var(--border);
@@ -3265,3 +3280,32 @@ body > #appNavbar + * {
 }
 .scan-sub     { font-size: 12px; color: var(--text-tertiary); margin-bottom: 16px; }
 .scan-actions { display: flex; gap: 8px; justify-content: center; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Phone portrait (≤480px) — mobile-pass standards
+   Class-scoped only; never touches the legacy .position/.pos-card base grid.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+    /* Standard 2: drop the lowest-information table columns on phones */
+    .col-hide-mobile { display: none; }
+
+    /* Keep the transactions search usable when the toolbar wraps */
+    #txSearch { min-width: 110px; }
+
+    /* Standard 3: dialogs become bottom sheets so action buttons stay reachable */
+    .ticker-picker-overlay,
+    .modal-overlay,
+    #positionDialog { align-items: flex-end; }
+
+    .ticker-picker-dialog,
+    .modal,
+    #positionDialog .card {
+        width: 100%;
+        max-width: 100%;
+        max-height: calc(100vh - 96px);
+        border-radius: var(--r-xl) var(--r-xl) 0 0;
+    }
+
+    /* Inline import card (not an overlay): keep the textarea from eating the screen */
+    .import-area { min-height: 80px; }
+}

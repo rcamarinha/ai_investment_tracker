@@ -1386,3 +1386,15 @@
     letter-spacing: 0.1em;
     margin-top: 3px;
 }
+
+/* Phone portrait (≤480px): bottom-sheet the confirm modal, matching the
+   stock-tracker modal standard (css/styles.css) for cross-app consistency. */
+@media (max-width: 480px) {
+    .confirm-overlay { align-items: flex-end; }
+    .confirm-dialog {
+        max-width: 100%;
+        max-height: calc(100vh - 96px);
+        overflow-y: auto;
+        border-radius: var(--r-xl) var(--r-xl) 0 0;
+    }
+}
