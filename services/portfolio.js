@@ -1513,6 +1513,7 @@ export async function importPositions() {
 function brokerLabel(broker) {
     switch (broker) {
         case 'degiro': return 'DeGiro';
+        case 'degiro_account': return 'DeGiro (Account)';
         case 'revolut': return 'Revolut';
         case 'bancobest': return 'BancoBest';
         default: return null;

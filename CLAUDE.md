@@ -150,8 +150,9 @@ BancoBest by feeding broker exports into the **existing** transaction ledger.
 
 `services/import-brokers.js` is **pure** (no DOM, no network, no service imports) so tests import it
 directly — there is **no `src/` mirror** for it. Key exports:
-- **`parseBrokerExport(text)`** → `detectBroker()` then dispatches to `parseDegiroCsv()` / `parseRevolutCsv()`
+- **`parseBrokerExport(text)`** → `detectBroker()` then dispatches to `parseDegiroCsv()` / `parseDegiroAccountCsv()` / `parseRevolutCsv()`
 - **`parseDegiroCsv(text)`** - DeGiro Transactions.csv; **sign of Quantity = buy/sell**; ISIN identifier; currency is the unnamed column right after Price. Zero-price corporate-action rows and detected split pairs go to a `review[]` array (not silently dropped)
+- **`parseDegiroAccountCsv(text)`** - DeGiro **Account** statement (detected via ISIN + `Saldo`, no Quantidade). Imports **dividends + withholding tax only** (`Dividendo` / `Imposto sobre dividendo`), grouped per (ISIN, value-date) and summed with sign so reversals net out. Trades & per-trade commissions are skipped — they already come from the Transactions export, so importing them here would double-count
 - **`parseRevolutCsv(text)`** - Revolut statement; `BUY*`/`SELL*` → trades; `DIVIDEND`/`FEE`/`CUSTODY` → an `income[]` array (with withholding `tax`); top-ups/transfers skipped
 - **`detectSplitPairs(trades)`** - flags same-instrument, same-date buy/sell pairs with ≥3× price gap as `possible_split` (with inferred ratio)
 - **`normalizeTrades(rows, broker)`** - normalizes loose rows from the AI fallback
@@ -178,7 +179,7 @@ per-card dividend badge + yield-on-cost, an **Income & Fees** table (`renderInco
 (`renderTransactionsLedger()` → `#transactionsSection`; `setTxFilter`/`setTxSearch`/`deleteTransactionRow`),
 and a safety banner when `state.ledgerNeedsReview`.
 
-**Not yet built**: DeGiro `Account.csv` parser (DeGiro dividends/fees source — dividend handling is
+**Not yet built**: DeGiro Account-statement **fees** (connectivity/FTT — currently only dividends are taken from Account.csv; transaction commissions come from Transactions.csv); ~~DeGiro `Account.csv` parser~~ (dividend handling is
 broker-agnostic via the `income[]` stream, so it slots in); cash-balance modeling; first-class options.
 
 ### Storage Service (`services/storage.js`)

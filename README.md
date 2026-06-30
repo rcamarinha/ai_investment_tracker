@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.22.0
+- **DeGiro Account statement import (dividends)** — a new parser for DeGiro's `Account.csv` (the cash/dividends statement, separate from Transactions.csv). Imports **dividends + withholding tax** into the income stream, so DeGiro dividends now appear in the summary-bar Income, per-card badges, and Income & Fees table (clearing the "DeGiro dividends not imported" notice). Trades and per-trade commissions are skipped (they already come from the Transactions export → no double-counting); dividend reversals net out per (ISIN, value-date). Verified against a real 2,099-row export: 212 dividends across 5 currencies, 0 errors. No DB migration needed.
+
 ### v3.21.0
 - **Unresolvable symbols — manual ticker mapping (no silent drops)** — when an ISIN can't be auto-resolved on import (e.g. some European UCITS ETFs), the trade is no longer silently dropped. A dialog lets you map it to the correct ticker (remembered for next time, flagged `source:'user'`), keep it as an untracked cost-only holding, or explicitly skip it. Mapped ISINs auto-resolve on future imports via the existing asset-DB lookup. Untracked holdings (symbol = ISIN) are excluded from price fetching and badged in the UI. Migration `20260628_assets_source.sql` adds the `assets.source` column.
 

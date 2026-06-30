@@ -178,11 +178,15 @@ function findCol(header, aliases) {
 
 // ── Broker detection ─────────────────────────────────────────────────────────
 
-/** Detect which broker an export came from. Returns 'degiro' | 'revolut' | null. */
+/** Detect which broker an export came from.
+ *  Returns 'degiro' | 'degiro_account' | 'revolut' | null. */
 export function detectBroker(text) {
     const head = String(text || '').split(/\r?\n/).slice(0, 3).join('\n').toLowerCase();
     if (!head.trim()) return null;
     if (/price per share/.test(head) && /total amount/.test(head)) return 'revolut';
+    // DeGiro Account statement: has ISIN + a running Saldo (balance) + Descrição,
+    // and no Quantidade column (that's the Transactions export).
+    if (/\bisin\b/.test(head) && /\bsaldo\b/.test(head)) return 'degiro_account';
     if (/\bisin\b/.test(head) && /(quantity|quantidade|aantal|menge|qty)/.test(head)) return 'degiro';
     return null;
 }
@@ -483,8 +487,80 @@ export function normalizeTrades(rawRows, broker = 'generic') {
 export function parseBrokerExport(text) {
     const broker = detectBroker(text);
     if (broker === 'degiro') return parseDegiroCsv(text);
+    if (broker === 'degiro_account') return parseDegiroAccountCsv(text);
     if (broker === 'revolut') return parseRevolutCsv(text);
-    return { broker: null, trades: [], errors: ['Unrecognized export format. Use a DeGiro Transactions CSV, a Revolut statement CSV, or the AI paste fallback.'], skipped: 0, review: [], income: [] };
+    return { broker: null, trades: [], errors: ['Unrecognized export format. Use a DeGiro Transactions/Account CSV, a Revolut statement CSV, or the AI paste fallback.'], skipped: 0, review: [], income: [] };
+}
+
+// ── DeGiro Account statement (dividends + withholding tax) ───────────────────
+
+const DEGIRO_ACCT_ALIASES = {
+    date:      ['data'],
+    valueDate: ['data valor', 'value date', 'valuedate'],
+    isin:      ['isin'],
+    desc:      ['descricao', 'description', 'omschrijving'],
+    change:    ['mudanca', 'change', 'mutatie'],
+};
+
+/**
+ * Parse a DeGiro Account statement. Imports ONLY dividends + withholding tax
+ * (trades and per-trade commissions already come from the Transactions export,
+ * so importing them here would double-count). Dividends and their tax are
+ * grouped per (ISIN, value-date) and summed with sign, so corrections/reversals
+ * (negative dividend rows) net out correctly.
+ *
+ * Column quirk (same as the Transactions export): the change AMOUNT sits in the
+ * unnamed column immediately after the "Mudança" header, whose own cell holds
+ * the currency code.
+ */
+export function parseDegiroAccountCsv(text) {
+    const { header, rows } = parseCsv(text);
+    const income = [];
+    const errors = [];
+    let skipped = 0;
+
+    const cDate = findCol(header, DEGIRO_ACCT_ALIASES.date);
+    const cValue = findCol(header, DEGIRO_ACCT_ALIASES.valueDate);
+    const cIsin = findCol(header, DEGIRO_ACCT_ALIASES.isin);
+    const cDesc = findCol(header, DEGIRO_ACCT_ALIASES.desc);
+    const cChange = findCol(header, DEGIRO_ACCT_ALIASES.change);
+
+    if (cIsin === -1 || cDesc === -1 || cChange === -1) {
+        errors.push('DeGiro Account export missing ISIN / Descrição / Mudança columns.');
+        return { broker: 'degiro_account', trades: [], income, review: [], errors, skipped };
+    }
+    const dateCol = cValue !== -1 ? cValue : cDate;
+
+    // Group dividends + tax by (ISIN, value-date); sum signed so reversals cancel.
+    const groups = new Map();
+    for (const row of rows) {
+        const desc = (row[cDesc] || '').trim().toLowerCase();
+        const isin = (row[cIsin] || '').toUpperCase().trim();
+        const isDividend = desc === 'dividendo' || desc === 'dividend';
+        const isDivTax = /^imposto sobre dividendo/.test(desc) || /dividend tax/.test(desc);
+        if (!isin || (!isDividend && !isDivTax)) { skipped++; continue; }
+
+        const amount = parseSignedNumber(row[cChange + 1]);
+        if (isNaN(amount)) { skipped++; continue; }
+        const date = normalizeDate(row[dateCol]);
+        const currency = detectCurrency(row[cChange], 'EUR');
+        const key = `${isin}|${date}`;
+        if (!groups.has(key)) groups.set(key, { identifier: isin, date, currency, gross: 0, tax: 0 });
+        const g = groups.get(key);
+        if (isDividend) g.gross += amount;
+        else g.tax += -amount; // withholding is reported negative; store it positive
+    }
+
+    for (const g of groups.values()) {
+        if (Math.abs(g.gross) < 1e-9 && Math.abs(g.tax) < 1e-9) { skipped++; continue; } // fully reversed
+        income.push({
+            type: 'dividend', identifier: g.identifier, isISIN: isISIN(g.identifier),
+            date: g.date, amount: g.gross, tax: g.tax, currency: g.currency,
+            broker: 'degiro', name: '',
+        });
+    }
+
+    return { broker: 'degiro_account', trades: [], income, review: [], errors, skipped };
 }
 
 // ── Dedupe + position rebuild ────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import {
   normalizeDate,
   detectBroker,
   parseDegiroCsv,
+  parseDegiroAccountCsv,
   detectSplitPairs,
   collectUnresolved,
   applyUnresolvedDecisions,
@@ -627,5 +628,53 @@ describe('unresolved-symbol handling', () => {
     const { skipped } = applyUnresolvedDecisions(list, { XS9999999999: { action: 'skip' } });
     expect(list[0].symbol).toBeUndefined();
     expect(skipped.has('XS9999999999')).toBe(true);
+  });
+});
+
+describe('parseDegiroAccountCsv (dividends + withholding tax)', () => {
+  const header = 'Data,Hora,Data Valor,Produto,ISIN,Descrição,T.,Mudança,,Saldo,,ID da Ordem';
+
+  it('detects the Account statement as degiro_account (not degiro)', () => {
+    expect(detectBroker(header)).toBe('degiro_account');
+  });
+
+  it('imports a dividend with its withholding tax, skips everything else', () => {
+    const csv = [
+      header,
+      '29-06-2026,10:59,26-06-2026,NVIDIA CORP,US67066G1040,Dividendo,,USD,"8,25",USD,"7,01",',
+      '29-06-2026,10:59,26-06-2026,NVIDIA CORP,US67066G1040,Imposto sobre dividendo,,USD,"-1,24",USD,"-1,24",',
+      '30-06-2026,09:22,30-06-2026,,,Degiro Cash Sweep Transfer,,EUR,"-6,12",EUR,"106,02",',
+      '13-03-2026,15:23,13-03-2026,LVMH,FR0000121014,Comissões de transação DEGIRO e/ou taxas de terceiros,,EUR,"-4,90",EUR,"501,30",ref',
+      '13-03-2026,15:23,13-03-2026,LVMH,FR0000121014,Compra 1 LVMH@489 EUR (FR0000121014),,EUR,"-489,00",EUR,"508,16",ref',
+    ].join('\n');
+    const { broker, trades, income } = parseDegiroAccountCsv(csv);
+    expect(broker).toBe('degiro_account');
+    expect(trades).toHaveLength(0);            // trades come from Transactions.csv
+    expect(income).toHaveLength(1);
+    expect(income[0]).toMatchObject({ type: 'dividend', identifier: 'US67066G1040', currency: 'USD' });
+    expect(income[0].amount).toBeCloseTo(8.25);
+    expect(income[0].tax).toBeCloseTo(1.24);   // stored positive
+    expect(income[0].date).toBe('2026-06-26'); // value date
+  });
+
+  it('nets out dividend reversals on the same value-date', () => {
+    const csv = [
+      header,
+      '24-04-2026,07:34,02-04-2026,TOTALENERGIES SE,FR0000120271,Dividendo,,EUR,"28,90",EUR,"650,12",',
+      '24-04-2026,07:34,02-04-2026,TOTALENERGIES SE,FR0000120271,Imposto sobre dividendo,,EUR,"-7,23",EUR,"642,89",',
+      '24-04-2026,07:34,02-04-2026,TOTALENERGIES SE,FR0000120271,Dividendo,,EUR,"-28,90",EUR,"613,99",',
+      '24-04-2026,07:34,02-04-2026,TOTALENERGIES SE,FR0000120271,Imposto sobre dividendo,,EUR,"7,23",EUR,"621,22",',
+    ].join('\n');
+    const { income } = parseDegiroAccountCsv(csv);
+    // dividend + reversal cancel → nothing emitted for this value-date
+    expect(income).toHaveLength(0);
+  });
+
+  it('handles EUR dividends and routes via parseBrokerExport', () => {
+    const csv = [header, '14-05-2026,06:58,13-05-2026,AXA SA,FR0000120628,Dividendo,,EUR,"116,00",EUR,"769,01",'].join('\n');
+    const res = parseBrokerExport(csv);
+    expect(res.broker).toBe('degiro_account');
+    expect(res.income).toHaveLength(1);
+    expect(res.income[0].amount).toBeCloseTo(116);
   });
 });
