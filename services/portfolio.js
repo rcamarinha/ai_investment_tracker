@@ -2700,10 +2700,10 @@ function renderIncomeHistory() {
             &bull; Fees: <span style="color: var(--down); font-weight: bold;">−${formatCurrency(totals.fees, base)}</span>
             ${totals.tax > 0 ? ` &bull; Tax withheld: ${formatCurrency(totals.tax, base)}` : ''}
         </div>` : ''}
-        ${rows.length > 0 ? `<div style="overflow-x: auto;">
+        ${rows.length > 0 ? `<div class="table-scroll">
             <table class="sales-history-table">
                 <thead>
-                    <tr><th>Date</th><th>Symbol</th><th>Type</th><th>Gross</th><th>Tax</th><th>Net</th><th>Ccy</th></tr>
+                    <tr><th>Date</th><th>Symbol</th><th>Type</th><th>Gross</th><th>Tax</th><th>Net</th><th class="col-hide-mobile">Ccy</th></tr>
                 </thead>
                 <tbody>
                     ${rows.map(r => {
@@ -2719,7 +2719,7 @@ function renderIncomeHistory() {
                             <td>${formatCurrency(gross, r.currency)}</td>
                             <td>${txTax ? formatCurrency(txTax, r.currency) : '—'}</td>
                             <td style="color: ${netColor}; font-weight: bold;">${net >= 0 ? '+' : ''}${formatCurrency(net, r.currency)}</td>
-                            <td>${escapeHTML(r.currency || '')}</td>
+                            <td class="col-hide-mobile">${escapeHTML(r.currency || '')}</td>
                         </tr>`;
                     }).join('')}
                 </tbody>
@@ -2760,12 +2760,12 @@ function renderTransactionsLedger() {
     content.innerHTML = `
         <h2 style="margin-bottom: 12px;">📒 Transactions <span style="font-size: 13px; color: var(--text-secondary);">(${rows.length})</span></h2>
         <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;">
-            <input id="txSearch" type="text" placeholder="Filter by symbol…" value="${escapeHTML(q || '')}" oninput="setTxSearch(this.value)" style="padding: 6px 10px; flex: 1; min-width: 160px; border-radius: 6px;" />
+            <input id="txSearch" type="text" placeholder="Filter by symbol…" value="${escapeHTML(q || '')}" oninput="setTxSearch(this.value)" style="padding: 6px 10px; flex: 1; min-width: 110px; border-radius: 6px;" />
             <div style="display: flex; flex-wrap: wrap; gap: 4px;">${filterBtns}</div>
         </div>
-        <div style="overflow-x: auto;">
+        <div class="table-scroll">
             <table class="sales-history-table">
-                <thead><tr><th>Date</th><th>Symbol</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th>Fee/Tax</th><th></th></tr></thead>
+                <thead><tr><th>Date</th><th>Symbol</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th class="col-hide-mobile">Fee/Tax</th><th></th></tr></thead>
                 <tbody>
                     ${rows.map((t, i) => {
                         const isTrade = t.type === 'buy' || t.type === 'sell';
@@ -2780,7 +2780,7 @@ function renderTransactionsLedger() {
                             <td>${escapeHTML(t.date || '')}</td>
                             <td style="font-weight: 600; color: var(--gold);">${escapeHTML(t.symbol)}</td>
                             <td style="color: ${typeColor};">${escapeHTML(typeLabel(t.type))}</td>
-                            <td>${qty}</td><td>${price}</td><td>${amount}</td><td>${feeTax}</td>
+                            <td>${qty}</td><td>${price}</td><td>${amount}</td><td class="col-hide-mobile">${feeTax}</td>
                             <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
                         </tr>`;
                     }).join('')}
@@ -2872,7 +2872,7 @@ function renderSalesHistory() {
             Total realized P&L: <span style="color: ${realizedColor}; font-weight: bold;">${totalRealized >= 0 ? '+' : ''}${formatCurrency(totalRealized)}</span>
             &bull; ${allSales.length} sale${allSales.length !== 1 ? 's' : ''}
         </div>
-        <div style="overflow-x: auto;">
+        <div class="table-scroll">
             <table class="sales-history-table">
                 <thead>
                     <tr>

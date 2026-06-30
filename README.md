@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.23.0
+- **Mobile responsiveness pass (consistency-first)** — four shared standards applied app-wide: (1) **tap targets** — `.btn` ≥44px, `.btn-sm` ≥36px, position/ledger action buttons 28→36px, modal close 28→40px; (2) **one responsive-table pattern** — a shared `.table-scroll` wrapper replaces inline `overflow-x:auto`, and the lowest-value columns hide on phones (`Ccy` in Income & Fees, `Fee/Tax` in the Transactions ledger) via `.col-hide-mobile`; (3) **bottom-sheet modals at ≤480px** — the position, trade-review, unresolved-symbol, ticker-picker, generic, and wine-confirm dialogs anchor to the bottom, full-width with reachable actions; (4) reduced the ledger search min-width. Desktop layout unchanged. Reviewed by the UX auditor (PASS).
+
 ### v3.22.0
 - **DeGiro Account statement import (dividends)** — a new parser for DeGiro's `Account.csv` (the cash/dividends statement, separate from Transactions.csv). Imports **dividends + withholding tax** into the income stream, so DeGiro dividends now appear in the summary-bar Income, per-card badges, and Income & Fees table (clearing the "DeGiro dividends not imported" notice). Trades and per-trade commissions are skipped (they already come from the Transactions export → no double-counting); dividend reversals net out per (ISIN, value-date). Verified against a real 2,099-row export: 212 dividends across 5 currencies, 0 errors. No DB migration needed.
 
