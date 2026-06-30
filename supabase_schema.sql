@@ -204,7 +204,9 @@ CREATE TABLE transactions (
     shares NUMERIC NOT NULL,         -- 0 for non-trade rows (dividend/fee/split)
     price NUMERIC NOT NULL,          -- 0 for non-trade rows
     total_amount NUMERIC NOT NULL DEFAULT 0,  -- trade gross (shares×price); 0 for split/isin_change
-    date TEXT,
+    date DATE NOT NULL DEFAULT CURRENT_DATE,  -- YYYY-MM-DD; writers must always supply a valid date
+    -- NOTE: the `type` CHECK and several NOT NULLs below mirror the deployed DB.
+    -- Keep this file in sync with production — the app's bulk insert aborts on any single bad row.
     cost_basis NUMERIC,              -- sells only
     realized_gain_loss NUMERIC,      -- sells only
     currency TEXT,
