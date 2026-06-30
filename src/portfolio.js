@@ -375,12 +375,49 @@ export function mergeSnapshots(existing, incoming) {
  * @param {string} [assetName]
  * @returns {string[]} unique alternative symbols
  */
+/**
+ * Map an exchange suffix that the price APIs don't recognize (often Finnhub's
+ * `search` format, e.g. `.FRK`, `.AMS`) to the FMP/Yahoo-style suffix the price
+ * endpoints expect (`.DE`, `.AS`). Already-valid suffixes pass through unchanged.
+ */
+export const PRICING_SUFFIX_MAP = {
+  FRK: 'DE', FRA: 'DE', ETR: 'DE', GER: 'DE', GF: 'DE', GY: 'DE',
+  AMS: 'AS', AEX: 'AS',
+  PAR: 'PA', EPA: 'PA', FP: 'PA',
+  MCE: 'MC', MAD: 'MC', BME: 'MC',
+  MIL: 'MI', BIT: 'MI', MTA: 'MI',
+  LIS: 'LS', ELI: 'LS', EL: 'LS',
+  BRU: 'BR', EBR: 'BR',
+  SWX: 'SW', EBS: 'SW', VTX: 'SW', SIX: 'SW',
+  LON: 'L', LSE: 'L',
+  CPH: 'CO', STO: 'ST', HEL: 'HE', OSL: 'OL', VIE: 'VI', ICE: 'IC',
+};
+
+/** Common European FMP/Yahoo exchange suffixes, for fanning out base tickers. */
+export const EU_SUFFIXES = ['DE', 'PA', 'AS', 'MI', 'MC', 'SW', 'L', 'BR', 'LS', 'CO', 'ST', 'HE', 'OL'];
+
+/** Normalize a ticker's exchange suffix to the price-API format. Pure. */
+export function normalizeForPricing(symbol) {
+  const s = String(symbol || '').toUpperCase();
+  const dot = s.lastIndexOf('.');
+  if (dot < 0) return s;
+  const base = s.slice(0, dot);
+  const sfx = s.slice(dot + 1);
+  const mapped = PRICING_SUFFIX_MAP[sfx];
+  return mapped ? `${base}.${mapped}` : s;
+}
+
 export function buildAlternativeSymbols(originalSymbol, assetName) {
   const alternatives = [];
 
   // Strategy 1: exchange suffixes
   if (originalSymbol.includes('.')) {
-    const base = originalSymbol.split('.')[0];
+    const base = originalSymbol.split('.')[0].toUpperCase();
+    // Remap an unrecognized suffix to the price-API format first (highest hit rate)
+    const normalized = normalizeForPricing(originalSymbol);
+    if (normalized !== originalSymbol.toUpperCase()) alternatives.push(normalized);
+    // Then fan the base out across the common EU exchanges, and finally the bare base (US/ADR)
+    EU_SUFFIXES.forEach(sfx => alternatives.push(`${base}.${sfx}`));
     alternatives.push(base);
   } else {
     alternatives.push(`${originalSymbol}.PA`);

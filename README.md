@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.24.0
+- **Fix EU price-fetch failures (resolve → price → fallback refactor)** — European holdings stored with Finnhub-style exchange suffixes (`.FRK`, `.AMS`) failed every price API. Now: (1) a `normalizeForPricing` suffix map remaps them to the FMP/Yahoo format (`.FRK→.DE`, `.AMS→.AS`, …) before the FMP/Alpha-Vantage tiers, and the alternative-format search fans a dotted ticker across all EU exchanges + the bare base instead of only stripping the suffix; (2) a **validated Claude fallback** — a new `resolve-tickers` edge function suggests a priceable ticker (US ADR or correct exchange suffix) for whatever still fails, and the client only trusts a suggestion after confirming it returns a price; (3) a working ticker is **persisted** (`assets.pricing_ticker`) so later refreshes fetch it directly; (4) holdings that genuinely can't be priced are shown **at cost basis** with a calm message instead of a scary failure dump. Migration `20260630_assets_pricing_ticker.sql` adds the column; deploy the `resolve-tickers` edge function.
+
 ### v3.23.0
 - **Mobile responsiveness pass (consistency-first)** — four shared standards applied app-wide: (1) **tap targets** — `.btn` ≥44px, `.btn-sm` ≥36px, position/ledger action buttons 28→36px, modal close 28→40px; (2) **one responsive-table pattern** — a shared `.table-scroll` wrapper replaces inline `overflow-x:auto`, and the lowest-value columns hide on phones (`Ccy` in Income & Fees, `Fee/Tax` in the Transactions ledger) via `.col-hide-mobile`; (3) **bottom-sheet modals at ≤480px** — the position, trade-review, unresolved-symbol, ticker-picker, generic, and wine-confirm dialogs anchor to the bottom, full-width with reachable actions; (4) reduced the ledger search min-width. Desktop layout unchanged. Reviewed by the UX auditor (PASS).
 

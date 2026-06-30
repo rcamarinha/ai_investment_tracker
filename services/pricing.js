@@ -16,6 +16,91 @@ import {
 } from './storage.js';
 import { analyzeMovers } from './analysis.js';
 
+// ── Exchange-suffix normalization (kept in sync with src/portfolio.js) ───────
+// Many stored tickers use Finnhub's `search` suffix format (.FRK/.AMS) which the
+// price endpoints don't recognize. Map them to the FMP/Yahoo format.
+const PRICING_SUFFIX_MAP = {
+    FRK: 'DE', FRA: 'DE', ETR: 'DE', GER: 'DE', GF: 'DE', GY: 'DE',
+    AMS: 'AS', AEX: 'AS',
+    PAR: 'PA', EPA: 'PA', FP: 'PA',
+    MCE: 'MC', MAD: 'MC', BME: 'MC',
+    MIL: 'MI', BIT: 'MI', MTA: 'MI',
+    LIS: 'LS', ELI: 'LS', EL: 'LS',
+    BRU: 'BR', EBR: 'BR',
+    SWX: 'SW', EBS: 'SW', VTX: 'SW', SIX: 'SW',
+    LON: 'L', LSE: 'L',
+    CPH: 'CO', STO: 'ST', HEL: 'HE', OSL: 'OL', VIE: 'VI', ICE: 'IC',
+};
+const EU_SUFFIXES = ['DE', 'PA', 'AS', 'MI', 'MC', 'SW', 'L', 'BR', 'LS', 'CO', 'ST', 'HE', 'OL'];
+
+/** Normalize a ticker's exchange suffix to the price-API format. */
+export function normalizeForPricing(symbol) {
+    const s = String(symbol || '').toUpperCase();
+    const dot = s.lastIndexOf('.');
+    if (dot < 0) return s;
+    const base = s.slice(0, dot);
+    const mapped = PRICING_SUFFIX_MAP[s.slice(dot + 1)];
+    return mapped ? `${base}.${mapped}` : s;
+}
+
+/** Remember the ticker that actually returned a price for a holding, so future
+ *  refreshes fetch it directly instead of re-running the alternative search. */
+function persistPricingTicker(symbol, pricingTicker) {
+    if (!symbol || !pricingTicker || pricingTicker === symbol) return;
+    const existing = state.assetDatabase[symbol] || {};
+    state.assetDatabase[symbol] = { ...existing, ticker: symbol, pricingTicker };
+    try {
+        saveAssetsToDB([{
+            ticker: symbol,
+            name: existing.name || symbol,
+            stock_exchange: existing.stockExchange || '',
+            sector: existing.sector || 'Other',
+            currency: existing.currency || '',
+            asset_type: existing.assetType || 'Stock',
+            isin: existing.isin || null,
+            pricing_ticker: pricingTicker,
+        }]);
+    } catch (err) { console.warn('persistPricingTicker failed:', err.message); }
+}
+
+/**
+ * Ask the resolve-tickers edge function for a priceable ticker for each symbol
+ * that failed all price APIs. Returns { ORIGINAL_SYMBOL: SUGGESTED_TICKER }.
+ * The caller must VALIDATE each suggestion against a price API before trusting it.
+ */
+async function resolveTickersViaAI(failedSymbols) {
+    if (!state.supabaseUrl || !state.supabaseClient || !failedSymbols.length) return {};
+    const items = failedSymbols.map(sym => {
+        const pos = state.portfolio.find(p => p.symbol === sym);
+        const meta = state.assetDatabase[sym] || {};
+        return { currentSymbol: sym, name: (pos && pos.name) || meta.name || sym, isin: meta.isin || '' };
+    });
+    try {
+        const { data: { session } } = await state.supabaseClient.auth.getSession();
+        const response = await fetch(`${state.supabaseUrl}/functions/v1/resolve-tickers`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': state.supabaseAnonKey,
+                ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+            },
+            body: JSON.stringify({ items }),
+        });
+        const txt = await response.text();
+        if (!response.ok) { console.warn('resolve-tickers failed:', response.status, txt.slice(0, 200)); return {}; }
+        const data = JSON.parse(txt);
+        const out = data.content?.find(c => c.type === 'text')?.text || '';
+        let rows;
+        try { rows = JSON.parse(out.replace(/```json|```/g, '').trim()); } catch { rows = []; }
+        const map = {};
+        (Array.isArray(rows) ? rows : []).forEach(r => {
+            const inp = String(r.input || '').toUpperCase();
+            if (inp && r.ticker) map[inp] = String(r.ticker).toUpperCase();
+        });
+        return map;
+    } catch (err) { console.warn('resolveTickersViaAI error:', err.message); return {}; }
+}
+
 // ── Single Symbol Fetch ─────────────────────────────────────────────────────
 
 export async function fetchStockPrice(symbol) {
@@ -38,10 +123,13 @@ export async function fetchStockPrice(symbol) {
         }
     }
 
+    // FMP / Alpha Vantage use FMP-style suffixes — remap Finnhub-style ones (.FRK→.DE)
+    const pricingSymbol = normalizeForPricing(symbol);
+
     // TIER 2: FMP
     if (state.fmpKey) {
         try {
-            const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${symbol}&apikey=${state.fmpKey}`;
+            const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${pricingSymbol}&apikey=${state.fmpKey}`;
             console.log(`Trying FMP for ${symbol}...`);
             const response = await fetch(url);
 
@@ -80,7 +168,7 @@ export async function fetchStockPrice(symbol) {
     // TIER 3: Alpha Vantage
     if (state.alphaVantageKey) {
         try {
-            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${state.alphaVantageKey}`;
+            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${pricingSymbol}&apikey=${state.alphaVantageKey}`;
             console.log(`Trying Alpha Vantage for ${symbol}...`);
             const response = await fetch(url);
 
@@ -129,9 +217,14 @@ export async function tryAlternativeFormats(originalSymbol, assetName) {
     console.log(`\n=== TRYING ALTERNATIVES FOR ${originalSymbol} (${assetName}) ===`);
 
     if (originalSymbol.includes('.')) {
-        const base = originalSymbol.split('.')[0];
+        const base = originalSymbol.split('.')[0].toUpperCase();
+        // 1) remap an unrecognized suffix to the price-API format (highest hit rate)
+        const normalized = normalizeForPricing(originalSymbol);
+        if (normalized !== originalSymbol.toUpperCase()) alternatives.push(normalized);
+        // 2) fan the base across the common EU exchanges, then 3) the bare base (US/ADR)
+        EU_SUFFIXES.forEach(sfx => alternatives.push(`${base}.${sfx}`));
         alternatives.push(base);
-        console.log(`Alternative: ${base} (removed exchange suffix)`);
+        console.log(`Alternatives for ${originalSymbol}: ${alternatives.join(', ')}`);
     } else {
         alternatives.push(`${originalSymbol}.PA`);
         alternatives.push(`${originalSymbol}.L`);
@@ -375,7 +468,9 @@ export async function fetchMarketPrices() {
             refreshBtn.textContent = `\u23F3 ${i + 1}/${symbols.length}`;
 
             try {
-                let result = await fetchStockPrice(symbol);
+                // Use a previously-learned working ticker directly (avoids re-searching).
+                const learned = state.assetDatabase[symbol] && state.assetDatabase[symbol].pricingTicker;
+                let result = await fetchStockPrice(learned || symbol);
 
                 if (!result.success) {
                     console.log(`Primary failed for ${symbol}, trying alternatives...`);
@@ -385,6 +480,8 @@ export async function fetchMarketPrices() {
                     if (altResult && altResult.success) {
                         result = altResult;
                         console.log(`\u2713 Found ${symbol} as ${altResult.alternativeSymbol}`);
+                        // Remember the working ticker so future refreshes skip the search.
+                        persistPricingTicker(symbol, altResult.alternativeSymbol);
                     }
                 }
 
@@ -423,6 +520,35 @@ export async function fetchMarketPrices() {
                 errors.push(`${symbol}: ${err.message}`);
                 failCount++;
             }
+        }
+
+        // ── Phase 2: Claude-assisted fallback for whatever still has no price ──
+        // Ask the AI for a priceable ticker for each failure, then VALIDATE each
+        // suggestion against the price APIs before trusting it (no blind quotes).
+        const stillFailed = symbols.filter(s => !(state.priceMetadata[s] && state.priceMetadata[s].success));
+        if (stillFailed.length > 0) {
+            if (refreshBtn) refreshBtn.textContent = '🤖 AI…';
+            const suggestions = await resolveTickersViaAI(stillFailed);
+            for (const sym of stillFailed) {
+                const suggested = suggestions[sym.toUpperCase()];
+                if (!suggested || suggested.toUpperCase() === sym.toUpperCase()) continue;
+                const r = await fetchStockPrice(suggested);
+                if (r.success) {
+                    state.marketPrices[sym] = r.price;
+                    state.priceMetadata[sym] = {
+                        timestamp: new Date().toISOString(),
+                        source: `${r.source} (AI: ${suggested})`,
+                        success: true,
+                    };
+                    persistPricingTicker(sym, suggested);
+                    successCount++; failCount--;
+                    const idx = errors.findIndex(e => e.startsWith(`${sym}:`));
+                    if (idx >= 0) errors.splice(idx, 1);
+                    console.log(`✓ AI recovered ${sym} as ${suggested}`);
+                }
+                await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+            }
+            renderPortfolio();
         }
 
         console.log('\n=== FETCH COMPLETE ===');
@@ -484,11 +610,14 @@ export async function fetchMarketPrices() {
         }
 
         let msg = `\u2713 Price update complete!\n\n`;
-        msg += `\u2713 Successfully fetched: ${successCount} symbols\n`;
+        msg += `\u2713 Priced: ${successCount} of ${symbols.length} holdings\n`;
         if (failCount > 0) {
-            msg += `\u2717 Failed: ${failCount} symbols\n\n`;
-            msg += `Failed symbols:\n`;
-            errors.forEach(err => { msg += `\u2022 ${err}\n`; });
+            // Calm, non-alarming: these are shown at cost basis, not "failures".
+            const noPrice = symbols.filter(s => !(state.priceMetadata[s] && state.priceMetadata[s].success));
+            msg += `\n\u2139 ${failCount} holding${failCount !== 1 ? 's have' : ' has'} no live price and ${failCount !== 1 ? 'are' : 'is'} shown at cost basis:\n`;
+            msg += noPrice.slice(0, 12).map(s => `\u2022 ${s}`).join('\n') + '\n';
+            if (noPrice.length > 12) msg += `\u2022 \u2026and ${noPrice.length - 12} more\n`;
+            msg += `\nTip: open one of these holdings to map a ticker your market-data provider recognizes (e.g. a US ADR or the right exchange suffix).`;
         }
 
         if (successCount > 0) {

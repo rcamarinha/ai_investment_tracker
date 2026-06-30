@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { buildAlternativeSymbols } from '../src/portfolio.js';
+import { buildAlternativeSymbols, normalizeForPricing } from '../src/portfolio.js';
+
+describe('normalizeForPricing', () => {
+  it('remaps Finnhub-style suffixes to FMP/Yahoo format', () => {
+    expect(normalizeForPricing('AEU.FRK')).toBe('AEU.DE');
+    expect(normalizeForPricing('CITY.AMS')).toBe('CITY.AS');
+    expect(normalizeForPricing('X.PAR')).toBe('X.PA');
+    expect(normalizeForPricing('Y.MIL')).toBe('Y.MI');
+    expect(normalizeForPricing('Z.SWX')).toBe('Z.SW');
+  });
+  it('passes already-valid suffixes through unchanged', () => {
+    expect(normalizeForPricing('BCP.LS')).toBe('BCP.LS');
+    expect(normalizeForPricing('MC.PA')).toBe('MC.PA');
+    expect(normalizeForPricing('AAPL')).toBe('AAPL');
+  });
+});
 
 describe('buildAlternativeSymbols', () => {
   describe('exchange suffix handling', () => {
@@ -19,14 +34,18 @@ describe('buildAlternativeSymbols', () => {
       expect(result).toContain('LVMH.CO');
     });
 
-    it('strips suffix for a symbol that already has one', () => {
-      const result = buildAlternativeSymbols('MC.PA');
-      expect(result).toEqual(['MC']);
+    it('remaps an unrecognized suffix and fans the base across EU exchanges', () => {
+      const result = buildAlternativeSymbols('AEU.FRK');
+      expect(result).toContain('AEU.DE');   // the remapped suffix (top candidate)
+      expect(result).toContain('AEU.PA');    // fanned out
+      expect(result).toContain('AEU');       // bare base (US/ADR) last
     });
 
-    it('strips suffix for London exchange', () => {
-      const result = buildAlternativeSymbols('VOD.L');
-      expect(result).toEqual(['VOD']);
+    it('still tries other exchanges + base for an already-valid suffix', () => {
+      const result = buildAlternativeSymbols('MC.PA');
+      expect(result).toContain('MC.DE');
+      expect(result).toContain('MC.AS');
+      expect(result).toContain('MC');
     });
   });
 
