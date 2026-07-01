@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAlternativeSymbols, normalizeForPricing } from '../src/portfolio.js';
+import { buildAlternativeSymbols, normalizeForPricing, parseFmpBatchResponse, isPriceFresh } from '../src/portfolio.js';
 
 describe('normalizeForPricing', () => {
   it('remaps Finnhub-style suffixes to FMP/Yahoo format', () => {
@@ -186,5 +186,42 @@ describe('buildAlternativeSymbols', () => {
       // assetName === originalSymbol → skips Strategy 2
       expect(result.length).toBe(12);
     });
+  });
+});
+
+describe('parseFmpBatchResponse', () => {
+  it('maps valid positive prices keyed by uppercased symbol', () => {
+    const out = parseFmpBatchResponse([
+      { symbol: 'AAPL', price: 150.2 },
+      { symbol: 'tte.pa', price: 62.5 },
+    ]);
+    expect(out).toEqual({ AAPL: 150.2, 'TTE.PA': 62.5 });
+  });
+  it('drops zero / non-numeric prices', () => {
+    const out = parseFmpBatchResponse([{ symbol: 'X', price: 0 }, { symbol: 'Y', price: 'n/a' }, { symbol: 'Z' }]);
+    expect(out).toEqual({});
+  });
+  it('returns {} for FMP error shapes and non-arrays', () => {
+    expect(parseFmpBatchResponse({ 'Error Message': 'Invalid API KEY' })).toEqual({});
+    expect(parseFmpBatchResponse(null)).toEqual({});
+    expect(parseFmpBatchResponse([])).toEqual({});
+  });
+});
+
+describe('isPriceFresh', () => {
+  const now = Date.UTC(2026, 0, 1, 12, 0, 0);
+  const WIN = 15 * 60 * 1000;
+  it('true for a live success within the window', () => {
+    const meta = { success: true, source: 'FMP', timestamp: new Date(now - 5 * 60 * 1000).toISOString() };
+    expect(isPriceFresh(meta, WIN, now)).toBe(true);
+  });
+  it('false when older than the window', () => {
+    const meta = { success: true, source: 'FMP', timestamp: new Date(now - 20 * 60 * 1000).toISOString() };
+    expect(isPriceFresh(meta, WIN, now)).toBe(false);
+  });
+  it('false for DB-cached, failed, or missing meta', () => {
+    expect(isPriceFresh({ success: true, source: 'FMP (cached)', timestamp: new Date(now).toISOString() }, WIN, now)).toBe(false);
+    expect(isPriceFresh({ success: false, source: 'FMP', timestamp: new Date(now).toISOString() }, WIN, now)).toBe(false);
+    expect(isPriceFresh(null, WIN, now)).toBe(false);
   });
 });

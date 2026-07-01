@@ -396,6 +396,34 @@ export const PRICING_SUFFIX_MAP = {
 /** Common European FMP/Yahoo exchange suffixes, for fanning out base tickers. */
 export const EU_SUFFIXES = ['DE', 'PA', 'AS', 'MI', 'MC', 'SW', 'L', 'BR', 'LS', 'CO', 'ST', 'HE', 'OL'];
 
+/**
+ * Parse an FMP quote-short batch response (array of {symbol, price}) into a
+ * map { UPPER(symbol): price } of valid positive prices. Tolerates FMP error
+ * shapes ({ "Error Message" }) and non-arrays → returns {}. Pure & testable.
+ */
+export function parseFmpBatchResponse(data) {
+  const out = {};
+  if (!Array.isArray(data)) return out;
+  for (const row of data) {
+    if (!row || !row.symbol) continue;
+    const price = Number(row.price);
+    if (Number.isFinite(price) && price > 0) out[String(row.symbol).toUpperCase()] = price;
+  }
+  return out;
+}
+
+/**
+ * Freshness predicate for the price cache: true if we already have a live
+ * (non-DB-cached) successful price newer than windowMs. Pure & testable.
+ */
+export function isPriceFresh(meta, windowMs, now = Date.now()) {
+  if (!meta || !meta.success || !meta.timestamp) return false;
+  if (typeof meta.source === 'string' && meta.source.includes('(cached)')) return false;
+  const t = new Date(meta.timestamp).getTime();
+  if (!Number.isFinite(t)) return false;
+  return (now - t) <= windowMs;
+}
+
 /** Normalize a ticker's exchange suffix to the price-API format. Pure. */
 export function normalizeForPricing(symbol) {
   const s = String(symbol || '').toUpperCase();
