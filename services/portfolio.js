@@ -2833,7 +2833,6 @@ export function deleteTransactionRow(rowIndex) {
 
     rebuildPositionsFromLedger();
     saveTransactionsToStorage();
-    saveTransactionsToDB();
     savePortfolioDB();
     renderPortfolio();
 }
