@@ -43,6 +43,67 @@ export function normalizeForPricing(symbol) {
     return mapped ? `${base}.${mapped}` : s;
 }
 
+/** Parse an FMP quote-short batch array → { UPPER(symbol): price>0 }. Tolerant. */
+function parseFmpBatchResponse(data) {
+    const out = {};
+    if (!Array.isArray(data)) return out;
+    for (const row of data) {
+        if (!row || !row.symbol) continue;
+        const price = Number(row.price);
+        if (Number.isFinite(price) && price > 0) out[String(row.symbol).toUpperCase()] = price;
+    }
+    return out;
+}
+
+/** True if we already hold a live (non-DB-cached) success newer than windowMs. */
+function isPriceFresh(meta, windowMs, now = Date.now()) {
+    if (!meta || !meta.success || !meta.timestamp) return false;
+    if (typeof meta.source === 'string' && meta.source.includes('(cached)')) return false;
+    const t = new Date(meta.timestamp).getTime();
+    return Number.isFinite(t) && (now - t) <= windowMs;
+}
+
+/**
+ * Fetch many tickers from FMP in one (chunked) call. Queries the price-API
+ * normalized form and maps results back to the raw input symbol.
+ * Returns { RAW_UPPER: price }. Never throws — returns {} on failure so the
+ * caller falls back to per-symbol.
+ */
+export async function batchFetchFMP(symbols) {
+    if (!state.fmpKey || !symbols || !symbols.length) return {};
+    const result = {};
+    const normToRaw = {};
+    for (const raw of new Set(symbols.map(s => String(s).toUpperCase()))) {
+        (normToRaw[normalizeForPricing(raw)] ||= []).push(raw);
+    }
+    const normSyms = Object.keys(normToRaw);
+    for (let i = 0; i < normSyms.length; i += 50) {
+        const chunk = normSyms.slice(i, i + 50);
+        try {
+            const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${encodeURIComponent(chunk.join(','))}&apikey=${state.fmpKey}`;
+            const resp = await fetch(url);
+            state.fmpCallsToday = (state.fmpCallsToday || 0) + chunk.length; // quota ≈ per symbol
+            if (!resp.ok) { console.warn(`FMP batch HTTP ${resp.status}`); continue; }
+            const priced = parseFmpBatchResponse(await resp.json());
+            for (const [norm, price] of Object.entries(priced)) {
+                (normToRaw[norm] || [norm]).forEach(raw => { result[raw] = price; });
+            }
+        } catch (err) { console.warn('FMP batch failed:', err.message); }
+    }
+    return result;
+}
+
+/** Run at most `concurrency` promises at a time, with `delay` ms between waves. */
+async function pooled(items, factory, concurrency, delay = 0) {
+    const results = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+        const settled = await Promise.allSettled(items.slice(i, i + concurrency).map(factory));
+        results.push(...settled);
+        if (delay && i + concurrency < items.length) await new Promise(r => setTimeout(r, delay));
+    }
+    return results;
+}
+
 /** Remember the ticker that actually returned a price for a holding, so future
  *  refreshes fetch it directly instead of re-running the alternative search. */
 function persistPricingTicker(symbol, pricingTicker) {
@@ -95,7 +156,12 @@ async function resolveTickersViaAI(failedSymbols) {
         const map = {};
         (Array.isArray(rows) ? rows : []).forEach(r => {
             const inp = String(r.input || '').toUpperCase();
-            if (inp && r.ticker) map[inp] = String(r.ticker).toUpperCase();
+            if (!inp) return;
+            const price = Number(r.price);
+            map[inp] = {
+                ticker: r.ticker ? String(r.ticker).toUpperCase() : null,
+                price: Number.isFinite(price) && price > 0 ? price : null,
+            };
         });
         return map;
     } catch (err) { console.warn('resolveTickersViaAI error:', err.message); return {}; }
@@ -279,16 +345,16 @@ export async function tryAlternativeFormats(originalSymbol, assetName) {
     }
 
     const uniqueAlternatives = [...new Set(alternatives)];
-    console.log(`Total unique alternatives to try: ${uniqueAlternatives.length}`);
+    console.log(`Trying ${uniqueAlternatives.length} alternatives in one FMP batch...`);
 
-    for (const altSymbol of uniqueAlternatives) {
-        console.log(`Trying: ${altSymbol}...`);
-        const result = await fetchStockPrice(altSymbol);
-        if (result.success) {
-            console.log(`\u2713 SUCCESS with ${altSymbol}!`);
-            return { ...result, alternativeSymbol: altSymbol, originalSymbol };
+    // Try ALL candidates in a single FMP batch call (was: sequential, ~500ms each).
+    const priced = await batchFetchFMP(uniqueAlternatives);
+    for (const altSymbol of uniqueAlternatives) {          // priority order preserved
+        const price = priced[altSymbol.toUpperCase()];
+        if (price > 0) {
+            console.log(`\u2713 SUCCESS with ${altSymbol} (FMP batch)`);
+            return { price, source: 'Financial Modeling Prep', tier: 2, success: true, alternativeSymbol: altSymbol, originalSymbol };
         }
-        await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     console.log(`\u2717 All alternatives failed for ${originalSymbol}`);
@@ -460,96 +526,97 @@ export async function fetchMarketPrices() {
 
     let successCount = 0;
     let failCount = 0;
-    const errors = [];
+    let errors = [];
+    state.fmpCallsToday = state.fmpCallsToday || 0;
+
+    // The ticker we actually query for a holding (a learned pricingTicker wins).
+    const queryOf = sym => (state.assetDatabase[sym] && state.assetDatabase[sym].pricingTicker) || sym;
+    const recordSuccess = (sym, price, source) => {
+        state.marketPrices[sym] = price;
+        state.priceMetadata[sym] = { timestamp: new Date().toISOString(), source, success: true };
+    };
 
     try {
-        for (let i = 0; i < symbols.length; i++) {
-            const symbol = symbols[i];
-            refreshBtn.textContent = `\u23F3 ${i + 1}/${symbols.length}`;
+        // Freshness cache: skip symbols already priced live within 15 min.
+        const FRESH_WINDOW_MS = 15 * 60 * 1000;
+        const nowMs = Date.now();
+        let toFetch = symbols.filter(s => !isPriceFresh(state.priceMetadata[s], FRESH_WINDOW_MS, nowMs));
+        console.log(`Fresh (skipped): ${symbols.length - toFetch.length} | To fetch: ${toFetch.length}`);
 
-            try {
-                // Use a previously-learned working ticker directly (avoids re-searching).
-                const learned = state.assetDatabase[symbol] && state.assetDatabase[symbol].pricingTicker;
-                let result = await fetchStockPrice(learned || symbol);
-
-                if (!result.success) {
-                    console.log(`Primary failed for ${symbol}, trying alternatives...`);
-                    const position = state.portfolio.find(p => p.symbol === symbol);
-                    const assetName = position ? position.name : symbol;
-                    const altResult = await tryAlternativeFormats(symbol, assetName);
-                    if (altResult && altResult.success) {
-                        result = altResult;
-                        console.log(`\u2713 Found ${symbol} as ${altResult.alternativeSymbol}`);
-                        // Remember the working ticker so future refreshes skip the search.
-                        persistPricingTicker(symbol, altResult.alternativeSymbol);
-                    }
-                }
-
-                if (result.success) {
-                    state.marketPrices[symbol] = result.price;
-                    state.priceMetadata[symbol] = {
-                        timestamp: new Date().toISOString(),
-                        source: result.source + (result.alternativeSymbol ? ` (as ${result.alternativeSymbol})` : ''),
-                        success: true
-                    };
-                    successCount++;
-                } else {
-                    state.priceMetadata[symbol] = {
-                        timestamp: new Date().toISOString(),
-                        source: result.source,
-                        success: false,
-                        error: result.error
-                    };
-                    errors.push(`${symbol}: ${result.error}`);
-                    failCount++;
-                }
-
-                if ((i + 1) % 5 === 0 || i === symbols.length - 1) {
-                    renderPortfolio();
-                }
-
-                await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
-            } catch (err) {
-                console.error(`\u2717 ${symbol}: ${err.message}`);
-                state.priceMetadata[symbol] = {
-                    timestamp: new Date().toISOString(),
-                    source: 'Error',
-                    success: false,
-                    error: err.message
-                };
-                errors.push(`${symbol}: ${err.message}`);
-                failCount++;
+        // Phase A: one FMP batch pass over everything.
+        if (state.fmpKey && toFetch.length) {
+            refreshBtn.textContent = 'Batch...';
+            const priced = await batchFetchFMP([...new Set(toFetch.map(queryOf))]);
+            for (const sym of toFetch) {
+                const price = priced[queryOf(sym).toUpperCase()];
+                if (price > 0) recordSuccess(sym, price, 'Financial Modeling Prep (batch)');
             }
+            toFetch = toFetch.filter(s => !(state.priceMetadata[s] && state.priceMetadata[s].success));
+            renderPortfolio();
         }
 
-        // ── Phase 2: Claude-assisted fallback for whatever still has no price ──
-        // Ask the AI for a priceable ticker for each failure, then VALIDATE each
-        // suggestion against the price APIs before trusting it (no blind quotes).
+        // Phase B: per-symbol fallback (Finnhub/AV + alternatives) for misses, pooled.
+        if (toFetch.length) {
+            const concurrency = state.finnhubKey ? 2 : (state.fmpKey ? 5 : 1);
+            let done = 0;
+            await pooled(toFetch, async (symbol) => {
+                try {
+                    let result = await fetchStockPrice(queryOf(symbol));
+                    if (!result.success) {
+                        const position = state.portfolio.find(p => p.symbol === symbol);
+                        const altResult = await tryAlternativeFormats(symbol, position ? position.name : symbol);
+                        if (altResult && altResult.success) {
+                            result = altResult;
+                            persistPricingTicker(symbol, altResult.alternativeSymbol);
+                        }
+                    }
+                    if (result.success) {
+                        recordSuccess(symbol, result.price, result.source + (result.alternativeSymbol ? ` (as ${result.alternativeSymbol})` : ''));
+                    } else {
+                        state.priceMetadata[symbol] = { timestamp: new Date().toISOString(), source: result.source, success: false, error: result.error };
+                    }
+                } catch (err) {
+                    state.priceMetadata[symbol] = { timestamp: new Date().toISOString(), source: 'Error', success: false, error: err.message };
+                }
+                if (++done % 3 === 0) { refreshBtn.textContent = `${done}/${toFetch.length}`; renderPortfolio(); }
+            }, concurrency, delayBetweenCalls);
+            renderPortfolio();
+        }
+
+        // Phase C: AI web-search resolver (Gemini->Claude) for the remainder.
+        // Returns { SYM: {ticker, price?} }. Validate each ticker via one batch call;
+        // fall back to the AI's grounded price only when no API covers it.
         const stillFailed = symbols.filter(s => !(state.priceMetadata[s] && state.priceMetadata[s].success));
         if (stillFailed.length > 0) {
-            if (refreshBtn) refreshBtn.textContent = '🤖 AI…';
+            refreshBtn.textContent = 'AI...';
             const suggestions = await resolveTickersViaAI(stillFailed);
+            const suggestedTickers = Object.values(suggestions).map(x => x && x.ticker).filter(Boolean);
+            const validated = suggestedTickers.length ? await batchFetchFMP(suggestedTickers) : {};
             for (const sym of stillFailed) {
-                const suggested = suggestions[sym.toUpperCase()];
-                if (!suggested || suggested.toUpperCase() === sym.toUpperCase()) continue;
-                const r = await fetchStockPrice(suggested);
-                if (r.success) {
-                    state.marketPrices[sym] = r.price;
-                    state.priceMetadata[sym] = {
-                        timestamp: new Date().toISOString(),
-                        source: `${r.source} (AI: ${suggested})`,
-                        success: true,
-                    };
-                    persistPricingTicker(sym, suggested);
-                    successCount++; failCount--;
-                    const idx = errors.findIndex(e => e.startsWith(`${sym}:`));
-                    if (idx >= 0) errors.splice(idx, 1);
-                    console.log(`✓ AI recovered ${sym} as ${suggested}`);
+                const s = suggestions[sym.toUpperCase()];
+                if (!s) continue;
+                if (s.ticker && s.ticker.toUpperCase() !== sym.toUpperCase()) {
+                    let price = validated[s.ticker.toUpperCase()];
+                    let source = `Financial Modeling Prep (AI: ${s.ticker})`;
+                    if (!(price > 0)) {
+                        const r = await fetchStockPrice(s.ticker);
+                        if (r.success) { price = r.price; source = `${r.source} (AI: ${s.ticker})`; }
+                    }
+                    if (price > 0) { recordSuccess(sym, price, source); persistPricingTicker(sym, s.ticker); continue; }
                 }
-                await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+                if (Number(s.price) > 0) recordSuccess(sym, Number(s.price), 'Web search (AI)');
             }
             renderPortfolio();
         }
+
+        // Recompute counts/errors from final state (avoids races).
+        successCount = 0; failCount = 0; errors = [];
+        for (const s of symbols) {
+            const meta = state.priceMetadata[s];
+            if (meta && meta.success) successCount++;
+            else { failCount++; errors.push(`${s}: ${(meta && meta.error) || 'no price found'}`); }
+        }
+        if (state.fmpCallsToday > 200) console.warn(`FMP calls today ~ ${state.fmpCallsToday}/250`);
 
         console.log('\n=== FETCH COMPLETE ===');
         console.log('Success:', successCount);

@@ -2,10 +2,10 @@
  * Analysis service — AI-powered cellar analysis via Gemini (primary) / Claude (fallback).
  */
 
-import state from './state.js?v=3.24.0';
-import { callWineAI } from './api.js?v=3.24.0';
-import { computeTotals } from './cellar.js?v=3.24.0';
-import { showToast, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.24.0';
+import state from './state.js?v=3.25.0';
+import { callWineAI } from './api.js?v=3.25.0';
+import { computeTotals } from './cellar.js?v=3.25.0';
+import { showToast, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.25.0';
 import { t } from '../data/i18n.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
