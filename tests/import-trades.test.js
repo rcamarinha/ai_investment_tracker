@@ -5,6 +5,7 @@ import {
   parseSignedNumber,
   detectCurrency,
   normalizeDate,
+  coerceTxDate,
   detectBroker,
   parseDegiroCsv,
   parseDegiroAccountCsv,
@@ -676,5 +677,144 @@ describe('parseDegiroAccountCsv (dividends + withholding tax)', () => {
     expect(res.broker).toBe('degiro_account');
     expect(res.income).toHaveLength(1);
     expect(res.income[0].amount).toBeCloseTo(116);
+  });
+
+  it('emits income for multiple distinct ISINs in the same file', () => {
+    const csv = [
+      header,
+      '01-06-2026,00:00,01-06-2026,AAPL,US0378331005,Dividendo,,USD,"10,00",USD,"10,00",',
+      '01-06-2026,00:00,01-06-2026,MSFT,US5949181045,Dividendo,,USD,"20,00",USD,"20,00",',
+    ].join('\n');
+    const { income } = parseDegiroAccountCsv(csv);
+    expect(income).toHaveLength(2);
+    const isins = income.map(i => i.identifier).sort();
+    expect(isins).toEqual(['US0378331005', 'US5949181045']);
+  });
+
+  it('returns an error when required columns are missing', () => {
+    const badHeader = 'Date,Product,Description,Change';
+    const csv = [badHeader, '01-06-2026,AAPL,Dividendo,10'].join('\n');
+    const { errors, income } = parseDegiroAccountCsv(csv);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/missing/i);
+    expect(income).toHaveLength(0);
+  });
+
+  it('skips rows with an unrecognised description (not Dividendo or tax)', () => {
+    const csv = [
+      header,
+      '01-06-2026,00:00,01-06-2026,AAPL,US0378331005,Dividendo,,USD,"5,00",USD,"5,00",',
+      '01-06-2026,00:00,01-06-2026,AAPL,US0378331005,Comissões de transação,,USD,"-1,00",USD,"4,00",',
+    ].join('\n');
+    const { income, skipped } = parseDegiroAccountCsv(csv);
+    expect(income).toHaveLength(1);   // only the dividend
+    expect(skipped).toBeGreaterThanOrEqual(1);
+  });
+
+  it('uses transaction date when no value-date column is present', () => {
+    const noValueDateHeader = 'Data,Hora,Produto,ISIN,Descrição,T.,Mudança,,Saldo,,ID da Ordem';
+    const csv = [
+      noValueDateHeader,
+      '15-05-2026,08:30,ROCHE,CH0012032048,Dividend,,CHF,"25,00",CHF,"100,00",',
+    ].join('\n');
+    const { income } = parseDegiroAccountCsv(csv);
+    expect(income).toHaveLength(1);
+    expect(income[0].date).toBe('2026-05-15');
+    expect(income[0].currency).toBe('CHF');
+  });
+});
+
+// ── coerceTxDate — DB date-coercion guard (PR #197) ─────────────────────────
+
+describe('coerceTxDate', () => {
+  it('passes through a valid YYYY-MM-DD unchanged', () => {
+    expect(coerceTxDate({ date: '2024-03-15' })).toBe('2024-03-15');
+  });
+
+  it('uses only the date portion of an ISO timestamp (strips time)', () => {
+    expect(coerceTxDate({ date: '2024-06-10T14:30:00.000Z' })).toBe('2024-06-10');
+  });
+
+  it('falls back to tx.timestamp when date is empty', () => {
+    const tx = { date: '', timestamp: '2024-09-01T00:00:00.000Z' };
+    expect(coerceTxDate(tx)).toBe('2024-09-01');
+  });
+
+  it('falls back to tx.timestamp when date is null', () => {
+    const tx = { date: null, timestamp: '2025-01-15T10:00:00Z' };
+    expect(coerceTxDate(tx)).toBe('2025-01-15');
+  });
+
+  it('falls back to today when both date and timestamp are absent', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(coerceTxDate({})).toBe(today);
+  });
+
+  it('falls back to today when date is a garbage string', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(coerceTxDate({ date: 'not-a-date' })).toBe(today);
+  });
+
+  it('falls back to today when date is undefined and timestamp is also garbage', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(coerceTxDate({ date: undefined, timestamp: 'bad' })).toBe(today);
+  });
+
+  it('prefers date over timestamp when both are valid', () => {
+    const tx = { date: '2024-03-01', timestamp: '2025-12-31T00:00:00Z' };
+    expect(coerceTxDate(tx)).toBe('2024-03-01');
+  });
+});
+
+// ── detectBroker — format detection edge cases ───────────────────────────────
+
+describe('detectBroker — edge cases', () => {
+  it('returns null for empty text', () => {
+    expect(detectBroker('')).toBeNull();
+    expect(detectBroker(null)).toBeNull();
+  });
+
+  it('prefers degiro_account over degiro when file has both Saldo and Quantidade', () => {
+    // A file containing both headers (e.g. a test fixture or partial merge)
+    // should be classified as the Account statement (Saldo check runs first).
+    const header = 'Date,ISIN,Quantidade,Saldo,Description';
+    expect(detectBroker(header)).toBe('degiro_account');
+  });
+
+  it('does not mistake a generic CSV with price/total for Revolut', () => {
+    // The header must have BOTH "price per share" AND "total amount".
+    expect(detectBroker('Date,Symbol,Total amount,Price')).toBeNull();
+  });
+});
+
+// ── parseFlexibleNumber — additional edge cases ──────────────────────────────
+
+describe('parseFlexibleNumber (broker) — additional edge cases', () => {
+  it('treats a lone comma with 2 decimals as a decimal separator', () => {
+    // "1,23" → 1.23 (not 1230 — only 3 decimals after a lone comma = thousands)
+    expect(parseFlexibleNumber('1,23')).toBeCloseTo(1.23);
+  });
+
+  it('returns NaN for empty / null input', () => {
+    expect(parseFlexibleNumber('')).toBeNaN();
+    expect(parseFlexibleNumber(null)).toBeNaN();
+  });
+
+  it('handles parentheses as negative (accounting notation)', () => {
+    expect(parseFlexibleNumber('(2.50)')).toBeCloseTo(-2.5);
+  });
+
+  it('strips currency codes before parsing', () => {
+    // "EUR 1,234.56" — currency code stripped, US number parsed
+    expect(parseFlexibleNumber('EUR 1,234.56')).toBeCloseTo(1234.56);
+  });
+
+  it('parses multiple dots as thousands separators', () => {
+    // "1.234.567" → 1234567
+    expect(parseFlexibleNumber('1.234.567')).toBeCloseTo(1234567);
+  });
+
+  it('returns NaN for non-numeric text', () => {
+    expect(parseFlexibleNumber('abc')).toBeNaN();
   });
 });
