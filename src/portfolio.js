@@ -424,6 +424,24 @@ export function isPriceFresh(meta, windowMs, now = Date.now()) {
   return (now - t) <= windowMs;
 }
 
+/**
+ * Extract a JSON array from an LLM response that may be wrapped in prose or
+ * Markdown code fences (```json ... ``` or ``` ... ```). Strips fences, trims
+ * whitespace, then locates the outermost `[…]` pair. Returns the extracted
+ * substring as-is for the caller to JSON.parse, or the trimmed full string
+ * when no bracket pair is found. Pure & testable.
+ *
+ * @param {string} raw - raw LLM output
+ * @returns {string} text ready for JSON.parse (may still be invalid JSON)
+ */
+export function extractLlmJsonArray(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const cleaned = raw.replace(/```json\b|```/g, '').trim();
+  const start = cleaned.indexOf('[');
+  const end = cleaned.lastIndexOf(']');
+  return (start >= 0 && end > start) ? cleaned.slice(start, end + 1) : cleaned;
+}
+
 /** Normalize a ticker's exchange suffix to the price-API format. Pure. */
 export function normalizeForPricing(symbol) {
   const s = String(symbol || '').toUpperCase();
