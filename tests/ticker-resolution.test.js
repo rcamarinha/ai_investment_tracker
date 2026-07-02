@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAlternativeSymbols, normalizeForPricing, parseFmpBatchResponse, isPriceFresh } from '../src/portfolio.js';
+import { buildAlternativeSymbols, normalizeForPricing, parseFmpBatchResponse, isPriceFresh, extractLlmJsonArray } from '../src/portfolio.js';
 
 describe('normalizeForPricing', () => {
   it('remaps Finnhub-style suffixes to FMP/Yahoo format', () => {
@@ -223,5 +223,56 @@ describe('isPriceFresh', () => {
     expect(isPriceFresh({ success: true, source: 'FMP (cached)', timestamp: new Date(now).toISOString() }, WIN, now)).toBe(false);
     expect(isPriceFresh({ success: false, source: 'FMP', timestamp: new Date(now).toISOString() }, WIN, now)).toBe(false);
     expect(isPriceFresh(null, WIN, now)).toBe(false);
+  });
+});
+
+describe('extractLlmJsonArray', () => {
+  it('returns a bare JSON array unchanged', () => {
+    const raw = '[{"ticker":"AAPL","input":"APPLE"}]';
+    expect(extractLlmJsonArray(raw)).toBe(raw);
+  });
+
+  it('strips ```json ... ``` code fence', () => {
+    const raw = '```json\n[{"ticker":"MC.PA"}]\n```';
+    expect(extractLlmJsonArray(raw)).toBe('[{"ticker":"MC.PA"}]');
+  });
+
+  it('strips plain ``` ... ``` code fence', () => {
+    const raw = '```\n[{"ticker":"TTE"}]\n```';
+    expect(extractLlmJsonArray(raw)).toBe('[{"ticker":"TTE"}]');
+  });
+
+  it('extracts array from prose preamble', () => {
+    const raw = 'Here are the tickers:\n[{"ticker":"ASML.AS","input":"ASML"}]\nEnd of response.';
+    expect(extractLlmJsonArray(raw)).toBe('[{"ticker":"ASML.AS","input":"ASML"}]');
+  });
+
+  it('handles multi-item array with embedded prose stripped by fence removal', () => {
+    const raw = '```json\n[{"ticker":"MC.PA"},{"ticker":"AIR.PA"}]\n```';
+    const result = extractLlmJsonArray(raw);
+    expect(result).toBe('[{"ticker":"MC.PA"},{"ticker":"AIR.PA"}]');
+    expect(JSON.parse(result)).toHaveLength(2);
+  });
+
+  it('returns the trimmed string when no brackets are found (caller gets invalid JSON to handle)', () => {
+    const raw = 'No array here, just text';
+    expect(extractLlmJsonArray(raw)).toBe('No array here, just text');
+  });
+
+  it('handles empty string input', () => {
+    expect(extractLlmJsonArray('')).toBe('');
+  });
+
+  it('handles null/undefined input gracefully', () => {
+    expect(extractLlmJsonArray(null)).toBe('');
+    expect(extractLlmJsonArray(undefined)).toBe('');
+  });
+
+  it('uses the outermost brackets when nested arrays appear in prose', () => {
+    const raw = 'Result: [{"ticker":"X","alts":["A","B"]}]';
+    const result = extractLlmJsonArray(raw);
+    expect(result).toBe('[{"ticker":"X","alts":["A","B"]}]');
+    const parsed = JSON.parse(result);
+    expect(parsed[0].alts).toEqual(['A', 'B']);
   });
 });
