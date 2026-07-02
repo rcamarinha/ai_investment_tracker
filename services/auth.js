@@ -23,7 +23,10 @@ export function isAdmin() {
 }
 
 /**
- * Check app_config for adminEmails and set state.userRole accordingly.
+ * Admin status = membership in the `admin_users` table (single source of truth,
+ * enforced by RLS). A per-user SELECT policy (auth.uid() = user_id) lets each
+ * user check ONLY their own row, so a returned row proves admin. Fail-closed:
+ * any error or empty result -> regular user.
  * Called after login and after loadFromDatabase.
  */
 export async function checkUserRole() {
@@ -34,25 +37,18 @@ export async function checkUserRole() {
 
     try {
         const { data, error } = await state.supabaseClient
-            .from('app_config')
-            .select('value')
-            .eq('key', 'adminEmails')
-            .single();
+            .from('admin_users')
+            .select('user_id')
+            .eq('user_id', state.currentUser.id)
+            .maybeSingle();
 
-        if (error || !data) {
-            // No adminEmails config → safe default is regular user
-            console.log('No adminEmails config found — defaulting to user');
+        if (error) {
+            console.warn('checkUserRole: admin_users read failed, defaulting to user:', error.message);
             state.userRole = 'user';
-            updateActionVisibility();
-            updateAuthBar();
-            return;
+        } else {
+            state.userRole = data ? 'admin' : 'user';
+            console.log(`✓ User role: ${state.userRole} (${state.currentUser.email})`);
         }
-
-        const adminList = (data.value || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-        const userEmail = state.currentUser.email.toLowerCase();
-
-        state.userRole = adminList.includes(userEmail) ? 'admin' : 'user';
-        console.log(`\u2713 User role: ${state.userRole} (${userEmail})`);
     } catch (err) {
         console.warn('Failed to check user role:', err);
         state.userRole = 'user';
