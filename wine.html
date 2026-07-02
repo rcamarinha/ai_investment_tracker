@@ -6,9 +6,9 @@
     <title>Wine Cellar Tracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.25.0"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.25.0">
-    <link rel="stylesheet" href="css/wine.css?v=3.25.0">
+    <script src="lib/supabase.js?v=3.26.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.26.0">
+    <link rel="stylesheet" href="css/wine.css?v=3.26.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -27,7 +27,7 @@
             <div class="header-eyebrow wine-eyebrow">Fine Wine · Spirits · Cellar</div>
             <h1>
                 <span data-i18n="wine.title">Cellar</span>
-                <span class="header-version">v3.25.0</span>
+                <span class="header-version">v3.26.0</span>
             </h1>
             <p data-i18n="wine.subtitle">AI label recognition · valuations · drink windows</p>
         </div>
@@ -325,23 +325,23 @@
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
         // ── Imports ────────────────────────────────────────────────────────────
-        import { renderNavbar } from './services/navbar.js?v=3.25.0';
-        import state from './wine/state.js?v=3.25.0';
-        import { recognizeLabel, fileToBase64, captureVideoFrame, compressImageForLabel } from './wine/label.js?v=3.25.0';
+        import { renderNavbar } from './services/navbar.js?v=3.26.0';
+        import state from './wine/state.js?v=3.26.0';
+        import { recognizeLabel, fileToBase64, captureVideoFrame, compressImageForLabel } from './wine/label.js?v=3.26.0';
         import { initSupabase, updateAuthBar,
                  handleLogin, handleSignup, handleLogout, handleGoogleLogin,
-                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=3.25.0';
+                 handleForgotPassword, handlePasswordReset, cancelPasswordRecovery } from './wine/storage.js?v=3.26.0';
         import { renderCellar, showAddBottleDialog, showEditBottleDialog,
                  closeBottleDialog, submitBottle, deleteCurrentBottle,
                  saveCellarSnapshot, updateHistoryDisplay, deleteSnapshot, clearHistory,
                  exportCellarCSV, onFilterChange, onReadinessFilterClick,
                  clearAllFilters, toggleMoreFilters, deduplicateCellar,
                  onTypeFilterClick, classifyUntypedBottles,
-                 reclassifyAllBottles, drinkBottle } from './wine/cellar.js?v=3.25.0';
-        import { valuateAllBottles, valuateSingleBottle, applyValuationCache, attachValuationGuard, detachValuationGuard } from './wine/valuation.js?v=3.25.0';
-        import { analyzeCellar } from './wine/analysis.js?v=3.25.0';
-        import { renderAllocationCharts, showAllocationTab } from './wine/ui.js?v=3.25.0';
-        import { showToast, closeActiveModal } from './wine/utils.js?v=3.25.0';
+                 reclassifyAllBottles, drinkBottle } from './wine/cellar.js?v=3.26.0';
+        import { valuateAllBottles, valuateSingleBottle, applyValuationCache, attachValuationGuard, detachValuationGuard } from './wine/valuation.js?v=3.26.0';
+        import { analyzeCellar } from './wine/analysis.js?v=3.26.0';
+        import { renderAllocationCharts, showAllocationTab } from './wine/ui.js?v=3.26.0';
+        import { showToast, closeActiveModal } from './wine/utils.js?v=3.26.0';
         import { findCellarMatches, findFuzzyCellarMatches, normalizeWineName } from './src/wine.js';
 
         // ── Expose to onclick handlers ─────────────────────────────────────────

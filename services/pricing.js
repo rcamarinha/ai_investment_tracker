@@ -70,11 +70,14 @@ function isPriceFresh(meta, windowMs, now = Date.now()) {
  * caller falls back to per-symbol.
  */
 export async function batchFetchFMP(symbols) {
-    if (!state.fmpKey || !symbols || !symbols.length) return {};
+    if (!state.fmpKey || state.fmpBatchUnsupported || !symbols || !symbols.length) return {};
     const result = {};
-    const normToRaw = {};
+    const normToRaw = {};        // normalized query form → [raw...]
+    const baseToRaw = {};        // base (no suffix) → [raw...] for resilient echo matching
     for (const raw of new Set(symbols.map(s => String(s).toUpperCase()))) {
-        (normToRaw[normalizeForPricing(raw)] ||= []).push(raw);
+        const norm = normalizeForPricing(raw);
+        (normToRaw[norm] ||= []).push(raw);
+        (baseToRaw[norm.split('.')[0]] ||= []).push(raw);
     }
     const normSyms = Object.keys(normToRaw);
     for (let i = 0; i < normSyms.length; i += 50) {
@@ -82,15 +85,67 @@ export async function batchFetchFMP(symbols) {
         try {
             const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${encodeURIComponent(chunk.join(','))}&apikey=${state.fmpKey}`;
             const resp = await fetch(url);
-            state.fmpCallsToday = (state.fmpCallsToday || 0) + chunk.length; // quota ≈ per symbol
-            if (!resp.ok) { console.warn(`FMP batch HTTP ${resp.status}`); continue; }
-            const priced = parseFmpBatchResponse(await resp.json());
-            for (const [norm, price] of Object.entries(priced)) {
-                (normToRaw[norm] || [norm]).forEach(raw => { result[raw] = price; });
+            if (!resp.ok) {
+                console.warn(`FMP batch HTTP ${resp.status}`);
+                if (resp.status === 401 || resp.status === 402 || resp.status === 403) state.fmpBatchUnsupported = true;
+                continue;
+            }
+            const json = await resp.json();
+            if (json && !Array.isArray(json)) {           // { "Error Message": ... } etc.
+                console.warn('FMP batch non-array response — treating comma-list as unsupported for this session.');
+                state.fmpBatchUnsupported = true;
+                continue;
+            }
+            state.fmpCallsToday = (state.fmpCallsToday || 0) + chunk.length; // FMP bills ≈ per symbol, only on success
+            const priced = parseFmpBatchResponse(json);
+            // If we asked for many but got ≤1 back, the plan likely ignores comma-lists.
+            if (chunk.length > 3 && json.length <= 1) {
+                console.warn(`FMP batch returned ${json.length} for ${chunk.length} symbols — disabling batch for this session (falling back to per-symbol/Finnhub).`);
+                state.fmpBatchUnsupported = true;
+            }
+            for (const [sym, price] of Object.entries(priced)) {
+                const targets = normToRaw[sym] || baseToRaw[sym.split('.')[0]] || [sym];
+                targets.forEach(raw => { result[raw] = price; });
             }
         } catch (err) { console.warn('FMP batch failed:', err.message); }
     }
     return result;
+}
+
+// Injected by portfolio.js (avoids a static import cycle): opens the interactive
+// "resolve missing tickers" dialog and returns the user's decisions.
+let _missingTickerResolver = null;
+export function setMissingTickerResolver(fn) { _missingTickerResolver = fn; }
+
+/** Search for a ticker by company/instrument name → [{ ticker, exchange, name }]. */
+export async function searchTickerByName(query) {
+    const out = [];
+    if (!query || !query.trim()) return out;
+    if (state.fmpKey) {
+        try {
+            const url = `https://financialmodelingprep.com/stable/search-symbol?query=${encodeURIComponent(query)}&apikey=${state.fmpKey}`;
+            const r = await fetch(url);
+            if (r.ok) {
+                const data = await r.json();
+                if (Array.isArray(data)) data.slice(0, 8).forEach(x => {
+                    if (x.symbol) out.push({ ticker: String(x.symbol).toUpperCase(), exchange: x.exchangeShortName || x.exchange || '', name: x.name || '' });
+                });
+            }
+        } catch (err) { console.warn('FMP name search failed:', err.message); }
+    }
+    if (!out.length && state.finnhubKey) {
+        try {
+            const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${state.finnhubKey}`;
+            const r = await fetch(url);
+            if (r.ok) {
+                const data = await r.json();
+                (data.result || []).slice(0, 8).forEach(x => {
+                    if (x.symbol) out.push({ ticker: String(x.symbol).toUpperCase(), exchange: '', name: x.description || '' });
+                });
+            }
+        } catch (err) { console.warn('Finnhub name search failed:', err.message); }
+    }
+    return out;
 }
 
 /** Run at most `concurrency` promises at a time, with `delay` ms between waves. */
@@ -151,8 +206,12 @@ async function resolveTickersViaAI(failedSymbols) {
         if (!response.ok) { console.warn('resolve-tickers failed:', response.status, txt.slice(0, 200)); return {}; }
         const data = JSON.parse(txt);
         const out = data.content?.find(c => c.type === 'text')?.text || '';
+        // Gemini/Claude may wrap the JSON in prose or code fences — extract the array.
+        const cleaned = out.replace(/```json|```/g, '').trim();
+        const start = cleaned.indexOf('['), end = cleaned.lastIndexOf(']');
+        const jsonText = (start >= 0 && end > start) ? cleaned.slice(start, end + 1) : cleaned;
         let rows;
-        try { rows = JSON.parse(out.replace(/```json|```/g, '').trim()); } catch { rows = []; }
+        try { rows = JSON.parse(jsonText); } catch { rows = []; }
         const map = {};
         (Array.isArray(rows) ? rows : []).forEach(r => {
             const inp = String(r.input || '').toUpperCase();
@@ -440,7 +499,10 @@ export async function fetchAssetProfile(symbol) {
 
 // ── Batch Price Fetching ────────────────────────────────────────────────────
 
-export async function fetchMarketPrices() {
+export async function fetchMarketPrices(opts = {}) {
+    // Only the manual "Update Prices" button is interactive; auto-refresh/import
+    // callers pass nothing so the resolve dialog never pops on its own.
+    const interactive = opts.interactive === true;
     // Auth guard: require login when Supabase is configured
     if (state.supabaseClient && !state.currentUser) {
         alert('\u{1F512} Please log in to fetch market prices.\n\nSign in with your email or Google account above.');
@@ -561,15 +623,9 @@ export async function fetchMarketPrices() {
             let done = 0;
             await pooled(toFetch, async (symbol) => {
                 try {
-                    let result = await fetchStockPrice(queryOf(symbol));
-                    if (!result.success) {
-                        const position = state.portfolio.find(p => p.symbol === symbol);
-                        const altResult = await tryAlternativeFormats(symbol, position ? position.name : symbol);
-                        if (altResult && altResult.success) {
-                            result = altResult;
-                            persistPricingTicker(symbol, altResult.alternativeSymbol);
-                        }
-                    }
+                    // fetchStockPrice already normalizes the FMP/AV suffix (.FRK→.DE);
+                    // true misses go to the AI resolver (Phase C), not a costly FMP fan-out.
+                    const result = await fetchStockPrice(queryOf(symbol));
                     if (result.success) {
                         recordSuccess(symbol, result.price, result.source + (result.alternativeSymbol ? ` (as ${result.alternativeSymbol})` : ''));
                     } else {
@@ -586,10 +642,12 @@ export async function fetchMarketPrices() {
         // Phase C: AI web-search resolver (Gemini->Claude) for the remainder.
         // Returns { SYM: {ticker, price?} }. Validate each ticker via one batch call;
         // fall back to the AI's grounded price only when no API covers it.
+        let aiSuggestions = {};
         const stillFailed = symbols.filter(s => !(state.priceMetadata[s] && state.priceMetadata[s].success));
         if (stillFailed.length > 0) {
             refreshBtn.textContent = 'AI...';
             const suggestions = await resolveTickersViaAI(stillFailed);
+            aiSuggestions = suggestions;
             const suggestedTickers = Object.values(suggestions).map(x => x && x.ticker).filter(Boolean);
             const validated = suggestedTickers.length ? await batchFetchFMP(suggestedTickers) : {};
             for (const sym of stillFailed) {
@@ -607,6 +665,36 @@ export async function fetchMarketPrices() {
                 if (Number(s.price) > 0) recordSuccess(sym, Number(s.price), 'Web search (AI)');
             }
             renderPortfolio();
+        }
+
+        // ── Interactive resolve: let the user fix anything still unpriced ──
+        // (manual "Update Prices" only). Validate every chosen ticker before it's
+        // persisted — never trust an AI/user ticker blindly.
+        if (interactive && _missingTickerResolver) {
+            const unpriced = symbols.filter(s => !(state.priceMetadata[s] && state.priceMetadata[s].success));
+            if (unpriced.length) {
+                const items = unpriced.map(s => ({
+                    symbol: s,
+                    name: (state.portfolio.find(p => p.symbol === s) || {}).name || s,
+                    suggestion: (aiSuggestions[s.toUpperCase()] || {}).ticker || '',
+                }));
+                let decisions = [];
+                try { decisions = (await _missingTickerResolver(items)) || []; }
+                catch (err) { console.warn('missing-ticker resolver error:', err.message); }
+                for (const d of decisions) {
+                    if (!d || !d.symbol) continue;
+                    if (d.keepAtCost) {
+                        const meta = state.assetDatabase[d.symbol] || {};
+                        state.assetDatabase[d.symbol] = { ...meta, ticker: d.symbol, untracked: true };
+                        const pos = state.portfolio.find(p => p.symbol === d.symbol);
+                        if (pos) pos.untracked = true;
+                    } else if (d.ticker) {
+                        const r = await fetchStockPrice(d.ticker);   // validate before persist
+                        if (r.success) { recordSuccess(d.symbol, r.price, `${r.source} (user: ${d.ticker})`); persistPricingTicker(d.symbol, d.ticker); }
+                    }
+                }
+                renderPortfolio();
+            }
         }
 
         // Recompute counts/errors from final state (avoids races).
