@@ -90,8 +90,18 @@ export async function batchFetchFMP(symbols) {
                 if (resp.status === 401 || resp.status === 402 || resp.status === 403) state.fmpBatchUnsupported = true;
                 continue;
             }
-            const json = await resp.json();
-            if (json && !Array.isArray(json)) {           // { "Error Message": ... } etc.
+            // Read as text first: on free plans the comma-list endpoint returns a
+            // plain-text notice ("Premium Query Parameter…") with HTTP 200, which
+            // is NOT JSON. Parsing it directly throws and we'd never learn to stop.
+            const text = await resp.text();
+            let json;
+            try { json = JSON.parse(text); }
+            catch {
+                console.warn('FMP batch non-JSON response (likely premium-only comma-list) — disabling batch for this session:', text.slice(0, 80));
+                state.fmpBatchUnsupported = true;
+                continue;
+            }
+            if (json && !Array.isArray(json)) {           // { "Error Message": ... } / "Premium…" etc.
                 console.warn('FMP batch non-array response — treating comma-list as unsupported for this session.');
                 state.fmpBatchUnsupported = true;
                 continue;

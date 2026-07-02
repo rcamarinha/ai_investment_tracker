@@ -179,10 +179,15 @@ export async function loadAppConfig() {
         if (error) throw error;
 
         if (data && data.length > 0) {
+            // The DB is the source of truth for shared pricing keys. Overwrite both
+            // state AND the localStorage copy so a stale local key can't shadow it
+            // on the next load (and offline still has the good value).
             data.forEach(row => {
-                if (row.key === 'finnhubKey' && row.value) state.finnhubKey = row.value;
-                if (row.key === 'fmpKey' && row.value) state.fmpKey = row.value;
-                if (row.key === 'alphaVantageKey' && row.value) state.alphaVantageKey = row.value;
+                const k = { finnhubKey: 'finnhubKey', fmpKey: 'fmpKey', alphaVantageKey: 'alphaVantageKey' }[row.key];
+                if (k && row.value) {
+                    state[k] = row.value.trim();
+                    try { localStorage.setItem(k, state[k]); } catch { /* ignore quota */ }
+                }
             });
             console.log('\u2713 API keys loaded from DB:', {
                 finnhub: !!state.finnhubKey,
@@ -581,6 +586,11 @@ export async function loadFromDatabase() {
         state.priceMetadata = {};
         state.transactions = {};
 
+        // Load shared API keys FIRST — these are critical for price fetching and
+        // must override any stale key that init read from localStorage. Kept ahead
+        // of the heavy queries below so an error in one of those can't skip it.
+        await loadAppConfig();
+
         // Load positions
         const { data: dbPositions, error: posError } = await state.supabaseClient
             .from('positions')
@@ -657,9 +667,6 @@ export async function loadFromDatabase() {
         if (Object.keys(state.marketPrices).length > 0) {
             renderPortfolio();
         }
-
-        // Load shared API keys
-        await loadAppConfig();
 
         // Check user role (admin vs regular user)
         await checkUserRole();
