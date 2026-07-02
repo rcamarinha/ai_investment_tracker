@@ -7,6 +7,7 @@ import { buildAssetRecord } from './utils.js';
 import { updateAuthBar, checkUserRole, cancelPasswordRecovery } from './auth.js';
 import { renderPortfolio, updateHistoryDisplay } from './portfolio.js';
 import { fetchAssetProfile } from './pricing.js';
+import { coerceTxDate } from './import-brokers.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
 
@@ -450,17 +451,6 @@ export async function saveTransactionsToDB() {
 
         if (deleteError) throw deleteError;
 
-        // The deployed `date` column is DATE NOT NULL, so never send a null or
-        // malformed value (an AI-extracted row could miss a clean date) — that
-        // would abort the whole bulk insert. Fall back to the row timestamp, then today.
-        const toSafeDate = (tx) => {
-            const d = String(tx.date || '').slice(0, 10);
-            if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-            const ts = tx.timestamp ? String(tx.timestamp).slice(0, 10) : '';
-            if (/^\d{4}-\d{2}-\d{2}$/.test(ts)) return ts;
-            return new Date().toISOString().slice(0, 10);
-        };
-
         // Flatten state.transactions into rows
         const rows = [];
         for (const [symbol, txs] of Object.entries(state.transactions)) {
@@ -476,7 +466,8 @@ export async function saveTransactionsToDB() {
                     // total_amount is NOT NULL in the deployed schema; split/isin_change
                     // rows move no cash, so default to 0 rather than null.
                     total_amount: tx.totalAmount ?? tx.amount ?? 0,
-                    date: toSafeDate(tx),
+                    // coerceTxDate ensures DATE NOT NULL constraint is always met.
+                    date: coerceTxDate(tx),
                     cost_basis: tx.costBasis ?? null,
                     realized_gain_loss: tx.realizedGainLoss ?? null,
                     currency: tx.currency || null,
