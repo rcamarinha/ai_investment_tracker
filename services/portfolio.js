@@ -9,7 +9,7 @@ import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveTransactionsToDB, deleteTransactionsForSymbol,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
-import { fetchMarketPrices, fetchStockPrice, getExchangeRate } from './pricing.js';
+import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
 import { parseBrokerExport, normalizeTrades,
          buildExistingFingerprints, dedupeTrades,
@@ -1113,6 +1113,95 @@ function showUnresolvedDialog(items) {
             });
             document.body.removeChild(overlay);
             resolve(decisions);
+        });
+    });
+}
+
+/**
+ * Interactive "resolve missing prices" dialog, opened after a manual price
+ * refresh leaves holdings unpriced. Per holding: confirm the AI suggestion,
+ * search by name, enter a ticker, or keep at cost. Returns
+ * [{ symbol, ticker?, keepAtCost? }]; the caller (pricing.js) validates each
+ * ticker (fetches a price) before persisting it. Registered via
+ * setMissingTickerResolver so pricing.js needs no static import of this module.
+ */
+export function resolveMissingTickers(items) {
+    return new Promise(resolve => {
+        const rows = items.map((it, idx) => `
+            <tr data-idx="${idx}" data-symbol="${escapeHTML(it.symbol)}">
+                <td style="padding:6px 8px;">
+                    <div style="font-weight:600;">${escapeHTML(it.name || it.symbol)}</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono,monospace);">${escapeHTML(it.symbol)}</div>
+                </td>
+                <td style="padding:6px 8px;">
+                    <input class="rmt-ticker" type="text" placeholder="ticker" value="${escapeHTML(it.suggestion || '')}" style="width:96px;font-size:12px;padding:4px;text-transform:uppercase;" />
+                    <button class="btn btn-sm btn-primary rmt-search" type="button" title="Search by name" style="margin-left:4px;">🔎</button>
+                </td>
+                <td style="padding:6px 8px;">
+                    <select class="rmt-action" style="font-size:12px;padding:4px;">
+                        <option value="map"${it.suggestion ? ' selected' : ''}>Use ticker</option>
+                        <option value="cost"${it.suggestion ? '' : ' selected'}>Keep at cost</option>
+                        <option value="skip">Skip</option>
+                    </select>
+                </td>
+            </tr>`).join('');
+
+        const overlay = document.createElement('div');
+        overlay.className = 'ticker-picker-overlay';
+        overlay.innerHTML = `
+            <div class="ticker-picker-dialog" style="max-width:640px;">
+                <h3>💹 ${items.length} holding(s) have no live price</h3>
+                <p style="font-size:13px;">Map each to a ticker your data provider recognizes (a suggestion is pre-filled where we found one). Search by name if unsure, or keep it at cost. Tickers are validated before saving and remembered next time.</p>
+                <div style="max-height:340px;overflow-y:auto;margin:10px 0;">
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead><tr style="text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">
+                            <th style="padding:6px 8px;">Holding</th><th style="padding:6px 8px;">Ticker</th><th style="padding:6px 8px;">Action</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div class="ticker-picker-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="btn btn-primary" id="rmtCancel">Cancel</button>
+                    <button class="btn btn-accent" id="rmtApply">Apply</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        // Per-row "search by name" → picker → fills the ticker input.
+        overlay.querySelectorAll('.rmt-search').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const tr = btn.closest('tr');
+                const it = items[Number(tr.dataset.idx)];
+                const query = prompt('Search ticker by name/description:', it.name || it.symbol);
+                if (!query) return;
+                btn.textContent = '…';
+                const results = await searchTickerByName(query);
+                btn.textContent = '🔎';
+                if (!results.length) { alert('No matches found. Try a different name.'); return; }
+                const chosen = await showTickerPickerDialog(
+                    query,
+                    { ticker: results[0].ticker, name: results[0].name, exchange: results[0].exchange },
+                    results.slice(1).map(r => ({ ticker: r.ticker, name: r.name, exchange: r.exchange }))
+                );
+                if (chosen && chosen.ticker) {
+                    tr.querySelector('.rmt-ticker').value = chosen.ticker.toUpperCase();
+                    tr.querySelector('.rmt-action').value = 'map';
+                }
+            });
+        });
+
+        overlay.querySelector('#rmtCancel').addEventListener('click', () => { document.body.removeChild(overlay); resolve([]); });
+        overlay.querySelector('#rmtApply').addEventListener('click', () => {
+            const out = [];
+            overlay.querySelectorAll('tbody tr').forEach(tr => {
+                const symbol = tr.dataset.symbol;
+                const action = tr.querySelector('.rmt-action').value;
+                const ticker = (tr.querySelector('.rmt-ticker').value || '').trim().toUpperCase();
+                if (action === 'cost') out.push({ symbol, keepAtCost: true });
+                else if (action === 'map' && ticker) out.push({ symbol, ticker });
+            });
+            document.body.removeChild(overlay);
+            resolve(out);
         });
     });
 }

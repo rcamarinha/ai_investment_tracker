@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.26.0
+- **Interactive ticker resolution ("no more silent missing prices")** — a manual **Update Prices** run now ends with a resolve dialog for any holding still unpriced after the batch/concurrency/AI tiers. Per holding you can: accept the **AI web-search suggestion** (pre-filled), **search by name/description** (FMP `search-symbol` → Finnhub `search`, pick from candidates), **enter a ticker** directly, or **keep it at cost**. Every chosen ticker is **validated** (a price is fetched) before it's trusted, then persisted as the learned `pricing_ticker` so it auto-applies next refresh. Automatic/background refreshes stay silent (non-interactive) — only the button opens the dialog.
+- **Wiring** — `pricing.js` exposes `setMissingTickerResolver()` / `searchTickerByName()`; `fetchMarketPrices({interactive:true})` triggers the dialog (callback injection avoids a circular import between pricing and portfolio).
+
 ### v3.25.0
 - **Price-fetch performance (minutes → ~seconds)** — "Update Prices" was strictly sequential (~1s per symbol) with a ~14-candidate sequential fallback per failure. Now: (1) a single **FMP batch quote** (`symbol=A,B,C`, chunked 50) prices all holdings in ~2 calls; (2) residual misses go through a **bounded-concurrency pool** (not fixed sleeps); (3) the alternative-format search tries all candidates in **one batch call**; (4) a **15-min freshness cache** skips symbols already priced live (2nd refresh ≈ instant); (5) learned tickers persist so they're fetched directly next time; (6) counts recomputed from final state to avoid races, with an FMP daily-quota warning.
 - **Provider-independent AI fallback** — the `resolve-tickers` edge function now uses **Gemini 2.5 Flash + Google Search grounding → Claude + web_search** (the wine-tool pattern) to find a priceable ticker — or, for instruments no data API carries, a live-web **grounded price** flagged "≈ Web search (AI)". Every AI ticker is validated against a price API before it's trusted.
