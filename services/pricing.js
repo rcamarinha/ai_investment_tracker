@@ -18,7 +18,6 @@ import { analyzeMovers } from './analysis.js';
 // Pure exchange-suffix / batch-parse / freshness helpers — shared with the test
 // mirror (src/portfolio.js) so the shipped code is what the tests exercise.
 import {
-    EU_SUFFIXES,
     normalizeForPricing, parseFmpBatchResponse, isPriceFresh,
 } from './pricing-core.js';
 export { normalizeForPricing };
@@ -336,92 +335,6 @@ export async function fetchStockPrice(symbol) {
         success: false,
         error: availableAPIs.length > 0 ? 'Symbol not found in any API' : 'Configure API keys'
     };
-}
-
-// ── Alternative Ticker Formats (international stocks) ───────────────────────
-
-export async function tryAlternativeFormats(originalSymbol, assetName) {
-    const alternatives = [];
-
-    console.log(`\n=== TRYING ALTERNATIVES FOR ${originalSymbol} (${assetName}) ===`);
-
-    if (originalSymbol.includes('.')) {
-        const base = originalSymbol.split('.')[0].toUpperCase();
-        // 1) remap an unrecognized suffix to the price-API format (highest hit rate)
-        const normalized = normalizeForPricing(originalSymbol);
-        if (normalized !== originalSymbol.toUpperCase()) alternatives.push(normalized);
-        // 2) fan the base across the common EU exchanges, then 3) the bare base (US/ADR)
-        EU_SUFFIXES.forEach(sfx => alternatives.push(`${base}.${sfx}`));
-        alternatives.push(base);
-        console.log(`Alternatives for ${originalSymbol}: ${alternatives.join(', ')}`);
-    } else {
-        alternatives.push(`${originalSymbol}.PA`);
-        alternatives.push(`${originalSymbol}.L`);
-        alternatives.push(`${originalSymbol}.DE`);
-        alternatives.push(`${originalSymbol}.MC`);
-        alternatives.push(`${originalSymbol}.SW`);
-        alternatives.push(`${originalSymbol}.AS`);
-        alternatives.push(`${originalSymbol}.MI`);
-        alternatives.push(`${originalSymbol}.BR`);
-        alternatives.push(`${originalSymbol}.HE`);
-        alternatives.push(`${originalSymbol}.ST`);
-        alternatives.push(`${originalSymbol}.OL`);
-        alternatives.push(`${originalSymbol}.CO`);
-        console.log(`Alternatives: ${alternatives.join(', ')}`);
-    }
-
-    if (assetName && assetName !== originalSymbol) {
-        const nameLower = assetName.toLowerCase();
-        const smartMappings = {
-            'cellnex': ['CLNX', 'CLNX.MC'],
-            'covestro': ['1COV.DE', 'COV.DE'],
-            'prosus': ['PRX.AS', 'PROSUS'],
-            'adyen': ['ADYEN.AS', 'ADYEY'],
-            'just eat': ['JET.L', 'TKWY.AS'],
-            'moncler': ['MONC.MI', 'MONRF'],
-            'sartorius': ['SRT.DE', 'SRT3.DE'],
-            'nestle': ['NESN.SW', 'NSRGY'],
-            'roche': ['ROG.SW', 'RHHBY'],
-            'novartis': ['NOVN.SW', 'NVS'],
-            'asml': ['ASML.AS', 'ASML'],
-            'lvmh': ['MC.PA', 'LVMUY'],
-            'hermes': ['RMS.PA', 'HESAY'],
-            'schneider': ['SU.PA', 'SBGSF'],
-            'totalenergies': ['TTE.PA', 'TTE'],
-            'airbus': ['AIR.PA', 'EADSY']
-        };
-
-        for (const [key, tickers] of Object.entries(smartMappings)) {
-            if (nameLower.includes(key)) {
-                alternatives.push(...tickers);
-                console.log(`Smart mapping found for "${key}": ${tickers.join(', ')}`);
-                break;
-            }
-        }
-
-        const baseName = assetName.split(/\s+(SA|NV|AG|SE|PLC|INC|CORP|LTD|SPA|ASA|OYJ)/i)[0].trim();
-        const firstWord = baseName.split(' ')[0];
-        if (firstWord.length >= 3 && firstWord.length <= 6) {
-            alternatives.push(firstWord.toUpperCase());
-            console.log(`Trying company name as ticker: ${firstWord.toUpperCase()}`);
-        }
-    }
-
-    const uniqueAlternatives = [...new Set(alternatives)];
-    console.log(`Trying ${uniqueAlternatives.length} alternatives in one FMP batch...`);
-
-    // Try ALL candidates in a single FMP batch call (was: sequential, ~500ms each).
-    const priced = await batchFetchFMP(uniqueAlternatives);
-    for (const altSymbol of uniqueAlternatives) {          // priority order preserved
-        const price = priced[altSymbol.toUpperCase()];
-        if (price > 0) {
-            console.log(`\u2713 SUCCESS with ${altSymbol} (FMP batch)`);
-            return { price, source: 'Financial Modeling Prep', tier: 2, success: true, alternativeSymbol: altSymbol, originalSymbol };
-        }
-    }
-
-    console.log(`\u2717 All alternatives failed for ${originalSymbol}`);
-    return null;
 }
 
 // ── Asset Profile Fetching ──────────────────────────────────────────────────
