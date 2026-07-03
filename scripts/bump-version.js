@@ -31,7 +31,10 @@ if (!SEMVER.test(current)) { console.error(`package.json version "${current}" is
 if (current === next) { console.error(`Already at ${next}.`); process.exit(1); }
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'scripts']);
-const SKIP_FILES = new Set(['package-lock.json']);   // handled via JSON below
+// package-lock.json is handled via JSON below. README.md is skipped entirely:
+// it holds the changelog, whose historical `### vX.Y.Z` headings must NOT be
+// rewritten — add the new version's entry there by hand.
+const SKIP_FILES = new Set(['package-lock.json', 'README.md']);
 const EXTS = new Set(['.html', '.js', '.json', '.md', '.css']);
 
 const re = new RegExp(current.replace(/\./g, '\\.'), 'g');

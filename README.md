@@ -307,6 +307,15 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.27.0
+- **Optimization & Quality audit fixes (13 findings)** — a full read-only audit of the recently-shipped pricing/import code, actioned end to end:
+  - **Data safety:** wine type-classification now matches AI results by **stable bottle id** (was a weak chunk index that could silently mis-type and persist bottles).
+  - **Import speed:** ISIN resolution runs through a **bounded concurrency pool** instead of one-at-a-time with 1.5s/0.5s sleeps (~3× faster imports, still within Finnhub's 60/min).
+  - **FMP quota:** a real **date-keyed, persisted daily counter** that resets at midnight and actually **pauses** the FMP tier near the 250/day cap (falls back to Finnhub/AV/AI) — the old counter reset every reload and never gated.
+  - **No snapshot spam:** a refresh where the 15-min freshness cache skipped everything no longer writes a portfolio snapshot / re-saves price history.
+  - **Consistency:** shared pure helpers (`normalizeForPricing`, batch mapping, freshness, `pooled`) extracted to `services/pricing-core.js` so the **shipped** code is what the tests exercise; Phase-C AI validation and wine valuation batches are now **pooled**; `detectSplitPairs` no longer runs quadratic; the AI resolver distinguishes a **transient outage** from a genuine no-match.
+  - **Tooling/tech-debt:** `npm run bump X.Y.Z` rewrites every `?v=` string in one shot; removed the dead `tryAlternativeFormats`; +13 unit tests for the new pure helpers (708 total).
+
 ### v3.26.0
 - **Interactive ticker resolution ("no more silent missing prices")** — a manual **Update Prices** run now ends with a resolve dialog for any holding still unpriced after the batch/concurrency/AI tiers. Per holding you can: accept the **AI web-search suggestion** (pre-filled), **search by name/description** (FMP `search-symbol` → Finnhub `search`, pick from candidates), **enter a ticker** directly, or **keep it at cost**. Every chosen ticker is **validated** (a price is fetched) before it's trusted, then persisted as the learned `pricing_ticker` so it auto-applies next refresh. Automatic/background refreshes stay silent (non-interactive) — only the button opens the dialog.
 - **Wiring** — `pricing.js` exposes `setMissingTickerResolver()` / `searchTickerByName()`; `fetchMarketPrices({interactive:true})` triggers the dialog (callback injection avoids a circular import between pricing and portfolio).
