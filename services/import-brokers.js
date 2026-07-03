@@ -286,8 +286,9 @@ export function detectSplitPairs(trades) {
         const buys = idxs.filter(i => trades[i].side === 'buy');
         const sells = idxs.filter(i => trades[i].side === 'sell');
         for (const bi of buys) {
+            if (flaggedIdx.has(bi)) continue;
             for (const si of sells) {
-                if (flaggedIdx.has(bi) || flaggedIdx.has(si)) continue;
+                if (flaggedIdx.has(si)) continue;
                 const b = trades[bi], s = trades[si];
                 const hi = Math.max(b.price, s.price), lo = Math.min(b.price, s.price);
                 if (lo > 0 && hi / lo >= 3) {
@@ -301,6 +302,7 @@ export function detectSplitPairs(trades) {
                         fromShares, toShares,
                         ratio: fromShares > 0 ? toShares / fromShares : 1,
                     });
+                    break; // this buy is consumed — stop scanning sells for it
                 }
             }
         }

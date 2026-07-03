@@ -197,7 +197,11 @@ async function resolveTickersViaAI(failedSymbols) {
             body: JSON.stringify({ items }),
         });
         const txt = await response.text();
-        if (!response.ok) { console.warn('resolve-tickers failed:', response.status, txt.slice(0, 200)); return {}; }
+        if (!response.ok) {
+            console.warn('resolve-tickers failed:', response.status, txt.slice(0, 200));
+            state.lastResolverError = `resolver unavailable (HTTP ${response.status})`;
+            return {};
+        }
         const data = JSON.parse(txt);
         const out = data.content?.find(c => c.type === 'text')?.text || '';
         // Gemini/Claude may wrap the JSON in prose or code fences — extract the array.
@@ -216,8 +220,13 @@ async function resolveTickersViaAI(failedSymbols) {
                 price: Number.isFinite(price) && price > 0 ? price : null,
             };
         });
+        state.lastResolverError = null;   // reached the resolver successfully
         return map;
-    } catch (err) { console.warn('resolveTickersViaAI error:', err.message); return {}; }
+    } catch (err) {
+        console.warn('resolveTickersViaAI error:', err.message);
+        state.lastResolverError = `resolver error: ${err.message}`;
+        return {};
+    }
 }
 
 // ── Single Symbol Fetch ─────────────────────────────────────────────────────
@@ -584,6 +593,7 @@ export async function fetchMarketPrices(opts = {}) {
     let successCount = 0;
     let failCount = 0;
     let errors = [];
+    state.lastResolverError = null;         // reset per run; set if the AI resolver errors
     state.fmpCallsToday = fmpCallsUsed();   // sync from persisted daily quota
 
     // The ticker we actually query for a holding (a learned pricingTicker wins).
@@ -777,7 +787,12 @@ export async function fetchMarketPrices(opts = {}) {
             msg += `\n\u2139 ${failCount} holding${failCount !== 1 ? 's have' : ' has'} no live price and ${failCount !== 1 ? 'are' : 'is'} shown at cost basis:\n`;
             msg += noPrice.slice(0, 12).map(s => `\u2022 ${s}`).join('\n') + '\n';
             if (noPrice.length > 12) msg += `\u2022 \u2026and ${noPrice.length - 12} more\n`;
-            msg += `\nTip: open one of these holdings to map a ticker your market-data provider recognizes (e.g. a US ADR or the right exchange suffix).`;
+            // Distinguish a transient resolver outage from a genuine "no match".
+            if (state.lastResolverError) {
+                msg += `\n\u26a0\ufe0f The online ticker resolver was ${state.lastResolverError} \u2014 some of these may resolve if you retry in a bit.`;
+            } else {
+                msg += `\nTip: open one of these holdings to map a ticker your market-data provider recognizes (e.g. a US ADR or the right exchange suffix).`;
+            }
         }
 
         if (refreshedThisRun.size > 0) {
