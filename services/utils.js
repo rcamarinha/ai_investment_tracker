@@ -91,7 +91,8 @@ export function buildAssetRecord(position) {
         stock_exchange: stockExchange,
         sector,
         currency,
-        asset_type: position.type || 'Stock'
+        asset_type: position.type || 'Stock',
+        untracked: !!position.untracked
     };
 }
 

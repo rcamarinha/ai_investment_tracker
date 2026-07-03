@@ -147,6 +147,7 @@ CREATE TABLE assets (
     isin TEXT DEFAULT NULL,
     source TEXT DEFAULT NULL,         -- ISIN→ticker mapping provenance: 'user' (manual) | 'api' | null
     pricing_ticker TEXT DEFAULT NULL, -- learned ticker that actually returns a price (EU remap / ADR)
+    untracked BOOLEAN DEFAULT FALSE,  -- "kept at cost": pricing deliberately disabled for this holding
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );

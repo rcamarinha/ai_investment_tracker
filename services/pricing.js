@@ -153,6 +153,31 @@ function persistPricingTicker(symbol, pricingTicker) {
 }
 
 /**
+ * Set (or clear) the "kept at cost" flag on a holding and persist it immediately,
+ * so the choice survives a reload and re-enabling pricing sticks. Updates both the
+ * position and the asset DB. Exported for the per-card "re-enable pricing" action.
+ */
+export function setUntracked(symbol, flag) {
+    if (!symbol) return;
+    const existing = state.assetDatabase[symbol] || {};
+    state.assetDatabase[symbol] = { ...existing, ticker: symbol, untracked: !!flag };
+    const pos = state.portfolio.find(p => p.symbol === symbol);
+    if (pos) pos.untracked = !!flag;
+    try {
+        saveAssetsToDB([{
+            ticker: symbol,
+            name: existing.name || symbol,
+            stock_exchange: existing.stockExchange || '',
+            sector: existing.sector || 'Other',
+            currency: existing.currency || '',
+            asset_type: existing.assetType || 'Stock',
+            isin: existing.isin || null,
+            untracked: !!flag,
+        }]);
+    } catch (err) { console.warn('setUntracked failed:', err.message); }
+}
+
+/**
  * Ask the resolve-tickers edge function for a priceable ticker for each symbol
  * that failed all price APIs. Returns { ORIGINAL_SYMBOL: SUGGESTED_TICKER }.
  * The caller must VALIDATE each suggestion against a price API before trusting it.
@@ -591,13 +616,23 @@ export async function fetchMarketPrices(opts = {}) {
                 for (const d of decisions) {
                     if (!d || !d.symbol) continue;
                     if (d.keepAtCost) {
-                        const meta = state.assetDatabase[d.symbol] || {};
-                        state.assetDatabase[d.symbol] = { ...meta, ticker: d.symbol, untracked: true };
-                        const pos = state.portfolio.find(p => p.symbol === d.symbol);
-                        if (pos) pos.untracked = true;
+                        setUntracked(d.symbol, true);   // persisted so the choice survives reload
                     } else if (d.ticker) {
                         const r = await fetchStockPrice(d.ticker);   // validate before persist
-                        if (r.success) { recordSuccess(d.symbol, r.price, `${r.source} (user: ${d.ticker})`); persistPricingTicker(d.symbol, d.ticker); }
+                        if (r.success) {
+                            recordSuccess(d.symbol, r.price, `${r.source} (user: ${d.ticker})`);
+                            setUntracked(d.symbol, false);            // mapping a ticker re-enables pricing
+                            persistPricingTicker(d.symbol, d.ticker);
+                        } else {
+                            // Validation failed — surface WHY instead of leaving the old
+                            // "no price found" so the user knows their ticker was rejected.
+                            state.priceMetadata[d.symbol] = {
+                                timestamp: new Date().toISOString(),
+                                source: `User entry (${d.ticker})`,
+                                success: false,
+                                error: r.error || `"${d.ticker}" returned no price`,
+                            };
+                        }
                     }
                 }
                 renderPortfolio();
@@ -674,6 +709,11 @@ export async function fetchMarketPrices(opts = {}) {
 
         let msg = `\u2713 Price update complete!\n\n`;
         msg += `\u2713 Priced: ${successCount} of ${symbols.length} holdings\n`;
+        // Tell the user when the FMP tier was paused for the day, so unpriced
+        // holdings aren't a mystery (the quota guard is otherwise console-only).
+        if (fmpQuotaExhausted() && state.fmpKey) {
+            msg += `\n\u23f8 FMP daily limit reached (${fmpCallsUsed()}/${FMP_DAILY_LIMIT}) \u2014 used Finnhub/Alpha Vantage/AI for the rest. Resets tomorrow.\n`;
+        }
         if (failCount > 0) {
             // Calm, non-alarming: these are shown at cost basis, not "failures".
             const noPrice = symbols.filter(s => !(state.priceMetadata[s] && state.priceMetadata[s].success));
