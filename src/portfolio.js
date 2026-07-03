@@ -873,6 +873,58 @@ export function aggregateByType(portfolio, marketPrices = {}) {
   return { allocations, totalMarketValue };
 }
 
+// ── AI Resolver Helpers ───────────────────────────────────────────────────────
+
+/**
+ * Extract and parse a JSON array from LLM output that may be wrapped in prose
+ * or Markdown code fences (```json or ```).
+ *
+ * Mirrors the inline parsing in resolveTickersViaAI() inside services/pricing.js.
+ * A misparse silently drops all AI ticker suggestions, so this pure helper
+ * exists to make the extraction behaviour testable.
+ *
+ * @param {string} text - Raw LLM response text
+ * @returns {Array} Parsed array, or [] on any failure
+ */
+export function extractLlmJsonArray(text) {
+  if (!text) return [];
+  const cleaned = text.replace(/```json|```/g, '').trim();
+  const start = cleaned.indexOf('[');
+  const end = cleaned.lastIndexOf(']');
+  const jsonText = (start >= 0 && end > start) ? cleaned.slice(start, end + 1) : cleaned;
+  try {
+    const parsed = JSON.parse(jsonText);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Classify an FMP batch endpoint HTTP response body.
+ *
+ * Mirrors the text-first / non-JSON detection logic introduced in PR #206
+ * inside batchFetchFMP() in services/pricing.js. On free plans the comma-list
+ * endpoint returns a plain-text "Premium Query Parameter…" notice with HTTP 200,
+ * which is NOT JSON — parsing it directly throws and the fmpBatchUnsupported
+ * flag was never set, so every refresh retried the doomed batch silently.
+ *
+ * Returns { unsupported: true } when the body is not JSON or is not an array
+ * (FMP error object / premium notice), and { unsupported: false, json } when
+ * the body is a valid JSON array that can be fed to parseFmpBatchResponse.
+ *
+ * @param {string} text - Raw HTTP response body text
+ * @returns {{ unsupported: boolean, json?: any }}
+ */
+export function classifyFmpBatchText(text) {
+  let json;
+  try { json = JSON.parse(text); } catch {
+    return { unsupported: true };
+  }
+  if (!Array.isArray(json)) return { unsupported: true, json };
+  return { unsupported: false, json };
+}
+
 // ── Sector Filter Helpers ────────────────────────────────────────────────────
 
 /**
