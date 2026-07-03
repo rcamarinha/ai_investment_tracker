@@ -63,6 +63,30 @@ function isPriceFresh(meta, windowMs, now = Date.now()) {
     return Number.isFinite(t) && (now - t) <= windowMs;
 }
 
+// ── FMP daily-quota guard ────────────────────────────────────────────────────
+// FMP free plan is 250 requests/day (comma-batch bills ~per symbol). Track usage
+// across reloads in localStorage, keyed by date so it resets at midnight, and
+// actually STOP hitting FMP when near the cap (falls back to Finnhub/AV/AI).
+const FMP_DAILY_LIMIT = 250;
+const FMP_QUOTA_HEADROOM = 10;   // stop a bit early to leave manual-lookup budget
+
+function fmpQuota() {
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+        const raw = JSON.parse(localStorage.getItem('fmpQuota') || '{}');
+        if (raw && raw.date === today && Number.isFinite(raw.count)) return raw;
+    } catch { /* ignore */ }
+    return { date: today, count: 0 };
+}
+export function fmpCallsUsed() { return fmpQuota().count; }
+function addFmpCalls(n) {
+    const q = fmpQuota();
+    q.count += n;
+    try { localStorage.setItem('fmpQuota', JSON.stringify(q)); } catch { /* ignore quota */ }
+    state.fmpCallsToday = q.count;   // kept for existing UI/log references
+}
+function fmpQuotaExhausted() { return fmpCallsUsed() >= FMP_DAILY_LIMIT - FMP_QUOTA_HEADROOM; }
+
 /**
  * Fetch many tickers from FMP in one (chunked) call. Queries the price-API
  * normalized form and maps results back to the raw input symbol.
@@ -70,7 +94,7 @@ function isPriceFresh(meta, windowMs, now = Date.now()) {
  * caller falls back to per-symbol.
  */
 export async function batchFetchFMP(symbols) {
-    if (!state.fmpKey || state.fmpBatchUnsupported || !symbols || !symbols.length) return {};
+    if (!state.fmpKey || state.fmpBatchUnsupported || fmpQuotaExhausted() || !symbols || !symbols.length) return {};
     const result = {};
     const normToRaw = {};        // normalized query form → [raw...]
     const baseToRaw = {};        // base (no suffix) → [raw...] for resilient echo matching
@@ -106,7 +130,7 @@ export async function batchFetchFMP(symbols) {
                 state.fmpBatchUnsupported = true;
                 continue;
             }
-            state.fmpCallsToday = (state.fmpCallsToday || 0) + chunk.length; // FMP bills ≈ per symbol, only on success
+            addFmpCalls(chunk.length); // FMP bills ≈ per symbol, only on success
             const priced = parseFmpBatchResponse(json);
             // If we asked for many but got ≤1 back, the plan likely ignores comma-lists.
             if (chunk.length > 3 && json.length <= 1) {
@@ -261,11 +285,12 @@ export async function fetchStockPrice(symbol) {
     // FMP / Alpha Vantage use FMP-style suffixes — remap Finnhub-style ones (.FRK→.DE)
     const pricingSymbol = normalizeForPricing(symbol);
 
-    // TIER 2: FMP
-    if (state.fmpKey) {
+    // TIER 2: FMP (skipped when the daily quota is near the cap)
+    if (state.fmpKey && !fmpQuotaExhausted()) {
         try {
             const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${pricingSymbol}&apikey=${state.fmpKey}`;
             console.log(`Trying FMP for ${symbol}...`);
+            addFmpCalls(1);
             const response = await fetch(url);
 
             if (response.ok) {
@@ -599,13 +624,18 @@ export async function fetchMarketPrices(opts = {}) {
     let successCount = 0;
     let failCount = 0;
     let errors = [];
-    state.fmpCallsToday = state.fmpCallsToday || 0;
+    state.fmpCallsToday = fmpCallsUsed();   // sync from persisted daily quota
 
     // The ticker we actually query for a holding (a learned pricingTicker wins).
     const queryOf = sym => (state.assetDatabase[sym] && state.assetDatabase[sym].pricingTicker) || sym;
+    // Symbols whose price was actually (re)fetched this run — NOT the ones the
+    // freshness cache skipped. Used to avoid snapshotting/re-saving on a run that
+    // fetched nothing (e.g. a 2nd "Update Prices" click within the 15-min window).
+    const refreshedThisRun = new Set();
     const recordSuccess = (sym, price, source) => {
         state.marketPrices[sym] = price;
         state.priceMetadata[sym] = { timestamp: new Date().toISOString(), source, success: true };
+        refreshedThisRun.add(sym);
     };
 
     try {
@@ -714,7 +744,7 @@ export async function fetchMarketPrices(opts = {}) {
             if (meta && meta.success) successCount++;
             else { failCount++; errors.push(`${s}: ${(meta && meta.error) || 'no price found'}`); }
         }
-        if (state.fmpCallsToday > 200) console.warn(`FMP calls today ~ ${state.fmpCallsToday}/250`);
+        if (fmpCallsUsed() > FMP_DAILY_LIMIT * 0.8) console.warn(`FMP calls today ~ ${fmpCallsUsed()}/${FMP_DAILY_LIMIT}${fmpQuotaExhausted() ? ' — FMP paused, using Finnhub/AV/AI' : ''}`);
 
         console.log('\n=== FETCH COMPLETE ===');
         console.log('Success:', successCount);
@@ -723,7 +753,7 @@ export async function fetchMarketPrices(opts = {}) {
         renderPortfolio();
 
         // Compute & display top movers (only where we had a previous price to compare)
-        if (successCount > 0 && Object.keys(previousPrices).length > 0) {
+        if (refreshedThisRun.size > 0 && Object.keys(previousPrices).length > 0) {
             const now = new Date().toISOString();
             const movers = [];
             for (const [symbol, newPrice] of Object.entries(state.marketPrices)) {
@@ -747,8 +777,9 @@ export async function fetchMarketPrices(opts = {}) {
             analyzeMovers(movers).catch(err => console.warn('analyzeMovers error:', err));
         }
 
-        // Post-fetch: save assets and prices to DB
-        if (successCount > 0) {
+        // Post-fetch: save assets and prices to DB — only when we actually fetched
+        // something this run (skip on a fully fresh-cached no-op run).
+        if (refreshedThisRun.size > 0) {
             const assetRecords = state.portfolio.map(p => buildAssetRecord(p));
             await saveAssetsToDB(assetRecords);
             await loadAssetsFromDB();
@@ -758,7 +789,7 @@ export async function fetchMarketPrices(opts = {}) {
             const now = new Date().toISOString();
             for (const [symbol, price] of Object.entries(state.marketPrices)) {
                 const meta = state.priceMetadata[symbol];
-                if (meta && meta.success && !meta.source.includes('(cached)')) {
+                if (refreshedThisRun.has(symbol) && meta && meta.success && !meta.source.includes('(cached)')) {
                     const assetInfo = state.assetDatabase[symbol.toUpperCase()];
                     priceRecords.push({
                         ticker: symbol.toUpperCase(),
@@ -785,7 +816,7 @@ export async function fetchMarketPrices(opts = {}) {
             msg += `\nTip: open one of these holdings to map a ticker your market-data provider recognizes (e.g. a US ADR or the right exchange suffix).`;
         }
 
-        if (successCount > 0) {
+        if (refreshedThisRun.size > 0) {
             await savePortfolioSnapshot();
             msg += '\n\n\uD83D\uDCCA Portfolio snapshot saved to history!';
         }
