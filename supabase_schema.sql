@@ -81,16 +81,23 @@ CREATE TABLE admin_users (
 );
 
 ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
--- No SELECT policy: admin_users is not readable via the anon/authenticated role.
--- Only the Postgres service role (used by edge functions) can query it.
+-- Each user may read ONLY their own row. This is how checkUserRole() (client)
+-- determines admin status — a returned row proves membership, without letting
+-- anyone enumerate all admins. The service role still bypasses RLS for writes.
+CREATE POLICY "Users can read their own admin row"
+    ON admin_users FOR SELECT
+    USING (auth.uid() = user_id);
 
 -- ============================================
 -- App Config: shared API keys (admin-managed)
 -- ============================================
 -- Pricing keys (finnhubKey, fmpKey, alphaVantageKey) are readable by all
 -- authenticated users so they never need to configure their own keys.
--- Sensitive admin config (adminEmails) remains admin-only.
--- No frontend writes allowed.
+-- No frontend writes allowed (no INSERT/UPDATE/DELETE policy = all client
+-- writes blocked; only the service role can change these).
+-- NOTE: adminEmails is deprecated as of 2026-07 — admin status now derives
+-- solely from admin_users membership (see checkUserRole). Any adminEmails row
+-- is unused and can be deleted.
 
 CREATE TABLE app_config (
     key TEXT PRIMARY KEY,
