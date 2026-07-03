@@ -646,8 +646,15 @@ export function dedupeTrades(trades, existing = new Map()) {
  */
 export function computePositionsFromLedger(transactions) {
     const out = {};
+    const txTime = t => new Date(t && t.date || 0).getTime();
     for (const [symbol, txs] of Object.entries(transactions || {})) {
-        const sorted = [...(txs || [])].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+        const arr = txs || [];
+        // Average-cost is order-sensitive, so txs must be date-sorted. But this
+        // runs on every rebuild and several UI paths; skip the copy+sort when the
+        // ledger is already ascending (the common case: appended / loaded sorted).
+        let ascending = true;
+        for (let i = 1; i < arr.length; i++) { if (txTime(arr[i - 1]) > txTime(arr[i])) { ascending = false; break; } }
+        const sorted = ascending ? arr : [...arr].sort((a, b) => txTime(a) - txTime(b));
         let shares = 0;
         let costTotal = 0; // native-currency cost of currently-held shares
         let realized = 0;
