@@ -59,16 +59,16 @@ export function renderPortfolio() {
         if (txs && txs.length > 0) {
             // Sum buy transactions converted at their historical rates
             let investedBase = 0;
-            let soldBase = 0;
             txs.forEach(tx => {
                 const rate = tx.exchangeRate || getExchangeRate(tx.currency || currency);
                 if (tx.type === 'buy') investedBase += tx.totalAmount * rate;
-                else if (tx.type === 'sell') soldBase += tx.totalAmount * rate;
             });
-            // Invested = total buys minus total sells (in base), proportional to remaining shares
-            const totalBuyShares = txs.filter(t => t.type === 'buy').reduce((s, t) => s + t.shares, 0);
-            const totalSellShares = txs.filter(t => t.type === 'sell').reduce((s, t) => s + t.shares, 0);
-            const remainingRatio = totalBuyShares > 0 ? p.shares / totalBuyShares : 1;
+            // Scale by the fraction of original cost still held. Uses cost-based
+            // ratio (not share-based) so stock splits don't inflate the total.
+            const totalBuyCostNative = txs.filter(t => t.type === 'buy')
+                .reduce((s, t) => s + (t.totalAmount || t.shares * t.price), 0);
+            const remainingRatio = totalBuyCostNative > 0
+                ? Math.min(1, investedNative / totalBuyCostNative) : 1;
             totalInvestedBase += investedBase * remainingRatio;
         } else {
             // No transactions: fallback to current rate
@@ -821,7 +821,10 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
                     return;
                 }
 
-                const resolvedTicker = (r.ticker + (r.exchange || '')).toUpperCase();
+                // Only append exchange suffix when ticker doesn't already include one
+                const base = r.ticker.toUpperCase();
+                const exch = (r.exchange || '').toUpperCase();
+                const resolvedTicker = (exch && !base.includes('.')) ? (base + exch) : base;
 
                 // Check if this ticker already exists in DB — log for visibility
                 const existingInPortfolio = state.portfolio.find(p => p.symbol.toUpperCase() === resolvedTicker);
@@ -2918,11 +2921,16 @@ export function deleteTransactionRow(rowIndex) {
     if (idx < 0) return;
 
     txs.splice(idx, 1);
-    if (txs.length === 0) delete state.transactions[symbol];
+    if (txs.length === 0) {
+        delete state.transactions[symbol];
+        // No transactions remain → remove the ledger-derived portfolio position
+        state.portfolio = state.portfolio.filter(p => p.symbol !== symbol);
+    }
 
     rebuildPositionsFromLedger();
+    // saveTransactionsToStorage already calls saveTransactionsToDB internally;
+    // a second direct call races (two concurrent delete-then-insert ops).
     saveTransactionsToStorage();
-    saveTransactionsToDB();
     savePortfolioDB();
     renderPortfolio();
 }

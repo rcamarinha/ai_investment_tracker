@@ -513,6 +513,20 @@ describe('computePositionsFromLedger', () => {
     expect(pos.NVDA.avgPrice).toBeCloseTo(42.5);
   });
 
+  it('preserves total cost (shares × avgPrice) through a split', () => {
+    const originalCost = 100 * 100; // 100 shares @ $100
+    const txs = {
+      AAPL: [
+        { type: 'buy', shares: 100, price: 100, date: '2020-01-01' },
+        { type: 'split', ratio: 4, date: '2020-08-31' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.AAPL.shares).toBe(400);
+    expect(pos.AAPL.avgPrice).toBeCloseTo(25);
+    expect(pos.AAPL.shares * pos.AAPL.avgPrice).toBeCloseTo(originalCost);
+  });
+
   it('folds buy/sell fees into cost basis and realized P&L', () => {
     const txs = {
       AAPL: [
