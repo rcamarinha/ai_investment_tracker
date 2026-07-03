@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.28.0
+- **Fix the ticker-resolve flow (typed tickers were being dropped)** — in the "resolve missing price" dialog, when there was no AI suggestion the action dropdown silently defaulted to **Keep at cost**, so a ticker you *typed* was discarded and the holding was marked untracked. Now: typing a ticker **auto-selects "Use ticker"**, the no-suggestion default is an inert **Skip** (never a silent keep-at-cost), and Apply honours a typed ticker even if the dropdown wasn't touched. A user-entered ticker that fails validation now reports **why** instead of a generic "no price".
+- **"Kept at cost" is now recoverable and durable** — the untracked flag is **persisted** (`assets.untracked`, migration `20260703_assets_untracked.sql`) so a deliberate keep-at-cost survives reload, and each kept-at-cost holding shows a **click-to-re-enable-pricing** link on its card (clears the flag + refetches). No more dead-end where a holding could never be priced again without re-importing.
+- **FMP daily-limit is no longer a silent failure** — when the 250/day FMP quota is reached and the tier pauses (falling back to Finnhub/Alpha Vantage/AI), the price-update summary now says so, instead of prices mysteriously not updating with only a console note.
+
 ### v3.27.0
 - **Optimization & Quality audit fixes (13 findings)** — a full read-only audit of the recently-shipped pricing/import code, actioned end to end:
   - **Data safety:** wine type-classification now matches AI results by **stable bottle id** (was a weak chunk index that could silently mis-type and persist bottles).

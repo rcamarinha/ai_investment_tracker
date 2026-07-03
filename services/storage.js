@@ -223,6 +223,8 @@ export async function saveAssetsToDB(assets) {
             if (asset.source) upsertData.source = asset.source;
             // Learned ticker that actually returns a price (e.g. EU suffix remap)
             if (asset.pricing_ticker) upsertData.pricing_ticker = asset.pricing_ticker;
+            // "Kept at cost" flag — always written (incl. false) so re-enabling sticks
+            if (typeof asset.untracked === 'boolean') upsertData.untracked = asset.untracked;
 
             const { error } = await state.supabaseClient
                 .from('assets')
@@ -264,7 +266,8 @@ export async function loadAssetsFromDB() {
                     assetType: a.asset_type,
                     isin: a.isin || null,
                     source: a.source || null,
-                    pricingTicker: a.pricing_ticker || null
+                    pricingTicker: a.pricing_ticker || null,
+                    untracked: a.untracked || false
                 };
             });
             console.log('\u2713 Loaded', data.length, 'assets from DB into assetDatabase');

@@ -9,7 +9,7 @@ import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveTransactionsToDB, deleteTransactionsForSymbol,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
-import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled } from './pricing.js';
+import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled, setUntracked } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
 import { parseBrokerExport, normalizeTrades,
          buildExistingFingerprints, dedupeTrades,
@@ -239,7 +239,9 @@ export function renderPortfolio() {
                 </div>
                 <div class="pos-sub">${cardSub}</div>
                 <div class="pos-sub">${positionSub}${timestampText ? ' \u00B7 ' + escapeHTML(timestampText) : ''}</div>
-                ${(pos.untracked || isISIN(pos.symbol)) ? `<div class="pos-sub" style="color: var(--gold);" title="No ticker mapping \u2014 live price disabled. Re-import and map a ticker, or it stays cost-only.">\u26A0 untracked \u00B7 no live price</div>` : ''}
+                ${pos.untracked
+                    ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="Kept at cost \u2014 pricing disabled. Click to re-enable live pricing." onclick="reEnablePricing('${escapeHTML(pos.symbol)}')">\u26A0 kept at cost \u00B7 <u>re-enable pricing</u></div>`
+                    : (isISIN(pos.symbol) ? `<div class="pos-sub" style="color: var(--gold);" title="No ticker mapping \u2014 live price disabled. Re-import and map a ticker.">\u26A0 unmapped ISIN \u00B7 no live price</div>` : '')}
                 ${(pos.dividends > 0) ? `<div class="pos-sub" style="color: var(--up);">\uD83D\uDCB0 ${formatCurrency(pos.dividends - (pos.taxWithheld || 0), currency)} income${(pos.avgPrice > 0 && pos.shares > 0) ? ` \u00B7 ${formatPercent((pos.dividends - (pos.taxWithheld || 0)) / (pos.avgPrice * pos.shares) * 100)} yld/cost` : ''}</div>` : ''}
                 ${platformBadge}
                 <div class="position-actions">${actionButtons}</div>
@@ -1105,6 +1107,19 @@ function showUnresolvedDialog(items) {
  * ticker (fetches a price) before persisting it. Registered via
  * setMissingTickerResolver so pricing.js needs no static import of this module.
  */
+/**
+ * Re-enable live pricing for a holding the user previously "kept at cost".
+ * Clears the persisted untracked flag and immediately runs an interactive
+ * refresh so they can map a ticker on the spot if it still can't be priced.
+ */
+export async function reEnablePricing(symbol) {
+    if (!symbol) return;
+    setUntracked(symbol, false);
+    delete state.priceMetadata[symbol];   // drop any stale "no price" record
+    renderPortfolio();
+    await fetchMarketPrices({ interactive: true });
+}
+
 export function resolveMissingTickers(items) {
     return new Promise(resolve => {
         const rows = items.map((it, idx) => `
@@ -1120,8 +1135,8 @@ export function resolveMissingTickers(items) {
                 <td style="padding:6px 8px;">
                     <select class="rmt-action" style="font-size:12px;padding:4px;">
                         <option value="map"${it.suggestion ? ' selected' : ''}>Use ticker</option>
-                        <option value="cost"${it.suggestion ? '' : ' selected'}>Keep at cost</option>
-                        <option value="skip">Skip</option>
+                        <option value="skip"${it.suggestion ? '' : ' selected'}>Skip for now</option>
+                        <option value="cost">Keep at cost (no live price)</option>
                     </select>
                 </td>
             </tr>`).join('');
@@ -1146,6 +1161,19 @@ export function resolveMissingTickers(items) {
                 </div>
             </div>`;
         document.body.appendChild(overlay);
+
+        // Typing a ticker auto-selects "Use ticker" so a manually entered symbol
+        // is never silently dropped (the bug where the no-suggestion default was
+        // "Keep at cost" and swallowed typed tickers). Respect an explicit later
+        // dropdown change — only flip when the current action isn't 'cost'/'skip'
+        // that the user just chose deliberately, i.e. flip on typing regardless,
+        // since typing is a stronger signal of intent than the default.
+        overlay.querySelectorAll('.rmt-ticker').forEach(inp => {
+            inp.addEventListener('input', () => {
+                const sel = inp.closest('tr').querySelector('.rmt-action');
+                if (inp.value.trim()) sel.value = 'map';
+            });
+        });
 
         // Per-row "search by name" → picker → fills the ticker input.
         overlay.querySelectorAll('.rmt-search').forEach(btn => {
@@ -1178,7 +1206,8 @@ export function resolveMissingTickers(items) {
                 const action = tr.querySelector('.rmt-action').value;
                 const ticker = (tr.querySelector('.rmt-ticker').value || '').trim().toUpperCase();
                 if (action === 'cost') out.push({ symbol, keepAtCost: true });
-                else if (action === 'map' && ticker) out.push({ symbol, ticker });
+                else if (action === 'skip' && !ticker) { /* explicit skip, no ticker */ }
+                else if (ticker) out.push({ symbol, ticker });   // typed ticker wins even if dropdown wasn't switched
             });
             document.body.removeChild(overlay);
             resolve(out);
