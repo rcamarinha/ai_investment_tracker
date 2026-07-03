@@ -649,10 +649,14 @@ export async function fetchMarketPrices(opts = {}) {
             const suggestions = await resolveTickersViaAI(stillFailed);
             aiSuggestions = suggestions;
             const suggestedTickers = Object.values(suggestions).map(x => x && x.ticker).filter(Boolean);
+            // One batch validation pass — no-ops instantly on free plans where the
+            // comma-list batch is unsupported, so per-symbol validation carries it.
             const validated = suggestedTickers.length ? await batchFetchFMP(suggestedTickers) : {};
-            for (const sym of stillFailed) {
+            // Pool the per-symbol validations so a large AI batch doesn't validate
+            // strictly sequentially (recordSuccess/persist mutate maps — pool-safe).
+            await pooled(stillFailed, async (sym) => {
                 const s = suggestions[sym.toUpperCase()];
-                if (!s) continue;
+                if (!s) return;
                 if (s.ticker && s.ticker.toUpperCase() !== sym.toUpperCase()) {
                     let price = validated[s.ticker.toUpperCase()];
                     let source = `Financial Modeling Prep (AI: ${s.ticker})`;
@@ -660,10 +664,10 @@ export async function fetchMarketPrices(opts = {}) {
                         const r = await fetchStockPrice(s.ticker);
                         if (r.success) { price = r.price; source = `${r.source} (AI: ${s.ticker})`; }
                     }
-                    if (price > 0) { recordSuccess(sym, price, source); persistPricingTicker(sym, s.ticker); continue; }
+                    if (price > 0) { recordSuccess(sym, price, source); persistPricingTicker(sym, s.ticker); return; }
                 }
                 if (Number(s.price) > 0) recordSuccess(sym, Number(s.price), 'Web search (AI)');
-            }
+            }, state.finnhubKey ? 3 : 2, 300);
             renderPortfolio();
         }
 
