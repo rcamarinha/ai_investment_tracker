@@ -19,8 +19,9 @@ import { analyzeMovers } from './analysis.js';
 // mirror (src/portfolio.js) so the shipped code is what the tests exercise.
 import {
     normalizeForPricing, parseFmpBatchResponse, isPriceFresh,
+    buildRawMaps, mapPricedToRaw, pooled,
 } from './pricing-core.js';
-export { normalizeForPricing };
+export { normalizeForPricing, pooled };
 
 // ── FMP daily-quota guard ────────────────────────────────────────────────────
 // FMP free plan is 250 requests/day (comma-batch bills ~per symbol). Track usage
@@ -55,14 +56,7 @@ function fmpQuotaExhausted() { return fmpCallsUsed() >= FMP_DAILY_LIMIT - FMP_QU
 export async function batchFetchFMP(symbols) {
     if (!state.fmpKey || state.fmpBatchUnsupported || fmpQuotaExhausted() || !symbols || !symbols.length) return {};
     const result = {};
-    const normToRaw = {};        // normalized query form → [raw...]
-    const baseToRaw = {};        // base (no suffix) → [raw...] for resilient echo matching
-    for (const raw of new Set(symbols.map(s => String(s).toUpperCase()))) {
-        const norm = normalizeForPricing(raw);
-        (normToRaw[norm] ||= []).push(raw);
-        (baseToRaw[norm.split('.')[0]] ||= []).push(raw);
-    }
-    const normSyms = Object.keys(normToRaw);
+    const { normToRaw, baseToRaw, normSyms } = buildRawMaps(symbols);
     for (let i = 0; i < normSyms.length; i += 50) {
         const chunk = normSyms.slice(i, i + 50);
         try {
@@ -96,10 +90,7 @@ export async function batchFetchFMP(symbols) {
                 console.warn(`FMP batch returned ${json.length} for ${chunk.length} symbols — disabling batch for this session (falling back to per-symbol/Finnhub).`);
                 state.fmpBatchUnsupported = true;
             }
-            for (const [sym, price] of Object.entries(priced)) {
-                const targets = normToRaw[sym] || baseToRaw[sym.split('.')[0]] || [sym];
-                targets.forEach(raw => { result[raw] = price; });
-            }
+            Object.assign(result, mapPricedToRaw(priced, normToRaw, baseToRaw));
         } catch (err) { console.warn('FMP batch failed:', err.message); }
     }
     return result;
@@ -139,17 +130,6 @@ export async function searchTickerByName(query) {
         } catch (err) { console.warn('Finnhub name search failed:', err.message); }
     }
     return out;
-}
-
-/** Run at most `concurrency` promises at a time, with `delay` ms between waves. */
-export async function pooled(items, factory, concurrency, delay = 0) {
-    const results = [];
-    for (let i = 0; i < items.length; i += concurrency) {
-        const settled = await Promise.allSettled(items.slice(i, i + concurrency).map(factory));
-        results.push(...settled);
-        if (delay && i + concurrency < items.length) await new Promise(r => setTimeout(r, delay));
-    }
-    return results;
 }
 
 /** Remember the ticker that actually returned a price for a holding, so future

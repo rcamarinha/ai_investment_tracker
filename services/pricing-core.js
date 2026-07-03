@@ -54,3 +54,48 @@ export function isPriceFresh(meta, windowMs, now = Date.now()) {
     const t = new Date(meta.timestamp).getTime();
     return Number.isFinite(t) && (now - t) <= windowMs;
 }
+
+/**
+ * For an FMP comma-batch: map raw input symbols to the normalized query form and
+ * keep reverse indexes so a price echoed by FMP (which may come back under the
+ * normalized OR the bare-base form) can be matched to every raw symbol that asked
+ * for it. Returns { normToRaw, baseToRaw, normSyms } (normSyms = unique query list).
+ */
+export function buildRawMaps(symbols) {
+    const normToRaw = {};   // normalized query form → [raw...]
+    const baseToRaw = {};   // base (no suffix)     → [raw...]
+    for (const raw of new Set((symbols || []).map(s => String(s).toUpperCase()))) {
+        const norm = normalizeForPricing(raw);
+        (normToRaw[norm] ||= []).push(raw);
+        (baseToRaw[norm.split('.')[0]] ||= []).push(raw);
+    }
+    return { normToRaw, baseToRaw, normSyms: Object.keys(normToRaw) };
+}
+
+/**
+ * Fan a { echoedSymbol: price } map back onto raw input symbols using the reverse
+ * indexes from buildRawMaps. Matches on the normalized form first, then the bare
+ * base (resilient to FMP returning a slightly different suffix), else the symbol
+ * itself. Returns { RAW_UPPER: price }.
+ */
+export function mapPricedToRaw(priced, normToRaw, baseToRaw) {
+    const out = {};
+    for (const [sym, price] of Object.entries(priced || {})) {
+        const targets = normToRaw[sym] || baseToRaw[sym.split('.')[0]] || [sym];
+        targets.forEach(raw => { out[raw] = price; });
+    }
+    return out;
+}
+
+/** Run at most `concurrency` promises at a time, with `delay` ms between waves.
+ *  Never rejects — returns the Promise.allSettled results in input order. */
+export async function pooled(items, factory, concurrency, delay = 0) {
+    const results = [];
+    const n = Math.max(1, concurrency | 0);
+    for (let i = 0; i < items.length; i += n) {
+        const settled = await Promise.allSettled(items.slice(i, i + n).map(factory));
+        results.push(...settled);
+        if (delay && i + n < items.length) await new Promise(r => setTimeout(r, delay));
+    }
+    return results;
+}
