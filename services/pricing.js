@@ -159,7 +159,7 @@ export async function searchTickerByName(query) {
 }
 
 /** Run at most `concurrency` promises at a time, with `delay` ms between waves. */
-async function pooled(items, factory, concurrency, delay = 0) {
+export async function pooled(items, factory, concurrency, delay = 0) {
     const results = [];
     for (let i = 0; i < items.length; i += concurrency) {
         const settled = await Promise.allSettled(items.slice(i, i + concurrency).map(factory));
