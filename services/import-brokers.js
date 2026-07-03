@@ -286,8 +286,9 @@ export function detectSplitPairs(trades) {
         const buys = idxs.filter(i => trades[i].side === 'buy');
         const sells = idxs.filter(i => trades[i].side === 'sell');
         for (const bi of buys) {
+            if (flaggedIdx.has(bi)) continue;
             for (const si of sells) {
-                if (flaggedIdx.has(bi) || flaggedIdx.has(si)) continue;
+                if (flaggedIdx.has(si)) continue;
                 const b = trades[bi], s = trades[si];
                 const hi = Math.max(b.price, s.price), lo = Math.min(b.price, s.price);
                 if (lo > 0 && hi / lo >= 3) {
@@ -301,6 +302,7 @@ export function detectSplitPairs(trades) {
                         fromShares, toShares,
                         ratio: fromShares > 0 ? toShares / fromShares : 1,
                     });
+                    break; // this buy is consumed — stop scanning sells for it
                 }
             }
         }
@@ -644,8 +646,15 @@ export function dedupeTrades(trades, existing = new Map()) {
  */
 export function computePositionsFromLedger(transactions) {
     const out = {};
+    const txTime = t => new Date(t && t.date || 0).getTime();
     for (const [symbol, txs] of Object.entries(transactions || {})) {
-        const sorted = [...(txs || [])].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+        const arr = txs || [];
+        // Average-cost is order-sensitive, so txs must be date-sorted. But this
+        // runs on every rebuild and several UI paths; skip the copy+sort when the
+        // ledger is already ascending (the common case: appended / loaded sorted).
+        let ascending = true;
+        for (let i = 1; i < arr.length; i++) { if (txTime(arr[i - 1]) > txTime(arr[i])) { ascending = false; break; } }
+        const sorted = ascending ? arr : [...arr].sort((a, b) => txTime(a) - txTime(b));
         let shares = 0;
         let costTotal = 0; // native-currency cost of currently-held shares
         let realized = 0;

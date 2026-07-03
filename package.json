@@ -1,11 +1,12 @@
 {
   "name": "ai-investment-tracker",
-  "version": "3.26.0",
+  "version": "3.27.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bump": "node scripts/bump-version.js"
   },
   "devDependencies": {
     "playwright": "^1.61.0",

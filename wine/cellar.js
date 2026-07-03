@@ -3,14 +3,14 @@
  */
 
 import { t } from '../data/i18n.js';
-import state from './state.js?v=3.26.0';
+import state from './state.js?v=3.27.0';
 import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
          deleteSnapshotFromDB, clearSnapshotsFromDB,
-         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js?v=3.26.0';
-import { renderAllocationCharts } from './ui.js?v=3.26.0';
-import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.26.0';
+         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js?v=3.27.0';
+import { renderAllocationCharts } from './ui.js?v=3.27.0';
+import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.27.0';
 import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
-import { callWineAI } from './api.js?v=3.26.0';
+import { callWineAI } from './api.js?v=3.27.0';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
@@ -1063,13 +1063,15 @@ export async function classifyUntypedBottles() {
             if (btn) btn.textContent = `🏷️ Classifying batch ${Math.floor(i / CLASSIFY_BATCH_SIZE) + 1}… (${i}/${untyped.length})`;
 
             const classifications = await classifyBatch(chunk);
+            // Match results by stable bottle id (never positional index): the AI can
+            // return fewer/reordered items, which would silently mis-type bottles.
+            const byId = new Map(chunk.map(b => [String(b.id), b]));
             for (const entry of classifications) {
-                const idx = entry.index;
                 const type = entry.type;
-                if (idx == null || !type) continue;
+                if (entry.id == null || !type) continue;
                 if (!VALID_TYPES.includes(type)) continue;
-                const bottle = chunk[idx];
-                if (!bottle) continue;
+                const bottle = byId.get(String(entry.id));
+                if (!bottle) { console.warn('[Classify] result id not in batch:', entry.id); continue; }
                 bottle.type = type;
                 try { await saveBottleToDB(bottle); updated++; }
                 catch (err) { console.warn(`Failed to save type for "${bottle.name}":`, err.message); }
@@ -1113,13 +1115,14 @@ export async function reclassifyAllBottles() {
             if (btn) btn.textContent = `🔄 Reclassifying batch ${Math.floor(i / CLASSIFY_BATCH_SIZE) + 1}… (${i}/${bottles.length})`;
 
             const classifications = await classifyBatch(chunk);
+            // Match by stable bottle id (never positional index) — see classifyUntypedBottles.
+            const byId = new Map(chunk.map(b => [String(b.id), b]));
             for (const entry of classifications) {
-                const idx = entry.index;
                 const type = entry.type;
-                if (idx == null || !type) continue;
+                if (entry.id == null || !type) continue;
                 if (!VALID_TYPES.includes(type)) continue;
-                const bottle = chunk[idx];
-                if (!bottle) continue;
+                const bottle = byId.get(String(entry.id));
+                if (!bottle) { console.warn('[Reclassify] result id not in batch:', entry.id); continue; }
                 if (bottle.type === type) continue;
                 bottle.type = type;
                 try { await saveBottleToDB(bottle); updated++; }
@@ -1146,7 +1149,7 @@ export async function reclassifyAllBottles() {
 const CLASSIFY_BATCH_SIZE = 15; // ~15 bottles per batch keeps prompt + response within token limits
 
 async function classifyBatch(bottles) {
-    const wineList = bottles.map((b, i) => {
+    const wineList = bottles.map((b) => {
         const parts = [
             b.name,
             b.winery && `by ${b.winery}`,
@@ -1155,18 +1158,18 @@ async function classifyBatch(bottles) {
             b.region && `from ${b.region}`,
             b.country && `(${b.country})`,
         ].filter(Boolean).join(' ');
-        return `${i}: ${parts}`;
+        return `${b.id}: ${parts}`;
     }).join('\n');
 
     const prompt = `Classify each wine/spirit below into exactly one type.
 
 Valid types: ${VALID_TYPES.join(', ')}
 
-Wines to classify:
+Wines to classify (each line starts with its id):
 ${wineList}
 
-Return ONLY a compact JSON array on a single line: [{"index":0,"type":"Red Wine"},{"index":1,"type":"White Wine"},...]
-One entry per wine. Use the index from the list above. No whitespace, no markdown fences, no explanation.`;
+Return ONLY a compact JSON array on a single line: [{"id":"<id>","type":"Red Wine"},{"id":"<id>","type":"White Wine"},...]
+One entry per wine. Echo back each wine's exact id from the list above. No whitespace, no markdown fences, no explanation.`;
 
     const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 4096 });
 

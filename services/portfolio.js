@@ -9,7 +9,7 @@ import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveTransactionsToDB, deleteTransactionsForSymbol,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
-import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName } from './pricing.js';
+import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
 import { parseBrokerExport, normalizeTrades,
          buildExistingFingerprints, dedupeTrades,
@@ -685,15 +685,16 @@ async function resolveIdentifiers(identifiers) {
     // Update progress UI
     const statusEl = document.getElementById('importReportArea');
 
-    // ── Tier 1: Finnhub API ─────────────────────────────────────────────
-    let afterFinnhub = [];
-    if (state.finnhubKey) {
-        for (const id of needsResolution) {
-            if (!isISIN(id.toUpperCase())) { afterFinnhub.push(id); continue; }
-            if (statusEl) statusEl.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — Finnhub lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
-            const candidates = await lookupISINviaFinnhub(id);
+    // Resolve one ISIN via `lookupFn`; on success mutate resultMap, else collect
+    // it for the next tier. Runs through a bounded concurrency pool instead of a
+    // serial loop with fixed per-ISIN sleeps (the dominant import-latency source).
+    const resolveTier = async (ids, lookupFn, label, concurrency, delay) => {
+        const unresolved = [];
+        await pooled(ids, async (id) => {
+            if (!isISIN(id.toUpperCase())) { unresolved.push(id); return; }
+            const candidates = await lookupFn(id);
             if (candidates.length > 1) {
-                // Multiple listings found — let user pick later
+                // Multiple listings found - let user pick later
                 const best = pickBestTicker(candidates);
                 resultMap[id.toUpperCase()] = {
                     ...best,
@@ -701,51 +702,30 @@ async function resolveIdentifiers(identifiers) {
                     multipleListings: true,
                     alternatives: candidates.filter(c => c.ticker !== best.ticker)
                 };
-                console.log(`ISIN ${id} → ${best.ticker} (Finnhub, ${candidates.length} listing(s) — user will pick)`);
+                console.log(`ISIN ${id} -> ${best.ticker} (${label}, ${candidates.length} listing(s) - user will pick)`);
                 await persistISINMapping(id.toUpperCase(), best);
             } else if (candidates.length === 1) {
                 resultMap[id.toUpperCase()] = { ...candidates[0], confident: true };
-                console.log(`ISIN ${id} → ${candidates[0].ticker} (Finnhub, single match)`);
+                console.log(`ISIN ${id} -> ${candidates[0].ticker} (${label}, single match)`);
                 await persistISINMapping(id.toUpperCase(), candidates[0]);
             } else {
-                afterFinnhub.push(id);
+                unresolved.push(id);
             }
-            // Rate limit: profile2 + search = 2 calls per ISIN; 60/min → ~2s between ISINs
-            await new Promise(resolve => setTimeout(resolve, 1500));
-        }
-    } else {
-        afterFinnhub = [...needsResolution];
-    }
+            if (statusEl) statusEl.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs - ${label} (${Object.keys(resultMap).length}/${identifiers.length})...</div>`;
+        }, concurrency, delay);
+        return unresolved;
+    };
 
-    // ── Tier 2: FMP API ─────────────────────────────────────────────────
-    let needsClaude = [];
-    if (state.fmpKey && afterFinnhub.length > 0) {
-        for (const id of afterFinnhub) {
-            if (!isISIN(id.toUpperCase())) { needsClaude.push(id); continue; }
-            if (statusEl) statusEl.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">\u23F3 Resolving ISINs — FMP lookup (${Object.keys(resultMap).length + 1}/${identifiers.length})...</div>`;
-            const candidates = await lookupISINviaFMP(id);
-            if (candidates.length > 1) {
-                const best = pickBestTicker(candidates);
-                resultMap[id.toUpperCase()] = {
-                    ...best,
-                    confident: false,
-                    multipleListings: true,
-                    alternatives: candidates.filter(c => c.ticker !== best.ticker)
-                };
-                console.log(`ISIN ${id} → ${best.ticker} (FMP, ${candidates.length} listing(s) — user will pick)`);
-                await persistISINMapping(id.toUpperCase(), best);
-            } else if (candidates.length === 1) {
-                resultMap[id.toUpperCase()] = { ...candidates[0], confident: true };
-                console.log(`ISIN ${id} → ${candidates[0].ticker} (FMP, single match)`);
-                await persistISINMapping(id.toUpperCase(), candidates[0]);
-            } else {
-                needsClaude.push(id);
-            }
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-    } else {
-        needsClaude = [...afterFinnhub];
-    }
+    // Tier 1: Finnhub (profile2+search = 2 calls/ISIN; pool of 2 with a 1s wave
+    // gap keeps in-flight well under the 60/min limit).
+    const afterFinnhub = state.finnhubKey
+        ? await resolveTier(needsResolution, lookupISINviaFinnhub, 'Finnhub', 2, 1000)
+        : [...needsResolution];
+
+    // Tier 2: FMP (1 call/ISIN; pool of 4).
+    const needsClaude = (state.fmpKey && afterFinnhub.length > 0)
+        ? await resolveTier(afterFinnhub, lookupISINviaFMP, 'FMP', 4, 300)
+        : [...afterFinnhub];
 
     if (needsClaude.length === 0) {
         console.log(`All identifiers resolved via API lookups (Finnhub/FMP)`);

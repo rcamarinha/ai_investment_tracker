@@ -12,11 +12,11 @@
  * (not in the DB schema) and applied to in-memory bottle state on load.
  */
 
-import state from './state.js?v=3.26.0';
-import { callWineAI } from './api.js?v=3.26.0';
-import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.26.0';
-import { renderCellar, updateBottleCard } from './cellar.js?v=3.26.0';
-import { showToast, repairTruncatedJSON } from './utils.js?v=3.26.0';
+import state from './state.js?v=3.27.0';
+import { callWineAI } from './api.js?v=3.27.0';
+import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.27.0';
+import { renderCellar, updateBottleCard } from './cellar.js?v=3.27.0';
+import { showToast, repairTruncatedJSON } from './utils.js?v=3.27.0';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
@@ -181,22 +181,36 @@ export async function valuateAllBottles(forceAll = false) {
 
         const allResults = [];
         const totalBatches = Math.ceil(bottleInfos.length / CLIENT_BATCH_SIZE);
-
-        for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-            const batchStart = batchIdx * CLIENT_BATCH_SIZE;
-            const batchSlice = bottleInfos.slice(batchStart, batchStart + CLIENT_BATCH_SIZE);
-            const batchNum   = batchIdx + 1;
-
-            if (btn) btn.textContent = `💎 Valuing batch ${batchNum}/${totalBatches} (${batchSlice.length} bottle(s))...`;
-            console.log(`[Valuation] Client batch ${batchNum}/${totalBatches}: ${batchSlice.length} bottles`);
-
-            const data = await callWineAI({ requestType: 'batch-valuation', bottles: batchSlice });
-
-            if (!data.results || !Array.isArray(data.results)) {
-                throw new Error(`Unexpected response from batch valuation endpoint (batch ${batchNum}).`);
-            }
-
-            allResults.push(...data.results);
+        // Run batches with bounded concurrency instead of strictly sequentially.
+        // Kept low (2) because each batch does grounded web-search valuations that
+        // are slow and heavy on the wine-ai edge function / Gemini rate limits.
+        const VAL_CONCURRENCY = 2;
+        let completedBatches = 0;
+        for (let i = 0; i < totalBatches; i += VAL_CONCURRENCY) {
+            const wave = [];
+            for (let j = i; j < Math.min(i + VAL_CONCURRENCY, totalBatches); j++) wave.push(j);
+            await Promise.all(wave.map(async (batchIdx) => {
+                const batchStart = batchIdx * CLIENT_BATCH_SIZE;
+                const batchSlice = bottleInfos.slice(batchStart, batchStart + CLIENT_BATCH_SIZE);
+                const batchNum   = batchIdx + 1;
+                console.log(`[Valuation] Client batch ${batchNum}/${totalBatches}: ${batchSlice.length} bottles`);
+                try {
+                    const data = await callWineAI({ requestType: 'batch-valuation', bottles: batchSlice });
+                    if (!data.results || !Array.isArray(data.results)) {
+                        throw new Error(`Unexpected response from batch valuation endpoint (batch ${batchNum}).`);
+                    }
+                    allResults.push(...data.results);
+                } catch (err) {
+                    // One bad batch must not abort the rest; its bottles stay unvalued.
+                    console.warn(`[Valuation] Batch ${batchNum} failed:`, err.message);
+                } finally {
+                    completedBatches++;
+                    if (btn) btn.textContent = `\uD83D\uDC8E Valuing\u2026 ${completedBatches}/${totalBatches} batches`;
+                }
+            }));
+        }
+        if (allResults.length === 0) {
+            throw new Error('All valuation batches failed. Check your connection and try again.');
         }
 
         if (btn) btn.textContent = `💎 Saving results...`;

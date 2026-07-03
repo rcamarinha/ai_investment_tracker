@@ -375,65 +375,14 @@ export function mergeSnapshots(existing, incoming) {
  * @param {string} [assetName]
  * @returns {string[]} unique alternative symbols
  */
-/**
- * Map an exchange suffix that the price APIs don't recognize (often Finnhub's
- * `search` format, e.g. `.FRK`, `.AMS`) to the FMP/Yahoo-style suffix the price
- * endpoints expect (`.DE`, `.AS`). Already-valid suffixes pass through unchanged.
- */
-export const PRICING_SUFFIX_MAP = {
-  FRK: 'DE', FRA: 'DE', ETR: 'DE', GER: 'DE', GF: 'DE', GY: 'DE',
-  AMS: 'AS', AEX: 'AS',
-  PAR: 'PA', EPA: 'PA', FP: 'PA',
-  MCE: 'MC', MAD: 'MC', BME: 'MC',
-  MIL: 'MI', BIT: 'MI', MTA: 'MI',
-  LIS: 'LS', ELI: 'LS', EL: 'LS',
-  BRU: 'BR', EBR: 'BR',
-  SWX: 'SW', EBS: 'SW', VTX: 'SW', SIX: 'SW',
-  LON: 'L', LSE: 'L',
-  CPH: 'CO', STO: 'ST', HEL: 'HE', OSL: 'OL', VIE: 'VI', ICE: 'IC',
-};
-
-/** Common European FMP/Yahoo exchange suffixes, for fanning out base tickers. */
-export const EU_SUFFIXES = ['DE', 'PA', 'AS', 'MI', 'MC', 'SW', 'L', 'BR', 'LS', 'CO', 'ST', 'HE', 'OL'];
-
-/**
- * Parse an FMP quote-short batch response (array of {symbol, price}) into a
- * map { UPPER(symbol): price } of valid positive prices. Tolerates FMP error
- * shapes ({ "Error Message" }) and non-arrays → returns {}. Pure & testable.
- */
-export function parseFmpBatchResponse(data) {
-  const out = {};
-  if (!Array.isArray(data)) return out;
-  for (const row of data) {
-    if (!row || !row.symbol) continue;
-    const price = Number(row.price);
-    if (Number.isFinite(price) && price > 0) out[String(row.symbol).toUpperCase()] = price;
-  }
-  return out;
-}
-
-/**
- * Freshness predicate for the price cache: true if we already have a live
- * (non-DB-cached) successful price newer than windowMs. Pure & testable.
- */
-export function isPriceFresh(meta, windowMs, now = Date.now()) {
-  if (!meta || !meta.success || !meta.timestamp) return false;
-  if (typeof meta.source === 'string' && meta.source.includes('(cached)')) return false;
-  const t = new Date(meta.timestamp).getTime();
-  if (!Number.isFinite(t)) return false;
-  return (now - t) <= windowMs;
-}
-
-/** Normalize a ticker's exchange suffix to the price-API format. Pure. */
-export function normalizeForPricing(symbol) {
-  const s = String(symbol || '').toUpperCase();
-  const dot = s.lastIndexOf('.');
-  if (dot < 0) return s;
-  const base = s.slice(0, dot);
-  const sfx = s.slice(dot + 1);
-  const mapped = PRICING_SUFFIX_MAP[sfx];
-  return mapped ? `${base}.${mapped}` : s;
-}
+// Pure suffix/batch/freshness helpers now live in the shared core module so the
+// runtime service and these tested mirrors can't drift. Re-exported here to keep
+// the existing test import surface (`from '../src/portfolio.js'`) unchanged.
+export {
+  PRICING_SUFFIX_MAP, EU_SUFFIXES,
+  normalizeForPricing, parseFmpBatchResponse, isPriceFresh,
+} from '../services/pricing-core.js';
+import { normalizeForPricing, EU_SUFFIXES } from '../services/pricing-core.js';
 
 export function buildAlternativeSymbols(originalSymbol, assetName) {
   const alternatives = [];

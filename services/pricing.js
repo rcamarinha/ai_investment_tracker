@@ -15,53 +15,37 @@ import {
     savePriceHistoryToDB, enrichUnknownAssets
 } from './storage.js';
 import { analyzeMovers } from './analysis.js';
+// Pure exchange-suffix / batch-parse / freshness helpers — shared with the test
+// mirror (src/portfolio.js) so the shipped code is what the tests exercise.
+import {
+    normalizeForPricing, parseFmpBatchResponse, isPriceFresh,
+    buildRawMaps, mapPricedToRaw, pooled,
+} from './pricing-core.js';
+export { normalizeForPricing, pooled };
 
-// ── Exchange-suffix normalization (kept in sync with src/portfolio.js) ───────
-// Many stored tickers use Finnhub's `search` suffix format (.FRK/.AMS) which the
-// price endpoints don't recognize. Map them to the FMP/Yahoo format.
-const PRICING_SUFFIX_MAP = {
-    FRK: 'DE', FRA: 'DE', ETR: 'DE', GER: 'DE', GF: 'DE', GY: 'DE',
-    AMS: 'AS', AEX: 'AS',
-    PAR: 'PA', EPA: 'PA', FP: 'PA',
-    MCE: 'MC', MAD: 'MC', BME: 'MC',
-    MIL: 'MI', BIT: 'MI', MTA: 'MI',
-    LIS: 'LS', ELI: 'LS', EL: 'LS',
-    BRU: 'BR', EBR: 'BR',
-    SWX: 'SW', EBS: 'SW', VTX: 'SW', SIX: 'SW',
-    LON: 'L', LSE: 'L',
-    CPH: 'CO', STO: 'ST', HEL: 'HE', OSL: 'OL', VIE: 'VI', ICE: 'IC',
-};
-const EU_SUFFIXES = ['DE', 'PA', 'AS', 'MI', 'MC', 'SW', 'L', 'BR', 'LS', 'CO', 'ST', 'HE', 'OL'];
+// ── FMP daily-quota guard ────────────────────────────────────────────────────
+// FMP free plan is 250 requests/day (comma-batch bills ~per symbol). Track usage
+// across reloads in localStorage, keyed by date so it resets at midnight, and
+// actually STOP hitting FMP when near the cap (falls back to Finnhub/AV/AI).
+const FMP_DAILY_LIMIT = 250;
+const FMP_QUOTA_HEADROOM = 10;   // stop a bit early to leave manual-lookup budget
 
-/** Normalize a ticker's exchange suffix to the price-API format. */
-export function normalizeForPricing(symbol) {
-    const s = String(symbol || '').toUpperCase();
-    const dot = s.lastIndexOf('.');
-    if (dot < 0) return s;
-    const base = s.slice(0, dot);
-    const mapped = PRICING_SUFFIX_MAP[s.slice(dot + 1)];
-    return mapped ? `${base}.${mapped}` : s;
+function fmpQuota() {
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+        const raw = JSON.parse(localStorage.getItem('fmpQuota') || '{}');
+        if (raw && raw.date === today && Number.isFinite(raw.count)) return raw;
+    } catch { /* ignore */ }
+    return { date: today, count: 0 };
 }
-
-/** Parse an FMP quote-short batch array → { UPPER(symbol): price>0 }. Tolerant. */
-function parseFmpBatchResponse(data) {
-    const out = {};
-    if (!Array.isArray(data)) return out;
-    for (const row of data) {
-        if (!row || !row.symbol) continue;
-        const price = Number(row.price);
-        if (Number.isFinite(price) && price > 0) out[String(row.symbol).toUpperCase()] = price;
-    }
-    return out;
+export function fmpCallsUsed() { return fmpQuota().count; }
+function addFmpCalls(n) {
+    const q = fmpQuota();
+    q.count += n;
+    try { localStorage.setItem('fmpQuota', JSON.stringify(q)); } catch { /* ignore quota */ }
+    state.fmpCallsToday = q.count;   // kept for existing UI/log references
 }
-
-/** True if we already hold a live (non-DB-cached) success newer than windowMs. */
-function isPriceFresh(meta, windowMs, now = Date.now()) {
-    if (!meta || !meta.success || !meta.timestamp) return false;
-    if (typeof meta.source === 'string' && meta.source.includes('(cached)')) return false;
-    const t = new Date(meta.timestamp).getTime();
-    return Number.isFinite(t) && (now - t) <= windowMs;
-}
+function fmpQuotaExhausted() { return fmpCallsUsed() >= FMP_DAILY_LIMIT - FMP_QUOTA_HEADROOM; }
 
 /**
  * Fetch many tickers from FMP in one (chunked) call. Queries the price-API
@@ -70,16 +54,9 @@ function isPriceFresh(meta, windowMs, now = Date.now()) {
  * caller falls back to per-symbol.
  */
 export async function batchFetchFMP(symbols) {
-    if (!state.fmpKey || state.fmpBatchUnsupported || !symbols || !symbols.length) return {};
+    if (!state.fmpKey || state.fmpBatchUnsupported || fmpQuotaExhausted() || !symbols || !symbols.length) return {};
     const result = {};
-    const normToRaw = {};        // normalized query form → [raw...]
-    const baseToRaw = {};        // base (no suffix) → [raw...] for resilient echo matching
-    for (const raw of new Set(symbols.map(s => String(s).toUpperCase()))) {
-        const norm = normalizeForPricing(raw);
-        (normToRaw[norm] ||= []).push(raw);
-        (baseToRaw[norm.split('.')[0]] ||= []).push(raw);
-    }
-    const normSyms = Object.keys(normToRaw);
+    const { normToRaw, baseToRaw, normSyms } = buildRawMaps(symbols);
     for (let i = 0; i < normSyms.length; i += 50) {
         const chunk = normSyms.slice(i, i + 50);
         try {
@@ -106,17 +83,14 @@ export async function batchFetchFMP(symbols) {
                 state.fmpBatchUnsupported = true;
                 continue;
             }
-            state.fmpCallsToday = (state.fmpCallsToday || 0) + chunk.length; // FMP bills ≈ per symbol, only on success
+            addFmpCalls(chunk.length); // FMP bills ≈ per symbol, only on success
             const priced = parseFmpBatchResponse(json);
             // If we asked for many but got ≤1 back, the plan likely ignores comma-lists.
             if (chunk.length > 3 && json.length <= 1) {
                 console.warn(`FMP batch returned ${json.length} for ${chunk.length} symbols — disabling batch for this session (falling back to per-symbol/Finnhub).`);
                 state.fmpBatchUnsupported = true;
             }
-            for (const [sym, price] of Object.entries(priced)) {
-                const targets = normToRaw[sym] || baseToRaw[sym.split('.')[0]] || [sym];
-                targets.forEach(raw => { result[raw] = price; });
-            }
+            Object.assign(result, mapPricedToRaw(priced, normToRaw, baseToRaw));
         } catch (err) { console.warn('FMP batch failed:', err.message); }
     }
     return result;
@@ -156,17 +130,6 @@ export async function searchTickerByName(query) {
         } catch (err) { console.warn('Finnhub name search failed:', err.message); }
     }
     return out;
-}
-
-/** Run at most `concurrency` promises at a time, with `delay` ms between waves. */
-async function pooled(items, factory, concurrency, delay = 0) {
-    const results = [];
-    for (let i = 0; i < items.length; i += concurrency) {
-        const settled = await Promise.allSettled(items.slice(i, i + concurrency).map(factory));
-        results.push(...settled);
-        if (delay && i + concurrency < items.length) await new Promise(r => setTimeout(r, delay));
-    }
-    return results;
 }
 
 /** Remember the ticker that actually returned a price for a holding, so future
@@ -213,7 +176,11 @@ async function resolveTickersViaAI(failedSymbols) {
             body: JSON.stringify({ items }),
         });
         const txt = await response.text();
-        if (!response.ok) { console.warn('resolve-tickers failed:', response.status, txt.slice(0, 200)); return {}; }
+        if (!response.ok) {
+            console.warn('resolve-tickers failed:', response.status, txt.slice(0, 200));
+            state.lastResolverError = `resolver unavailable (HTTP ${response.status})`;
+            return {};
+        }
         const data = JSON.parse(txt);
         const out = data.content?.find(c => c.type === 'text')?.text || '';
         // Gemini/Claude may wrap the JSON in prose or code fences — extract the array.
@@ -232,8 +199,13 @@ async function resolveTickersViaAI(failedSymbols) {
                 price: Number.isFinite(price) && price > 0 ? price : null,
             };
         });
+        state.lastResolverError = null;   // reached the resolver successfully
         return map;
-    } catch (err) { console.warn('resolveTickersViaAI error:', err.message); return {}; }
+    } catch (err) {
+        console.warn('resolveTickersViaAI error:', err.message);
+        state.lastResolverError = `resolver error: ${err.message}`;
+        return {};
+    }
 }
 
 // ── Single Symbol Fetch ─────────────────────────────────────────────────────
@@ -261,11 +233,12 @@ export async function fetchStockPrice(symbol) {
     // FMP / Alpha Vantage use FMP-style suffixes — remap Finnhub-style ones (.FRK→.DE)
     const pricingSymbol = normalizeForPricing(symbol);
 
-    // TIER 2: FMP
-    if (state.fmpKey) {
+    // TIER 2: FMP (skipped when the daily quota is near the cap)
+    if (state.fmpKey && !fmpQuotaExhausted()) {
         try {
             const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${pricingSymbol}&apikey=${state.fmpKey}`;
             console.log(`Trying FMP for ${symbol}...`);
+            addFmpCalls(1);
             const response = await fetch(url);
 
             if (response.ok) {
@@ -342,92 +315,6 @@ export async function fetchStockPrice(symbol) {
         success: false,
         error: availableAPIs.length > 0 ? 'Symbol not found in any API' : 'Configure API keys'
     };
-}
-
-// ── Alternative Ticker Formats (international stocks) ───────────────────────
-
-export async function tryAlternativeFormats(originalSymbol, assetName) {
-    const alternatives = [];
-
-    console.log(`\n=== TRYING ALTERNATIVES FOR ${originalSymbol} (${assetName}) ===`);
-
-    if (originalSymbol.includes('.')) {
-        const base = originalSymbol.split('.')[0].toUpperCase();
-        // 1) remap an unrecognized suffix to the price-API format (highest hit rate)
-        const normalized = normalizeForPricing(originalSymbol);
-        if (normalized !== originalSymbol.toUpperCase()) alternatives.push(normalized);
-        // 2) fan the base across the common EU exchanges, then 3) the bare base (US/ADR)
-        EU_SUFFIXES.forEach(sfx => alternatives.push(`${base}.${sfx}`));
-        alternatives.push(base);
-        console.log(`Alternatives for ${originalSymbol}: ${alternatives.join(', ')}`);
-    } else {
-        alternatives.push(`${originalSymbol}.PA`);
-        alternatives.push(`${originalSymbol}.L`);
-        alternatives.push(`${originalSymbol}.DE`);
-        alternatives.push(`${originalSymbol}.MC`);
-        alternatives.push(`${originalSymbol}.SW`);
-        alternatives.push(`${originalSymbol}.AS`);
-        alternatives.push(`${originalSymbol}.MI`);
-        alternatives.push(`${originalSymbol}.BR`);
-        alternatives.push(`${originalSymbol}.HE`);
-        alternatives.push(`${originalSymbol}.ST`);
-        alternatives.push(`${originalSymbol}.OL`);
-        alternatives.push(`${originalSymbol}.CO`);
-        console.log(`Alternatives: ${alternatives.join(', ')}`);
-    }
-
-    if (assetName && assetName !== originalSymbol) {
-        const nameLower = assetName.toLowerCase();
-        const smartMappings = {
-            'cellnex': ['CLNX', 'CLNX.MC'],
-            'covestro': ['1COV.DE', 'COV.DE'],
-            'prosus': ['PRX.AS', 'PROSUS'],
-            'adyen': ['ADYEN.AS', 'ADYEY'],
-            'just eat': ['JET.L', 'TKWY.AS'],
-            'moncler': ['MONC.MI', 'MONRF'],
-            'sartorius': ['SRT.DE', 'SRT3.DE'],
-            'nestle': ['NESN.SW', 'NSRGY'],
-            'roche': ['ROG.SW', 'RHHBY'],
-            'novartis': ['NOVN.SW', 'NVS'],
-            'asml': ['ASML.AS', 'ASML'],
-            'lvmh': ['MC.PA', 'LVMUY'],
-            'hermes': ['RMS.PA', 'HESAY'],
-            'schneider': ['SU.PA', 'SBGSF'],
-            'totalenergies': ['TTE.PA', 'TTE'],
-            'airbus': ['AIR.PA', 'EADSY']
-        };
-
-        for (const [key, tickers] of Object.entries(smartMappings)) {
-            if (nameLower.includes(key)) {
-                alternatives.push(...tickers);
-                console.log(`Smart mapping found for "${key}": ${tickers.join(', ')}`);
-                break;
-            }
-        }
-
-        const baseName = assetName.split(/\s+(SA|NV|AG|SE|PLC|INC|CORP|LTD|SPA|ASA|OYJ)/i)[0].trim();
-        const firstWord = baseName.split(' ')[0];
-        if (firstWord.length >= 3 && firstWord.length <= 6) {
-            alternatives.push(firstWord.toUpperCase());
-            console.log(`Trying company name as ticker: ${firstWord.toUpperCase()}`);
-        }
-    }
-
-    const uniqueAlternatives = [...new Set(alternatives)];
-    console.log(`Trying ${uniqueAlternatives.length} alternatives in one FMP batch...`);
-
-    // Try ALL candidates in a single FMP batch call (was: sequential, ~500ms each).
-    const priced = await batchFetchFMP(uniqueAlternatives);
-    for (const altSymbol of uniqueAlternatives) {          // priority order preserved
-        const price = priced[altSymbol.toUpperCase()];
-        if (price > 0) {
-            console.log(`\u2713 SUCCESS with ${altSymbol} (FMP batch)`);
-            return { price, source: 'Financial Modeling Prep', tier: 2, success: true, alternativeSymbol: altSymbol, originalSymbol };
-        }
-    }
-
-    console.log(`\u2717 All alternatives failed for ${originalSymbol}`);
-    return null;
 }
 
 // ── Asset Profile Fetching ──────────────────────────────────────────────────
@@ -599,13 +486,19 @@ export async function fetchMarketPrices(opts = {}) {
     let successCount = 0;
     let failCount = 0;
     let errors = [];
-    state.fmpCallsToday = state.fmpCallsToday || 0;
+    state.lastResolverError = null;         // reset per run; set if the AI resolver errors
+    state.fmpCallsToday = fmpCallsUsed();   // sync from persisted daily quota
 
     // The ticker we actually query for a holding (a learned pricingTicker wins).
     const queryOf = sym => (state.assetDatabase[sym] && state.assetDatabase[sym].pricingTicker) || sym;
+    // Symbols whose price was actually (re)fetched this run — NOT the ones the
+    // freshness cache skipped. Used to avoid snapshotting/re-saving on a run that
+    // fetched nothing (e.g. a 2nd "Update Prices" click within the 15-min window).
+    const refreshedThisRun = new Set();
     const recordSuccess = (sym, price, source) => {
         state.marketPrices[sym] = price;
         state.priceMetadata[sym] = { timestamp: new Date().toISOString(), source, success: true };
+        refreshedThisRun.add(sym);
     };
 
     try {
@@ -659,10 +552,14 @@ export async function fetchMarketPrices(opts = {}) {
             const suggestions = await resolveTickersViaAI(stillFailed);
             aiSuggestions = suggestions;
             const suggestedTickers = Object.values(suggestions).map(x => x && x.ticker).filter(Boolean);
+            // One batch validation pass — no-ops instantly on free plans where the
+            // comma-list batch is unsupported, so per-symbol validation carries it.
             const validated = suggestedTickers.length ? await batchFetchFMP(suggestedTickers) : {};
-            for (const sym of stillFailed) {
+            // Pool the per-symbol validations so a large AI batch doesn't validate
+            // strictly sequentially (recordSuccess/persist mutate maps — pool-safe).
+            await pooled(stillFailed, async (sym) => {
                 const s = suggestions[sym.toUpperCase()];
-                if (!s) continue;
+                if (!s) return;
                 if (s.ticker && s.ticker.toUpperCase() !== sym.toUpperCase()) {
                     let price = validated[s.ticker.toUpperCase()];
                     let source = `Financial Modeling Prep (AI: ${s.ticker})`;
@@ -670,10 +567,10 @@ export async function fetchMarketPrices(opts = {}) {
                         const r = await fetchStockPrice(s.ticker);
                         if (r.success) { price = r.price; source = `${r.source} (AI: ${s.ticker})`; }
                     }
-                    if (price > 0) { recordSuccess(sym, price, source); persistPricingTicker(sym, s.ticker); continue; }
+                    if (price > 0) { recordSuccess(sym, price, source); persistPricingTicker(sym, s.ticker); return; }
                 }
                 if (Number(s.price) > 0) recordSuccess(sym, Number(s.price), 'Web search (AI)');
-            }
+            }, state.finnhubKey ? 3 : 2, 300);
             renderPortfolio();
         }
 
@@ -714,7 +611,7 @@ export async function fetchMarketPrices(opts = {}) {
             if (meta && meta.success) successCount++;
             else { failCount++; errors.push(`${s}: ${(meta && meta.error) || 'no price found'}`); }
         }
-        if (state.fmpCallsToday > 200) console.warn(`FMP calls today ~ ${state.fmpCallsToday}/250`);
+        if (fmpCallsUsed() > FMP_DAILY_LIMIT * 0.8) console.warn(`FMP calls today ~ ${fmpCallsUsed()}/${FMP_DAILY_LIMIT}${fmpQuotaExhausted() ? ' — FMP paused, using Finnhub/AV/AI' : ''}`);
 
         console.log('\n=== FETCH COMPLETE ===');
         console.log('Success:', successCount);
@@ -723,7 +620,7 @@ export async function fetchMarketPrices(opts = {}) {
         renderPortfolio();
 
         // Compute & display top movers (only where we had a previous price to compare)
-        if (successCount > 0 && Object.keys(previousPrices).length > 0) {
+        if (refreshedThisRun.size > 0 && Object.keys(previousPrices).length > 0) {
             const now = new Date().toISOString();
             const movers = [];
             for (const [symbol, newPrice] of Object.entries(state.marketPrices)) {
@@ -747,8 +644,9 @@ export async function fetchMarketPrices(opts = {}) {
             analyzeMovers(movers).catch(err => console.warn('analyzeMovers error:', err));
         }
 
-        // Post-fetch: save assets and prices to DB
-        if (successCount > 0) {
+        // Post-fetch: save assets and prices to DB — only when we actually fetched
+        // something this run (skip on a fully fresh-cached no-op run).
+        if (refreshedThisRun.size > 0) {
             const assetRecords = state.portfolio.map(p => buildAssetRecord(p));
             await saveAssetsToDB(assetRecords);
             await loadAssetsFromDB();
@@ -758,7 +656,7 @@ export async function fetchMarketPrices(opts = {}) {
             const now = new Date().toISOString();
             for (const [symbol, price] of Object.entries(state.marketPrices)) {
                 const meta = state.priceMetadata[symbol];
-                if (meta && meta.success && !meta.source.includes('(cached)')) {
+                if (refreshedThisRun.has(symbol) && meta && meta.success && !meta.source.includes('(cached)')) {
                     const assetInfo = state.assetDatabase[symbol.toUpperCase()];
                     priceRecords.push({
                         ticker: symbol.toUpperCase(),
@@ -782,10 +680,15 @@ export async function fetchMarketPrices(opts = {}) {
             msg += `\n\u2139 ${failCount} holding${failCount !== 1 ? 's have' : ' has'} no live price and ${failCount !== 1 ? 'are' : 'is'} shown at cost basis:\n`;
             msg += noPrice.slice(0, 12).map(s => `\u2022 ${s}`).join('\n') + '\n';
             if (noPrice.length > 12) msg += `\u2022 \u2026and ${noPrice.length - 12} more\n`;
-            msg += `\nTip: open one of these holdings to map a ticker your market-data provider recognizes (e.g. a US ADR or the right exchange suffix).`;
+            // Distinguish a transient resolver outage from a genuine "no match".
+            if (state.lastResolverError) {
+                msg += `\n\u26a0\ufe0f The online ticker resolver was ${state.lastResolverError} \u2014 some of these may resolve if you retry in a bit.`;
+            } else {
+                msg += `\nTip: open one of these holdings to map a ticker your market-data provider recognizes (e.g. a US ADR or the right exchange suffix).`;
+            }
         }
 
-        if (successCount > 0) {
+        if (refreshedThisRun.size > 0) {
             await savePortfolioSnapshot();
             msg += '\n\n\uD83D\uDCCA Portfolio snapshot saved to history!';
         }
