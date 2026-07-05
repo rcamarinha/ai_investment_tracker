@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectStockExchange, detectCurrency, normalizeAssetType } from '../services/utils.js';
+import { detectStockExchange, detectCurrency, normalizeAssetType, buildAssetRecord } from '../services/utils.js';
 
 // ── detectStockExchange ──────────────────────────────────────────────────────
 
@@ -348,5 +348,75 @@ describe('normalizeAssetType', () => {
   it('trims surrounding whitespace', () => {
     expect(normalizeAssetType('  stock  ')).toBe('Stock');
     expect(normalizeAssetType('  etf  ')).toBe('ETF');
+  });
+});
+
+// ── buildAssetRecord ─────────────────────────────────────────────────────────
+
+describe('buildAssetRecord', () => {
+  it('returns null for a null position', () => {
+    expect(buildAssetRecord(null)).toBeNull();
+  });
+
+  it('returns null for a position with no symbol', () => {
+    expect(buildAssetRecord({ name: 'Apple' })).toBeNull();
+  });
+
+  it('builds a complete record for a minimal position', () => {
+    const record = buildAssetRecord({ symbol: 'AAPL' });
+    expect(record).toMatchObject({
+      ticker: 'AAPL',
+      name: 'AAPL',
+      stock_exchange: 'US',
+      currency: 'USD',
+      asset_type: 'Stock',
+      untracked: false,
+    });
+  });
+
+  it('uppercases the symbol', () => {
+    const record = buildAssetRecord({ symbol: 'aapl' });
+    expect(record.ticker).toBe('AAPL');
+  });
+
+  it('uses position.name when provided', () => {
+    const record = buildAssetRecord({ symbol: 'AAPL', name: 'Apple Inc.' });
+    expect(record.name).toBe('Apple Inc.');
+  });
+
+  it('uses position.type as asset_type, defaulting to Stock', () => {
+    expect(buildAssetRecord({ symbol: 'QQQ', type: 'ETF' }).asset_type).toBe('ETF');
+    expect(buildAssetRecord({ symbol: 'QQQ' }).asset_type).toBe('Stock');
+  });
+
+  it('propagates untracked: true to the record', () => {
+    const record = buildAssetRecord({ symbol: 'AAPL', untracked: true });
+    expect(record.untracked).toBe(true);
+  });
+
+  it('propagates untracked: false to the record', () => {
+    const record = buildAssetRecord({ symbol: 'AAPL', untracked: false });
+    expect(record.untracked).toBe(false);
+  });
+
+  it('defaults untracked to false when field is absent', () => {
+    const record = buildAssetRecord({ symbol: 'AAPL' });
+    expect(record.untracked).toBe(false);
+  });
+
+  it('coerces a truthy non-boolean to true', () => {
+    const record = buildAssetRecord({ symbol: 'AAPL', untracked: 1 });
+    expect(record.untracked).toBe(true);
+  });
+
+  it('coerces a falsy non-boolean (0) to false', () => {
+    const record = buildAssetRecord({ symbol: 'AAPL', untracked: 0 });
+    expect(record.untracked).toBe(false);
+  });
+
+  it('detects exchange suffix for European tickers', () => {
+    const record = buildAssetRecord({ symbol: 'MC.PA', name: 'LVMH' });
+    expect(record.stock_exchange).toBe('Euronext Paris');
+    expect(record.currency).toBe('EUR');
   });
 });
