@@ -52,9 +52,15 @@
         <div class="card">
             <div class="portfolio-header">
                 <h2 data-i18n="portfolio.your_portfolio">💼 Your Portfolio</h2>
-                <div class="total-value">
-                    <div data-i18n="portfolio.total_value">Total Value</div>
-                    <div id="totalValue">$0</div>
+                <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                    <div class="currency-toggle" id="currencySelector">
+                        <button class="ct-opt active" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
+                        <button class="ct-opt" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
+                    </div>
+                    <div class="total-value">
+                        <div data-i18n="portfolio.total_value">Total Value</div>
+                        <div id="totalValue">$0</div>
+                    </div>
                 </div>
             </div>
 
@@ -64,10 +70,6 @@
                 <button class="btn btn-primary" onclick="showImportDialog()" data-i18n="portfolio.btn.import">📋 Import from Spreadsheet</button>
                 <button class="btn btn-success" onclick="fetchMarketPrices({interactive:true})" id="refreshBtn" data-i18n="portfolio.btn.prices">🔄 Update Prices</button>
                 <button class="btn btn-warning" onclick="savePortfolioSnapshot()" data-i18n="portfolio.btn.snapshot">💾 Save Snapshot</button>
-                <div class="currency-toggle" id="currencySelector">
-                    <button class="ct-opt active" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
-                    <button class="ct-opt" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
-                </div>
             </div>
 
             <div id="moversSection" style="display: none;"></div>

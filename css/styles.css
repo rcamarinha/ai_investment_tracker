@@ -3309,3 +3309,30 @@ body > #appNavbar + * {
     /* Inline import card (not an overlay): keep the textarea from eating the screen */
     .import-area { min-height: 80px; }
 }
+
+/* ── Desktop layout (sprint S7/S8) ───────────────────────────────────────────
+   Mobile-first is the baseline; everything here only widens layouts above the
+   breakpoints, so viewports below them are pixel-identical to before. */
+
+/* Overlay blur parity with .modal-overlay (S8) */
+.ticker-picker-overlay { backdrop-filter: blur(6px); }
+
+/* Allocation charts side-by-side on tablet+ */
+@media (min-width: 768px) {
+    .allocation-charts { grid-template-columns: 1fr 1fr; }
+}
+
+/* Positions become a multi-column card grid on desktop */
+@media (min-width: 1024px) {
+    .positions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 12px;
+    }
+    .positions .position { margin-bottom: 0; }
+}
+
+/* Dialogs get room to breathe on large monitors */
+@media (min-width: 1200px) {
+    .ticker-picker-dialog { max-width: 640px; }
+}
