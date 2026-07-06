@@ -541,7 +541,11 @@ export async function fetchMarketPrices(opts = {}) {
                 const price = priced[queryOf(sym).toUpperCase()];
                 if (price > 0) recordSuccess(sym, price, 'Financial Modeling Prep (batch)');
             }
-            toFetch = toFetch.filter(s => !(state.priceMetadata[s] && state.priceMetadata[s].success));
+            // Only drop symbols Phase A actually priced THIS run. Filtering on
+            // priceMetadata.success here reused the stale success:true left by
+            // loadLatestPricesFromDB '(cached)' entries, silently skipping Phase B
+            // for every DB-cached symbol — prices froze at the last cached values.
+            toFetch = toFetch.filter(s => !refreshedThisRun.has(s));
             renderPortfolio();
         }
 
