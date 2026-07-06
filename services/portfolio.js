@@ -158,6 +158,40 @@ export function renderPortfolio() {
         displayPositions = displayPositions.filter(p => getSector(p.symbol) === state.selectedSector);
     }
 
+    // Text search across symbol + name (toolbar above the grid)
+    if (state.posSearch) {
+        const q = state.posSearch.toLowerCase();
+        displayPositions = displayPositions.filter(p =>
+            (p.symbol || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q));
+    }
+
+    // Sort order (default: market value desc; closed positions sink to the bottom)
+    const sortKey = state.posSort || 'value';
+    const baseValOf = p => {
+        const c = state.marketPrices[p.symbol];
+        const mv = c !== undefined ? p.shares * c : p.shares * p.avgPrice;
+        return toBaseCurrency(mv, getAssetCurrency(p.symbol));
+    };
+    const gainPctOf = p => {
+        const inv = p.shares * p.avgPrice;
+        if (inv <= 0) return -Infinity;
+        const c = state.marketPrices[p.symbol];
+        return ((c !== undefined ? p.shares * c : inv) - inv) / inv;
+    };
+    const sorters = {
+        value:  (a, b) => baseValOf(b) - baseValOf(a),
+        gain:   (a, b) => gainPctOf(b) - gainPctOf(a),
+        loss:   (a, b) => gainPctOf(a) - gainPctOf(b),
+        name:   (a, b) => (a.name || a.symbol).localeCompare(b.name || b.symbol),
+        symbol: (a, b) => (a.symbol || '').localeCompare(b.symbol || ''),
+    };
+    if (sorters[sortKey]) displayPositions.sort(sorters[sortKey]);
+
+    // Per-card transaction panels reference rows by index into this flat list
+    // (rebuilt every render; deleteTransactionRow re-verifies by timestamp).
+    state._ledgerRows = [];
+    if (!(state.cardTxExpanded instanceof Set)) state.cardTxExpanded = new Set();
+
     let html = '';
 
     html += displayPositions.map((pos) => {
@@ -227,15 +261,64 @@ export function renderPortfolio() {
             ? `<span class="pos-platform">${escapeHTML(pos.platform)}</span>`
             : '';
 
+        // Per-asset transactions & income live behind the 📒 toggle on each card.
+        const cardTxs = state.transactions[pos.symbol] || state.transactions[pos.symbol.toUpperCase()] || [];
+        const txExpanded = cardTxs.length > 0 && state.cardTxExpanded.has(pos.symbol);
+        const txButton = cardTxs.length > 0
+            ? `<button class="position-action-btn${txExpanded ? ' action-buy' : ''}" title="${cardTxs.length} transaction${cardTxs.length !== 1 ? 's' : ''} — click to ${txExpanded ? 'hide' : 'show'}" onclick="toggleCardTx('${escapedSymbol}')">&#x1F4D2;</button>`
+            : '';
+
         // Action buttons: active positions get refresh/buy/sell/delete; inactive get just delete
         const actionButtons = isActive
             ? `<button class="position-action-btn action-refresh" title="Refresh price" onclick="refreshSinglePrice('${escapedSymbol}')">&#x21bb;</button>
                <button class="position-action-btn action-buy" title="Add shares" onclick="showEditPositionDialog('${escapedSymbol}','buy')">+</button>
                <button class="position-action-btn action-sell" title="Sell shares" onclick="showEditPositionDialog('${escapedSymbol}','sell')">-</button>
+               ${txButton}
                <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`
-            : `<button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
+            : `${txButton}
+               <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
+
+        // Expanded panel: this asset's income summary + full transaction history.
+        let txPanel = '';
+        if (txExpanded) {
+            const sortedTx = [...cardTxs].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+            const startIdx = state._ledgerRows.length;
+            sortedTx.forEach(t => state._ledgerRows.push({ symbol: pos.symbol, ...t }));
+            const txTypeLabel = ty => ty === 'isin_change' ? 'ISIN change' : ty[0].toUpperCase() + ty.slice(1);
+            const incBits = [];
+            if (pos.dividends > 0) incBits.push(`<span style="color: var(--up);">💰 Dividends +${formatCurrency(pos.dividends, currency)}</span>`);
+            if (pos.taxWithheld > 0) incBits.push(`<span style="color: var(--down);">Tax −${formatCurrency(pos.taxWithheld, currency)}</span>`);
+            if (pos.feesPaid > 0) incBits.push(`<span style="color: var(--down);">Fees −${formatCurrency(pos.feesPaid, currency)}</span>`);
+            txPanel = `
+            <div class="pos-tx-panel" style="background: var(--ink-3); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--r-lg) var(--r-lg); padding: 10px 14px; font-size: 12px;">
+                ${incBits.length ? `<div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px;">${incBits.join('')}</div>` : ''}
+                <div class="table-scroll">
+                    <table class="sales-history-table">
+                        <thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th class="col-hide-mobile">Fee/Tax</th><th></th></tr></thead>
+                        <tbody>${sortedTx.map((t, k) => {
+                            const i = startIdx + k;
+                            const isTrade = t.type === 'buy' || t.type === 'sell';
+                            const qty = isTrade ? t.shares : (t.type === 'split' ? `×${t.ratio}` : '—');
+                            const price = isTrade ? formatCurrency(t.price, t.currency) : '—';
+                            const amount = t.totalAmount != null ? formatCurrency(t.totalAmount, t.currency) : '—';
+                            const feeTax = t.type === 'dividend'
+                                ? (t.tax ? `tax ${formatCurrency(t.tax, t.currency)}` : '—')
+                                : (t.fee ? formatCurrency(t.fee, t.currency) : '—');
+                            const typeColor = t.type === 'buy' ? 'var(--up)' : t.type === 'sell' ? 'var(--down)' : t.type === 'dividend' ? 'var(--up)' : 'var(--text-secondary)';
+                            return `<tr>
+                                <td>${escapeHTML(t.date || '')}</td>
+                                <td style="color: ${typeColor};">${escapeHTML(txTypeLabel(t.type))}</td>
+                                <td>${qty}</td><td>${price}</td><td>${amount}</td><td class="col-hide-mobile">${feeTax}</td>
+                                <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
+                            </tr>`;
+                        }).join('')}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        }
 
         return `
+        <div class="pos-wrap">
         <div class="pos-card ${assetTypeClass}${isActive ? '' : ' inactive'}" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
             <div class="pos-icon ${assetTypeClass}">${tickerBadge}</div>
             <div>
@@ -266,6 +349,8 @@ export function renderPortfolio() {
                 ${priceSub ? `<div class="pos-sub">${priceSub}</div>` : ''}
             </div>
         </div>
+        ${txPanel}
+        </div>
         `;
     }).join('');
 
@@ -275,12 +360,64 @@ export function renderPortfolio() {
     const reviewBanner = state.ledgerNeedsReview
         ? `<div style="background: var(--gold-glow); border-left: 3px solid var(--gold); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; color: var(--gold);">⚠ Some holdings show more sold than bought — likely an unhandled split or ISIN change. Re-import the broker export and use the review step to mark splits, or adjust the transactions in the ledger.</div>`
         : '';
-    positionsDiv.innerHTML = reviewBanner + html;
+
+    // Search + sort toolbar (T3)
+    const sortOpt = (v, label) => `<option value="${v}"${(state.posSort || 'value') === v ? ' selected' : ''}>${label}</option>`;
+    const toolbar = `
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
+            <input id="posSearch" type="text" placeholder="🔎 Search positions…" value="${escapeHTML(state.posSearch || '')}" oninput="setPosSearch(this.value)" style="flex: 1; min-width: 150px; padding: 6px 10px; border-radius: 6px;" />
+            <select onchange="setPosSort(this.value)" title="Sort positions" style="padding: 6px 8px; font-size: 12px; border-radius: 6px;">
+                ${sortOpt('value', 'Sort: Value')}
+                ${sortOpt('gain', 'Sort: Top gainers')}
+                ${sortOpt('loss', 'Sort: Top losers')}
+                ${sortOpt('name', 'Sort: Name')}
+                ${sortOpt('symbol', 'Sort: Ticker')}
+            </select>
+        </div>`;
+
+    const emptySearchNote = (displayPositions.length === 0 && state.posSearch)
+        ? `<div style="text-align: center; color: var(--text-tertiary); padding: 24px;">No positions match "${escapeHTML(state.posSearch)}".</div>`
+        : '';
+
+    positionsDiv.innerHTML = toolbar + reviewBanner + html + emptySearchNote;
+
+    // Keep typing fluid: re-focus the search box after the innerHTML rebuild.
+    if (state._focusPosSearch) {
+        state._focusPosSearch = false;
+        const searchEl = document.getElementById('posSearch');
+        if (searchEl) { searchEl.focus(); searchEl.setSelectionRange(searchEl.value.length, searchEl.value.length); }
+    }
+
     renderAllocationCharts();
     renderSalesHistory();
-    renderIncomeHistory();
-    renderTransactionsLedger();
+    // Income & transactions now live inside each position card (📒 button).
+    // The retired global sections stay hidden.
+    const incomeSection = document.getElementById('incomeHistorySection');
+    if (incomeSection) incomeSection.style.display = 'none';
+    const txSection = document.getElementById('transactionsSection');
+    if (txSection) txSection.style.display = 'none';
     console.log('Portfolio rendered successfully');
+}
+
+/** Expand/collapse a position card's transactions & income panel. */
+export function toggleCardTx(symbol) {
+    if (!(state.cardTxExpanded instanceof Set)) state.cardTxExpanded = new Set();
+    if (state.cardTxExpanded.has(symbol)) state.cardTxExpanded.delete(symbol);
+    else state.cardTxExpanded.add(symbol);
+    renderPortfolio();
+}
+
+/** Positions toolbar: text search over symbol + name. */
+export function setPosSearch(value) {
+    state.posSearch = value;
+    state._focusPosSearch = true;
+    renderPortfolio();
+}
+
+/** Positions toolbar: sort order (value | gain | loss | name | symbol). */
+export function setPosSort(value) {
+    state.posSort = value;
+    renderPortfolio();
 }
 
 // ── Top Movers Section ───────────────────────────────────────────────────────
