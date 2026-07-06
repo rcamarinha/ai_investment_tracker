@@ -2927,37 +2927,69 @@ function renderTransactionsLedger() {
         `<button class="btn btn-sm ${fType === ty ? 'btn-accent' : 'btn-primary'}" onclick="setTxFilter('${ty}')">${typeLabel(ty)}</button>`
     ).join(' ');
 
+    // ── Group by asset (display-only) ────────────────────────────────────
+    // Groups are collapsed by default; a symbol search auto-expands matches.
+    // Rows keep their index into state._ledgerRows so per-row delete still works.
+    if (!(state.txExpandedGroups instanceof Set)) state.txExpandedGroups = new Set();
+    const groups = new Map();   // symbol → [{t, i}] (rows already date-sorted desc)
+    rows.forEach((t, i) => {
+        if (!groups.has(t.symbol)) groups.set(t.symbol, []);
+        groups.get(t.symbol).push({ t, i });
+    });
+
+    const renderRow = (t, i) => {
+        const isTrade = t.type === 'buy' || t.type === 'sell';
+        const qty = isTrade ? t.shares : (t.type === 'split' ? `×${t.ratio}` : '—');
+        const price = isTrade ? formatCurrency(t.price, t.currency) : '—';
+        const amount = t.totalAmount != null ? formatCurrency(t.totalAmount, t.currency) : '—';
+        const feeTax = t.type === 'dividend'
+            ? (t.tax ? `tax ${formatCurrency(t.tax, t.currency)}` : '—')
+            : (t.fee ? formatCurrency(t.fee, t.currency) : '—');
+        const typeColor = t.type === 'buy' ? 'var(--up)' : t.type === 'sell' ? 'var(--down)' : t.type === 'dividend' ? 'var(--up)' : 'var(--text-secondary)';
+        return `<tr>
+            <td>${escapeHTML(t.date || '')}</td>
+            <td style="color: ${typeColor};">${escapeHTML(typeLabel(t.type))}</td>
+            <td>${qty}</td><td>${price}</td><td>${amount}</td><td class="col-hide-mobile">${feeTax}</td>
+            <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
+        </tr>`;
+    };
+
+    const groupsHTML = [...groups.entries()].map(([symbol, entries]) => {
+        const open = !!qLower || state.txExpandedGroups.has(symbol);
+        const name = (state.portfolio.find(p => p.symbol === symbol) || {}).name;
+        return `
+        <div class="tx-group" style="border: 1px solid var(--border, rgba(255,255,255,0.08)); border-radius: 8px; margin-bottom: 8px; overflow: hidden;">
+            <div onclick="toggleTxGroup('${escapeHTML(symbol)}')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; cursor:pointer; user-select:none;">
+                <span style="font-size:11px; color: var(--text-secondary);">${open ? '▼' : '▶'}</span>
+                <span style="font-weight:600; color: var(--gold);">${escapeHTML(symbol)}</span>
+                ${name && name !== symbol ? `<span style="font-size:12px; color: var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(name)}</span>` : ''}
+                <span style="margin-left:auto; font-size:12px; color: var(--text-secondary);">${entries.length} transaction${entries.length !== 1 ? 's' : ''}</span>
+            </div>
+            ${open ? `<div class="table-scroll" style="border-top: 1px solid var(--border, rgba(255,255,255,0.08));">
+                <table class="sales-history-table">
+                    <thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th class="col-hide-mobile">Fee/Tax</th><th></th></tr></thead>
+                    <tbody>${entries.map(({ t, i }) => renderRow(t, i)).join('')}</tbody>
+                </table>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+
     content.innerHTML = `
-        <h2 style="margin-bottom: 12px;">📒 Transactions <span style="font-size: 13px; color: var(--text-secondary);">(${rows.length})</span></h2>
+        <h2 style="margin-bottom: 12px;">📒 Transactions <span style="font-size: 13px; color: var(--text-secondary);">(${rows.length} across ${groups.size} asset${groups.size !== 1 ? 's' : ''})</span></h2>
         <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;">
             <input id="txSearch" type="text" placeholder="Filter by symbol…" value="${escapeHTML(q || '')}" oninput="setTxSearch(this.value)" style="padding: 6px 10px; flex: 1; min-width: 110px; border-radius: 6px;" />
             <div style="display: flex; flex-wrap: wrap; gap: 4px;">${filterBtns}</div>
         </div>
-        <div class="table-scroll">
-            <table class="sales-history-table">
-                <thead><tr><th>Date</th><th>Symbol</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th class="col-hide-mobile">Fee/Tax</th><th></th></tr></thead>
-                <tbody>
-                    ${rows.map((t, i) => {
-                        const isTrade = t.type === 'buy' || t.type === 'sell';
-                        const qty = isTrade ? t.shares : (t.type === 'split' ? `×${t.ratio}` : '—');
-                        const price = isTrade ? formatCurrency(t.price, t.currency) : '—';
-                        const amount = t.totalAmount != null ? formatCurrency(t.totalAmount, t.currency) : '—';
-                        const feeTax = t.type === 'dividend'
-                            ? (t.tax ? `tax ${formatCurrency(t.tax, t.currency)}` : '—')
-                            : (t.fee ? formatCurrency(t.fee, t.currency) : '—');
-                        const typeColor = t.type === 'buy' ? 'var(--up)' : t.type === 'sell' ? 'var(--down)' : t.type === 'dividend' ? 'var(--up)' : 'var(--text-secondary)';
-                        return `<tr>
-                            <td>${escapeHTML(t.date || '')}</td>
-                            <td style="font-weight: 600; color: var(--gold);">${escapeHTML(t.symbol)}</td>
-                            <td style="color: ${typeColor};">${escapeHTML(typeLabel(t.type))}</td>
-                            <td>${qty}</td><td>${price}</td><td>${amount}</td><td class="col-hide-mobile">${feeTax}</td>
-                            <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-            </table>
-        </div>
+        ${groupsHTML}
     `;
+}
+
+/** Expand/collapse one asset's transaction group in the ledger. */
+export function toggleTxGroup(symbol) {
+    if (!(state.txExpandedGroups instanceof Set)) state.txExpandedGroups = new Set();
+    if (state.txExpandedGroups.has(symbol)) state.txExpandedGroups.delete(symbol);
+    else state.txExpandedGroups.add(symbol);
+    renderTransactionsLedger();
 }
 
 /** Set the transaction-ledger type filter and re-render just that section. */

@@ -410,7 +410,7 @@
                  showEditPositionDialog, closePositionDialog, submitPosition,
                  deletePosition, toggleInactivePositions,
                  refreshSinglePrice, setBaseCurrency,
-                 setTxFilter, setTxSearch, deleteTransactionRow,
+                 setTxFilter, setTxSearch, deleteTransactionRow, toggleTxGroup,
                  resolveMissingTickers, reEnablePricing,
                  loadTransactionsFromStorage } from './services/portfolio.js?v=3.28.0';
         import { fetchMarketPrices, fetchExchangeRates, setMissingTickerResolver } from './services/pricing.js?v=3.28.0';
@@ -470,6 +470,7 @@
         window.setTxFilter            = setTxFilter;
         window.setTxSearch            = setTxSearch;
         window.deleteTransactionRow   = deleteTransactionRow;
+        window.toggleTxGroup          = toggleTxGroup;
 
         // ── Initialization ──────────────────────────────────────────────────
         console.log('=== APP INITIALIZING (modular) ===');
