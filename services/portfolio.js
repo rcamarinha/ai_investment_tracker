@@ -1049,11 +1049,12 @@ function showUnresolvedDialog(items) {
         const rowsHTML = items.map((it, idx) => `
             <tr data-idx="${idx}" data-isin="${escapeHTML(it.identifier)}">
                 <td style="padding:6px 8px;">
-                    <div style="font-weight:600;">${escapeHTML(it.name || '—')}</div>
+                    <div style="font-weight:600;">${escapeHTML(it.name || '\u2014')}</div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono,monospace);">${escapeHTML(it.identifier)}</div>
                 </td>
-                <td style="padding:6px 8px;">
+                <td style="padding:6px 8px;white-space:nowrap;">
                     <input class="ur-ticker" type="text" placeholder="e.g. IUSQ.DE" style="width:110px;font-size:12px;padding:4px;text-transform:uppercase;" />
+                    <button class="btn btn-sm btn-primary ur-search" type="button" title="Search by name" style="margin-left:4px;">\uD83D\uDD0E</button>
                 </td>
                 <td style="padding:6px 8px;">
                     <select class="ur-action" style="font-size:12px;padding:4px;">
@@ -1067,9 +1068,9 @@ function showUnresolvedDialog(items) {
         const overlay = document.createElement('div');
         overlay.className = 'ticker-picker-overlay';
         overlay.innerHTML = `
-            <div class="ticker-picker-dialog" style="max-width:620px;">
-                <h3>🔎 ${items.length} symbol(s) couldn't be auto-resolved</h3>
-                <p style="font-size:13px;">Enter the ticker each instrument trades under (include an exchange suffix if needed, e.g. <code>IUSQ.DE</code>). Mapped tickers are remembered, so you'll only do this once per instrument. Nothing is dropped unless you choose <strong>Skip</strong>.</p>
+            <div class="ticker-picker-dialog" style="max-width:640px;">
+                <h3>\uD83D\uDD0E ${items.length} symbol(s) couldn't be auto-resolved</h3>
+                <p style="font-size:13px;">Enter the ticker each instrument trades under (include an exchange suffix if needed, e.g. <code>IUSQ.DE</code>) or use \uD83D\uDD0E to search by name. Mapped tickers are validated and remembered, so you'll only do this once per instrument. Nothing is dropped unless you choose <strong>Skip</strong>.</p>
                 <div style="max-height:320px;overflow-y:auto;margin:10px 0;">
                     <table style="width:100%;border-collapse:collapse;font-size:13px;">
                         <thead><tr style="text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">
@@ -1078,11 +1079,50 @@ function showUnresolvedDialog(items) {
                         <tbody>${rowsHTML}</tbody>
                     </table>
                 </div>
-                <div class="ticker-picker-footer">
+                <div class="ticker-picker-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="btn btn-primary" id="urCancel">Cancel import</button>
                     <button class="btn btn-accent" id="urConfirm">Apply</button>
                 </div>
             </div>`;
         document.body.appendChild(overlay);
+
+        // Typing a ticker selects "Map to ticker" (same pattern as the pricing
+        // resolve dialog) so a typed symbol is never silently ignored.
+        overlay.querySelectorAll('.ur-ticker').forEach(inp => {
+            inp.addEventListener('input', () => {
+                if (inp.value.trim()) inp.closest('tr').querySelector('.ur-action').value = 'map';
+            });
+        });
+
+        // Per-row search-by-name -> candidate picker -> fills the ticker input.
+        overlay.querySelectorAll('.ur-search').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const tr = btn.closest('tr');
+                const it = items[Number(tr.dataset.idx)];
+                const query = prompt('Search ticker by name/description:', it.name || it.identifier);
+                if (!query) return;
+                btn.textContent = '\u2026';
+                const results = await searchTickerByName(query);
+                btn.textContent = '\uD83D\uDD0E';
+                if (!results.length) { alert('No matches found. Try a different name.'); return; }
+                const chosen = await showTickerPickerDialog(
+                    query,
+                    { ticker: results[0].ticker, name: results[0].name, exchange: results[0].exchange },
+                    results.slice(1).map(r => ({ ticker: r.ticker, name: r.name, exchange: r.exchange }))
+                );
+                if (chosen && chosen.ticker) {
+                    tr.querySelector('.ur-ticker').value = chosen.ticker.toUpperCase();
+                    tr.querySelector('.ur-action').value = 'map';
+                }
+            });
+        });
+
+        // Cancel = abort the import entirely (resolve null; caller returns early
+        // before anything is persisted). Escape hatch for a wrong file/paste.
+        overlay.querySelector('#urCancel').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(null);
+        });
 
         overlay.querySelector('#urConfirm').addEventListener('click', () => {
             const decisions = {};
@@ -1090,7 +1130,7 @@ function showUnresolvedDialog(items) {
                 const isin = tr.dataset.isin;
                 let action = tr.querySelector('.ur-action').value;
                 const ticker = (tr.querySelector('.ur-ticker').value || '').trim().toUpperCase();
-                if (action === 'map' && !ticker) action = 'skip'; // blank ticker → skip
+                if (action === 'map' && !ticker) action = 'skip'; // blank ticker -> skip
                 decisions[isin] = { action, ticker };
             });
             document.body.removeChild(overlay);
@@ -1839,6 +1879,10 @@ export async function importTrades() {
                 let pending = unresolvedList;
                 while (pending.length > 0) {
                     const round = await showUnresolvedDialog(pending);
+                    if (round === null) {   // Cancel — abort before anything is persisted
+                        alert('Import cancelled — nothing was saved.');
+                        return;
+                    }
                     const failed = [];
                     for (const u of pending) {
                         const d = round[u.identifier];
