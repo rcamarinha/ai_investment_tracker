@@ -124,6 +124,11 @@ export function renderPortfolio() {
                 ${state.selectedSector ? `<span style="color: var(--gold); margin-left: 8px;">Filtered: ${escapeHTML(state.selectedSector)} <span style="cursor:pointer; color:var(--down);" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(state.selectedSector).replace(/'/g, "\\'")}')">✕</span></span>` : ''}
             </div>
         </div>
+        <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end;">
+        <div class="currency-toggle" id="currencySelector">
+            <button class="ct-opt${base === 'EUR' ? ' active' : ''}" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
+            <button class="ct-opt${base === 'USD' ? ' active' : ''}" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
+        </div>
         <div class="total-value">
             <div style="color: var(--text-secondary); font-size: 12px;">Total Invested (${escapeHTML(base)})</div>
             <div style="color: var(--text-primary); font-size: 16px; margin-bottom: 5px;">${formatCurrency(totalInvestedBase, base)}</div>
@@ -135,6 +140,7 @@ export function renderPortfolio() {
                 </div>
             ` : ''}
             ${incomeFeesRow}
+        </div>
         </div>
     `;
 

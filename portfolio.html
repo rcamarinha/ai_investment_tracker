@@ -51,16 +51,13 @@
 
         <div class="card">
             <div class="portfolio-header">
+                <!-- NOTE: renderPortfolio() replaces this element's innerHTML on every
+                     render — the currency toggle is part of that template, not static
+                     markup here (static children would be wiped on first render). -->
                 <h2 data-i18n="portfolio.your_portfolio">💼 Your Portfolio</h2>
-                <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-                    <div class="currency-toggle" id="currencySelector">
-                        <button class="ct-opt active" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
-                        <button class="ct-opt" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
-                    </div>
-                    <div class="total-value">
-                        <div data-i18n="portfolio.total_value">Total Value</div>
-                        <div id="totalValue">$0</div>
-                    </div>
+                <div class="total-value">
+                    <div data-i18n="portfolio.total_value">Total Value</div>
+                    <div id="totalValue">$0</div>
                 </div>
             </div>
 
