@@ -124,6 +124,11 @@ export function renderPortfolio() {
                 ${state.selectedSector ? `<span style="color: var(--gold); margin-left: 8px;">Filtered: ${escapeHTML(state.selectedSector)} <span style="cursor:pointer; color:var(--down);" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(state.selectedSector).replace(/'/g, "\\'")}')">✕</span></span>` : ''}
             </div>
         </div>
+        <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end;">
+        <div class="currency-toggle" id="currencySelector">
+            <button class="ct-opt${base === 'EUR' ? ' active' : ''}" data-currency="EUR" onclick="setBaseCurrency('EUR')">€ EUR</button>
+            <button class="ct-opt${base === 'USD' ? ' active' : ''}" data-currency="USD" onclick="setBaseCurrency('USD')">$ USD</button>
+        </div>
         <div class="total-value">
             <div style="color: var(--text-secondary); font-size: 12px;">Total Invested (${escapeHTML(base)})</div>
             <div style="color: var(--text-primary); font-size: 16px; margin-bottom: 5px;">${formatCurrency(totalInvestedBase, base)}</div>
@@ -135,6 +140,7 @@ export function renderPortfolio() {
                 </div>
             ` : ''}
             ${incomeFeesRow}
+        </div>
         </div>
     `;
 
@@ -1049,11 +1055,12 @@ function showUnresolvedDialog(items) {
         const rowsHTML = items.map((it, idx) => `
             <tr data-idx="${idx}" data-isin="${escapeHTML(it.identifier)}">
                 <td style="padding:6px 8px;">
-                    <div style="font-weight:600;">${escapeHTML(it.name || '—')}</div>
+                    <div style="font-weight:600;">${escapeHTML(it.name || '\u2014')}</div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono,monospace);">${escapeHTML(it.identifier)}</div>
                 </td>
-                <td style="padding:6px 8px;">
+                <td style="padding:6px 8px;white-space:nowrap;">
                     <input class="ur-ticker" type="text" placeholder="e.g. IUSQ.DE" style="width:110px;font-size:12px;padding:4px;text-transform:uppercase;" />
+                    <button class="btn btn-sm btn-primary ur-search" type="button" title="Search by name" style="margin-left:4px;">\uD83D\uDD0E</button>
                 </td>
                 <td style="padding:6px 8px;">
                     <select class="ur-action" style="font-size:12px;padding:4px;">
@@ -1067,9 +1074,9 @@ function showUnresolvedDialog(items) {
         const overlay = document.createElement('div');
         overlay.className = 'ticker-picker-overlay';
         overlay.innerHTML = `
-            <div class="ticker-picker-dialog" style="max-width:620px;">
-                <h3>🔎 ${items.length} symbol(s) couldn't be auto-resolved</h3>
-                <p style="font-size:13px;">Enter the ticker each instrument trades under (include an exchange suffix if needed, e.g. <code>IUSQ.DE</code>). Mapped tickers are remembered, so you'll only do this once per instrument. Nothing is dropped unless you choose <strong>Skip</strong>.</p>
+            <div class="ticker-picker-dialog" style="max-width:640px;">
+                <h3>\uD83D\uDD0E ${items.length} symbol(s) couldn't be auto-resolved</h3>
+                <p style="font-size:13px;">Enter the ticker each instrument trades under (include an exchange suffix if needed, e.g. <code>IUSQ.DE</code>) or use \uD83D\uDD0E to search by name. Mapped tickers are validated and remembered, so you'll only do this once per instrument. Nothing is dropped unless you choose <strong>Skip</strong>.</p>
                 <div style="max-height:320px;overflow-y:auto;margin:10px 0;">
                     <table style="width:100%;border-collapse:collapse;font-size:13px;">
                         <thead><tr style="text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">
@@ -1078,11 +1085,50 @@ function showUnresolvedDialog(items) {
                         <tbody>${rowsHTML}</tbody>
                     </table>
                 </div>
-                <div class="ticker-picker-footer">
+                <div class="ticker-picker-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="btn btn-primary" id="urCancel">Cancel import</button>
                     <button class="btn btn-accent" id="urConfirm">Apply</button>
                 </div>
             </div>`;
         document.body.appendChild(overlay);
+
+        // Typing a ticker selects "Map to ticker" (same pattern as the pricing
+        // resolve dialog) so a typed symbol is never silently ignored.
+        overlay.querySelectorAll('.ur-ticker').forEach(inp => {
+            inp.addEventListener('input', () => {
+                if (inp.value.trim()) inp.closest('tr').querySelector('.ur-action').value = 'map';
+            });
+        });
+
+        // Per-row search-by-name -> candidate picker -> fills the ticker input.
+        overlay.querySelectorAll('.ur-search').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const tr = btn.closest('tr');
+                const it = items[Number(tr.dataset.idx)];
+                const query = prompt('Search ticker by name/description:', it.name || it.identifier);
+                if (!query) return;
+                btn.textContent = '\u2026';
+                const results = await searchTickerByName(query);
+                btn.textContent = '\uD83D\uDD0E';
+                if (!results.length) { alert('No matches found. Try a different name.'); return; }
+                const chosen = await showTickerPickerDialog(
+                    query,
+                    { ticker: results[0].ticker, name: results[0].name, exchange: results[0].exchange },
+                    results.slice(1).map(r => ({ ticker: r.ticker, name: r.name, exchange: r.exchange }))
+                );
+                if (chosen && chosen.ticker) {
+                    tr.querySelector('.ur-ticker').value = chosen.ticker.toUpperCase();
+                    tr.querySelector('.ur-action').value = 'map';
+                }
+            });
+        });
+
+        // Cancel = abort the import entirely (resolve null; caller returns early
+        // before anything is persisted). Escape hatch for a wrong file/paste.
+        overlay.querySelector('#urCancel').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(null);
+        });
 
         overlay.querySelector('#urConfirm').addEventListener('click', () => {
             const decisions = {};
@@ -1090,7 +1136,7 @@ function showUnresolvedDialog(items) {
                 const isin = tr.dataset.isin;
                 let action = tr.querySelector('.ur-action').value;
                 const ticker = (tr.querySelector('.ur-ticker').value || '').trim().toUpperCase();
-                if (action === 'map' && !ticker) action = 'skip'; // blank ticker → skip
+                if (action === 'map' && !ticker) action = 'skip'; // blank ticker -> skip
                 decisions[isin] = { action, ticker };
             });
             document.body.removeChild(overlay);
@@ -1561,7 +1607,9 @@ export async function importPositions() {
         // ── Step 7: Fetch prices, then fill in missing avgPrices ─────────
         setTimeout(async () => {
             console.log('Auto-fetching market prices...');
-            await fetchMarketPrices();
+            // Interactive: the user just imported and is present — anything that
+            // can't be priced opens the resolve dialog instead of failing silently.
+            await fetchMarketPrices({ interactive: true });
 
             // For positions without acquisition price, use current market price
             if (positionsNeedingPrice.length > 0) {
@@ -1829,7 +1877,36 @@ export async function importTrades() {
             const allItems = [...trades, ...reviewItems, ...incomeItems];
             const unresolvedList = collectUnresolved(allItems, resolved);
             if (unresolvedList.length > 0) {
-                const decisions = await showUnresolvedDialog(unresolvedList);
+                // Validate every user-mapped ticker (a live price must come back)
+                // BEFORE it's applied/persisted — a typo must not be silently saved
+                // as a permanent dead mapping. Failures re-open the dialog for
+                // just the failed rows until each is fixed, skipped or untracked.
+                const decisions = {};
+                let pending = unresolvedList;
+                while (pending.length > 0) {
+                    const round = await showUnresolvedDialog(pending);
+                    if (round === null) {   // Cancel — abort before anything is persisted
+                        alert('Import cancelled — nothing was saved.');
+                        return;
+                    }
+                    const failed = [];
+                    for (const u of pending) {
+                        const d = round[u.identifier];
+                        if (d && d.action === 'map' && d.ticker) {
+                            const r = await fetchStockPrice(d.ticker.toUpperCase());
+                            if (r.success) decisions[u.identifier] = d;
+                            else failed.push(u);
+                        } else if (d) {
+                            decisions[u.identifier] = d;
+                        }
+                        // no decision = skip (drop below)
+                    }
+                    if (failed.length === 0) break;
+                    alert(`⚠ ${failed.length} ticker(s) returned no price and were NOT saved:\n` +
+                        failed.map(u => `• ${u.name || u.identifier} → "${(round[u.identifier] || {}).ticker}"`).join('\n') +
+                        `\n\nCheck the symbol (add an exchange suffix if needed, e.g. .DE/.PA), or choose Keep untracked / Skip.`);
+                    pending = failed;
+                }
                 applyUnresolvedDecisions(allItems, decisions);
                 // Persist user ticker maps so the ISIN auto-resolves on future imports.
                 for (const u of unresolvedList) {
@@ -1953,9 +2030,10 @@ export async function importTrades() {
         closeImportDialog();
         renderPortfolio();
 
-        // ── Step 8: Fetch current prices ───────────────────────────────────
+        // ── Step 8: Fetch current prices (interactive: user is present, so
+        // unpriced holdings open the resolve dialog instead of failing silently) ──
         setTimeout(async () => {
-            await fetchMarketPrices();
+            await fetchMarketPrices({ interactive: true });
             renderPortfolio();
         }, 300);
         setTimeout(() => {
@@ -2855,37 +2933,69 @@ function renderTransactionsLedger() {
         `<button class="btn btn-sm ${fType === ty ? 'btn-accent' : 'btn-primary'}" onclick="setTxFilter('${ty}')">${typeLabel(ty)}</button>`
     ).join(' ');
 
+    // ── Group by asset (display-only) ────────────────────────────────────
+    // Groups are collapsed by default; a symbol search auto-expands matches.
+    // Rows keep their index into state._ledgerRows so per-row delete still works.
+    if (!(state.txExpandedGroups instanceof Set)) state.txExpandedGroups = new Set();
+    const groups = new Map();   // symbol → [{t, i}] (rows already date-sorted desc)
+    rows.forEach((t, i) => {
+        if (!groups.has(t.symbol)) groups.set(t.symbol, []);
+        groups.get(t.symbol).push({ t, i });
+    });
+
+    const renderRow = (t, i) => {
+        const isTrade = t.type === 'buy' || t.type === 'sell';
+        const qty = isTrade ? t.shares : (t.type === 'split' ? `×${t.ratio}` : '—');
+        const price = isTrade ? formatCurrency(t.price, t.currency) : '—';
+        const amount = t.totalAmount != null ? formatCurrency(t.totalAmount, t.currency) : '—';
+        const feeTax = t.type === 'dividend'
+            ? (t.tax ? `tax ${formatCurrency(t.tax, t.currency)}` : '—')
+            : (t.fee ? formatCurrency(t.fee, t.currency) : '—');
+        const typeColor = t.type === 'buy' ? 'var(--up)' : t.type === 'sell' ? 'var(--down)' : t.type === 'dividend' ? 'var(--up)' : 'var(--text-secondary)';
+        return `<tr>
+            <td>${escapeHTML(t.date || '')}</td>
+            <td style="color: ${typeColor};">${escapeHTML(typeLabel(t.type))}</td>
+            <td>${qty}</td><td>${price}</td><td>${amount}</td><td class="col-hide-mobile">${feeTax}</td>
+            <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
+        </tr>`;
+    };
+
+    const groupsHTML = [...groups.entries()].map(([symbol, entries]) => {
+        const open = !!qLower || state.txExpandedGroups.has(symbol);
+        const name = (state.portfolio.find(p => p.symbol === symbol) || {}).name;
+        return `
+        <div class="tx-group" style="border: 1px solid var(--border, rgba(255,255,255,0.08)); border-radius: 8px; margin-bottom: 8px; overflow: hidden;">
+            <div onclick="toggleTxGroup('${escapeHTML(symbol)}')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; cursor:pointer; user-select:none;">
+                <span style="font-size:11px; color: var(--text-secondary);">${open ? '▼' : '▶'}</span>
+                <span style="font-weight:600; color: var(--gold);">${escapeHTML(symbol)}</span>
+                ${name && name !== symbol ? `<span style="font-size:12px; color: var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(name)}</span>` : ''}
+                <span style="margin-left:auto; font-size:12px; color: var(--text-secondary);">${entries.length} transaction${entries.length !== 1 ? 's' : ''}</span>
+            </div>
+            ${open ? `<div class="table-scroll" style="border-top: 1px solid var(--border, rgba(255,255,255,0.08));">
+                <table class="sales-history-table">
+                    <thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th class="col-hide-mobile">Fee/Tax</th><th></th></tr></thead>
+                    <tbody>${entries.map(({ t, i }) => renderRow(t, i)).join('')}</tbody>
+                </table>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+
     content.innerHTML = `
-        <h2 style="margin-bottom: 12px;">📒 Transactions <span style="font-size: 13px; color: var(--text-secondary);">(${rows.length})</span></h2>
+        <h2 style="margin-bottom: 12px;">📒 Transactions <span style="font-size: 13px; color: var(--text-secondary);">(${rows.length} across ${groups.size} asset${groups.size !== 1 ? 's' : ''})</span></h2>
         <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;">
             <input id="txSearch" type="text" placeholder="Filter by symbol…" value="${escapeHTML(q || '')}" oninput="setTxSearch(this.value)" style="padding: 6px 10px; flex: 1; min-width: 110px; border-radius: 6px;" />
             <div style="display: flex; flex-wrap: wrap; gap: 4px;">${filterBtns}</div>
         </div>
-        <div class="table-scroll">
-            <table class="sales-history-table">
-                <thead><tr><th>Date</th><th>Symbol</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th class="col-hide-mobile">Fee/Tax</th><th></th></tr></thead>
-                <tbody>
-                    ${rows.map((t, i) => {
-                        const isTrade = t.type === 'buy' || t.type === 'sell';
-                        const qty = isTrade ? t.shares : (t.type === 'split' ? `×${t.ratio}` : '—');
-                        const price = isTrade ? formatCurrency(t.price, t.currency) : '—';
-                        const amount = t.totalAmount != null ? formatCurrency(t.totalAmount, t.currency) : '—';
-                        const feeTax = t.type === 'dividend'
-                            ? (t.tax ? `tax ${formatCurrency(t.tax, t.currency)}` : '—')
-                            : (t.fee ? formatCurrency(t.fee, t.currency) : '—');
-                        const typeColor = t.type === 'buy' ? 'var(--up)' : t.type === 'sell' ? 'var(--down)' : t.type === 'dividend' ? 'var(--up)' : 'var(--text-secondary)';
-                        return `<tr>
-                            <td>${escapeHTML(t.date || '')}</td>
-                            <td style="font-weight: 600; color: var(--gold);">${escapeHTML(t.symbol)}</td>
-                            <td style="color: ${typeColor};">${escapeHTML(typeLabel(t.type))}</td>
-                            <td>${qty}</td><td>${price}</td><td>${amount}</td><td class="col-hide-mobile">${feeTax}</td>
-                            <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-            </table>
-        </div>
+        ${groupsHTML}
     `;
+}
+
+/** Expand/collapse one asset's transaction group in the ledger. */
+export function toggleTxGroup(symbol) {
+    if (!(state.txExpandedGroups instanceof Set)) state.txExpandedGroups = new Set();
+    if (state.txExpandedGroups.has(symbol)) state.txExpandedGroups.delete(symbol);
+    else state.txExpandedGroups.add(symbol);
+    renderTransactionsLedger();
 }
 
 /** Set the transaction-ledger type filter and re-render just that section. */
