@@ -307,6 +307,14 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.29.0
+- **Sprint: close the import→price→review loop + desktop layout** (team-planned from quality + UX audits):
+  - **S1** — after any import (trades or positions), the price fetch runs **interactively**: holdings that can't be priced open the resolve dialog on the spot instead of failing silently.
+  - **S2** — user-typed ISIN→ticker mappings are **validated** (must return a live price) before being applied or persisted; failures re-open the dialog for just the failed rows. A typo can no longer become a permanent dead mapping.
+  - **S3/S4** — the import-time resolve dialog now matches the pricing one: **🔎 search-by-name** per row (candidate picker), typing a ticker auto-selects "Map to ticker", and a **Cancel import** escape hatch aborts before anything is saved.
+  - **S5** — the transactions ledger is **grouped per asset**: collapsible cards per symbol (count in the header), search auto-expands matches, per-row delete unchanged.
+  - **S6–S8 (desktop)** — currency toggle moved into the portfolio header (action bar fits one row), positions become a **multi-column card grid ≥1024px**, allocation charts side-by-side ≥768px, resolve dialogs widen ≥1200px, overlay blur parity. All additive breakpoints — mobile verified pixel-identical.
+
 ### v3.28.0
 - **Fix the ticker-resolve flow (typed tickers were being dropped)** — in the "resolve missing price" dialog, when there was no AI suggestion the action dropdown silently defaulted to **Keep at cost**, so a ticker you *typed* was discarded and the holding was marked untracked. Now: typing a ticker **auto-selects "Use ticker"**, the no-suggestion default is an inert **Skip** (never a silent keep-at-cost), and Apply honours a typed ticker even if the dropdown wasn't touched. A user-entered ticker that fails validation now reports **why** instead of a generic "no price".
 - **"Kept at cost" is now recoverable and durable** — the untracked flag is **persisted** (`assets.untracked`, migration `20260703_assets_untracked.sql`) so a deliberate keep-at-cost survives reload, and each kept-at-cost holding shows a **click-to-re-enable-pricing** link on its card (clears the flag + refetches). No more dead-end where a holding could never be priced again without re-importing.
