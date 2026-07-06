@@ -248,6 +248,14 @@ export function renderPortfolio() {
                 ${pos.untracked
                     ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="Kept at cost \u2014 pricing disabled. Click to re-enable live pricing." onclick="reEnablePricing('${escapeHTML(pos.symbol)}')">\u26A0 kept at cost \u00B7 <u>re-enable pricing</u></div>`
                     : (isISIN(pos.symbol) ? `<div class="pos-sub" style="color: var(--gold);" title="No ticker mapping \u2014 live price disabled. Re-import and map a ticker.">\u26A0 unmapped ISIN \u00B7 no live price</div>` : '')}
+                ${(() => {
+                    // Show the EFFECTIVE ticker when it differs from the stored symbol,
+                    // so a learned/user mapping is visible instead of invisible magic.
+                    const pt = ((state.assetDatabase[pos.symbol.toUpperCase()] || state.assetDatabase[pos.symbol] || {})).pricingTicker;
+                    return (pt && pt !== pos.symbol.toUpperCase())
+                        ? `<div class="pos-sub" style="font-family: var(--font-mono, monospace); color: var(--text-tertiary);" title="Prices are fetched with this ticker (learned mapping)">\u21B3 priced as ${escapeHTML(pt)}</div>`
+                        : '';
+                })()}
                 ${(pos.dividends > 0) ? `<div class="pos-sub" style="color: var(--up);">\uD83D\uDCB0 ${formatCurrency(pos.dividends - (pos.taxWithheld || 0), currency)} income${(pos.avgPrice > 0 && pos.shares > 0) ? ` \u00B7 ${formatPercent((pos.dividends - (pos.taxWithheld || 0)) / (pos.avgPrice * pos.shares) * 100)} yld/cost` : ''}</div>` : ''}
                 ${platformBadge}
                 <div class="position-actions">${actionButtons}</div>
@@ -1059,7 +1067,7 @@ function showUnresolvedDialog(items) {
                     <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono,monospace);">${escapeHTML(it.identifier)}</div>
                 </td>
                 <td style="padding:6px 8px;white-space:nowrap;">
-                    <input class="ur-ticker" type="text" placeholder="e.g. IUSQ.DE" style="width:110px;font-size:12px;padding:4px;text-transform:uppercase;" />
+                    <input class="ur-ticker" type="text" placeholder="e.g. IUSQ.DE" style="width:150px;font-size:13px;font-family:var(--font-mono,monospace);padding:4px 6px;text-transform:uppercase;" />
                     <button class="btn btn-sm btn-primary ur-search" type="button" title="Search by name" style="margin-left:4px;">\uD83D\uDD0E</button>
                 </td>
                 <td style="padding:6px 8px;">
@@ -1160,7 +1168,7 @@ function showUnresolvedDialog(items) {
  */
 export async function reEnablePricing(symbol) {
     if (!symbol) return;
-    setUntracked(symbol, false);
+    await setUntracked(symbol, false);
     delete state.priceMetadata[symbol];   // drop any stale "no price" record
     renderPortfolio();
     await fetchMarketPrices({ interactive: true });
@@ -1175,7 +1183,7 @@ export function resolveMissingTickers(items) {
                     <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono,monospace);">${escapeHTML(it.symbol)}</div>
                 </td>
                 <td style="padding:6px 8px;">
-                    <input class="rmt-ticker" type="text" placeholder="ticker" value="${escapeHTML(it.suggestion || '')}" style="width:96px;font-size:12px;padding:4px;text-transform:uppercase;" />
+                    <input class="rmt-ticker" type="text" placeholder="ticker" value="${escapeHTML(it.suggestion || '')}" style="width:150px;font-size:13px;font-family:var(--font-mono,monospace);padding:4px 6px;text-transform:uppercase;" />
                     <button class="btn btn-sm btn-primary rmt-search" type="button" title="Search by name" style="margin-left:4px;">🔎</button>
                 </td>
                 <td style="padding:6px 8px;">
