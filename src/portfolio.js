@@ -304,6 +304,26 @@ export function calculatePositionGainLoss(position, currentPrice) {
   return { invested, marketValue, gainLoss, gainLossPct, hasPrice };
 }
 
+// ── Header Invested Ratio ───────────────────────────────────────────────────
+
+/**
+ * Compute the fraction of total buy cost still held, for scaling historical-rate
+ * invested amounts. Uses cost-based ratio (shares × avgPrice / totalBuyCost)
+ * rather than share-based ratio, so stock splits don't inflate the result.
+ *
+ * @param {Array} transactions - array of {type, shares, price, totalAmount, …}
+ * @param {number} currentShares - current holding (post-split)
+ * @param {number} currentAvgPrice - current average cost (post-split)
+ * @returns {number} ratio in [0, 1]
+ */
+export function calculateRemainingRatio(transactions, currentShares, currentAvgPrice) {
+  const totalBuyCostNative = (transactions || [])
+    .filter(t => t.type === 'buy')
+    .reduce((s, t) => s + (t.totalAmount || t.shares * t.price), 0);
+  const investedNative = currentShares * currentAvgPrice;
+  return totalBuyCostNative > 0 ? Math.min(1, investedNative / totalBuyCostNative) : 1;
+}
+
 // ── Snapshot Creation ───────────────────────────────────────────────────────
 
 /**

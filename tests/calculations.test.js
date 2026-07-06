@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   calculatePortfolioTotals,
   calculatePositionGainLoss,
+  calculateRemainingRatio,
   filterBySector,
   formatSectorPositionCount,
 } from '../src/portfolio.js';
@@ -258,5 +259,62 @@ describe('formatSectorPositionCount', () => {
   it('full-count and filtered-count match produces "N positions of N"', () => {
     // All positions match the sector
     expect(formatSectorPositionCount(4, 4, 'Technology')).toBe('4 positions of 4');
+  });
+});
+
+// ── calculateRemainingRatio (split-safe header invested) ─────────────────────
+
+describe('calculateRemainingRatio', () => {
+  it('returns 1 when no sells and no splits', () => {
+    const txs = [
+      { type: 'buy', shares: 100, price: 100, totalAmount: 10000 },
+    ];
+    expect(calculateRemainingRatio(txs, 100, 100)).toBeCloseTo(1);
+  });
+
+  it('returns 0.5 when half the shares are sold', () => {
+    const txs = [
+      { type: 'buy', shares: 100, price: 100, totalAmount: 10000 },
+      { type: 'sell', shares: 50, price: 120, totalAmount: 6000 },
+    ];
+    expect(calculateRemainingRatio(txs, 50, 100)).toBeCloseTo(0.5);
+  });
+
+  it('returns 1 after a stock split (not inflated by extra shares)', () => {
+    const txs = [
+      { type: 'buy', shares: 100, price: 100, totalAmount: 10000 },
+      { type: 'split', ratio: 4 },
+    ];
+    expect(calculateRemainingRatio(txs, 400, 25)).toBeCloseTo(1);
+  });
+
+  it('returns 0.75 after split + partial sell', () => {
+    const txs = [
+      { type: 'buy', shares: 100, price: 100, totalAmount: 10000 },
+      { type: 'split', ratio: 4 },
+      { type: 'sell', shares: 100, price: 30, totalAmount: 3000 },
+    ];
+    expect(calculateRemainingRatio(txs, 300, 25)).toBeCloseTo(0.75);
+  });
+
+  it('returns 1 when transactions is empty or null', () => {
+    expect(calculateRemainingRatio([], 10, 50)).toBe(1);
+    expect(calculateRemainingRatio(null, 10, 50)).toBe(1);
+  });
+
+  it('uses shares*price fallback when totalAmount is missing', () => {
+    const txs = [
+      { type: 'buy', shares: 50, price: 200 },
+    ];
+    expect(calculateRemainingRatio(txs, 50, 200)).toBeCloseTo(1);
+  });
+
+  it('handles multiple buys at different prices + partial sell', () => {
+    const txs = [
+      { type: 'buy', shares: 100, price: 100, totalAmount: 10000 },
+      { type: 'buy', shares: 100, price: 120, totalAmount: 12000 },
+      { type: 'sell', shares: 100, price: 150, totalAmount: 15000 },
+    ];
+    expect(calculateRemainingRatio(txs, 100, 110)).toBeCloseTo(0.5);
   });
 });
