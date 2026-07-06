@@ -307,6 +307,12 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.30.0
+- **Fix: mapped tickers now actually stick** — resolving a ticker in the dialog fired the DB save **without awaiting it**, and the post-fetch `loadAssetsFromDB()` then rebuilt the asset cache from the DB, racing (and usually wiping) the fresh mapping. Next refresh had no mapping → failed again → asked again. `persistPricingTicker`/`setUntracked` are now awaited everywhere, so a mapped ticker survives the same run, the session, and reloads.
+- **See the ticker actually used** — cards show `↳ priced as XYZ` whenever a learned/user mapping differs from the stored symbol, and the resolve-dialog ticker inputs are wider (monospace) so long tickers/suffixes are fully readable.
+- **Transactions & income live on the asset** — each card gets a 📒 button that expands the asset's dividend/tax/fee summary + full transaction history (with per-row delete). The global Transactions and Income & Fees sections are retired.
+- **Positions toolbar** — search positions by name/ticker and sort by Value (default), Top gainers, Top losers, Name, or Ticker.
+
 ### v3.29.0
 - **Sprint: close the import→price→review loop + desktop layout** (team-planned from quality + UX audits):
   - **S1** — after any import (trades or positions), the price fetch runs **interactively**: holdings that can't be priced open the resolve dialog on the spot instead of failing silently.
