@@ -133,13 +133,16 @@ export async function searchTickerByName(query) {
 }
 
 /** Remember the ticker that actually returned a price for a holding, so future
- *  refreshes fetch it directly instead of re-running the alternative search. */
-function persistPricingTicker(symbol, pricingTicker) {
+ *  refreshes fetch it directly instead of re-running the alternative search.
+ *  MUST be awaited: the post-fetch loadAssetsFromDB() rebuilds assetDatabase
+ *  from the DB, and an un-landed upsert would be silently wiped from memory
+ *  (the "mapped ticker doesn't stick" bug). */
+async function persistPricingTicker(symbol, pricingTicker) {
     if (!symbol || !pricingTicker || pricingTicker === symbol) return;
     const existing = state.assetDatabase[symbol] || {};
     state.assetDatabase[symbol] = { ...existing, ticker: symbol, pricingTicker };
     try {
-        saveAssetsToDB([{
+        await saveAssetsToDB([{
             ticker: symbol,
             name: existing.name || symbol,
             stock_exchange: existing.stockExchange || '',
@@ -157,14 +160,14 @@ function persistPricingTicker(symbol, pricingTicker) {
  * so the choice survives a reload and re-enabling pricing sticks. Updates both the
  * position and the asset DB. Exported for the per-card "re-enable pricing" action.
  */
-export function setUntracked(symbol, flag) {
+export async function setUntracked(symbol, flag) {
     if (!symbol) return;
     const existing = state.assetDatabase[symbol] || {};
     state.assetDatabase[symbol] = { ...existing, ticker: symbol, untracked: !!flag };
     const pos = state.portfolio.find(p => p.symbol === symbol);
     if (pos) pos.untracked = !!flag;
     try {
-        saveAssetsToDB([{
+        await saveAssetsToDB([{
             ticker: symbol,
             name: existing.name || symbol,
             stock_exchange: existing.stockExchange || '',
@@ -596,7 +599,7 @@ export async function fetchMarketPrices(opts = {}) {
                         const r = await fetchStockPrice(s.ticker);
                         if (r.success) { price = r.price; source = `${r.source} (AI: ${s.ticker})`; }
                     }
-                    if (price > 0) { recordSuccess(sym, price, source); persistPricingTicker(sym, s.ticker); return; }
+                    if (price > 0) { recordSuccess(sym, price, source); await persistPricingTicker(sym, s.ticker); return; }
                 }
                 if (Number(s.price) > 0) recordSuccess(sym, Number(s.price), 'Web search (AI)');
             }, state.finnhubKey ? 3 : 2, 300);
@@ -620,13 +623,13 @@ export async function fetchMarketPrices(opts = {}) {
                 for (const d of decisions) {
                     if (!d || !d.symbol) continue;
                     if (d.keepAtCost) {
-                        setUntracked(d.symbol, true);   // persisted so the choice survives reload
+                        await setUntracked(d.symbol, true);   // persisted so the choice survives reload
                     } else if (d.ticker) {
                         const r = await fetchStockPrice(d.ticker);   // validate before persist
                         if (r.success) {
                             recordSuccess(d.symbol, r.price, `${r.source} (user: ${d.ticker})`);
-                            setUntracked(d.symbol, false);            // mapping a ticker re-enables pricing
-                            persistPricingTicker(d.symbol, d.ticker);
+                            await setUntracked(d.symbol, false);      // mapping a ticker re-enables pricing
+                            await persistPricingTicker(d.symbol, d.ticker);
                         } else {
                             // Validation failed — surface WHY instead of leaving the old
                             // "no price found" so the user knows their ticker was rejected.
