@@ -1561,7 +1561,9 @@ export async function importPositions() {
         // ── Step 7: Fetch prices, then fill in missing avgPrices ─────────
         setTimeout(async () => {
             console.log('Auto-fetching market prices...');
-            await fetchMarketPrices();
+            // Interactive: the user just imported and is present — anything that
+            // can't be priced opens the resolve dialog instead of failing silently.
+            await fetchMarketPrices({ interactive: true });
 
             // For positions without acquisition price, use current market price
             if (positionsNeedingPrice.length > 0) {
@@ -1829,7 +1831,32 @@ export async function importTrades() {
             const allItems = [...trades, ...reviewItems, ...incomeItems];
             const unresolvedList = collectUnresolved(allItems, resolved);
             if (unresolvedList.length > 0) {
-                const decisions = await showUnresolvedDialog(unresolvedList);
+                // Validate every user-mapped ticker (a live price must come back)
+                // BEFORE it's applied/persisted — a typo must not be silently saved
+                // as a permanent dead mapping. Failures re-open the dialog for
+                // just the failed rows until each is fixed, skipped or untracked.
+                const decisions = {};
+                let pending = unresolvedList;
+                while (pending.length > 0) {
+                    const round = await showUnresolvedDialog(pending);
+                    const failed = [];
+                    for (const u of pending) {
+                        const d = round[u.identifier];
+                        if (d && d.action === 'map' && d.ticker) {
+                            const r = await fetchStockPrice(d.ticker.toUpperCase());
+                            if (r.success) decisions[u.identifier] = d;
+                            else failed.push(u);
+                        } else if (d) {
+                            decisions[u.identifier] = d;
+                        }
+                        // no decision = skip (drop below)
+                    }
+                    if (failed.length === 0) break;
+                    alert(`⚠ ${failed.length} ticker(s) returned no price and were NOT saved:\n` +
+                        failed.map(u => `• ${u.name || u.identifier} → "${(round[u.identifier] || {}).ticker}"`).join('\n') +
+                        `\n\nCheck the symbol (add an exchange suffix if needed, e.g. .DE/.PA), or choose Keep untracked / Skip.`);
+                    pending = failed;
+                }
                 applyUnresolvedDecisions(allItems, decisions);
                 // Persist user ticker maps so the ISIN auto-resolves on future imports.
                 for (const u of unresolvedList) {
@@ -1953,9 +1980,10 @@ export async function importTrades() {
         closeImportDialog();
         renderPortfolio();
 
-        // ── Step 8: Fetch current prices ───────────────────────────────────
+        // ── Step 8: Fetch current prices (interactive: user is present, so
+        // unpriced holdings open the resolve dialog instead of failing silently) ──
         setTimeout(async () => {
-            await fetchMarketPrices();
+            await fetchMarketPrices({ interactive: true });
             renderPortfolio();
         }, 300);
         setTimeout(() => {
