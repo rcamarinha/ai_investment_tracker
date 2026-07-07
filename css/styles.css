@@ -253,8 +253,22 @@ body {
 }
 
 .total-value { text-align: right; }
-.total-value div:first-child { color: var(--text-secondary); font-size: 12px; }
-.total-value div:last-child  { color: var(--up); font-size: 24px; font-weight: bold; font-family: var(--font-mono); }
+/* Direct children only — the old descendant `div:last-child` catch-all also
+   matched NESTED last-child divs (it blew the header's "Fees" figure up to
+   24px display type). Scope with `>` and exclude the income row explicitly. */
+.total-value > div:first-child { color: var(--text-secondary); font-size: 12px; }
+.total-value > div:last-child:not(.header-income-row) { color: var(--up); font-size: 24px; font-weight: bold; font-family: var(--font-mono); }
+
+/* Portfolio-level Income / Fees line under the header totals */
+.header-income-row {
+    margin-top: 8px;
+    display: flex;
+    gap: 16px;
+    justify-content: flex-end;
+    font-size: 12px;
+    font-weight: normal;
+    font-family: var(--font-mono);
+}
 
 
 /* ── Portfolio Grid ──────────────────────────────────────────────────────── */
@@ -882,27 +896,35 @@ body {
     align-items: center;
 }
 
+/* Quiet ghost buttons — solid 36px color blocks dominated the card visually
+   and gave destructive delete the same weight as buy/sell (ux-audit v3.30). */
 .position-action-btn {
-    width: 36px;
-    height: 36px;
-    border: none;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
     border-radius: 6px;
     cursor: pointer;
     font-size: 13px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: filter 0.15s ease, opacity 0.15s ease;
+    transition: all 0.15s ease;
     padding: 0;
-    color: white;
+    color: var(--text-tertiary);
+    background: transparent;
 }
 .position-action-btn:hover {
-    filter: brightness(1.2);
+    color: var(--text-primary);
+    border-color: var(--border-hover);
 }
-.position-action-btn.action-refresh { background: var(--gold-dim); }
-.position-action-btn.action-buy  { background: var(--up); }
-.position-action-btn.action-sell { background: var(--gold); }
-.position-action-btn.action-del  { background: var(--down); }
+.position-action-btn.action-refresh { color: var(--gold-dim); }
+.position-action-btn.action-refresh:hover { border-color: var(--gold-dim); color: var(--gold); }
+.position-action-btn.action-buy  { color: var(--up); }
+.position-action-btn.action-buy:hover { border-color: var(--up); }
+.position-action-btn.action-sell { color: var(--gold); }
+.position-action-btn.action-sell:hover { border-color: var(--gold); }
+.position-action-btn.action-del  { opacity: 0.5; }
+.position-action-btn.action-del:hover { color: var(--down); border-color: var(--down); opacity: 1; }
 
 /* Inactive toggle */
 .inactive-toggle {
@@ -3289,9 +3311,6 @@ body > #appNavbar + * {
     /* Standard 2: drop the lowest-information table columns on phones */
     .col-hide-mobile { display: none; }
 
-    /* Keep the transactions search usable when the toolbar wraps */
-    #txSearch { min-width: 110px; }
-
     /* Standard 3: dialogs become bottom sheets so action buttons stay reachable */
     .ticker-picker-overlay,
     .modal-overlay,
@@ -3330,6 +3349,29 @@ body > #appNavbar + * {
         gap: 12px;
     }
     .positions .position { margin-bottom: 0; }
+    /* Non-card rows inside the grid (review banner, empty-search note) must
+       span the full row instead of being squeezed into one card cell. */
+    .positions > .grid-full-row { grid-column: 1 / -1; }
+}
+
+/* Search + sort toolbar above the positions grid (its own container so grid
+   re-renders never touch the input mid-typing) */
+.portfolio-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+/* Per-asset transactions & income panel (expanded from a card's 📒 button) */
+.pos-tx-panel {
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+    padding: 10px 14px;
+    font-size: 12px;
 }
 
 /* Dialogs get room to breathe on large monitors */
