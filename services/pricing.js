@@ -7,7 +7,7 @@
  */
 
 import state from './state.js';
-import { buildAssetRecord } from './utils.js';
+import { buildAssetRecord, getAssetCurrency } from './utils.js';
 import { renderPortfolio, renderMoversSection } from './portfolio.js';
 import { savePortfolioSnapshot } from './portfolio.js';
 import {
@@ -21,6 +21,7 @@ import {
     normalizeForPricing, parseFmpBatchResponse, isPriceFresh,
     buildRawMaps, mapPricedToRaw, pooled,
     extractLlmJsonArray, classifyFmpBatchText,
+    deriveFxToBases, lookupFxTableForDate,
 } from './pricing-core.js';
 export { normalizeForPricing, pooled };
 
@@ -811,4 +812,105 @@ export async function fetchExchangeRates() {
 export function getExchangeRate(fromCurrency) {
     if (!fromCurrency || fromCurrency === state.baseCurrency) return 1;
     return state.exchangeRates[fromCurrency] || 1;
+}
+
+// ── Historical FX (trade-date rates) ─────────────────────────────────────────
+// Invested capital / income must convert at the rate WHEN ACQUIRED, per base.
+// Each transaction gets fxRates = { EUR: r, USD: r } (1 unit of tx.currency = r
+// units of base, at the trade date). Sourced from Frankfurter (ECB reference
+// rates: free, keyless, CORS). Historical rates are immutable, so the per-date
+// EUR-based table is cached in localStorage forever.
+
+export const SUPPORTED_BASES = ['EUR', 'USD'];
+const FX_HISTORY_KEY = 'fxHistoryEUR';   // { 'YYYY-MM-DD': { USD: 1.09, ... } }
+const FX_MIN_DATE = '1999-01-04';        // ECB euro reference rates begin here
+
+function loadFxHistoryCache() {
+    try { return JSON.parse(localStorage.getItem(FX_HISTORY_KEY) || '{}'); }
+    catch { return {}; }
+}
+
+/**
+ * Ensure the local EUR-based history covers every date in `dates` (each date
+ * resolvable directly or via previous-business-day walk-back). Fetches ONE
+ * Frankfurter range request covering the missing span (range responses omit
+ * weekends/holidays, hence the walk-back at lookup time). Returns the history.
+ */
+async function ensureFxHistoryForDates(dates) {
+    const hist = loadFxHistoryCache();
+    const missing = dates.filter(d => !lookupFxTableForDate(hist, d));
+    if (missing.length === 0) return hist;
+    missing.sort();
+    // Pad the start so the earliest date's walk-back has business days to land on.
+    const startPad = new Date(new Date(`${missing[0]}T00:00:00Z`).getTime() - 10 * 86400000)
+        .toISOString().slice(0, 10);
+    const start = startPad < FX_MIN_DATE ? FX_MIN_DATE : startPad;
+    const end = missing[missing.length - 1];
+    const url = `https://api.frankfurter.dev/v1/${start}..${end}?base=EUR&symbols=${SUPPORTED_BASES.filter(b => b !== 'EUR').join(',')}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Frankfurter HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data && data.rates && typeof data.rates === 'object') {
+        Object.assign(hist, data.rates);
+        try { localStorage.setItem(FX_HISTORY_KEY, JSON.stringify(hist)); } catch { /* quota */ }
+    }
+    return hist;
+}
+
+/**
+ * Backfill fxRates on every transaction missing a rate for any supported base
+ * ("fix all values already in the system"). Runs once per session on load
+ * (opts.force bypasses, e.g. right after an import adds new dates). Mutates
+ * state.transactions in place; the CALLER persists iff the return count > 0
+ * (saveTransactionsToDB is delete-then-insert — never trigger it for nothing).
+ * Never throws: on any failure the affected rows simply keep falling back to
+ * live rates at display time.
+ */
+export async function backfillFxRates(opts = {}) {
+    if (!opts.force && state._fxBackfillDone) return 0;
+    state._fxBackfillDone = true;
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Collect rows missing any supported base (per-base check: adding a new
+    // base later re-triggers backfill for old rows automatically).
+    const targets = [];
+    const dates = new Set();
+    for (const [symbol, txs] of Object.entries(state.transactions || {})) {
+        for (const tx of txs) {
+            const missing = SUPPORTED_BASES.some(b => !(tx.fxRates && Number.isFinite(Number(tx.fxRates[b])) && Number(tx.fxRates[b]) > 0));
+            if (!missing) continue;
+            // Resolve the currency NOW and persist it with the rates — if display
+            // and backfill resolved a null currency differently, we'd persist an
+            // inconsistency. Unresolvable rows stay on the live-rate fallback.
+            const currency = tx.currency || getAssetCurrency(symbol);
+            if (!currency) continue;
+            let d = String(tx.date || '').slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+            if (d < FX_MIN_DATE) d = FX_MIN_DATE;
+            if (d > today) d = today;
+            targets.push({ tx, currency, date: d });
+            dates.add(d);
+        }
+    }
+    if (targets.length === 0) return 0;
+
+    let hist;
+    try { hist = await ensureFxHistoryForDates([...dates]); }
+    catch (err) {
+        console.warn('FX backfill: history fetch failed — rows stay on live-rate fallback:', err.message);
+        return 0;
+    }
+
+    let changed = 0;
+    for (const t of targets) {
+        const table = lookupFxTableForDate(hist, t.date);
+        if (!table) continue;
+        const fx = deriveFxToBases(table, t.currency);
+        if (!fx || SUPPORTED_BASES.some(b => fx[b] == null)) continue;
+        t.tx.fxRates = fx;
+        if (!t.tx.currency) t.tx.currency = t.currency;
+        changed++;
+    }
+    if (changed) console.log(`✓ Backfilled trade-date FX rates for ${changed} transaction(s)`);
+    return changed;
 }
