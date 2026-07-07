@@ -99,3 +99,48 @@ export async function pooled(items, factory, concurrency, delay = 0) {
     }
     return results;
 }
+
+/**
+ * Extract and parse a JSON array from LLM output that may be wrapped in prose
+ * or Markdown code fences (```json or ```).
+ *
+ * Mirrors the inline parsing in resolveTickersViaAI() (services/pricing.js).
+ * A misparse silently drops all AI ticker suggestions, so this pure helper
+ * exists to make the extraction behaviour testable.
+ *
+ * @param {string} text - Raw LLM response text
+ * @returns {Array} Parsed array, or [] on any failure
+ */
+export function extractLlmJsonArray(text) {
+    if (!text) return [];
+    const cleaned = text.replace(/```json|```/g, '').trim();
+    const start = cleaned.indexOf('[');
+    const end = cleaned.lastIndexOf(']');
+    const jsonText = (start >= 0 && end > start) ? cleaned.slice(start, end + 1) : cleaned;
+    try {
+        const parsed = JSON.parse(jsonText);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Classify an FMP batch endpoint HTTP response body.
+ *
+ * Mirrors the text-first / non-JSON detection logic in batchFetchFMP()
+ * (services/pricing.js). On free plans the comma-list endpoint returns a
+ * plain-text "Premium Query Parameter…" notice with HTTP 200, which is NOT
+ * JSON — parsing it directly throws, so the caller must classify the raw text
+ * before trusting it as a price array.
+ *
+ * @param {string} text - Raw HTTP response body text
+ * @returns {{ unsupported: boolean, json?: any }}
+ */
+export function classifyFmpBatchText(text) {
+    let json;
+    try { json = JSON.parse(text); }
+    catch { return { unsupported: true }; }
+    if (!Array.isArray(json)) return { unsupported: true, json };
+    return { unsupported: false, json };
+}

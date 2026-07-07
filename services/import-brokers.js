@@ -111,6 +111,22 @@ export function normalizeDate(raw) {
     return isNaN(dt.getTime()) ? s : dt.toISOString().slice(0, 10);
 }
 
+/**
+ * Coerce a transaction object's date to a valid YYYY-MM-DD string for DB storage.
+ * The `date` column is DATE NOT NULL, so null/malformed values must be replaced
+ * before writing. Falls back to the row's `timestamp`, then today.
+ *
+ * @param {{ date?: string, timestamp?: string }} tx - Transaction row
+ * @returns {string} YYYY-MM-DD
+ */
+export function coerceTxDate(tx) {
+    const d = String(tx.date || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    const ts = tx.timestamp ? String(tx.timestamp).slice(0, 10) : '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ts)) return ts;
+    return new Date().toISOString().slice(0, 10);
+}
+
 // ── CSV tokenizing ───────────────────────────────────────────────────────────
 
 /** Detect the field separator of a CSV header line (comma or semicolon). */

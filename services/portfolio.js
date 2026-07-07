@@ -59,16 +59,18 @@ export function renderPortfolio(opts = {}) {
         if (txs && txs.length > 0) {
             // Sum buy transactions converted at their historical rates
             let investedBase = 0;
-            let soldBase = 0;
             txs.forEach(tx => {
                 const rate = tx.exchangeRate || getExchangeRate(tx.currency || currency);
                 if (tx.type === 'buy') investedBase += tx.totalAmount * rate;
-                else if (tx.type === 'sell') soldBase += tx.totalAmount * rate;
             });
-            // Invested = total buys minus total sells (in base), proportional to remaining shares
-            const totalBuyShares = txs.filter(t => t.type === 'buy').reduce((s, t) => s + t.shares, 0);
-            const totalSellShares = txs.filter(t => t.type === 'sell').reduce((s, t) => s + t.shares, 0);
-            const remainingRatio = totalBuyShares > 0 ? p.shares / totalBuyShares : 1;
+            // Scale by the fraction of original cost still held. Cost-based (not
+            // share-based): a split multiplies p.shares but leaves cost basis
+            // unchanged (avgPrice divides by the same ratio), so shares/totalBuyShares
+            // would over-scale by the split ratio (a 4:1 split inflated this 4x).
+            const totalBuyCostNative = txs.filter(t => t.type === 'buy')
+                .reduce((s, t) => s + (t.totalAmount || t.shares * t.price), 0);
+            const remainingRatio = totalBuyCostNative > 0
+                ? Math.min(1, investedNative / totalBuyCostNative) : 1;
             totalInvestedBase += investedBase * remainingRatio;
         } else {
             // No transactions: fallback to current rate
@@ -950,7 +952,13 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
                     return;
                 }
 
-                const resolvedTicker = (r.ticker + (r.exchange || '')).toUpperCase();
+                // If Claude already returned a fully-suffixed ticker (e.g. 'SAN.PA'),
+                // appending r.exchange (e.g. '.PA') again produces 'SAN.PA.PA' — an
+                // unpriceable ticker silently stored in the asset DB. Only append when
+                // the ticker doesn't already contain a dot.
+                const tickerBase = r.ticker.toUpperCase();
+                const exchangeSuffix = (r.exchange || '').toUpperCase();
+                const resolvedTicker = (exchangeSuffix && !tickerBase.includes('.')) ? (tickerBase + exchangeSuffix) : tickerBase;
 
                 // Check if this ticker already exists in DB — log for visibility
                 const existingInPortfolio = state.portfolio.find(p => p.symbol.toUpperCase() === resolvedTicker);
@@ -3014,11 +3022,23 @@ export function deleteTransactionRow(rowIndex) {
     if (idx < 0) return;
 
     txs.splice(idx, 1);
-    if (txs.length === 0) delete state.transactions[ledgerKey];
+    if (txs.length === 0) {
+        delete state.transactions[ledgerKey];
+        // rebuildPositionsFromLedger only ever UPDATES/ADDS from the ledger — it
+        // never removes a portfolio entry once created, so a symbol whose last
+        // transaction was just deleted would persist forever with stale data.
+        // Safe to prune here specifically: reaching this branch guarantees
+        // ledgerKey WAS ledger-managed (the `if (!txs)` guard above already
+        // rejected symbols with no ledger entry), so a manually-added position
+        // (never in state.transactions) can never be touched by this line.
+        state.portfolio = state.portfolio.filter(p => p.symbol !== ledgerKey);
+    }
 
     rebuildPositionsFromLedger();
+    // saveTransactionsToStorage() already calls saveTransactionsToDB() internally
+    // (see below) — a second direct call here raced it (two concurrent
+    // delete-then-insert operations that could double rows in the DB).
     saveTransactionsToStorage();
-    saveTransactionsToDB();
     savePortfolioDB();
     renderPortfolio();
 }

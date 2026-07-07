@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { buildAlternativeSymbols, normalizeForPricing, parseFmpBatchResponse, isPriceFresh } from '../src/portfolio.js';
+import {
+  buildAlternativeSymbols,
+  normalizeForPricing,
+  parseFmpBatchResponse,
+  isPriceFresh,
+  extractLlmJsonArray,
+  classifyFmpBatchText,
+} from '../src/portfolio.js';
 
 describe('normalizeForPricing', () => {
   it('remaps Finnhub-style suffixes to FMP/Yahoo format', () => {
@@ -223,5 +230,142 @@ describe('isPriceFresh', () => {
     expect(isPriceFresh({ success: true, source: 'FMP (cached)', timestamp: new Date(now).toISOString() }, WIN, now)).toBe(false);
     expect(isPriceFresh({ success: false, source: 'FMP', timestamp: new Date(now).toISOString() }, WIN, now)).toBe(false);
     expect(isPriceFresh(null, WIN, now)).toBe(false);
+  });
+});
+
+// ── extractLlmJsonArray ──────────────────────────────────────────────────────
+// Mirrors the inline fence-strip + bracket-find logic inside resolveTickersViaAI
+// in services/pricing.js. A misparse silently drops all AI ticker suggestions,
+// leaving EU/exotic holdings permanently unpriced without any error signal.
+
+describe('extractLlmJsonArray', () => {
+  it('passes a bare JSON array straight through', () => {
+    const input = '[{"ticker":"AAPL","input":"AAPL"},{"ticker":"MC.PA","input":"MC"}]';
+    const result = extractLlmJsonArray(input);
+    expect(result).toEqual([
+      { ticker: 'AAPL', input: 'AAPL' },
+      { ticker: 'MC.PA', input: 'MC' },
+    ]);
+  });
+
+  it('strips a ```json ... ``` code fence', () => {
+    const input = '```json\n[{"ticker":"NESN.SW","input":"NESN"}]\n```';
+    const result = extractLlmJsonArray(input);
+    expect(result).toEqual([{ ticker: 'NESN.SW', input: 'NESN' }]);
+  });
+
+  it('strips a plain ``` ... ``` code fence', () => {
+    const input = '```\n[{"ticker":"SAP.DE","input":"SAP"}]\n```';
+    const result = extractLlmJsonArray(input);
+    expect(result).toEqual([{ ticker: 'SAP.DE', input: 'SAP' }]);
+  });
+
+  it('extracts an array embedded in a prose preamble', () => {
+    const input = 'Here are the tickers I found:\n[{"ticker":"TTE.PA","input":"TTE"},{"ticker":"AIR.PA","input":"AIR"}]\nLet me know if you need more.';
+    const result = extractLlmJsonArray(input);
+    expect(result).toEqual([
+      { ticker: 'TTE.PA', input: 'TTE' },
+      { ticker: 'AIR.PA', input: 'AIR' },
+    ]);
+  });
+
+  it('handles an array that includes an optional price field', () => {
+    const input = '[{"ticker":"BCP.LS","input":"BCP","price":0.285}]';
+    const result = extractLlmJsonArray(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].price).toBe(0.285);
+  });
+
+  it('returns [] for a JSON object with no array brackets', () => {
+    expect(extractLlmJsonArray('{"error":"quota exceeded"}')).toEqual([]);
+  });
+
+  it('returns [] for null input', () => {
+    expect(extractLlmJsonArray(null)).toEqual([]);
+  });
+
+  it('returns [] for undefined input', () => {
+    expect(extractLlmJsonArray(undefined)).toEqual([]);
+  });
+
+  it('returns [] for an empty string', () => {
+    expect(extractLlmJsonArray('')).toEqual([]);
+  });
+
+  it('returns [] for a string that contains no valid JSON', () => {
+    expect(extractLlmJsonArray('Sorry, I could not find any tickers.')).toEqual([]);
+  });
+
+  it('returns [] for malformed JSON that has brackets', () => {
+    expect(extractLlmJsonArray('[{broken json here')).toEqual([]);
+  });
+
+  it('takes the outermost brackets when arrays are nested', () => {
+    // The first [ and last ] together encompass the full structure
+    const input = '[{"ticker":"AAPL","alternates":["AAPL.US","AAPL"]}]';
+    const result = extractLlmJsonArray(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].ticker).toBe('AAPL');
+    expect(Array.isArray(result[0].alternates)).toBe(true);
+  });
+});
+
+// ── classifyFmpBatchText ──────────────────────────────────────────────────────
+// Mirrors the text-first / non-JSON detection in batchFetchFMP() introduced in
+// PR #206. On free plans the FMP comma-list endpoint returns a plain-text
+// "Premium Query Parameter…" notice with HTTP 200, which looks like success
+// but is not JSON. Failing to detect this caused batchFetchFMP to throw, never
+// set the fmpBatchUnsupported flag, and silently retry the doomed request on
+// every subsequent refresh.
+
+describe('classifyFmpBatchText', () => {
+  it('marks a valid JSON array as supported and returns the parsed data', () => {
+    const text = JSON.stringify([{ symbol: 'AAPL', price: 175.2 }, { symbol: 'MC.PA', price: 62.5 }]);
+    const result = classifyFmpBatchText(text);
+    expect(result.unsupported).toBe(false);
+    expect(result.json).toEqual([{ symbol: 'AAPL', price: 175.2 }, { symbol: 'MC.PA', price: 62.5 }]);
+  });
+
+  it('marks an empty array as supported (no prices but not a plan limit)', () => {
+    const result = classifyFmpBatchText('[]');
+    expect(result.unsupported).toBe(false);
+    expect(result.json).toEqual([]);
+  });
+
+  it('marks a plain-text premium notice as unsupported', () => {
+    const result = classifyFmpBatchText('Premium Query Parameter. This endpoint is not available under your current subscription plan.');
+    expect(result.unsupported).toBe(true);
+  });
+
+  it('marks a JSON error object (FMP "Error Message" shape) as unsupported', () => {
+    const result = classifyFmpBatchText(JSON.stringify({ 'Error Message': 'Invalid API key.' }));
+    expect(result.unsupported).toBe(true);
+  });
+
+  it('marks a partial / truncated JSON string as unsupported', () => {
+    const result = classifyFmpBatchText('[{"symbol":"AAPL","price":');
+    expect(result.unsupported).toBe(true);
+  });
+
+  it('marks a JSON null as unsupported', () => {
+    const result = classifyFmpBatchText('null');
+    expect(result.unsupported).toBe(true);
+  });
+
+  it('marks an empty string as unsupported', () => {
+    const result = classifyFmpBatchText('');
+    expect(result.unsupported).toBe(true);
+  });
+
+  it('marks a plain number as unsupported', () => {
+    const result = classifyFmpBatchText('404');
+    expect(result.unsupported).toBe(true);
+  });
+
+  it('result json field is present on a JSON object for diagnostics', () => {
+    const obj = { 'Error Message': 'Premium' };
+    const result = classifyFmpBatchText(JSON.stringify(obj));
+    expect(result.unsupported).toBe(true);
+    expect(result.json).toEqual(obj);
   });
 });

@@ -381,6 +381,7 @@ export function mergeSnapshots(existing, incoming) {
 export {
   PRICING_SUFFIX_MAP, EU_SUFFIXES,
   normalizeForPricing, parseFmpBatchResponse, isPriceFresh,
+  extractLlmJsonArray, classifyFmpBatchText,
 } from '../services/pricing-core.js';
 import { normalizeForPricing, EU_SUFFIXES } from '../services/pricing-core.js';
 

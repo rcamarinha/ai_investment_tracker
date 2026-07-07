@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectStockExchange, detectCurrency, normalizeAssetType } from '../services/utils.js';
+import { detectStockExchange, detectCurrency, normalizeAssetType, buildAssetRecord } from '../services/utils.js';
 
 // ── detectStockExchange ──────────────────────────────────────────────────────
 
@@ -348,5 +348,101 @@ describe('normalizeAssetType', () => {
   it('trims surrounding whitespace', () => {
     expect(normalizeAssetType('  stock  ')).toBe('Stock');
     expect(normalizeAssetType('  etf  ')).toBe('ETF');
+  });
+});
+
+// ── buildAssetRecord ─────────────────────────────────────────────────────────
+
+describe('buildAssetRecord', () => {
+  it('returns null for null position', () => {
+    expect(buildAssetRecord(null)).toBeNull();
+  });
+
+  it('returns null for undefined position', () => {
+    expect(buildAssetRecord(undefined)).toBeNull();
+  });
+
+  it('returns null when symbol is missing', () => {
+    expect(buildAssetRecord({ name: 'Foo', shares: 10 })).toBeNull();
+  });
+
+  it('returns null when symbol is empty string', () => {
+    expect(buildAssetRecord({ symbol: '' })).toBeNull();
+  });
+
+  it('upcases the ticker', () => {
+    const rec = buildAssetRecord({ symbol: 'aapl' });
+    expect(rec.ticker).toBe('AAPL');
+  });
+
+  it('returns minimal valid shape for a US symbol', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL' });
+    expect(rec).toMatchObject({
+      ticker: 'AAPL',
+      stock_exchange: 'US',
+      currency: 'USD',
+      asset_type: 'Stock',
+      untracked: false,
+    });
+    expect(typeof rec.name).toBe('string');
+    expect(typeof rec.sector).toBe('string');
+  });
+
+  it('uses position.name when provided', () => {
+    const rec = buildAssetRecord({ symbol: 'MSFT', name: 'Microsoft Corp' });
+    expect(rec.name).toBe('Microsoft Corp');
+  });
+
+  it('falls back to ticker as name when name is absent', () => {
+    const rec = buildAssetRecord({ symbol: 'NVDA' });
+    expect(rec.name).toBe('NVDA');
+  });
+
+  it('respects position.type for asset_type', () => {
+    const rec = buildAssetRecord({ symbol: 'SPY', type: 'ETF' });
+    expect(rec.asset_type).toBe('ETF');
+  });
+
+  it('defaults asset_type to Stock when type is absent', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  it('detects European exchange and currency from suffix', () => {
+    const rec = buildAssetRecord({ symbol: 'AIR.PA' });
+    expect(rec.stock_exchange).toBe('Euronext Paris');
+    expect(rec.currency).toBe('EUR');
+  });
+
+  // ── untracked field (added PR #211) ────────────────────────────────────────
+
+  it('untracked defaults to false when field is absent', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL' });
+    expect(rec.untracked).toBe(false);
+  });
+
+  it('untracked: false → false', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: false });
+    expect(rec.untracked).toBe(false);
+  });
+
+  it('untracked: true → true', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: true });
+    expect(rec.untracked).toBe(true);
+  });
+
+  it('untracked: null coerced to false via !!', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: null });
+    expect(rec.untracked).toBe(false);
+  });
+
+  it('untracked: 1 coerced to true via !!', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: 1 });
+    expect(rec.untracked).toBe(true);
+  });
+
+  it('untracked: 0 coerced to false via !!', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: 0 });
+    expect(rec.untracked).toBe(false);
   });
 });

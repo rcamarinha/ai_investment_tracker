@@ -307,6 +307,14 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.32.0
+- **Four real bugs found and fixed** by reviewing (and independently verifying) unmerged branches from an automated background agent — code-reviewer confirmed each was still present in current code, and I ran the proposed fixes against the actual failure scenarios before shipping:
+  - **Split-inflated "Total Invested"** — the header scaled invested capital by `shares / totalBuyShares`, but a stock split multiplies `shares` while leaving cost basis unchanged, so a 4:1 split reported invested capital ~4× too high (also skewing gain/loss % and snapshots). Now uses a cost-based ratio (`shares × avgPrice / totalBuyCost`), which is split-invariant.
+  - **Orphan position after deleting the last transaction** — deleting a holding's only remaining transaction removed it from the ledger but left a stale `state.portfolio` entry behind forever (nothing ever pruned it). Fixed at the one safe point: `deleteTransactionRow` now removes the position when its ledger goes empty — scoped there specifically, so manually-added positions with no transaction history are never touched.
+  - **AI resolver double-suffix ticker** — the Claude ISIN-resolver fallback concatenated `ticker + exchange` unconditionally; when the AI already returned a fully-suffixed ticker (e.g. `SAN.PA`), appending `.PA` again produced the unpriceable `SAN.PA.PA`, silently stored in the asset DB. Now only appends when the ticker doesn't already contain a dot.
+  - **Redundant transaction-delete DB write** — `deleteTransactionRow` called `saveTransactionsToDB()` directly *and* via `saveTransactionsToStorage()` (which already calls it internally), firing two concurrent delete-then-insert operations per delete. Removed the redundant direct call.
+- **+83 tests** (708 → 791) cherry-picked from verified, still-relevant branches: ledger sort/split-detection regression guards, `setUntracked`/`buildAssetRecord.untracked` coverage, DegiroAccount/broker-detection/number-parsing edge cases, and AI-response-parsing helpers (`extractLlmJsonArray`, `classifyFmpBatchText`) newly extracted into `services/pricing-core.js` and wired into the resolver/FMP-batch paths they mirror. Two duplicate branches (same tests, less complete) were discarded in favor of their more thorough twin.
+
 ### v3.31.0
 - **Desktop UX repair (ux-auditor + optimization-quality joint review)** of the v3.30 issues:
   - **Fees figure fixed** — a descendant `div:last-child` CSS catch-all was blowing the header's "Fees" value up to 24px display type; rules are now direct-child scoped and the income/fees line has its own `.header-income-row` class (verified 12px mono in preview).

@@ -20,6 +20,7 @@ import { analyzeMovers } from './analysis.js';
 import {
     normalizeForPricing, parseFmpBatchResponse, isPriceFresh,
     buildRawMaps, mapPricedToRaw, pooled,
+    extractLlmJsonArray, classifyFmpBatchText,
 } from './pricing-core.js';
 export { normalizeForPricing, pooled };
 
@@ -71,18 +72,13 @@ export async function batchFetchFMP(symbols) {
             // plain-text notice ("Premium Query Parameter…") with HTTP 200, which
             // is NOT JSON. Parsing it directly throws and we'd never learn to stop.
             const text = await resp.text();
-            let json;
-            try { json = JSON.parse(text); }
-            catch {
-                console.warn('FMP batch non-JSON response (likely premium-only comma-list) — disabling batch for this session:', text.slice(0, 80));
+            const classified = classifyFmpBatchText(text);
+            if (classified.unsupported) {
+                console.warn('FMP batch non-JSON/non-array response (likely premium-only comma-list) — disabling batch for this session:', text.slice(0, 80));
                 state.fmpBatchUnsupported = true;
                 continue;
             }
-            if (json && !Array.isArray(json)) {           // { "Error Message": ... } / "Premium…" etc.
-                console.warn('FMP batch non-array response — treating comma-list as unsupported for this session.');
-                state.fmpBatchUnsupported = true;
-                continue;
-            }
+            const json = classified.json;
             addFmpCalls(chunk.length); // FMP bills ≈ per symbol, only on success
             const priced = parseFmpBatchResponse(json);
             // If we asked for many but got ≤1 back, the plan likely ignores comma-lists.
@@ -212,13 +208,9 @@ async function resolveTickersViaAI(failedSymbols) {
         const data = JSON.parse(txt);
         const out = data.content?.find(c => c.type === 'text')?.text || '';
         // Gemini/Claude may wrap the JSON in prose or code fences — extract the array.
-        const cleaned = out.replace(/```json|```/g, '').trim();
-        const start = cleaned.indexOf('['), end = cleaned.lastIndexOf(']');
-        const jsonText = (start >= 0 && end > start) ? cleaned.slice(start, end + 1) : cleaned;
-        let rows;
-        try { rows = JSON.parse(jsonText); } catch { rows = []; }
+        const rows = extractLlmJsonArray(out);
         const map = {};
-        (Array.isArray(rows) ? rows : []).forEach(r => {
+        rows.forEach(r => {
             const inp = String(r.input || '').toUpperCase();
             if (!inp) return;
             const price = Number(r.price);
