@@ -29,7 +29,7 @@ function requireAuth(actionName) {
 
 // ── Portfolio Rendering ─────────────────────────────────────────────────────
 
-export function renderPortfolio() {
+export function renderPortfolio(opts = {}) {
     const positionsDiv = document.getElementById('positions');
     if (!positionsDiv) {
         console.warn('renderPortfolio: #positions element not found');
@@ -108,7 +108,7 @@ export function renderPortfolio() {
     // Portfolio-wide income & fees (base currency), from the full ledger.
     const inc = computeIncomeTotalsBase();
     const incomeFeesRow = (inc.netIncome > 0 || inc.fees > 0) ? `
-        <div style="margin-top: 8px; display: flex; gap: 16px; justify-content: flex-end; font-size: 12px;">
+        <div class="header-income-row">
             ${inc.netIncome > 0 ? `<div><span style="color: var(--text-secondary);">Income</span> <span style="color: var(--up); font-weight: 600;">+${formatCurrency(inc.netIncome, base)}</span></div>` : ''}
             ${inc.fees > 0 ? `<div><span style="color: var(--text-secondary);">Fees</span> <span style="color: var(--down); font-weight: 600;">−${formatCurrency(inc.fees, base)}</span></div>` : ''}
         </div>` : '';
@@ -290,7 +290,7 @@ export function renderPortfolio() {
             if (pos.taxWithheld > 0) incBits.push(`<span style="color: var(--down);">Tax −${formatCurrency(pos.taxWithheld, currency)}</span>`);
             if (pos.feesPaid > 0) incBits.push(`<span style="color: var(--down);">Fees −${formatCurrency(pos.feesPaid, currency)}</span>`);
             txPanel = `
-            <div class="pos-tx-panel" style="background: var(--ink-3); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--r-lg) var(--r-lg); padding: 10px 14px; font-size: 12px;">
+            <div class="pos-tx-panel">
                 ${incBits.length ? `<div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px;">${incBits.join('')}</div>` : ''}
                 <div class="table-scroll">
                     <table class="sales-history-table">
@@ -356,17 +356,22 @@ export function renderPortfolio() {
 
     // Safety banner: a sell drove some holding's share count negative — a sign of
     // an unhandled split, ISIN change, or a missing buy. Surface it rather than
-    // showing silently-corrupted numbers.
+    // showing silently-corrupted numbers. (.grid-full-row spans the desktop grid.)
     const reviewBanner = state.ledgerNeedsReview
-        ? `<div style="background: var(--gold-glow); border-left: 3px solid var(--gold); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; color: var(--gold);">⚠ Some holdings show more sold than bought — likely an unhandled split or ISIN change. Re-import the broker export and use the review step to mark splits, or adjust the transactions in the ledger.</div>`
+        ? `<div class="grid-full-row" style="background: var(--gold-glow); border-left: 3px solid var(--gold); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; color: var(--gold);">⚠ Some holdings show more sold than bought — likely an unhandled split or ISIN change. Re-import the broker export and use the review step to mark splits, or adjust the transactions in the ledger.</div>`
         : '';
 
-    // Search + sort toolbar (T3)
-    const sortOpt = (v, label) => `<option value="${v}"${(state.posSort || 'value') === v ? ' selected' : ''}>${label}</option>`;
-    const toolbar = `
-        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
-            <input id="posSearch" type="text" placeholder="🔎 Search positions…" value="${escapeHTML(state.posSearch || '')}" oninput="setPosSearch(this.value)" style="flex: 1; min-width: 150px; padding: 6px 10px; border-radius: 6px;" />
-            <select onchange="setPosSort(this.value)" title="Sort positions" style="padding: 6px 8px; font-size: 12px; border-radius: 6px;">
+    // Search + sort toolbar — rendered into its OWN container (#positionsToolbar,
+    // a sibling of the grid), never into the grid: (a) the desktop grid would
+    // treat it as a card-sized cell; (b) rebuilding it mid-typing loses the
+    // caret. Skip the rewrite entirely while the search input is focused.
+    const toolbarEl = document.getElementById('positionsToolbar');
+    if (toolbarEl && !(document.activeElement && document.activeElement.id === 'posSearch')) {
+        const sortOpt = (v, label) => `<option value="${v}"${(state.posSort || 'value') === v ? ' selected' : ''}>${label}</option>`;
+        toolbarEl.innerHTML = `
+        <div class="portfolio-toolbar">
+            <input id="posSearch" type="text" class="form-input" placeholder="🔎 Search positions…" value="${escapeHTML(state.posSearch || '')}" oninput="setPosSearch(this.value)" style="flex: 1; min-width: 150px;" />
+            <select onchange="setPosSort(this.value)" title="Sort positions" class="form-select" style="width: auto;">
                 ${sortOpt('value', 'Sort: Value')}
                 ${sortOpt('gain', 'Sort: Top gainers')}
                 ${sortOpt('loss', 'Sort: Top losers')}
@@ -374,28 +379,18 @@ export function renderPortfolio() {
                 ${sortOpt('symbol', 'Sort: Ticker')}
             </select>
         </div>`;
-
-    const emptySearchNote = (displayPositions.length === 0 && state.posSearch)
-        ? `<div style="text-align: center; color: var(--text-tertiary); padding: 24px;">No positions match "${escapeHTML(state.posSearch)}".</div>`
-        : '';
-
-    positionsDiv.innerHTML = toolbar + reviewBanner + html + emptySearchNote;
-
-    // Keep typing fluid: re-focus the search box after the innerHTML rebuild.
-    if (state._focusPosSearch) {
-        state._focusPosSearch = false;
-        const searchEl = document.getElementById('posSearch');
-        if (searchEl) { searchEl.focus(); searchEl.setSelectionRange(searchEl.value.length, searchEl.value.length); }
     }
 
-    renderAllocationCharts();
-    renderSalesHistory();
-    // Income & transactions now live inside each position card (📒 button).
-    // The retired global sections stay hidden.
-    const incomeSection = document.getElementById('incomeHistorySection');
-    if (incomeSection) incomeSection.style.display = 'none';
-    const txSection = document.getElementById('transactionsSection');
-    if (txSection) txSection.style.display = 'none';
+    const emptySearchNote = (displayPositions.length === 0 && state.posSearch)
+        ? `<div class="grid-full-row" style="text-align: center; color: var(--text-tertiary); padding: 24px;">No positions match "${escapeHTML(state.posSearch)}".</div>`
+        : '';
+
+    positionsDiv.innerHTML = reviewBanner + html + emptySearchNote;
+
+    if (!opts.gridOnly) {
+        renderAllocationCharts();
+        renderSalesHistory();
+    }
     console.log('Portfolio rendered successfully');
 }
 
@@ -404,20 +399,21 @@ export function toggleCardTx(symbol) {
     if (!(state.cardTxExpanded instanceof Set)) state.cardTxExpanded = new Set();
     if (state.cardTxExpanded.has(symbol)) state.cardTxExpanded.delete(symbol);
     else state.cardTxExpanded.add(symbol);
-    renderPortfolio();
+    renderPortfolio({ gridOnly: true });
 }
 
 /** Positions toolbar: text search over symbol + name. */
 export function setPosSearch(value) {
     state.posSearch = value;
-    state._focusPosSearch = true;
-    renderPortfolio();
+    // gridOnly: searching changes which cards show — not totals, allocation,
+    // or sales history. Keeps each keystroke cheap and the caret untouched.
+    renderPortfolio({ gridOnly: true });
 }
 
 /** Positions toolbar: sort order (value | gain | loss | name | symbol). */
 export function setPosSort(value) {
     state.posSort = value;
-    renderPortfolio();
+    renderPortfolio({ gridOnly: true });
 }
 
 // ── Top Movers Section ───────────────────────────────────────────────────────
@@ -2983,181 +2979,6 @@ function computeIncomeTotalsBase() {
     return { dividends, tax, netIncome: dividends - tax, fees };
 }
 
-/** Render the Income & Fees history table (dividends + standalone fee rows). */
-function renderIncomeHistory() {
-    const section = document.getElementById('incomeHistorySection');
-    if (!section) return;
-
-    const rows = [];
-    let hasDividendRow = false;
-    for (const [symbol, txs] of Object.entries(state.transactions || {})) {
-        txs.forEach(t => {
-            if (t.type === 'dividend' || t.type === 'fee') rows.push({ symbol, ...t });
-            if (t.type === 'dividend') hasDividendRow = true;
-        });
-    }
-
-    // DeGiro dividends live in a separate Account.csv we don't parse yet, so income
-    // can be incomplete for a DeGiro-heavy portfolio. Warn rather than silently
-    // showing a partial (or zero) figure the user might trust.
-    const hasDegiro = state.portfolio.some(p => p.platform === 'DeGiro');
-    const degiroNote = (hasDegiro && !hasDividendRow)
-        ? `<div style="margin-bottom: 12px; padding: 10px 12px; background: var(--gold-glow); border-left: 3px solid var(--gold); border-radius: 6px; font-size: 12px; color: var(--gold);">⚠ DeGiro dividends &amp; fees aren't imported yet (they live in DeGiro's separate Account statement). Figures here reflect other brokers only.</div>`
-        : '';
-
-    if (rows.length === 0 && !degiroNote) { section.style.display = 'none'; return; }
-    rows.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    const totals = computeIncomeTotalsBase();
-    const base = state.baseCurrency || 'EUR';
-
-    section.style.display = 'block';
-    const content = section.querySelector('.card') || section;
-    content.innerHTML = `
-        <h2 style="margin-bottom: 15px;">💰 Income &amp; Fees</h2>
-        ${degiroNote}
-        ${rows.length > 0 ? `<div style="margin-bottom: 15px; font-size: 14px; color: var(--text-secondary);">
-            Net income: <span style="color: var(--up); font-weight: bold;">+${formatCurrency(totals.netIncome, base)}</span>
-            &bull; Fees: <span style="color: var(--down); font-weight: bold;">−${formatCurrency(totals.fees, base)}</span>
-            ${totals.tax > 0 ? ` &bull; Tax withheld: ${formatCurrency(totals.tax, base)}` : ''}
-        </div>` : ''}
-        ${rows.length > 0 ? `<div class="table-scroll">
-            <table class="sales-history-table">
-                <thead>
-                    <tr><th>Date</th><th>Symbol</th><th>Type</th><th>Gross</th><th>Tax</th><th>Net</th><th class="col-hide-mobile">Ccy</th></tr>
-                </thead>
-                <tbody>
-                    ${rows.map(r => {
-                        const gross = Number(r.totalAmount) || 0;
-                        const txTax = Number(r.tax) || 0;
-                        const net = r.type === 'dividend' ? gross - txTax : -gross;
-                        const netColor = net >= 0 ? 'var(--up)' : 'var(--down)';
-                        const label = r.type === 'dividend' ? 'Dividend' : 'Fee';
-                        return `<tr>
-                            <td>${escapeHTML(r.date || '')}</td>
-                            <td style="font-weight: 600; color: var(--gold);">${escapeHTML(r.symbol)}</td>
-                            <td>${label}</td>
-                            <td>${formatCurrency(gross, r.currency)}</td>
-                            <td>${txTax ? formatCurrency(txTax, r.currency) : '—'}</td>
-                            <td style="color: ${netColor}; font-weight: bold;">${net >= 0 ? '+' : ''}${formatCurrency(net, r.currency)}</td>
-                            <td class="col-hide-mobile">${escapeHTML(r.currency || '')}</td>
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-            </table>
-        </div>` : ''}
-    `;
-}
-
-/** Render the full transaction ledger with search + type filter and per-row delete. */
-function renderTransactionsLedger() {
-    const section = document.getElementById('transactionsSection');
-    if (!section) return;
-
-    const all = [];
-    for (const [symbol, txs] of Object.entries(state.transactions || {})) {
-        txs.forEach(t => all.push({ symbol, ...t }));
-    }
-    if (all.length === 0) { section.style.display = 'none'; return; }
-
-    if (!state.txFilter) state.txFilter = { type: 'all', q: '' };
-    const { type: fType, q } = state.txFilter;
-    const qLower = (q || '').toLowerCase();
-    const rows = all
-        .filter(t => (fType === 'all' || t.type === fType) && (!qLower || (t.symbol || '').toLowerCase().includes(qLower)))
-        .sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    section.style.display = 'block';
-    // Stash the displayed rows so the delete button can reference a row by index
-    // (avoids interpolating broker-derived strings into an onclick attribute).
-    state._ledgerRows = rows;
-    const content = section.querySelector('.card') || section;
-    const typeLabel = ty => ty === 'isin_change' ? 'ISIN change' : ty[0].toUpperCase() + ty.slice(1);
-    const types = ['all', 'buy', 'sell', 'dividend', 'fee', 'split', 'isin_change'];
-    const filterBtns = types.map(ty =>
-        `<button class="btn btn-sm ${fType === ty ? 'btn-accent' : 'btn-primary'}" onclick="setTxFilter('${ty}')">${typeLabel(ty)}</button>`
-    ).join(' ');
-
-    // ── Group by asset (display-only) ────────────────────────────────────
-    // Groups are collapsed by default; a symbol search auto-expands matches.
-    // Rows keep their index into state._ledgerRows so per-row delete still works.
-    if (!(state.txExpandedGroups instanceof Set)) state.txExpandedGroups = new Set();
-    const groups = new Map();   // symbol → [{t, i}] (rows already date-sorted desc)
-    rows.forEach((t, i) => {
-        if (!groups.has(t.symbol)) groups.set(t.symbol, []);
-        groups.get(t.symbol).push({ t, i });
-    });
-
-    const renderRow = (t, i) => {
-        const isTrade = t.type === 'buy' || t.type === 'sell';
-        const qty = isTrade ? t.shares : (t.type === 'split' ? `×${t.ratio}` : '—');
-        const price = isTrade ? formatCurrency(t.price, t.currency) : '—';
-        const amount = t.totalAmount != null ? formatCurrency(t.totalAmount, t.currency) : '—';
-        const feeTax = t.type === 'dividend'
-            ? (t.tax ? `tax ${formatCurrency(t.tax, t.currency)}` : '—')
-            : (t.fee ? formatCurrency(t.fee, t.currency) : '—');
-        const typeColor = t.type === 'buy' ? 'var(--up)' : t.type === 'sell' ? 'var(--down)' : t.type === 'dividend' ? 'var(--up)' : 'var(--text-secondary)';
-        return `<tr>
-            <td>${escapeHTML(t.date || '')}</td>
-            <td style="color: ${typeColor};">${escapeHTML(typeLabel(t.type))}</td>
-            <td>${qty}</td><td>${price}</td><td>${amount}</td><td class="col-hide-mobile">${feeTax}</td>
-            <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
-        </tr>`;
-    };
-
-    const groupsHTML = [...groups.entries()].map(([symbol, entries]) => {
-        const open = !!qLower || state.txExpandedGroups.has(symbol);
-        const name = (state.portfolio.find(p => p.symbol === symbol) || {}).name;
-        return `
-        <div class="tx-group" style="border: 1px solid var(--border, rgba(255,255,255,0.08)); border-radius: 8px; margin-bottom: 8px; overflow: hidden;">
-            <div onclick="toggleTxGroup('${escapeHTML(symbol)}')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; cursor:pointer; user-select:none;">
-                <span style="font-size:11px; color: var(--text-secondary);">${open ? '▼' : '▶'}</span>
-                <span style="font-weight:600; color: var(--gold);">${escapeHTML(symbol)}</span>
-                ${name && name !== symbol ? `<span style="font-size:12px; color: var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(name)}</span>` : ''}
-                <span style="margin-left:auto; font-size:12px; color: var(--text-secondary);">${entries.length} transaction${entries.length !== 1 ? 's' : ''}</span>
-            </div>
-            ${open ? `<div class="table-scroll" style="border-top: 1px solid var(--border, rgba(255,255,255,0.08));">
-                <table class="sales-history-table">
-                    <thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Price</th><th>Amount</th><th class="col-hide-mobile">Fee/Tax</th><th></th></tr></thead>
-                    <tbody>${entries.map(({ t, i }) => renderRow(t, i)).join('')}</tbody>
-                </table>
-            </div>` : ''}
-        </div>`;
-    }).join('');
-
-    content.innerHTML = `
-        <h2 style="margin-bottom: 12px;">📒 Transactions <span style="font-size: 13px; color: var(--text-secondary);">(${rows.length} across ${groups.size} asset${groups.size !== 1 ? 's' : ''})</span></h2>
-        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;">
-            <input id="txSearch" type="text" placeholder="Filter by symbol…" value="${escapeHTML(q || '')}" oninput="setTxSearch(this.value)" style="padding: 6px 10px; flex: 1; min-width: 110px; border-radius: 6px;" />
-            <div style="display: flex; flex-wrap: wrap; gap: 4px;">${filterBtns}</div>
-        </div>
-        ${groupsHTML}
-    `;
-}
-
-/** Expand/collapse one asset's transaction group in the ledger. */
-export function toggleTxGroup(symbol) {
-    if (!(state.txExpandedGroups instanceof Set)) state.txExpandedGroups = new Set();
-    if (state.txExpandedGroups.has(symbol)) state.txExpandedGroups.delete(symbol);
-    else state.txExpandedGroups.add(symbol);
-    renderTransactionsLedger();
-}
-
-/** Set the transaction-ledger type filter and re-render just that section. */
-export function setTxFilter(type) {
-    if (!state.txFilter) state.txFilter = { type: 'all', q: '' };
-    state.txFilter.type = type;
-    renderTransactionsLedger();
-}
-
-/** Set the transaction-ledger symbol search, re-render, and keep input focus. */
-export function setTxSearch(value) {
-    if (!state.txFilter) state.txFilter = { type: 'all', q: '' };
-    state.txFilter.q = value;
-    renderTransactionsLedger();
-    const input = document.getElementById('txSearch');
-    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
-}
 
 /**
  * Delete a single ledger transaction (referenced by its index in the currently
@@ -3168,8 +2989,12 @@ export function deleteTransactionRow(rowIndex) {
     const row = (state._ledgerRows || [])[Number(rowIndex)];
     if (!row) return;
     const { symbol, timestamp, date, type } = row;
-    const txs = state.transactions[symbol];
-    if (!txs) return;
+    // The ledger may be keyed under a different case than the card displayed
+    // (silent no-op delete otherwise — quality audit v3.30).
+    const ledgerKey = state.transactions[symbol] ? symbol
+        : (state.transactions[String(symbol).toUpperCase()] ? String(symbol).toUpperCase() : null);
+    const txs = ledgerKey ? state.transactions[ledgerKey] : null;
+    if (!txs) { console.warn('deleteTransactionRow: no ledger entry for', symbol); return; }
 
     const safeSymbol = String(symbol || '').slice(0, 24);
     const safeType = String(type || '').slice(0, 16);
@@ -3178,11 +3003,18 @@ export function deleteTransactionRow(rowIndex) {
 
     let idx = -1;
     if (timestamp) idx = txs.findIndex(t => (t.timestamp || '') === timestamp);
-    if (idx < 0) idx = txs.findIndex(t => (t.date || '') === date && t.type === type); // fallback
+    // Fallback must match the FULL row, not just (date, type): two same-day buys
+    // at different prices are common in broker imports and (date, type) alone
+    // deletes whichever comes first.
+    const numMatches = (a, b) => (a == null || b == null) || Number(a) === Number(b);
+    if (idx < 0) idx = txs.findIndex(t =>
+        (t.date || '') === date && t.type === type &&
+        numMatches(t.shares, row.shares) && numMatches(t.price, row.price) &&
+        numMatches(t.totalAmount, row.totalAmount));
     if (idx < 0) return;
 
     txs.splice(idx, 1);
-    if (txs.length === 0) delete state.transactions[symbol];
+    if (txs.length === 0) delete state.transactions[ledgerKey];
 
     rebuildPositionsFromLedger();
     saveTransactionsToStorage();

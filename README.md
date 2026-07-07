@@ -307,6 +307,15 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.31.0
+- **Desktop UX repair (ux-auditor + optimization-quality joint review)** of the v3.30 issues:
+  - **Fees figure fixed** — a descendant `div:last-child` CSS catch-all was blowing the header's "Fees" value up to 24px display type; rules are now direct-child scoped and the income/fees line has its own `.header-income-row` class (verified 12px mono in preview).
+  - **Toolbar out of the grid** — the search/sort toolbar was rendering as a card-sized grid cell (broken first row). It now lives in its own `#positionsToolbar` container above the grid, is never rewritten while you're typing (caret/focus preserved, hack removed), and search/sort/expand only re-render the grid — not the header, allocation charts, or sales history.
+  - **Styled controls** — search input & sort select use the design-system `.form-input`/`.form-select` (no more white browser-default box); review banner and empty-search note span the full grid row.
+  - **Quieter cards** — action buttons are now ghost-style (32px, transparent, colored on hover) with the destructive delete de-emphasized until hover; the per-card transactions panel styling moved into a real `.pos-tx-panel` rule.
+  - **Dead code removed** — the retired global Transactions/Income sections (~175 lines: `renderIncomeHistory`, `renderTransactionsLedger`, filters and their wirings) are deleted; `state.js` now declares the live toolbar/panel state fields.
+  - **Two ledger-delete defects fixed** — per-row delete no longer silently no-ops on symbol-case mismatch, and the no-timestamp fallback now matches shares/price/amount so it can't delete the wrong same-day transaction.
+
 ### v3.30.0
 - **Fix: mapped tickers now actually stick** — resolving a ticker in the dialog fired the DB save **without awaiting it**, and the post-fetch `loadAssetsFromDB()` then rebuilt the asset cache from the DB, racing (and usually wiping) the fresh mapping. Next refresh had no mapping → failed again → asked again. `persistPricingTicker`/`setUntracked` are now awaited everywhere, so a mapped ticker survives the same run, the session, and reloads.
 - **See the ticker actually used** — cards show `↳ priced as XYZ` whenever a learned/user mapping differs from the stored symbol, and the resolve-dialog ticker inputs are wider (monospace) so long tickers/suffixes are fully readable.
