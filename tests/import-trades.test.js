@@ -5,6 +5,7 @@ import {
   parseSignedNumber,
   detectCurrency,
   normalizeDate,
+  coerceTxDate,
   detectBroker,
   parseDegiroCsv,
   parseDegiroAccountCsv,
@@ -676,5 +677,293 @@ describe('parseDegiroAccountCsv (dividends + withholding tax)', () => {
     expect(res.broker).toBe('degiro_account');
     expect(res.income).toHaveLength(1);
     expect(res.income[0].amount).toBeCloseTo(116);
+  });
+
+  it('emits income for multiple distinct ISINs in the same file', () => {
+    const csv = [
+      header,
+      '01-06-2026,00:00,01-06-2026,AAPL,US0378331005,Dividendo,,USD,"10,00",USD,"10,00",',
+      '01-06-2026,00:00,01-06-2026,MSFT,US5949181045,Dividendo,,USD,"20,00",USD,"20,00",',
+    ].join('\n');
+    const { income } = parseDegiroAccountCsv(csv);
+    expect(income).toHaveLength(2);
+    const isins = income.map(i => i.identifier).sort();
+    expect(isins).toEqual(['US0378331005', 'US5949181045']);
+  });
+
+  it('returns an error when required columns are missing', () => {
+    const badHeader = 'Date,Product,Description,Change';
+    const csv = [badHeader, '01-06-2026,AAPL,Dividendo,10'].join('\n');
+    const { errors, income } = parseDegiroAccountCsv(csv);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/missing/i);
+    expect(income).toHaveLength(0);
+  });
+
+  it('skips rows with an unrecognised description (not Dividendo or tax)', () => {
+    const csv = [
+      header,
+      '01-06-2026,00:00,01-06-2026,AAPL,US0378331005,Dividendo,,USD,"5,00",USD,"5,00",',
+      '01-06-2026,00:00,01-06-2026,AAPL,US0378331005,Comissões de transação,,USD,"-1,00",USD,"4,00",',
+    ].join('\n');
+    const { income, skipped } = parseDegiroAccountCsv(csv);
+    expect(income).toHaveLength(1);   // only the dividend
+    expect(skipped).toBeGreaterThanOrEqual(1);
+  });
+
+  it('uses transaction date when no value-date column is present', () => {
+    const noValueDateHeader = 'Data,Hora,Produto,ISIN,Descrição,T.,Mudança,,Saldo,,ID da Ordem';
+    const csv = [
+      noValueDateHeader,
+      '15-05-2026,08:30,ROCHE,CH0012032048,Dividend,,CHF,"25,00",CHF,"100,00",',
+    ].join('\n');
+    const { income } = parseDegiroAccountCsv(csv);
+    expect(income).toHaveLength(1);
+    expect(income[0].date).toBe('2026-05-15');
+    expect(income[0].currency).toBe('CHF');
+  });
+});
+
+// ── coerceTxDate — DB date-coercion guard (PR #197) ─────────────────────────
+
+describe('coerceTxDate', () => {
+  it('passes through a valid YYYY-MM-DD unchanged', () => {
+    expect(coerceTxDate({ date: '2024-03-15' })).toBe('2024-03-15');
+  });
+
+  it('uses only the date portion of an ISO timestamp (strips time)', () => {
+    expect(coerceTxDate({ date: '2024-06-10T14:30:00.000Z' })).toBe('2024-06-10');
+  });
+
+  it('falls back to tx.timestamp when date is empty', () => {
+    const tx = { date: '', timestamp: '2024-09-01T00:00:00.000Z' };
+    expect(coerceTxDate(tx)).toBe('2024-09-01');
+  });
+
+  it('falls back to tx.timestamp when date is null', () => {
+    const tx = { date: null, timestamp: '2025-01-15T10:00:00Z' };
+    expect(coerceTxDate(tx)).toBe('2025-01-15');
+  });
+
+  it('falls back to today when both date and timestamp are absent', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(coerceTxDate({})).toBe(today);
+  });
+
+  it('falls back to today when date is a garbage string', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(coerceTxDate({ date: 'not-a-date' })).toBe(today);
+  });
+
+  it('falls back to today when date is undefined and timestamp is also garbage', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(coerceTxDate({ date: undefined, timestamp: 'bad' })).toBe(today);
+  });
+
+  it('prefers date over timestamp when both are valid', () => {
+    const tx = { date: '2024-03-01', timestamp: '2025-12-31T00:00:00Z' };
+    expect(coerceTxDate(tx)).toBe('2024-03-01');
+  });
+});
+
+// ── detectBroker — format detection edge cases ───────────────────────────────
+
+describe('detectBroker — edge cases', () => {
+  it('returns null for empty text', () => {
+    expect(detectBroker('')).toBeNull();
+    expect(detectBroker(null)).toBeNull();
+  });
+
+  it('prefers degiro_account over degiro when file has both Saldo and Quantidade', () => {
+    // A file containing both headers (e.g. a test fixture or partial merge)
+    // should be classified as the Account statement (Saldo check runs first).
+    const header = 'Date,ISIN,Quantidade,Saldo,Description';
+    expect(detectBroker(header)).toBe('degiro_account');
+  });
+
+  it('does not mistake a generic CSV with price/total for Revolut', () => {
+    // The header must have BOTH "price per share" AND "total amount".
+    expect(detectBroker('Date,Symbol,Total amount,Price')).toBeNull();
+  });
+});
+
+// ── parseFlexibleNumber — additional edge cases ──────────────────────────────
+
+describe('parseFlexibleNumber (broker) — additional edge cases', () => {
+  it('treats a lone comma with 2 decimals as a decimal separator', () => {
+    // "1,23" → 1.23 (not 1230 — only 3 decimals after a lone comma = thousands)
+    expect(parseFlexibleNumber('1,23')).toBeCloseTo(1.23);
+  });
+
+  it('returns NaN for empty / null input', () => {
+    expect(parseFlexibleNumber('')).toBeNaN();
+    expect(parseFlexibleNumber(null)).toBeNaN();
+  });
+
+  it('handles parentheses as negative (accounting notation)', () => {
+    expect(parseFlexibleNumber('(2.50)')).toBeCloseTo(-2.5);
+  });
+
+  it('strips currency codes before parsing', () => {
+    // "EUR 1,234.56" — currency code stripped, US number parsed
+    expect(parseFlexibleNumber('EUR 1,234.56')).toBeCloseTo(1234.56);
+  });
+
+  it('parses multiple dots as thousands separators', () => {
+    // "1.234.567" → 1234567
+    expect(parseFlexibleNumber('1.234.567')).toBeCloseTo(1234567);
+  });
+
+  it('returns NaN for non-numeric text', () => {
+    expect(parseFlexibleNumber('abc')).toBeNaN();
+  });
+});
+
+// ── computePositionsFromLedger — ascending-order fast path (Audit L4) ─────────
+// Audit L4 added an O(k) ascending check: if the ledger is already date-sorted
+// the copy+sort is skipped. These tests verify correctness on both paths.
+
+describe('computePositionsFromLedger — ascending-order optimization', () => {
+  it('sorts out-of-order transactions before computing (sell before buy in array)', () => {
+    // Array position 0 = sell (date 2024-03-01), position 1 = buy (date 2024-01-01).
+    // Without sorting, the sell runs first → shares go negative → wrong P&L.
+    // With sorting (non-ascending detected), buy runs first → correct result.
+    const txs = {
+      AAPL: [
+        { type: 'sell', shares: 5, price: 200, date: '2024-03-01' },
+        { type: 'buy', shares: 10, price: 100, date: '2024-01-01' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.AAPL.shares).toBe(5);
+    expect(pos.AAPL.avgPrice).toBeCloseTo(100);
+    expect(pos.AAPL.realizedPnL).toBeCloseTo((200 - 100) * 5); // 500
+    expect(pos.AAPL.needsReview).toBeFalsy();
+  });
+
+  it('already-ascending transactions produce correct result (fast path)', () => {
+    // Transactions are already in date order → ascending=true, no copy+sort.
+    const txs = {
+      AAPL: [
+        { type: 'buy', shares: 10, price: 100, date: '2024-01-01' },
+        { type: 'buy', shares: 5, price: 120, date: '2024-02-01' },
+        { type: 'sell', shares: 3, price: 150, date: '2024-03-01' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    // avg after two buys: (10*100 + 5*120) / 15 = 1600/15 ≈ 106.67
+    expect(pos.AAPL.shares).toBe(12);
+    expect(pos.AAPL.avgPrice).toBeCloseTo(1600 / 15);
+    expect(pos.AAPL.realizedPnL).toBeCloseTo((150 - 1600 / 15) * 3);
+  });
+
+  it('produces the same result for in-order and out-of-order ledgers', () => {
+    const inOrder = {
+      TSLA: [
+        { type: 'buy', shares: 4, price: 200, date: '2024-01-01' },
+        { type: 'buy', shares: 4, price: 300, date: '2024-02-01' },
+        { type: 'sell', shares: 2, price: 400, date: '2024-03-01' },
+      ],
+    };
+    const outOfOrder = {
+      TSLA: [
+        // same transactions, shuffled in array
+        { type: 'sell', shares: 2, price: 400, date: '2024-03-01' },
+        { type: 'buy', shares: 4, price: 300, date: '2024-02-01' },
+        { type: 'buy', shares: 4, price: 200, date: '2024-01-01' },
+      ],
+    };
+    const r1 = computePositionsFromLedger(inOrder);
+    const r2 = computePositionsFromLedger(outOfOrder);
+    expect(r2.TSLA.shares).toBe(r1.TSLA.shares);
+    expect(r2.TSLA.avgPrice).toBeCloseTo(r1.TSLA.avgPrice);
+    expect(r2.TSLA.realizedPnL).toBeCloseTo(r1.TSLA.realizedPnL);
+  });
+
+  it('treats same-date transactions as ascending (no sort triggered)', () => {
+    // Two transactions on the same date: txTime(a) === txTime(b), strict > is false,
+    // so ascending=true and array order is preserved (no copy+sort).
+    const txs = {
+      MSFT: [
+        { type: 'buy', shares: 10, price: 300, date: '2024-06-01' },
+        { type: 'sell', shares: 4, price: 350, date: '2024-06-01' },
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.MSFT.shares).toBe(6);
+    expect(pos.MSFT.realizedPnL).toBeCloseTo((350 - 300) * 4); // 200
+  });
+
+  it('each symbol in a multi-symbol ledger is sorted independently', () => {
+    // AAPL ascending, GOOG out-of-order — both should produce correct results
+    const txs = {
+      AAPL: [
+        { type: 'buy', shares: 5, price: 150, date: '2024-01-01' },
+        { type: 'sell', shares: 2, price: 180, date: '2024-02-01' },
+      ],
+      GOOG: [
+        { type: 'sell', shares: 1, price: 3000, date: '2024-04-01' }, // array 0, later date
+        { type: 'buy', shares: 3, price: 2500, date: '2024-03-01' },  // array 1, earlier date
+      ],
+    };
+    const pos = computePositionsFromLedger(txs);
+    expect(pos.AAPL.shares).toBe(3);
+    expect(pos.AAPL.realizedPnL).toBeCloseTo((180 - 150) * 2); // 60
+    expect(pos.GOOG.shares).toBe(2);
+    expect(pos.GOOG.realizedPnL).toBeCloseTo((3000 - 2500) * 1); // 500
+  });
+});
+
+// ── detectSplitPairs — early-break optimization (Audit M4) ───────────────────
+// Audit M4 added two optimizations: skip already-flagged buys in the outer loop,
+// and break the inner sell loop after the first match. Both are performance-only
+// changes that must not change which pairs get flagged.
+
+describe('detectSplitPairs — early-break optimization', () => {
+  it('flags two distinct split pairs on the same symbol and date', () => {
+    // B1+S1 qualify as a split (price ratio ≥ 3×); B2+S2 also qualify.
+    // The break after B1→S1 match must not prevent B2→S2 from being detected.
+    const trades = [
+      { identifier: 'NVDA', date: '2024-06-10', side: 'buy',  shares: 30, price: 120, isISIN: false },
+      { identifier: 'NVDA', date: '2024-06-10', side: 'sell', shares:  3, price: 1200, isISIN: false },
+      { identifier: 'NVDA', date: '2024-06-10', side: 'buy',  shares: 40, price: 50,  isISIN: false },
+      { identifier: 'NVDA', date: '2024-06-10', side: 'sell', shares:  4, price: 500, isISIN: false },
+    ];
+    const { kept, flagged } = detectSplitPairs(trades);
+    expect(kept).toHaveLength(0);
+    expect(flagged).toHaveLength(2);
+    // Each flagged entry has a valid ratio
+    for (const f of flagged) {
+      expect(f.reason).toBe('possible_split');
+      expect(f.ratio).toBeGreaterThan(0);
+    }
+  });
+
+  it('an already-flagged sell is not consumed by a second buy', () => {
+    // B1 matches S1 (flagged). B2 also matches S1 in price ratio, but S1 is flagged.
+    // B2 must then check S2 (which does NOT qualify) → B2 stays in kept.
+    const trades = [
+      { identifier: 'AAPL', date: '2024-01-15', side: 'buy',  shares: 10, price: 100, isISIN: false },
+      { identifier: 'AAPL', date: '2024-01-15', side: 'sell', shares:  1, price: 1000, isISIN: false }, // S1: flagged with B1
+      { identifier: 'AAPL', date: '2024-01-15', side: 'buy',  shares:  5, price: 200, isISIN: false },  // B2: price vs S1 qualifies, but S1 flagged
+    ];
+    const { kept, flagged } = detectSplitPairs(trades);
+    // Only one split pair (B1+S1); B2 has no unflagged partner → stays in kept
+    expect(flagged).toHaveLength(1);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({ side: 'buy', shares: 5 });
+  });
+
+  it('non-qualifying same-day trades are untouched by the optimized loop', () => {
+    // Multiple buys/sells but none with price ratio ≥ 3× → all kept, none flagged
+    const trades = [
+      { identifier: 'KO', date: '2024-03-01', side: 'buy',  shares: 50, price: 60, isISIN: false },
+      { identifier: 'KO', date: '2024-03-01', side: 'sell', shares: 20, price: 62, isISIN: false },
+      { identifier: 'KO', date: '2024-03-01', side: 'buy',  shares: 30, price: 61, isISIN: false },
+      { identifier: 'KO', date: '2024-03-01', side: 'sell', shares: 10, price: 63, isISIN: false },
+    ];
+    const { kept, flagged } = detectSplitPairs(trades);
+    expect(flagged).toHaveLength(0);
+    expect(kept).toHaveLength(4);
   });
 });
