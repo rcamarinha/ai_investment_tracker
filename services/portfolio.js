@@ -9,7 +9,7 @@ import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveTransactionsToDB, deleteTransactionsForSymbol,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
-import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled, setUntracked } from './pricing.js';
+import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled, setUntracked, backfillFxRates } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
 import { parseBrokerExport, normalizeTrades,
          buildExistingFingerprints, dedupeTrades,
@@ -29,12 +29,50 @@ function requireAuth(actionName) {
 
 // ── Portfolio Rendering ─────────────────────────────────────────────────────
 
+/**
+ * Rate to convert 1 unit of a transaction's currency into the CURRENT base
+ * currency: the trade-date historical rate when backfilled (tx.fxRates, keyed
+ * by base), else the live rate. NEVER reads the legacy tx.exchangeRate — it was
+ * captured against whichever base was active at import time with no record of
+ * which, so using it froze invested/income totals in EUR regardless of the
+ * currency toggle (identical numbers relabeled $).
+ */
+function txRateToBase(tx, fallbackCurrency) {
+    const base = state.baseCurrency || 'EUR';
+    const hist = tx.fxRates ? Number(tx.fxRates[base]) : NaN;
+    if (Number.isFinite(hist) && hist > 0) return hist;
+    state._fxFallbackCount = (state._fxFallbackCount || 0) + 1;
+    return getExchangeRate(tx.currency || fallbackCurrency);
+}
+
+/**
+ * Invested capital in the current base currency for one position — SHARED by
+ * renderPortfolio and savePortfolioSnapshot (the two inline copies drifted
+ * twice: the split-ratio fix and the FX fix each initially landed in only one).
+ * Buys convert at trade-date FX (fallback: live), scaled by the cost-based
+ * remaining ratio (split-invariant — a split multiplies shares, not cost).
+ */
+function computeInvestedBase(p, txs, currency) {
+    const investedNative = p.shares * p.avgPrice;
+    if (!txs || txs.length === 0) return toBaseCurrency(investedNative, currency);
+    let investedBase = 0;
+    txs.forEach(tx => {
+        if (tx.type === 'buy') investedBase += (Number(tx.totalAmount) || 0) * txRateToBase(tx, currency);
+    });
+    const totalBuyCostNative = txs.filter(t => t.type === 'buy')
+        .reduce((s, t) => s + (t.totalAmount || t.shares * t.price), 0);
+    const remainingRatio = totalBuyCostNative > 0
+        ? Math.min(1, investedNative / totalBuyCostNative) : 1;
+    return investedBase * remainingRatio;
+}
+
 export function renderPortfolio(opts = {}) {
     const positionsDiv = document.getElementById('positions');
     if (!positionsDiv) {
         console.warn('renderPortfolio: #positions element not found');
         return;
     }
+    state._fxFallbackCount = 0;   // txRateToBase increments; logged post-render
 
     // Separate active and inactive positions
     const activePositions = state.portfolio.filter(p => p.shares > 0);
@@ -54,28 +92,8 @@ export function renderPortfolio(opts = {}) {
         const currency = getAssetCurrency(p.symbol);
         const investedNative = p.shares * p.avgPrice;
 
-        // Invested in base currency: use transaction-stored rates if available, else current rate
-        const txs = state.transactions[p.symbol];
-        if (txs && txs.length > 0) {
-            // Sum buy transactions converted at their historical rates
-            let investedBase = 0;
-            txs.forEach(tx => {
-                const rate = tx.exchangeRate || getExchangeRate(tx.currency || currency);
-                if (tx.type === 'buy') investedBase += tx.totalAmount * rate;
-            });
-            // Scale by the fraction of original cost still held. Cost-based (not
-            // share-based): a split multiplies p.shares but leaves cost basis
-            // unchanged (avgPrice divides by the same ratio), so shares/totalBuyShares
-            // would over-scale by the split ratio (a 4:1 split inflated this 4x).
-            const totalBuyCostNative = txs.filter(t => t.type === 'buy')
-                .reduce((s, t) => s + (t.totalAmount || t.shares * t.price), 0);
-            const remainingRatio = totalBuyCostNative > 0
-                ? Math.min(1, investedNative / totalBuyCostNative) : 1;
-            totalInvestedBase += investedBase * remainingRatio;
-        } else {
-            // No transactions: fallback to current rate
-            totalInvestedBase += toBaseCurrency(investedNative, currency);
-        }
+        // Invested: trade-date FX via the shared helper (falls back to live rates)
+        totalInvestedBase += computeInvestedBase(p, state.transactions[p.symbol], currency);
 
         // Market value in base currency: always use current exchange rate
         const currentPrice = state.marketPrices[p.symbol];
@@ -86,6 +104,9 @@ export function renderPortfolio(opts = {}) {
             totalMarketValueBase += toBaseCurrency(investedNative, currency);
         }
     });
+    if (state._fxFallbackCount > 0) {
+        console.log(`ℹ ${state._fxFallbackCount} transaction(s) converted at LIVE rates (trade-date FX not backfilled yet)`);
+    }
 
     console.log('=== RENDER PORTFOLIO DEBUG ===');
     console.log('Rendering portfolio:', activePositions.length, 'active,', inactivePositions.length, 'closed');
@@ -2173,6 +2194,12 @@ export async function importTrades() {
         rebuildPositionsFromLedger();
 
         // ── Step 7: Persist ───────────────────────────────────────────────
+        // Backfill trade-date FX for the freshly imported rows BEFORE the save,
+        // so the persisted rows already carry fxRates (one Frankfurter range
+        // call, usually served from the local cache). Non-fatal on failure —
+        // rows just render on live-rate fallback until the next backfill.
+        try { await backfillFxRates({ force: true }); }
+        catch (err) { console.warn('post-import FX backfill failed:', err.message); }
         await saveTransactionsToDB();
         saveTransactionsToStorage();
         await savePortfolioDB();
@@ -2259,20 +2286,10 @@ export async function savePortfolioSnapshot() {
         const currency = getAssetCurrency(p.symbol);
         const investedNative = p.shares * p.avgPrice;
 
-        // Invested in base currency: use transaction-stored rates if available, else current rate
-        const txs = state.transactions[p.symbol];
-        if (txs && txs.length > 0) {
-            let investedBase = 0;
-            txs.forEach(tx => {
-                const rate = tx.exchangeRate || getExchangeRate(tx.currency || currency);
-                if (tx.type === 'buy') investedBase += tx.totalAmount * rate;
-            });
-            const totalBuyShares = txs.filter(t => t.type === 'buy').reduce((s, t) => s + t.shares, 0);
-            const remainingRatio = totalBuyShares > 0 ? p.shares / totalBuyShares : 1;
-            totalInvested += investedBase * remainingRatio;
-        } else {
-            totalInvested += toBaseCurrency(investedNative, currency);
-        }
+        // Shared helper: trade-date FX + cost-based (split-invariant) remaining
+        // ratio. This inline copy had drifted from renderPortfolio's TWICE
+        // (missed both the split-ratio and FX fixes) — never inline it again.
+        totalInvested += computeInvestedBase(p, state.transactions[p.symbol], currency);
 
         // Market value in base currency: always use current exchange rate
         const currentPrice = state.marketPrices[p.symbol];
@@ -2937,6 +2954,12 @@ function recordTransaction(symbol, type, shares, price, date, totalAmount, costB
     if (extra.ratio != null) tx.ratio = extra.ratio;
     if (extra.note != null) tx.note = extra.note;
     state.transactions[symbol].push(tx);
+    // Fill trade-date FX for the new row in the background (the local FX cache
+    // makes this near-instant); persist + re-render only when it actually set
+    // something. Failures are silent — the row falls back to live rates.
+    backfillFxRates({ force: true }).then(changed => {
+        if (changed) { saveTransactionsToStorage(); renderPortfolio(); }
+    }).catch(() => {});
 }
 
 export function saveTransactionsToStorage() {
@@ -2971,9 +2994,11 @@ export function loadTransactionsFromStorage() {
 function computeIncomeTotalsBase() {
     const base = state.baseCurrency || 'EUR';
     let dividends = 0, tax = 0, fees = 0;
-    for (const txs of Object.values(state.transactions || {})) {
+    for (const [symbol, txs] of Object.entries(state.transactions || {})) {
         for (const tx of txs) {
-            const rate = tx.exchangeRate || getExchangeRate(tx.currency || base);
+            // Same currency resolution as the backfill (symbol's asset currency,
+            // not the base) so null-currency rows convert consistently everywhere.
+            const rate = txRateToBase(tx, getAssetCurrency(symbol) || base);
             if (tx.type === 'dividend') {
                 dividends += (Number(tx.totalAmount) || 0) * rate;
                 tax += (Number(tx.tax) || 0) * rate;

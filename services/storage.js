@@ -5,8 +5,8 @@
 import state from './state.js';
 import { buildAssetRecord } from './utils.js';
 import { updateAuthBar, checkUserRole, cancelPasswordRecovery } from './auth.js';
-import { renderPortfolio, updateHistoryDisplay } from './portfolio.js';
-import { fetchAssetProfile } from './pricing.js';
+import { renderPortfolio, updateHistoryDisplay, saveTransactionsToStorage } from './portfolio.js';
+import { fetchAssetProfile, backfillFxRates } from './pricing.js';
 import { coerceTxDate } from './import-brokers.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
@@ -481,7 +481,11 @@ export async function saveTransactionsToDB() {
                     cost_basis: tx.costBasis ?? null,
                     realized_gain_loss: tx.realizedGainLoss ?? null,
                     currency: tx.currency || null,
+                    // Legacy (base-ambiguous, no longer read) — kept for one release
+                    // as rollback safety; fx_rates is the authoritative field.
                     exchange_rate: tx.exchangeRate || null,
+                    // Trade-date rates to each supported base: { EUR: r, USD: r }
+                    fx_rates: tx.fxRates || null,
                     fee: tx.fee ?? null,
                     tax: tx.tax ?? null,
                     ratio: tx.ratio ?? null,
@@ -529,6 +533,13 @@ export async function loadTransactionsFromDB() {
                     totalAmount: row.total_amount !== null ? Number(row.total_amount) : null,
                     currency: row.currency || null,
                     exchangeRate: row.exchange_rate ? Number(row.exchange_rate) : null,
+                    // Coerce JSONB values with Number(); drop non-finite/≤0 entries so a
+                    // corrupt rate can never poison a conversion (falls back to live).
+                    fxRates: (row.fx_rates && typeof row.fx_rates === 'object')
+                        ? Object.fromEntries(Object.entries(row.fx_rates)
+                            .map(([k, v]) => [k, Number(v)])
+                            .filter(([, v]) => Number.isFinite(v) && v > 0))
+                        : null,
                     timestamp: row.created_at
                 };
                 if (row.type === 'sell') {
@@ -657,6 +668,17 @@ export async function loadFromDatabase() {
         if (Object.keys(state.transactions).length > 0) {
             localStorage.setItem('positionTransactions', JSON.stringify(state.transactions));
         }
+
+        // Repair-all: backfill trade-date FX for any transaction still missing a
+        // rate for a supported base (once per session; non-blocking). PERSIST ONLY
+        // ON CHANGE — saveTransactionsToDB is delete-then-insert, so triggering it
+        // on every load for nothing would widen that window pointlessly.
+        backfillFxRates().then(changed => {
+            if (changed > 0) {
+                saveTransactionsToStorage();   // localStorage + Supabase
+                renderPortfolio();
+            }
+        }).catch(err => console.warn('FX backfill (load) failed:', err.message));
 
         // Load cached prices
         await loadLatestPricesFromDB();

@@ -307,6 +307,12 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.33.0
+- **Historical (trade-date) currency conversion** — Total Invested / Income / Fees were numerically identical under the € and $ toggles: each transaction stored a single `exchangeRate` captured at **import time** against whichever base was active then (EUR), with no record of which — so toggling to USD just relabeled EUR numbers. Now every transaction carries `fxRates: { EUR, USD }` — the ECB reference rate **at the trade date** (Frankfurter, free/keyless; one range request per gap, cached immutably in localStorage). Display uses `fxRates[base]`, falling back to live rates until backfill covers a row — so the toggle converts correctly even mid-repair. Legacy `exchange_rate` is kept in the DB one release for rollback but never read.
+- **Automatic repair of all existing data** — on the next load after deploying, every transaction missing trade-date rates is backfilled and persisted (persist only-on-change), including resolving and writing back missing `currency` fields so rows are self-consistent. New imports and manual buys/sells backfill immediately. GBX (pence) converts via GBP/100.
+- **Snapshot totals de-drifted** — the snapshot's invested-total math was a near-copy of the header's and had already missed **two** fixes (the split-inflation ratio and this FX fix). Both paths now share one `computeInvestedBase()` helper (cost-based split-invariant ratio + trade-date FX). Historical snapshots are left untouched — each records its own base currency at capture and can't be faithfully recomputed.
+- Migration: `20260707_transactions_fx_rates.sql` (`transactions.fx_rates JSONB`). +16 tests (807 total).
+
 ### v3.32.0
 - **Four real bugs found and fixed** by reviewing (and independently verifying) unmerged branches from an automated background agent — code-reviewer confirmed each was still present in current code, and I ran the proposed fixes against the actual failure scenarios before shipping:
   - **Split-inflated "Total Invested"** — the header scaled invested capital by `shares / totalBuyShares`, but a stock split multiplies `shares` while leaving cost basis unchanged, so a 4:1 split reported invested capital ~4× too high (also skewing gain/loss % and snapshots). Now uses a cost-based ratio (`shares × avgPrice / totalBuyCost`), which is split-invariant.

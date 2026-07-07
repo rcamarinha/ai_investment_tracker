@@ -126,6 +126,60 @@ export function extractLlmJsonArray(text) {
 }
 
 /**
+ * Derive "1 unit of `currency` = X units of base" rates from a single
+ * EUR-based rate table (ECB/Frankfurter shape: { USD: 1.09, GBP: 0.85, ... }
+ * meaning 1 EUR = 1.09 USD). Pure & testable.
+ *
+ * Math: C→EUR = 1 / (EUR→C); C→B = (EUR→B) / (EUR→C); identity for C === B.
+ * Returns { EUR: r, USD: r, ... } for the requested bases, or null for a base
+ * whose rate can't be derived (missing/zero table entry) — callers must treat
+ * null as "no historical rate, fall back to live".
+ *
+ * @param {Object} eurTable - { CUR: rate } where rate = 1 EUR in CUR
+ * @param {string} currency - the transaction's native currency
+ * @param {string[]} bases  - target base currencies (default EUR + USD)
+ * @returns {Object|null} { BASE: rate|null } or null if currency is unusable
+ */
+export function deriveFxToBases(eurTable, currency, bases = ['EUR', 'USD']) {
+    let cur = String(currency || '').toUpperCase();
+    if (!cur) return null;
+    // London quotes pence (GBX/GBp): 1 GBX = 0.01 GBP. ECB only carries GBP.
+    let subunit = 1;
+    if (cur === 'GBX' || cur === 'GBP.') { cur = 'GBP'; subunit = 0.01; }
+    const table = eurTable || {};
+    // 1 EUR = eurToCur units of the tx currency (identity for EUR itself)
+    const eurToCur = cur === 'EUR' ? 1 : Number(table[cur]);
+    const out = {};
+    for (const b of bases) {
+        const base = String(b).toUpperCase();
+        if (base === cur) { out[base] = 1 * subunit; continue; }
+        const eurToBase = base === 'EUR' ? 1 : Number(table[base]);
+        out[base] = (Number.isFinite(eurToCur) && eurToCur > 0 && Number.isFinite(eurToBase) && eurToBase > 0)
+            ? (eurToBase / eurToCur) * subunit
+            : null;
+    }
+    return out;
+}
+
+/**
+ * Look up the EUR-based rate table for `date` in a { 'YYYY-MM-DD': table } map,
+ * walking back up to `maxBack` days to the previous business day (the ECB
+ * publishes no rates on weekends/holidays; Frankfurter range responses simply
+ * omit those dates). Returns the table or null. Pure & testable.
+ */
+export function lookupFxTableForDate(history, date, maxBack = 7) {
+    if (!history || !date) return null;
+    let d = new Date(`${String(date).slice(0, 10)}T00:00:00Z`);
+    if (isNaN(d.getTime())) return null;
+    for (let i = 0; i <= maxBack; i++) {
+        const key = d.toISOString().slice(0, 10);
+        if (history[key]) return history[key];
+        d = new Date(d.getTime() - 86400000);
+    }
+    return null;
+}
+
+/**
  * Classify an FMP batch endpoint HTTP response body.
  *
  * Mirrors the text-first / non-JSON detection logic in batchFetchFMP()

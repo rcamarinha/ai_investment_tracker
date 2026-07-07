@@ -219,7 +219,8 @@ CREATE TABLE transactions (
     cost_basis NUMERIC,              -- sells only
     realized_gain_loss NUMERIC,      -- sells only
     currency TEXT,
-    exchange_rate NUMERIC,
+    exchange_rate NUMERIC,           -- LEGACY (base-ambiguous, import-day; no longer read)
+    fx_rates JSONB,                  -- trade-date rates to each base: { "EUR": r, "USD": r }
     fee NUMERIC,                     -- commission/fee on a buy/sell row
     tax NUMERIC,                     -- withholding tax on a dividend row
     ratio NUMERIC,                   -- split / isin_change factor (newShares / oldShares)
