@@ -9,7 +9,7 @@ import { renderAllocationCharts } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveTransactionsToDB, deleteTransactionsForSymbol,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
-import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled, setUntracked, backfillFxRates } from './pricing.js';
+import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled, setUntracked, backfillFxRates, applyResolveDecisions } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
 import { parseBrokerExport, normalizeTrades,
          buildExistingFingerprints, dedupeTrades,
@@ -352,8 +352,12 @@ export function renderPortfolio(opts = {}) {
                 <div class="pos-sub">${cardSub}</div>
                 <div class="pos-sub">${positionSub}${timestampText ? ' \u00B7 ' + escapeHTML(timestampText) : ''}</div>
                 ${pos.untracked
-                    ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="Kept at cost \u2014 pricing disabled. Click to re-enable live pricing." onclick="reEnablePricing('${escapeHTML(pos.symbol)}')">\u26A0 kept at cost \u00B7 <u>re-enable pricing</u></div>`
-                    : (isISIN(pos.symbol) ? `<div class="pos-sub" style="color: var(--gold);" title="No ticker mapping \u2014 live price disabled. Re-import and map a ticker.">\u26A0 unmapped ISIN \u00B7 no live price</div>` : '')}
+                    ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="Kept at cost \u2014 pricing disabled. Click to re-enable live pricing." onclick="reEnablePricing('${escapedSymbol}')">\u26A0 kept at cost \u00B7 <u>re-enable pricing</u></div>`
+                    : (isISIN(pos.symbol)
+                        ? `<div class="pos-sub" style="color: var(--gold);" title="No ticker mapping \u2014 live price disabled. Re-import and map a ticker.">\u26A0 unmapped ISIN \u00B7 no live price</div>`
+                        : (isActive && !hasPrice
+                            ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="No live price \u2014 click to find the right ticker (search by name, enter one, or keep at cost)." onclick="resolveCardTicker('${escapedSymbol}')">\u26A0 no live price \u00B7 <u>resolve ticker</u></div>`
+                            : ''))}
                 ${(() => {
                     // Show the EFFECTIVE ticker when it differs from the stored symbol,
                     // so a learned/user mapping is visible instead of invisible magic.
@@ -1334,6 +1338,28 @@ export async function reEnablePricing(symbol) {
     delete state.priceMetadata[symbol];   // drop any stale "no price" record
     renderPortfolio();
     await fetchMarketPrices({ interactive: true });
+}
+
+/**
+ * Per-card ticker resolver (PO: clickable failure-state line, not a new
+ * always-visible button). Opens the SAME resolve dialog scoped to one symbol —
+ * search by name, enter a ticker (validated before persist), or keep at cost.
+ */
+export async function resolveCardTicker(symbol) {
+    if (!symbol) return;
+    const pos = state.portfolio.find(p => p.symbol === symbol);
+    const meta = state.assetDatabase[symbol.toUpperCase()] || state.assetDatabase[symbol] || {};
+    const decisions = await resolveMissingTickers([{
+        symbol,
+        name: (pos && pos.name) || meta.name || symbol,
+        suggestion: meta.pricingTicker || '',
+    }]);
+    const wantedTicker = (decisions || []).find(d => d && d.ticker);
+    const priced = await applyResolveDecisions(decisions);
+    if (wantedTicker && priced === 0) {
+        alert(`⚠ "${wantedTicker.ticker}" returned no price from any provider.\n\nCheck the symbol (add an exchange suffix if needed, e.g. .DE/.PA), try 🔎 search by name, or choose Keep at cost.`);
+    }
+    renderPortfolio();
 }
 
 export function resolveMissingTickers(items) {

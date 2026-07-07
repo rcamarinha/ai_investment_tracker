@@ -408,7 +408,7 @@
                  refreshSinglePrice, setBaseCurrency,
                  deleteTransactionRow,
                  toggleCardTx, setPosSearch, setPosSort,
-                 resolveMissingTickers, reEnablePricing,
+                 resolveMissingTickers, reEnablePricing, resolveCardTicker,
                  loadTransactionsFromStorage } from './services/portfolio.js?v=3.33.0';
         import { fetchMarketPrices, fetchExchangeRates, setMissingTickerResolver } from './services/pricing.js?v=3.33.0';
 
@@ -442,6 +442,7 @@
         };
         window.fetchMarketPrices   = fetchMarketPrices;
         window.reEnablePricing     = reEnablePricing;
+        window.resolveCardTicker   = resolveCardTicker;
         window.savePortfolioSnapshot = savePortfolioSnapshot;
         window.analyzeMarkets      = analyzeMarkets;
         window.getTradeIdeas       = getTradeIdeas;

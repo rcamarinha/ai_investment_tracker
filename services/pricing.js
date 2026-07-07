@@ -178,6 +178,49 @@ export async function setUntracked(symbol, flag) {
 }
 
 /**
+ * Apply the user's resolve-dialog decisions ([{symbol, ticker?, keepAtCost?}]):
+ * validate each chosen ticker with a real price fetch BEFORE persisting it as
+ * the learned pricing_ticker; keep-at-cost persists the untracked flag; a
+ * failed validation records WHY into priceMetadata. Shared by the bulk
+ * post-refresh dialog (inside fetchMarketPrices) and the per-card resolver.
+ * Returns the number of symbols successfully priced.
+ */
+export async function applyResolveDecisions(decisions, { onPriced } = {}) {
+    let priced = 0;
+    for (const d of decisions || []) {
+        if (!d || !d.symbol) continue;
+        if (d.keepAtCost) {
+            await setUntracked(d.symbol, true);   // persisted so the choice survives reload
+            continue;
+        }
+        if (!d.ticker) continue;
+        const r = await fetchStockPrice(d.ticker);   // validate before persist
+        if (r.success) {
+            state.marketPrices[d.symbol] = r.price;
+            state.priceMetadata[d.symbol] = {
+                timestamp: new Date().toISOString(),
+                source: `${r.source} (user: ${d.ticker})`,
+                success: true,
+            };
+            await setUntracked(d.symbol, false);      // mapping a ticker re-enables pricing
+            await persistPricingTicker(d.symbol, d.ticker);
+            priced++;
+            if (onPriced) onPriced(d.symbol, r);
+        } else {
+            // Validation failed — surface WHY instead of leaving the old
+            // "no price found" so the user knows their ticker was rejected.
+            state.priceMetadata[d.symbol] = {
+                timestamp: new Date().toISOString(),
+                source: `User entry (${d.ticker})`,
+                success: false,
+                error: r.error || `"${d.ticker}" returned no price`,
+            };
+        }
+    }
+    return priced;
+}
+
+/**
  * Ask the resolve-tickers edge function for a priceable ticker for each symbol
  * that failed all price APIs. Returns { ORIGINAL_SYMBOL: SUGGESTED_TICKER }.
  * The caller must VALIDATE each suggestion against a price API before trusting it.
@@ -613,28 +656,9 @@ export async function fetchMarketPrices(opts = {}) {
                 let decisions = [];
                 try { decisions = (await _missingTickerResolver(items)) || []; }
                 catch (err) { console.warn('missing-ticker resolver error:', err.message); }
-                for (const d of decisions) {
-                    if (!d || !d.symbol) continue;
-                    if (d.keepAtCost) {
-                        await setUntracked(d.symbol, true);   // persisted so the choice survives reload
-                    } else if (d.ticker) {
-                        const r = await fetchStockPrice(d.ticker);   // validate before persist
-                        if (r.success) {
-                            recordSuccess(d.symbol, r.price, `${r.source} (user: ${d.ticker})`);
-                            await setUntracked(d.symbol, false);      // mapping a ticker re-enables pricing
-                            await persistPricingTicker(d.symbol, d.ticker);
-                        } else {
-                            // Validation failed — surface WHY instead of leaving the old
-                            // "no price found" so the user knows their ticker was rejected.
-                            state.priceMetadata[d.symbol] = {
-                                timestamp: new Date().toISOString(),
-                                source: `User entry (${d.ticker})`,
-                                success: false,
-                                error: r.error || `"${d.ticker}" returned no price`,
-                            };
-                        }
-                    }
-                }
+                await applyResolveDecisions(decisions, {
+                    onPriced: (sym) => refreshedThisRun.add(sym),   // count toward snapshot gating
+                });
                 renderPortfolio();
             }
         }
@@ -661,11 +685,15 @@ export async function fetchMarketPrices(opts = {}) {
             for (const [symbol, newPrice] of Object.entries(state.marketPrices)) {
                 const prevPrice = previousPrices[symbol];
                 if (prevPrice && prevPrice > 0 && newPrice > 0) {
-                    const changePct = ((newPrice - prevPrice) / prevPrice) * 100;
+                    // Only ACTIVE holdings: state.marketPrices retains cached prices
+                    // for closed/sold positions (and symbols no longer held at all),
+                    // which used to surface as "movers" the user doesn't own.
                     const position = state.portfolio.find(p => p.symbol === symbol);
+                    if (!position || position.shares <= 0) continue;
+                    const changePct = ((newPrice - prevPrice) / prevPrice) * 100;
                     movers.push({
                         symbol,
-                        name: position?.name || symbol,
+                        name: position.name || symbol,
                         prevPrice,
                         newPrice,
                         changePct
