@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.34.0
+- **Biggest Movers: active holdings only** — the widget iterated every cached price, so sold/closed positions (whose prices persist in the cache) appeared as "movers." Now requires an open position (shares > 0); closed-position performance belongs to a realized-P&L view, not movers (PO-confirmed).
+- **Per-card ticker resolver** — active cards with no live price now show a clickable **"⚠ no live price · resolve ticker"** line (same pattern as "kept at cost · re-enable pricing") that opens the resolve dialog scoped to that one symbol: 🔎 search by name, enter a ticker (validated before persist), or keep at cost. No more triggering a full price refresh just to fix one stuck holding. The decision-applying logic is now a single shared `applyResolveDecisions()` used by both the bulk post-refresh dialog and the per-card path; a rejected ticker explains itself instead of failing silently.
+
 ### v3.33.0
 - **Historical (trade-date) currency conversion** — Total Invested / Income / Fees were numerically identical under the € and $ toggles: each transaction stored a single `exchangeRate` captured at **import time** against whichever base was active then (EUR), with no record of which — so toggling to USD just relabeled EUR numbers. Now every transaction carries `fxRates: { EUR, USD }` — the ECB reference rate **at the trade date** (Frankfurter, free/keyless; one range request per gap, cached immutably in localStorage). Display uses `fxRates[base]`, falling back to live rates until backfill covers a row — so the toggle converts correctly even mid-repair. Legacy `exchange_rate` is kept in the DB one release for rollback but never read.
 - **Automatic repair of all existing data** — on the next load after deploying, every transaction missing trade-date rates is backfilled and persisted (persist only-on-change), including resolving and writing back missing `currency` fields so rows are self-consistent. New imports and manual buys/sells backfill immediately. GBX (pence) converts via GBP/100.
