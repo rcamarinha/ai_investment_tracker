@@ -178,6 +178,32 @@ export async function setUntracked(symbol, flag) {
 }
 
 /**
+ * Fetch a quote through the server-side quote-proxy edge function (Yahoo chart
+ * API — keyless, broad EU coverage incl. Xetra/LSE/Euronext; Yahoo is
+ * CORS-blocked from the browser, hence the proxy). Same Yahoo-style suffixes
+ * the app already normalizes to. Returns { price, currency, exchange,
+ * quotedSymbol } or null. Prices are in the listing's local currency.
+ */
+async function fetchQuoteViaProxy(symbol) {
+    if (!state.supabaseUrl || !state.supabaseClient || !symbol) return null;
+    const { data: { session } } = await state.supabaseClient.auth.getSession();
+    if (!session?.access_token) return null;   // proxy requires a logged-in user
+    const response = await fetch(`${state.supabaseUrl}/functions/v1/quote-proxy`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'apikey': state.supabaseAnonKey,
+            'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ symbols: [symbol] }),
+    });
+    if (!response.ok) throw new Error(`quote-proxy HTTP ${response.status}`);
+    const data = await response.json();
+    const hit = data?.results?.[String(symbol).toUpperCase()];
+    return (hit && Number(hit.price) > 0) ? hit : null;
+}
+
+/**
  * Apply the user's resolve-dialog decisions ([{symbol, ticker?, keepAtCost?}]):
  * validate each chosen ticker with a real price fetch BEFORE persisting it as
  * the learned pricing_ticker; keep-at-cost persists the untracked flag; a
@@ -276,6 +302,9 @@ async function resolveTickersViaAI(failedSymbols) {
 
 export async function fetchStockPrice(symbol) {
     console.log(`Fetching price for ${symbol}...`);
+    // Per-tier failure reasons — surfaced in the resolve dialog so "no price"
+    // is never a mystery (e.g. "Finnhub: no quote (US-only on free plan)").
+    const reasons = [];
 
     // TIER 1: Finnhub
     if (state.finnhubKey) {
@@ -285,13 +314,19 @@ export async function fetchStockPrice(symbol) {
             if (response.ok) {
                 const data = await response.json();
                 if (data.c && data.c > 0) {
-                    console.log(`\u2713 ${symbol}: $${data.c} (Finnhub)`);
+                    console.log(`✓ ${symbol}: $${data.c} (Finnhub)`);
                     return { price: data.c, source: 'Finnhub', tier: 1, success: true };
                 }
+                reasons.push('Finnhub: no quote (US-listed only on free plan)');
+            } else {
+                reasons.push(`Finnhub: HTTP ${response.status}`);
             }
         } catch (err) {
             console.log(`Finnhub failed for ${symbol}:`, err.message);
+            reasons.push('Finnhub: request failed');
         }
+    } else {
+        reasons.push('Finnhub: no key');
     }
 
     // FMP / Alpha Vantage use FMP-style suffixes — remap Finnhub-style ones (.FRK→.DE)
@@ -306,35 +341,40 @@ export async function fetchStockPrice(symbol) {
             const response = await fetch(url);
 
             if (response.ok) {
-                const data = await response.json();
-                if (data.error) {
-                    console.log(`FMP API error for ${symbol}:`, data.error);
-                } else if (data && Array.isArray(data) && data.length > 0) {
-                    const quote = data[0];
-                    if (quote.price && quote.price > 0) {
-                        console.log(`\u2713 ${symbol}: $${quote.price} (FMP)`);
-                        return { price: quote.price, source: 'Financial Modeling Prep', tier: 2, success: true };
-                    } else {
-                        console.log(`FMP returned data but no valid price for ${symbol}`);
-                    }
+                // Text-first: free plans return a plain-text "Premium…" notice with
+                // HTTP 200 for premium-gated symbols (same as the batch endpoint).
+                const classified = classifyFmpBatchText(await response.text());
+                if (classified.unsupported) {
+                    console.log(`FMP premium-gated/non-array response for ${symbol}`);
+                    reasons.push('FMP: symbol premium-gated on free plan');
+                } else if (classified.json.length > 0 && classified.json[0].price > 0) {
+                    const quote = classified.json[0];
+                    console.log(`✓ ${symbol}: $${quote.price} (FMP)`);
+                    return { price: quote.price, source: 'Financial Modeling Prep', tier: 2, success: true };
                 } else {
-                    console.log(`FMP returned empty/invalid data for ${symbol}`);
+                    console.log(`FMP returned empty/no-price data for ${symbol}`);
+                    reasons.push('FMP: no data for symbol');
                 }
             } else if (response.status === 403) {
                 console.log(`FMP 403 for ${symbol}`);
+                reasons.push('FMP: 403 (check key)');
                 if (!window.fmpKeyWarningShown) {
                     window.fmpKeyWarningShown = true;
-                    console.warn('\u26A0\uFE0F FMP 403 - Check API key');
+                    console.warn('⚠️ FMP 403 - Check API key');
                 }
             } else if (response.status === 429) {
-                console.log(`\u26A0\uFE0F FMP rate limit hit for ${symbol}`);
+                console.log(`⚠️ FMP rate limit hit for ${symbol}`);
+                reasons.push('FMP: rate-limited');
             } else {
                 console.log(`FMP HTTP ${response.status} for ${symbol}`);
+                reasons.push(`FMP: HTTP ${response.status}`);
             }
         } catch (err) {
             console.log(`FMP failed for ${symbol}:`, err.message);
+            reasons.push('FMP: request failed');
         }
-        console.log(`FMP didn't find price for ${symbol}, trying Alpha Vantage...`);
+    } else {
+        reasons.push(state.fmpKey ? 'FMP: daily quota reached' : 'FMP: no key');
     }
 
     // TIER 3: Alpha Vantage
@@ -351,33 +391,55 @@ export async function fetchStockPrice(symbol) {
                     const price = parseFloat(quote['05. price']);
                     if (isNaN(price) || price <= 0) {
                         console.log(`Alpha Vantage returned invalid price "${quote['05. price']}" for ${symbol}`);
+                        reasons.push('Alpha Vantage: invalid price');
                     } else {
-                        console.log(`\u2713 ${symbol}: $${price} (Alpha Vantage)`);
+                        console.log(`✓ ${symbol}: $${price} (Alpha Vantage)`);
                         return { price, source: 'Alpha Vantage', tier: 3, success: true };
                     }
+                } else if (data['Note']) {
+                    console.log('⚠️ Alpha Vantage rate limit hit');
+                    reasons.push('Alpha Vantage: rate/day limit');
                 } else {
                     console.log(`Alpha Vantage returned no price for ${symbol}`);
-                }
-                if (data['Note']) {
-                    console.log('\u26A0\uFE0F Alpha Vantage rate limit hit');
-                    return { price: null, source: 'Alpha Vantage', tier: 3, success: false, error: 'Rate limit (5/min) - wait 12s' };
+                    reasons.push('Alpha Vantage: no data');
                 }
             } else {
                 console.log(`Alpha Vantage HTTP ${response.status} for ${symbol}`);
+                reasons.push(`Alpha Vantage: HTTP ${response.status}`);
             }
         } catch (err) {
             console.log(`Alpha Vantage failed for ${symbol}:`, err.message);
+            reasons.push('Alpha Vantage: request failed');
         }
+    } else {
+        reasons.push('Alpha Vantage: no key');
     }
 
-    // All tiers failed
-    const availableAPIs = [state.finnhubKey && 'Finnhub', state.fmpKey && 'FMP', state.alphaVantageKey && 'AlphaV'].filter(Boolean);
+    // TIER 4: EU quote proxy (server-side Yahoo via edge function). Catches what
+    // the free API tiers structurally can't: EU-listed UCITS ETFs and other
+    // Xetra/LSE/Euronext symbols. Also runs during ticker VALIDATION, closing the
+    // trap where 🔎 search finds a correct EU ticker the quote tiers can't price.
+    try {
+        // Query with the normalized (Yahoo-style) suffix — same form Yahoo expects.
+        const q = await fetchQuoteViaProxy(pricingSymbol);
+        if (q && q.price > 0) {
+            console.log(`✓ ${symbol}: ${q.price} ${q.currency || ''} (EU proxy, ${q.exchange || 'Yahoo'})`);
+            return { price: q.price, source: `Yahoo (EU proxy${q.exchange ? `: ${q.exchange}` : ''})`, tier: 4, success: true };
+        }
+        reasons.push('EU proxy (Yahoo): no data');
+    } catch (err) {
+        console.log(`Quote proxy failed for ${symbol}:`, err.message);
+        reasons.push('EU proxy: unavailable');
+    }
+
+    // All tiers failed — return the per-tier story, not a generic shrug.
+    const hasKeys = !!(state.finnhubKey || state.fmpKey || state.alphaVantageKey);
     return {
         price: null,
-        source: availableAPIs.length > 0 ? 'All APIs failed' : 'No API keys',
+        source: hasKeys ? 'All APIs failed' : 'No API keys',
         tier: 0,
         success: false,
-        error: availableAPIs.length > 0 ? 'Symbol not found in any API' : 'Configure API keys'
+        error: hasKeys ? reasons.join(' · ') : 'Configure API keys',
     };
 }
 
@@ -652,6 +714,8 @@ export async function fetchMarketPrices(opts = {}) {
                     symbol: s,
                     name: (state.portfolio.find(p => p.symbol === s) || {}).name || s,
                     suggestion: (aiSuggestions[s.toUpperCase()] || {}).ticker || '',
+                    // Per-tier failure story ("Finnhub: US-only · FMP: premium-gated…")
+                    reason: (state.priceMetadata[s] && state.priceMetadata[s].error) || '',
                 }));
                 let decisions = [];
                 try { decisions = (await _missingTickerResolver(items)) || []; }
