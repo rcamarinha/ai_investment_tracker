@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.35.0
+- **EU quote proxy — Tier 4 of price fetching** — the root cause of "ETFs never price" was structural: EU-listed UCITS ETFs (Xetra/LSE/Euronext) have no US listing, Finnhub free only quotes US symbols, and FMP free premium-gates most EU listings. New `quote-proxy` edge function fetches quotes **server-side from Yahoo's chart API** (keyless, broad EU coverage, returns the listing currency; Yahoo is CORS-blocked from the browser, hence the proxy — and Stooq's old CSV endpoint turned out to be dead, caught in pre-ship testing). Runs as Tier 4 in `fetchStockPrice`, so it covers refreshes **and ticker validation** — closing the trap where 🔎 search finds a correct EU ticker (search endpoints have broad coverage) that the free quote endpoints then reject.
+- **"No price" is never a mystery anymore** — `fetchStockPrice` now records a per-tier failure story (e.g. `Finnhub: no quote (US-listed only on free plan) · FMP: symbol premium-gated · Alpha Vantage: no key · EU proxy: no data`), shown under each instrument in the resolve dialog and in the price-update summary. The single-symbol FMP tier also gained the text-first premium-notice detection the batch tier already had.
+- **Deploy note:** `supabase functions deploy quote-proxy` (config: `verify_jwt = false`, same manual-auth pattern as the other functions).
+
 ### v3.34.0
 - **Biggest Movers: active holdings only** — the widget iterated every cached price, so sold/closed positions (whose prices persist in the cache) appeared as "movers." Now requires an open position (shares > 0); closed-position performance belongs to a realized-P&L view, not movers (PO-confirmed).
 - **Per-card ticker resolver** — active cards with no live price now show a clickable **"⚠ no live price · resolve ticker"** line (same pattern as "kept at cost · re-enable pricing") that opens the resolve dialog scoped to that one symbol: 🔎 search by name, enter a ticker (validated before persist), or keep at cost. No more triggering a full price refresh just to fix one stuck holding. The decision-applying logic is now a single shared `applyResolveDecisions()` used by both the bulk post-refresh dialog and the per-card path; a rejected ticker explains itself instead of failing silently.

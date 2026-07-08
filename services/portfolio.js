@@ -1353,6 +1353,7 @@ export async function resolveCardTicker(symbol) {
         symbol,
         name: (pos && pos.name) || meta.name || symbol,
         suggestion: meta.pricingTicker || '',
+        reason: (state.priceMetadata[symbol] && state.priceMetadata[symbol].error) || '',
     }]);
     const wantedTicker = (decisions || []).find(d => d && d.ticker);
     const priced = await applyResolveDecisions(decisions);
@@ -1369,6 +1370,7 @@ export function resolveMissingTickers(items) {
                 <td style="padding:6px 8px;">
                     <div style="font-weight:600;">${escapeHTML(it.name || it.symbol)}</div>
                     <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono,monospace);">${escapeHTML(it.symbol)}</div>
+                    ${it.reason ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:2px;" title="Why each price source failed">${escapeHTML(it.reason)}</div>` : ''}
                 </td>
                 <td style="padding:6px 8px;">
                     <input class="rmt-ticker" type="text" placeholder="ticker" value="${escapeHTML(it.suggestion || '')}" style="width:150px;font-size:13px;font-family:var(--font-mono,monospace);padding:4px 6px;text-transform:uppercase;" />

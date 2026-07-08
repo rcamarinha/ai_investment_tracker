@@ -41,6 +41,8 @@ ai_investment_tracker/
 │       │   └── index.ts        # Edge function: extract trades from unstructured statement text (Revolut PDF / BancoBest)
 │       ├── resolve-tickers/
 │       │   └── index.ts        # Edge function: Gemini(+Google Search)→Claude(+web_search) fallback that finds a priceable ticker (and last-resort grounded price) for symbols all price APIs reject; validated client-side
+│       ├── quote-proxy/
+│       │   └── index.ts        # Edge function: server-side Yahoo chart quotes (keyless; broad EU coverage incl. Xetra/LSE/Euronext, returns currency) — Tier 4 of fetchStockPrice for EU-listed UCITS ETFs etc. that free API tiers can't quote (Yahoo is CORS-blocked from the browser, hence the proxy)
 │       └── wine-ai/
 │           └── index.ts        # Edge function for wine AI (label, valuation, analysis)
 ├── supabase_schema.sql         # Database schema (positions, snapshots, assets, transactions, etc.)
