@@ -57,10 +57,10 @@ function computeInvestedBase(p, txs, currency) {
     if (!txs || txs.length === 0) return toBaseCurrency(investedNative, currency);
     let investedBase = 0;
     txs.forEach(tx => {
-        if (tx.type === 'buy') investedBase += (Number(tx.totalAmount) || 0) * txRateToBase(tx, currency);
+        if (tx.type === 'buy') investedBase += ((Number(tx.totalAmount) || 0) + (Number(tx.fee) || 0)) * txRateToBase(tx, currency);
     });
     const totalBuyCostNative = txs.filter(t => t.type === 'buy')
-        .reduce((s, t) => s + (t.totalAmount || t.shares * t.price), 0);
+        .reduce((s, t) => s + (t.totalAmount || t.shares * t.price) + (Number(t.fee) || 0), 0);
     const remainingRatio = totalBuyCostNative > 0
         ? Math.min(1, investedNative / totalBuyCostNative) : 1;
     return investedBase * remainingRatio;

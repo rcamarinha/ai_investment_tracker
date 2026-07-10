@@ -938,7 +938,7 @@ async function ensureFxHistoryForDates(dates) {
         .toISOString().slice(0, 10);
     const start = startPad < FX_MIN_DATE ? FX_MIN_DATE : startPad;
     const end = missing[missing.length - 1];
-    const url = `https://api.frankfurter.dev/v1/${start}..${end}?base=EUR&symbols=${SUPPORTED_BASES.filter(b => b !== 'EUR').join(',')}`;
+    const url = `https://api.frankfurter.dev/v1/${start}..${end}?base=EUR`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`Frankfurter HTTP ${resp.status}`);
     const data = await resp.json();

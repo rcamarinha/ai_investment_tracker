@@ -72,6 +72,45 @@ describe('deriveFxToBases', () => {
   });
 });
 
+describe('deriveFxToBases — regression: USD-only table cannot convert GBP', () => {
+  const USD_ONLY_TABLE = { USD: 1.10 };
+  const FULL_TABLE = { USD: 1.10, GBP: 0.85, CHF: 0.95, SEK: 11.5 };
+
+  it('GBP tx with USD-only table yields null rates (the bug)', () => {
+    const fx = deriveFxToBases(USD_ONLY_TABLE, 'GBP');
+    expect(fx.EUR).toBeNull();
+    expect(fx.USD).toBeNull();
+  });
+
+  it('GBP tx with full table yields correct rates (the fix)', () => {
+    const fx = deriveFxToBases(FULL_TABLE, 'GBP');
+    expect(fx.EUR).toBeCloseTo(1 / 0.85, 10);
+    expect(fx.USD).toBeCloseTo(1.10 / 0.85, 10);
+  });
+
+  it('CHF tx with USD-only table yields null rates', () => {
+    const fx = deriveFxToBases(USD_ONLY_TABLE, 'CHF');
+    expect(fx.EUR).toBeNull();
+    expect(fx.USD).toBeNull();
+  });
+
+  it('CHF tx with full table yields correct rates', () => {
+    const fx = deriveFxToBases(FULL_TABLE, 'CHF');
+    expect(fx.EUR).toBeCloseTo(1 / 0.95, 10);
+    expect(fx.USD).toBeCloseTo(1.10 / 0.95, 10);
+  });
+
+  it('EUR/USD txs work with either table (not affected by bug)', () => {
+    const fxEur = deriveFxToBases(USD_ONLY_TABLE, 'EUR');
+    expect(fxEur.EUR).toBe(1);
+    expect(fxEur.USD).toBeCloseTo(1.10, 10);
+
+    const fxUsd = deriveFxToBases(USD_ONLY_TABLE, 'USD');
+    expect(fxUsd.USD).toBe(1);
+    expect(fxUsd.EUR).toBeCloseTo(1 / 1.10, 10);
+  });
+});
+
 describe('lookupFxTableForDate', () => {
   const HIST = {
     '2024-03-15': { USD: 1.09 },   // Friday
