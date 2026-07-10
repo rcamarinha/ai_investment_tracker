@@ -799,11 +799,12 @@ function pickBestTicker(candidates) {
  */
 async function persistISINMapping(isin, resolved, source = 'api') {
     const ticker = resolved.ticker;
+    const canonicalType = normalizeAssetType(resolved.type);
     state.assetDatabase[ticker] = {
         ...(state.assetDatabase[ticker] || {}),
         name: resolved.name || ticker,
         ticker,
-        assetType: resolved.type || 'Stock',
+        assetType: canonicalType,
         isin,
         source
     };
@@ -812,7 +813,7 @@ async function persistISINMapping(isin, resolved, source = 'api') {
         await saveAssetsToDB([{
             ticker,
             name: resolved.name || ticker,
-            asset_type: resolved.type || 'Stock',
+            asset_type: canonicalType,
             isin,
             stock_exchange: resolved.exchange || '',
             sector: 'Other',
@@ -992,10 +993,14 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
                     console.log(`Claude resolved ${inputUpper} → ${resolvedTicker} (matches existing DB entry)`);
                 }
 
+                // Claude returns free-text types ("Shares", "Shares (REIT)", …) —
+                // normalize BEFORE storing, or the allocation chart splits one
+                // asset class into synonym buckets ("Stock" vs "Shares").
+                const canonicalType = normalizeAssetType(r.type);
                 resultMap[inputUpper] = {
                     ticker: resolvedTicker,
                     name: r.name || r.ticker,
-                    type: r.type || 'Stock',
+                    type: canonicalType,
                     exchange: r.exchange || '',
                     confident: r.confident !== false,
                     alternatives: r.alternatives || []
@@ -1006,7 +1011,7 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
                     assetsToSave.push({
                         ticker: resolvedTicker,
                         name: r.name || r.ticker,
-                        asset_type: r.type || 'Stock',
+                        asset_type: canonicalType,
                         isin: inputUpper,
                         stock_exchange: r.exchange || '',
                         sector: 'Other',
@@ -1017,7 +1022,7 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
                         ...(state.assetDatabase[resolvedTicker] || {}),
                         name: r.name || r.ticker,
                         ticker: resolvedTicker,
-                        assetType: r.type || 'Stock',
+                        assetType: canonicalType,
                         isin: inputUpper
                     };
                 }
@@ -1982,7 +1987,7 @@ export function rebuildPositionsFromLedger() {
                 name: meta.name || symbol,
                 symbol,
                 platform: brokerLabel(broker) || 'Imported',
-                type: meta.assetType || 'Stock',
+                type: normalizeAssetType(meta.assetType),
                 shares: data.shares,
                 avgPrice: data.avgPrice,
                 isin: meta.isin || null,

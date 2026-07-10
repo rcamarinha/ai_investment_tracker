@@ -222,6 +222,15 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('adr')).toBe('Stock');
   });
 
+  it('normalizes Shares → Stock (AI resolver label — the chart-splitting bug)', () => {
+    expect(normalizeAssetType('Shares')).toBe('Stock');
+  });
+
+  it('normalizes Shares (REIT) → REIT (AI resolver label)', () => {
+    expect(normalizeAssetType('Shares (REIT)')).toBe('REIT');
+    expect(normalizeAssetType('shares (reit)')).toBe('REIT');
+  });
+
   it('preserves canonical Stock', () => {
     expect(normalizeAssetType('Stock')).toBe('Stock');
   });

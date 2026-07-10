@@ -91,7 +91,7 @@ export function buildAssetRecord(position) {
         stock_exchange: stockExchange,
         sector,
         currency,
-        asset_type: position.type || 'Stock',
+        asset_type: normalizeAssetType(position.type),
         untracked: !!position.untracked
     };
 }
@@ -141,6 +141,7 @@ const ASSET_TYPE_ALIASES = {
     'token': 'Crypto', 'coin': 'Crypto',
     // REIT variants
     'reit': 'REIT', 'real estate': 'REIT', 'real estate investment trust': 'REIT',
+    'shares (reit)': 'REIT', 'stock (reit)': 'REIT', 'reit shares': 'REIT',
     // Bond variants
     'bond': 'Bond', 'bonds': 'Bond', 'fixed income': 'Bond', 'debt': 'Bond',
     'note': 'Bond', 'treasury': 'Bond', 'government bond': 'Bond',

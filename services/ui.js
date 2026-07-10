@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { escapeHTML, formatCurrency } from './utils.js';
+import { escapeHTML, formatCurrency, normalizeAssetType } from './utils.js';
 import { getSector } from '../data/sectors.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
 import { renderPortfolio } from './portfolio.js';
@@ -71,10 +71,12 @@ export function renderAllocationCharts() {
         return;
     }
 
-    // Aggregate by type
+    // Aggregate by type — normalize to the canonical taxonomy so synonym labels
+    // from different sources ("Shares"/"Stock"/"Equity", "Shares (REIT)"/"REIT")
+    // never split the same asset class into separate chart buckets.
     const typeAllocation = {};
     state.portfolio.forEach(p => {
-        const assetType = p.type || 'Other';
+        const assetType = normalizeAssetType(p.type);
         const currentPrice = state.marketPrices[p.symbol];
         const invested = p.shares * p.avgPrice;
         const marketValue = currentPrice ? p.shares * currentPrice : invested;
