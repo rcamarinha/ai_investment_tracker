@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { buildAssetRecord } from './utils.js';
+import { buildAssetRecord, normalizeAssetType } from './utils.js';
 import { updateAuthBar, checkUserRole, cancelPasswordRecovery } from './auth.js';
 import { renderPortfolio, updateHistoryDisplay, saveTransactionsToStorage } from './portfolio.js';
 import { fetchAssetProfile, backfillFxRates } from './pricing.js';
@@ -264,7 +264,7 @@ export async function loadAssetsFromDB() {
                     stockExchange: a.stock_exchange,
                     sector: a.sector,
                     currency: a.currency,
-                    assetType: a.asset_type,
+                    assetType: normalizeAssetType(a.asset_type),
                     isin: a.isin || null,
                     source: a.source || null,
                     pricingTicker: a.pricing_ticker || null,
@@ -612,7 +612,10 @@ export async function loadFromDatabase() {
                 name: p.name,
                 symbol: p.symbol,
                 platform: p.platform,
-                type: p.asset_type || 'Stock',
+                // Normalize legacy free-text types ("Shares", "Shares (REIT)"…)
+                // to the canonical taxonomy on read — rows self-heal in the DB
+                // on the next natural save (savePortfolioDB / asset upserts).
+                type: normalizeAssetType(p.asset_type),
                 shares: Number(p.shares),
                 avgPrice: Number(p.avg_price)
             }));
