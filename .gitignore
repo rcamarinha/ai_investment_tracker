@@ -1,2 +1,5 @@
 node_modules/
 .vercel/
+
+# Supabase CLI local state (created by supabase link / functions deploy)
+supabase/.temp/
