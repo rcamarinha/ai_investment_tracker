@@ -314,11 +314,16 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
                     ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
                 },
                 body: JSON.stringify({
+                    // Send the fully-built prompt at top level so the edge function
+                    // uses it verbatim (as `customPrompt`). Nesting it under
+                    // `perspective.prompt` made the edge function ignore it and
+                    // rebuild the wrong (markets-analysis) prompt instead.
+                    prompt: tradeIdeasPrompt,
                     portfolio: state.portfolio.map(p => ({
                         shares: p.shares, symbol: p.symbol, avgPrice: p.avgPrice,
                         currentPrice: state.marketPrices[p.symbol] || null, type: p.type || 'Stock'
                     })),
-                    perspective: { key: state.selectedPerspective, name: perspective.name, prompt: tradeIdeasPrompt },
+                    perspective: { key: state.selectedPerspective, name: perspective.name },
                     requestType: 'tradeIdeas'
                 })
             });
@@ -339,7 +344,16 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
         try {
             ideas = JSON.parse(cleanText);
         } catch {
-            throw new Error('Could not parse trade ideas response as JSON. Raw: ' + cleanText.slice(0, 200));
+            // Fallback: extract the outermost JSON object in case the model added
+            // any preamble/trailing prose around it.
+            const start = cleanText.indexOf('{');
+            const end = cleanText.lastIndexOf('}');
+            if (start !== -1 && end > start) {
+                try { ideas = JSON.parse(cleanText.slice(start, end + 1)); } catch { /* fall through */ }
+            }
+            if (!ideas) {
+                throw new Error('Could not parse trade ideas response as JSON. Raw: ' + cleanText.slice(0, 200));
+            }
         }
 
         const actionColors = { 'BUY': '#4CAF84', 'SELL': '#E05A5A', 'TRIM': '#E09A3A', 'ADD': '#4CAF84', 'REBALANCE': '#E09A3A', 'WATCH': '#7A8099', 'HOLD': '#7A8099' };
