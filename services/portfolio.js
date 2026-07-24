@@ -11,6 +11,7 @@ import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
 import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled, setUntracked, backfillFxRates, applyResolveDecisions } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
+import { buildCashFlows, xirr, summarizeCashFlows, computeYearlyIncome, computeYearlyXirr } from './returns-core.js';
 import { parseBrokerExport, normalizeTrades,
          buildExistingFingerprints, dedupeTrades,
          computePositionsFromLedger,
@@ -416,6 +417,9 @@ export function renderPortfolio(opts = {}) {
 
     if (!opts.gridOnly) {
         renderAllocationCharts();
+        renderPerformance(totalMarketValueBase);
+        renderYearlyReturns(totalMarketValueBase);
+        renderYearlyIncome();
         renderSalesHistory();
     }
     console.log('Portfolio rendered successfully');
@@ -3099,6 +3103,288 @@ export function deleteTransactionRow(rowIndex) {
     saveTransactionsToStorage();
     savePortfolioDB();
     renderPortfolio();
+}
+
+/**
+ * Money-weighted lifetime return (XIRR) panel → #performanceSection.
+ *
+ * Builds base-currency dated cash flows from the full ledger (buys −, sells +,
+ * dividends net of tax +, fees −) via the pure returns-core, appends the CURRENT
+ * portfolio market value as today's terminal inflow (passed in from
+ * renderPortfolio so the FX/market-value logic isn't duplicated), and solves for
+ * the annualized rate. XIRR is undefined without a terminal value, so when no
+ * live prices are loaded the panel prompts to update prices instead of showing
+ * a bogus number.
+ *
+ * @param {number} marketValueBase  current total market value in base currency
+ */
+function renderPerformance(marketValueBase) {
+    const section = document.getElementById('performanceSection');
+    if (!section) return;
+    const base = state.baseCurrency || 'EUR';
+
+    const flows = buildCashFlows(state.transactions, {
+        rateFor: txRateToBase,
+        currencyFor: symbol => getAssetCurrency(symbol),
+    });
+
+    // No ledger → nothing to annualize (manually-added positions have no dated
+    // cash flows). Snapshot-only users see the existing history chart instead.
+    if (flows.length === 0) { section.style.display = 'none'; return; }
+
+    const summary = summarizeCashFlows(flows);
+    const currentValue = Number(marketValueBase) || 0;
+    const hasValue = currentValue > 0;
+
+    // Terminal flow = liquidate at today's market value.
+    const today = new Date().toISOString().slice(0, 10);
+    const allFlows = hasValue
+        ? [...flows, { date: today, amount: currentValue, type: 'value', symbol: '—' }]
+        : flows;
+    const rate = hasValue ? xirr(allFlows) : null;
+
+    const totalReturned = summary.cashReturned + currentValue;
+    const absGain = totalReturned - summary.capitalIn;
+    const simpleReturnPct = summary.capitalIn > 0 ? (absGain / summary.capitalIn) * 100 : 0;
+    const gainColor = absGain >= 0 ? 'var(--up)' : 'var(--down)';
+
+    const xirrStr = rate === null
+        ? '—'
+        : `${rate >= 0 ? '+' : ''}${(rate * 100).toFixed(1)}%`;
+    const xirrColor = rate === null ? 'var(--text-secondary)' : (rate >= 0 ? 'var(--up)' : 'var(--down)');
+
+    const note = !hasValue
+        ? 'Click "Update Prices" for live market data to compute XIRR.'
+        : rate === null
+            ? 'Not enough cash-flow history to annualize a return yet.'
+            : `Money-weighted (XIRR) across ${summary.count} cash flow${summary.count !== 1 ? 's' : ''} since ${summary.firstDate}.`;
+
+    const expanded = !!state._perfExpanded;
+    let detailTable = '';
+    if (expanded) {
+        const rows = [...allFlows].sort((a, b) => new Date(b.date) - new Date(a.date)).map(f => {
+            const amtColor = f.amount >= 0 ? 'var(--up)' : 'var(--down)';
+            const label = f.type === 'value' ? 'current value' : f.type;
+            return `<tr>
+                <td>${escapeHTML(f.date)}</td>
+                <td>${escapeHTML(f.symbol || '—')}</td>
+                <td>${escapeHTML(label)}</td>
+                <td style="text-align:right; color:${amtColor};">${f.amount >= 0 ? '+' : ''}${formatCurrency(f.amount, base)}</td>
+            </tr>`;
+        }).join('');
+        detailTable = `
+            <div class="table-scroll" style="margin-top: 15px;">
+                <table class="sales-history-table">
+                    <thead><tr><th>Date</th><th>Symbol</th><th>Flow</th><th style="text-align:right;">Amount (${escapeHTML(base)})</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+    }
+
+    section.style.display = 'block';
+    const content = section.querySelector('.card') || section;
+    content.innerHTML = `
+        <h2 style="margin-bottom: 5px;">📊 Portfolio Return</h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: baseline; margin: 12px 0;">
+            <div>
+                <div style="color: var(--text-secondary); font-size: 12px;">Annualized return (XIRR)</div>
+                <div style="color: ${xirrColor}; font-size: 32px; font-weight: bold;">${xirrStr}</div>
+            </div>
+            <div>
+                <div style="color: var(--text-secondary); font-size: 12px;">Total gain</div>
+                <div style="color: ${gainColor}; font-size: 20px; font-weight: 600;">${absGain >= 0 ? '+' : ''}${formatCurrency(absGain, base)} (${formatPercent(simpleReturnPct)})</div>
+            </div>
+        </div>
+        <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.7;">
+            <div>Capital invested: <span style="color: var(--text-primary);">${formatCurrency(summary.capitalIn, base)}</span></div>
+            <div>Cash returned (sells + dividends): <span style="color: var(--text-primary);">${formatCurrency(summary.cashReturned, base)}</span></div>
+            <div>Current market value: <span style="color: var(--text-primary);">${formatCurrency(currentValue, base)}</span></div>
+            <div style="margin-top: 6px; color: var(--text-tertiary);">${escapeHTML(note)}</div>
+        </div>
+        <div style="margin-top: 10px;">
+            <span class="inactive-toggle" onclick="togglePerformanceDetails()">${expanded ? 'Hide' : 'Show'} ${allFlows.length} cash flow${allFlows.length !== 1 ? 's' : ''}</span>
+        </div>
+        ${detailTable}
+    `;
+}
+
+/** Expand/collapse the XIRR cash-flow transparency table. */
+export function togglePerformanceDetails() {
+    state._perfExpanded = !state._perfExpanded;
+    renderPortfolio();
+}
+
+// Snapshots within this many days of a Jan-1 boundary are accepted as that
+// year's opening/closing portfolio value. ~3 weeks tolerates a New-Year price
+// refresh landing a few days late without drifting far enough to misstate value.
+const BOUNDARY_TOLERANCE_DAYS = 21;
+
+/**
+ * Portfolio market value (base currency) at a year-boundary date, from saved
+ * snapshots. Returns 0 for any boundary on/before the first ledger transaction
+ * (the portfolio was empty), the nearest PRICE-BEARING snapshot's value within
+ * BOUNDARY_TOLERANCE_DAYS, else null (insufficient data for that boundary).
+ *
+ * Cost-basis-only snapshots (pricesAvailable === 0, where totalMarketValue is
+ * just the cost fallback) are skipped — they are not real market values and
+ * would corrupt the return.
+ */
+function boundaryValueFromSnapshots(dateStr, firstTxDate) {
+    if (firstTxDate && dateStr <= firstTxDate) return 0;
+    const target = new Date(dateStr + 'T00:00:00Z').getTime();
+    const tolMs = BOUNDARY_TOLERANCE_DAYS * 86400000;
+    let best = null, bestDist = Infinity;
+    for (const s of (state.portfolioHistory || [])) {
+        if (!s || !s.timestamp || !(s.pricesAvailable > 0)) continue;
+        const dist = Math.abs(new Date(s.timestamp).getTime() - target);
+        if (dist <= tolMs && dist < bestDist) { best = s; bestDist = dist; }
+    }
+    return best ? (Number(best.totalMarketValue) || null) : null;
+}
+
+/**
+ * Per-calendar-year money-weighted return (XIRR) → #yearlyReturnsSection.
+ *
+ * Approach A: opening/closing year values come from saved snapshots near each
+ * Jan 1 (via boundaryValueFromSnapshots); the current year closes at today's
+ * live market value (passed in). Years without a nearby snapshot show
+ * "insufficient data" with an actionable hint rather than a fabricated number.
+ *
+ * @param {number} marketValueBase  current total market value in base currency
+ */
+function renderYearlyReturns(marketValueBase) {
+    const section = document.getElementById('yearlyReturnsSection');
+    if (!section) return;
+    const base = state.baseCurrency || 'EUR';
+
+    // Earliest transaction date across the whole ledger (boundaries on/before it
+    // legitimately value at 0 — the portfolio didn't exist yet).
+    let firstTxDate = null;
+    for (const txs of Object.values(state.transactions || {})) {
+        for (const t of txs) {
+            if (t && t.date && (firstTxDate === null || t.date < firstTxDate)) firstTxDate = t.date;
+        }
+    }
+
+    const rows = computeYearlyXirr(state.transactions, {
+        rateFor: txRateToBase,
+        currencyFor: symbol => getAssetCurrency(symbol),
+        boundaryValueFor: d => boundaryValueFromSnapshots(d, firstTxDate),
+        currentValue: marketValueBase,
+    });
+
+    if (rows.length === 0) { section.style.display = 'none'; return; }
+
+    const anyComputed = rows.some(r => !r.insufficient);
+    const fmtRate = r => {
+        if (r.rate == null) return '<span style="color: var(--text-tertiary);">insufficient data</span>';
+        const c = r.rate >= 0 ? 'var(--up)' : 'var(--down)';
+        return `<span style="color: ${c}; font-weight: 600;">${r.rate >= 0 ? '+' : ''}${(r.rate * 100).toFixed(1)}%</span>`;
+    };
+    const fmtVal = v => v == null ? '—' : formatCurrency(v, base);
+
+    const body = [...rows].reverse().map(r => `
+        <tr>
+            <td>${escapeHTML(r.year)}</td>
+            <td style="text-align:right;">${fmtRate(r)}</td>
+            <td style="text-align:right; color: var(--text-secondary);">${fmtVal(r.openValue)}</td>
+            <td style="text-align:right; color: var(--text-secondary);">${fmtVal(r.closeValue)}</td>
+        </tr>`).join('');
+
+    const hint = anyComputed
+        ? 'Opening/closing values use your saved snapshots near each Jan 1; the current year closes at today’s live value.'
+        : 'Per-year returns need a portfolio snapshot near each Jan 1. Save a snapshot at the start of each year (💾) to unlock this — past years without one stay marked insufficient.';
+
+    section.style.display = 'block';
+    const content = section.querySelector('.card') || section;
+    content.innerHTML = `
+        <h2 style="margin-bottom: 5px;">📅 Return by Year (XIRR)</h2>
+        <div style="font-size: 13px; color: var(--text-tertiary); margin-bottom: 12px;">${escapeHTML(hint)}</div>
+        <div class="table-scroll">
+            <table class="sales-history-table">
+                <thead>
+                    <tr>
+                        <th>Year</th>
+                        <th style="text-align:right;">Return (XIRR)</th>
+                        <th style="text-align:right;">Opening value</th>
+                        <th style="text-align:right;">Closing value</th>
+                    </tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+/**
+ * Dividend income & yield-on-cost broken down by calendar year → #incomeByYearSection.
+ *
+ * Complements the XIRR panel with the classic "yield" reading: net dividends
+ * (gross − withholding tax) per year, in base currency, plus fees. Fully exact
+ * from the ledger — no market valuation or year-boundary snapshots needed — so
+ * every historical year is accurate today. Yield-on-cost divides each year's net
+ * dividends by the average cost basis at risk that year (see computeYearlyIncome).
+ */
+function renderYearlyIncome() {
+    const section = document.getElementById('incomeByYearSection');
+    if (!section) return;
+    const base = state.baseCurrency || 'EUR';
+
+    const { years, totals } = computeYearlyIncome(state.transactions, {
+        rateFor: txRateToBase,
+        currencyFor: symbol => getAssetCurrency(symbol),
+    });
+
+    // Only meaningful once there's dividend or fee history.
+    if (years.length === 0 || (totals.dividends === 0 && totals.fees === 0)) {
+        section.style.display = 'none';
+        return;
+    }
+
+    const pct = v => v == null ? '—' : `${(v * 100).toFixed(2)}%`;
+    const rows = [...years].reverse().map(y => `
+        <tr>
+            <td>${escapeHTML(y.year)}</td>
+            <td style="text-align:right;">${formatCurrency(y.dividends, base)}</td>
+            <td style="text-align:right; color: var(--down);">${y.tax > 0 ? '−' + formatCurrency(y.tax, base) : '—'}</td>
+            <td style="text-align:right; color: var(--up); font-weight:600;">${formatCurrency(y.netIncome, base)}</td>
+            <td style="text-align:right; color: var(--text-secondary);" title="${escapeHTML(`Avg cost basis at risk that year: ${formatCurrency(y.avgInvested, base)}`)}">${pct(y.yieldOnCost)}</td>
+            <td style="text-align:right; color: var(--down);">${y.fees > 0 ? '−' + formatCurrency(y.fees, base) : '—'}</td>
+        </tr>`).join('');
+
+    section.style.display = 'block';
+    const content = section.querySelector('.card') || section;
+    content.innerHTML = `
+        <h2 style="margin-bottom: 5px;">💰 Income by Year</h2>
+        <div style="font-size: 13px; color: var(--text-tertiary); margin-bottom: 12px;">
+            Net dividends (after withholding tax) per calendar year, in ${escapeHTML(base)}. Yield = net dividends ÷ average cost basis held that year.
+        </div>
+        <div class="table-scroll">
+            <table class="sales-history-table">
+                <thead>
+                    <tr>
+                        <th>Year</th>
+                        <th style="text-align:right;">Dividends</th>
+                        <th style="text-align:right;">Tax</th>
+                        <th style="text-align:right;">Net income</th>
+                        <th style="text-align:right;">Yield on cost</th>
+                        <th style="text-align:right;">Fees</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+                <tfoot>
+                    <tr style="border-top: 2px solid var(--border, #333); font-weight: 600;">
+                        <td>All years</td>
+                        <td style="text-align:right;">${formatCurrency(totals.dividends, base)}</td>
+                        <td style="text-align:right; color: var(--down);">${totals.tax > 0 ? '−' + formatCurrency(totals.tax, base) : '—'}</td>
+                        <td style="text-align:right; color: var(--up);">${formatCurrency(totals.netIncome, base)}</td>
+                        <td style="text-align:right; color: var(--text-tertiary);">—</td>
+                        <td style="text-align:right; color: var(--down);">${totals.fees > 0 ? '−' + formatCurrency(totals.fees, base) : '—'}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    `;
 }
 
 function renderSalesHistory() {

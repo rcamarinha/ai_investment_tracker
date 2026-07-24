@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.37.0
+- **Portfolio return metrics — money-weighted (XIRR) + income by year** — three new cards on the portfolio page, all derived from the transaction ledger and FX-normalized to your base currency. **Portfolio Return** shows the combined lifetime **XIRR** (dated cash flows — buys −, sells +, dividends net of tax +, fees − — plus today's live market value as the terminal inflow), with an expandable audit table of every flow. **Income by Year** breaks net dividends / tax / fees and yield-on-cost down per calendar year (exact from the ledger — no valuation needed). **Return by Year (XIRR)** treats each year as its own money-weighted period, sourcing opening/closing values from saved snapshots near each Jan 1 (±21 days, price-bearing snapshots only); years without a nearby snapshot honestly read "insufficient data" rather than showing a fabricated number, so coverage improves as snapshots accumulate.
+- New pure module `services/returns-core.js` (`buildCashFlows`, `xirr`/`xnpv`, `computeYearlyIncome`, `computeYearlyXirr`) — no DOM/state/network, tests import it directly (same pattern as `pricing-core.js` / `import-brokers.js`, no `src/` mirror). +23 tests (830 total).
+
 ### v3.36.0
 - **Asset-type taxonomy unified ("Stock" vs "Shares" were the same thing)** — the AI ISIN-resolver returns free-text types ("Shares", "Shares (REIT)") that were stored raw, while manual/default paths used the canonical "Stock" — so the allocation chart split one asset class into synonym buckets. `normalizeAssetType()` (which already knew `shares → Stock`) is now applied at **every** ingest point (AI resolution, ISIN mapping persistence, ledger rebuild, asset upserts), at **load** (positions + asset DB — existing rows self-heal in the DB on the next natural save), and at **chart aggregation** as defense-in-depth. New aliases: `Shares (REIT) → REIT`. Your chart will show one "Stock" bucket and a proper "REIT" bucket after the next load.
 
