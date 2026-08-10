@@ -2665,6 +2665,20 @@ body > #appNavbar + * {
 .pos-card.wine:hover   { border-left-color: var(--wine); }
 .position:hover        { border-left-color: var(--gold); }
 
+/* Middle column MUST be allowed to shrink below its no-wrap content, otherwise
+   the long instrument name pushes the right-hand value/% column off the screen
+   edge on narrow (mobile) viewports — the grid `1fr` track defaults to
+   min-width:auto and refuses to shrink. (iphone-14-pro overflow fix) */
+.pos-main { min-width: 0; }
+
+/* Right-hand value column keeps its content together and never gets squeezed. */
+.pos-right { min-width: 0; flex-shrink: 0; }
+.pos-right .pos-value,
+.pos-right .pos-change { white-space: nowrap; }
+
+/* Action buttons wrap instead of forcing horizontal overflow on tight cards. */
+.pos-main .position-actions { flex-wrap: wrap; }
+
 /* DS: .pos-icon → existing: .pos-icon-badge */
 .pos-icon,
 .pos-icon-badge {

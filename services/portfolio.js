@@ -345,7 +345,7 @@ export function renderPortfolio(opts = {}) {
         <div class="pos-wrap">
         <div class="pos-card ${assetTypeClass}${isActive ? '' : ' inactive'}" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
             <div class="pos-icon ${assetTypeClass}">${tickerBadge}</div>
-            <div>
+            <div class="pos-main">
                 <div class="pos-name">
                     <span class="pos-status-dot" style="color:${statusColor}" title="${escapeHTML(statusText)}">${statusFlag}</span>
                     ${displayName}
