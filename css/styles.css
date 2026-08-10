@@ -302,19 +302,6 @@ body {
 }
 .position.inactive:hover { opacity: 0.7; }
 
-/* Middle column */
-.pos-card-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-}
-.pos-card-body .position-actions {
-    display: flex;
-    gap: 4px;
-    margin-top: 6px;
-}
-
 /* Status dot inline with name */
 .pos-status-dot {
     font-size: 11px;
@@ -1778,7 +1765,7 @@ body > #appNavbar + * {
     bottom: 0; left: 0; right: 0;
     background: var(--ink-2);
     border-top: 1px solid var(--border);
-    padding: 10px 0 env(safe-area-inset-bottom, 10px);
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
     z-index: 90;
     justify-content: space-around;
 }
@@ -1805,7 +1792,7 @@ body > #appNavbar + * {
 
 @media (max-width: 640px) {
     .bottom-tab-nav { display: flex; }
-    .container { padding-bottom: 68px; } /* clearance for fixed bottom nav */
+    .container { padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px)); } /* clearance for fixed bottom nav */
 }
 
 
@@ -2447,7 +2434,7 @@ body > #appNavbar + * {
     bottom: 0; left: 0; right: 0;
     background: var(--ink-2);
     border-top: 1px solid var(--border);
-    padding: 10px 0 env(safe-area-inset-bottom, 10px);
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
     z-index: 90;
     justify-content: space-around;
 }
@@ -2638,7 +2625,7 @@ body > #appNavbar + * {
     border-radius: var(--r-lg);
     padding: 12px 14px;
     display: grid;
-    grid-template-columns: 40px 1fr auto;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
     gap: 10px;
     align-items: start;
     transition: border-color 0.15s;
@@ -2665,19 +2652,31 @@ body > #appNavbar + * {
 .pos-card.wine:hover   { border-left-color: var(--wine); }
 .position:hover        { border-left-color: var(--gold); }
 
-/* Middle column MUST be allowed to shrink below its no-wrap content, otherwise
-   the long instrument name pushes the right-hand value/% column off the screen
-   edge on narrow (mobile) viewports — the grid `1fr` track defaults to
-   min-width:auto and refuses to shrink. (iphone-14-pro overflow fix) */
-.pos-main { min-width: 0; }
+/* Card layout is stated on the tracks, not patched onto the items:
+   `minmax(0, 1fr)` is what lets the middle column shrink below its no-wrap
+   content. Without it that track keeps min-width:auto, so a long instrument
+   name shoves the value column off the right screen edge on a phone. */
+.pos-icon         { grid-column: 1; grid-row: 1 / span 2; }
+.pos-main         { grid-column: 2; grid-row: 1; min-width: 0; }
+.pos-right        { grid-column: 3; grid-row: 1; }
+.position-actions { grid-column: 2 / -1; grid-row: 2; }
 
-/* Right-hand value column keeps its content together and never gets squeezed. */
-.pos-right { min-width: 0; flex-shrink: 0; }
 .pos-right .pos-value,
 .pos-right .pos-change { white-space: nowrap; }
 
-/* Action buttons wrap instead of forcing horizontal overflow on tight cards. */
-.pos-main .position-actions { flex-wrap: wrap; }
+/* Phones: three columns leave the name ~70px ("Vanguar…" — unusable when many
+   holdings share a prefix). Drop to two columns and give the name the full
+   width, with value and actions on their own rows underneath. */
+@media (max-width: 480px) {
+    .pos-card {
+        grid-template-columns: 40px minmax(0, 1fr);
+        row-gap: 6px;
+    }
+    .pos-icon         { grid-row: 1; }
+    .pos-right        { grid-column: 2; grid-row: 2; text-align: left; }
+    .position-actions { grid-column: 1 / -1; grid-row: 3; flex-wrap: nowrap; }
+    .pos-name         { white-space: normal; overflow-wrap: anywhere; }
+}
 
 /* DS: .pos-icon → existing: .pos-icon-badge */
 .pos-icon,

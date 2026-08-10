@@ -369,13 +369,13 @@ export function renderPortfolio(opts = {}) {
                 })()}
                 ${(pos.dividends > 0) ? `<div class="pos-sub" style="color: var(--up);">\uD83D\uDCB0 ${formatCurrency(pos.dividends - (pos.taxWithheld || 0), currency)} income${(pos.avgPrice > 0 && pos.shares > 0) ? ` \u00B7 ${formatPercent((pos.dividends - (pos.taxWithheld || 0)) / (pos.avgPrice * pos.shares) * 100)} yld/cost` : ''}</div>` : ''}
                 ${platformBadge}
-                <div class="position-actions">${actionButtons}</div>
             </div>
             <div class="pos-right">
                 <div class="pos-value">${isActive ? formatCurrency(marketValue, currency) : '\u2014'}</div>
                 ${isActive ? `<div class="pos-change ${pnlClass}">${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss, currency)} (${formatPercent(gainLossPct)})</div>` : ''}
                 ${priceSub ? `<div class="pos-sub">${priceSub}</div>` : ''}
             </div>
+            <div class="position-actions">${actionButtons}</div>
         </div>
         ${txPanel}
         </div>
@@ -2423,10 +2423,10 @@ export function updateHistoryDisplay() {
                                     <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" class="btn-icon-hover-danger">\u{1F5D1}\u{FE0F}</button>
                                 </div>
                             </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; font-size: 13px;">
                                 <div><div style="color: var(--text-secondary); font-size: 11px;">Invested${snapshot.baseCurrency ? ' (' + snapshot.baseCurrency + ')' : ''}</div><div style="color: var(--text-primary);">${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}</div></div>
                                 <div><div style="color: var(--text-secondary); font-size: 11px;">Market Value</div><div style="color: var(--text-primary);">${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}</div></div>
-                                <div><div style="color: var(--text-secondary); font-size: 11px;">Gain/Loss</div><div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss, snapshot.baseCurrency)} (${formatPercent(gainLossPct)})</div></div>
+                                <div><div style="color: var(--text-secondary); font-size: 11px;">Gain/Loss</div><div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss, snapshot.baseCurrency)}<br><span style="font-weight: normal;">(${formatPercent(gainLossPct)})</span></div></div>
                             </div>
                         </div>
                     `;
@@ -2448,24 +2448,38 @@ function updateChart() {
         const chartDiv = document.getElementById('historyChart');
         if (!chartDiv) return;
 
-        const allValues = state.portfolioHistory.flatMap(s => [s.totalInvested, s.totalMarketValue]);
-        const minValue = Math.min(...allValues) * 0.95;
-        const maxValue = Math.max(...allValues) * 1.05;
-        const range = maxValue - minValue;
+        // Only the most recent snapshots are plotted: at 40px per column a long
+        // history renders as dozens of unreadable slivers, and (before the
+        // .table-scroll wrapper below) made the whole *document* wider than the
+        // viewport, which on iOS drags the sticky navbar out of view with it.
+        const MAX_BARS = 30;
+        const series = state.portfolioHistory.slice(-MAX_BARS);
+        const omitted = state.portfolioHistory.length - series.length;
+
+        const allValues = series.flatMap(s => [s.totalInvested, s.totalMarketValue]);
+        // Baseline at zero: bar height must be proportional to value. The old
+        // `min * 0.95` baseline made every bar at the low end of the range
+        // collapse to a ~0px stub while carrying most of the actual value.
+        const peak = Math.max(...allValues, 0);
+        const range = peak > 0 ? peak * 1.05 : 1;   // never divide by zero
+        const barHeight = v => Math.max(0, Math.min(180, (v / range) * 180));
 
         let chartHTML = '<div style="background: var(--surface-2); padding: 20px; border-radius: 10px;">';
-        chartHTML += '<div style="display: flex; justify-content: space-around; gap: 8px; align-items: flex-end; height: 200px;">';
+        // .table-scroll keeps a long history inside its own scroll region
+        // instead of widening the page (css/styles.css — overflow-x:auto).
+        chartHTML += '<div class="table-scroll">';
+        chartHTML += '<div style="display: flex; justify-content: space-around; gap: 8px; align-items: flex-end; height: 200px; width: max-content; min-width: 100%;">';
 
-        state.portfolioHistory.forEach((snapshot) => {
+        series.forEach((snapshot) => {
             const date = new Date(snapshot.timestamp);
             const label = `${date.getMonth() + 1}/${date.getDate()}`;
-            const marketHeight = ((snapshot.totalMarketValue - minValue) / range) * 180;
-            const investedHeight = ((snapshot.totalInvested - minValue) / range) * 180;
+            const marketHeight = barHeight(snapshot.totalMarketValue);
+            const investedHeight = barHeight(snapshot.totalInvested);
             const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
             const color = gainLoss >= 0 ? 'var(--up)' : 'var(--down)';
 
             chartHTML += `
-                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 40px;">
+                <div style="flex: 0 0 40px; display: flex; flex-direction: column; align-items: center;">
                     <div style="position: relative; width: 100%; height: 180px; display: flex; align-items: flex-end; justify-content: center; gap: 2px;">
                         <div style="width: 45%; background: var(--gold); height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}"></div>
                         <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0;" title="Market: ${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}"></div>
@@ -2475,12 +2489,19 @@ function updateChart() {
             `;
         });
 
-        chartHTML += '</div>';
+        chartHTML += '</div>';   // bar row
+        chartHTML += '</div>';   // .table-scroll
+        if (omitted > 0) {
+            chartHTML += `<div style="font-size: 11px; color: var(--text-tertiary); margin-top: 8px; text-align: center;">showing last ${series.length} of ${state.portfolioHistory.length} snapshots</div>`;
+        }
+        // flex-wrap lets the legend break between items; nowrap on the labels
+        // stops "Market Value (Profit)" from breaking *within* a word into a
+        // three-line stack when the row is narrower than the three items.
         chartHTML += `
-            <div style="display: flex; justify-content: center; gap: 20px; margin-top: 15px; font-size: 12px;">
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--gold); border-radius: 2px;"></div><span style="color: var(--text-primary);">Invested</span></div>
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--up); border-radius: 2px;"></div><span style="color: var(--text-primary);">Market Value (Profit)</span></div>
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--down); border-radius: 2px;"></div><span style="color: var(--text-primary);">Market Value (Loss)</span></div>
+            <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin-top: 15px; font-size: 12px;">
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--gold); border-radius: 2px; flex-shrink: 0;"></div><span style="color: var(--text-primary); white-space: nowrap;">Invested</span></div>
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--up); border-radius: 2px; flex-shrink: 0;"></div><span style="color: var(--text-primary); white-space: nowrap;">Market (profit)</span></div>
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--down); border-radius: 2px; flex-shrink: 0;"></div><span style="color: var(--text-primary); white-space: nowrap;">Market (loss)</span></div>
             </div>
         `;
         chartHTML += '</div>';
