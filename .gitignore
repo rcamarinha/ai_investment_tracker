@@ -3,3 +3,9 @@ node_modules/
 
 # Supabase CLI local state (created by supabase link / functions deploy)
 supabase/.temp/
+
+# Throwaway UI/layout audit harnesses. The app has no build step, so measuring
+# real layout means dropping a copy of a page next to it and serving it over
+# HTTP — these are scratch files and must never ship (a stray copy of a page
+# here would be served publicly).
+__audit_*.html
