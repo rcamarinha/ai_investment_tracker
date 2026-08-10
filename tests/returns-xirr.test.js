@@ -93,6 +93,17 @@ describe('buildCashFlows — ledger → dated base-currency flows', () => {
     );
     expect(flows).toEqual([]);
   });
+
+  it('isin_change produces no cash flow (like split)', () => {
+    const txs = {
+      OLD: [{ type: 'isin_change', date: '2023-01-15', totalAmount: 1000 }],
+      NEW: [{ type: 'buy', date: '2023-02-01', totalAmount: 500, fee: 0 }],
+    };
+    const flows = buildCashFlows(txs, { rateFor: rateOne, currencyFor: noCurrency });
+    expect(flows.some(f => f.type === 'isin_change')).toBe(false);
+    expect(flows).toHaveLength(1);
+    expect(flows[0].type).toBe('buy');
+  });
 });
 
 describe('computeYearlyXirr — per-calendar-year money-weighted return', () => {
@@ -167,6 +178,32 @@ describe('computeYearlyXirr — per-calendar-year money-weighted return', () => 
 
   it('returns [] when the ledger has no dated flows', () => {
     expect(computeYearlyXirr({}, { rateFor: rateOne, currencyFor: noCurrency, currentValue: 0 })).toEqual([]);
+  });
+
+  it('non-first fully-past year with both boundaries computes a defined rate', () => {
+    // 2022 is a fully-past year that is not the first activity year (2021).
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2021-06-01', totalAmount: 1000, fee: 0 },
+        { type: 'buy', date: '2022-06-01', totalAmount: 500, fee: 0 },
+      ],
+    };
+    const rows = computeYearlyXirr(txs, {
+      rateFor: rateOne, currencyFor: noCurrency,
+      boundaryValueFor: d => {
+        if (d <= '2021-06-01') return 0;
+        if (d === '2022-01-01') return 1100;
+        if (d === '2023-01-01') return 1700;
+        return null;
+      },
+      currentValue: 2000,
+      today: '2023-09-01',
+    });
+    const y2022 = rows.find(r => r.year === '2022');
+    expect(y2022).toBeDefined();
+    expect(y2022.insufficient).toBe(false);
+    expect(y2022.rate).not.toBeNull();
+    expect(typeof y2022.rate).toBe('number');
   });
 });
 
@@ -248,6 +285,34 @@ describe('computeYearlyIncome — dividend income & yield-on-cost by calendar ye
     expect(totals.fees).toBe(14);
   });
 
+  it('sell without realizedGainLoss uses proceeds as cost basis', () => {
+    // When realizedGainLoss is absent, cost = proceeds (no gain known), so delta = -proceeds * rate.
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2022-01-01', totalAmount: 1000, fee: 0 },
+        { type: 'sell', date: '2022-06-01', totalAmount: 800 }, // no realizedGainLoss
+        { type: 'dividend', date: '2022-09-01', totalAmount: 30, tax: 0 },
+      ],
+    };
+    const { years } = computeYearlyIncome(txs, deps);
+    const y22 = years[0];
+    // investedEnd = 1000 - 800 (proceeds used as cost basis) = 200
+    expect(y22.investedEnd).toBe(200);
+    expect(y22.yieldOnCost).not.toBeNull();
+  });
+
+  it('fee on sell goes to the fees bucket for that year', () => {
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2022-01-01', totalAmount: 1000, fee: 0 },
+        { type: 'sell', date: '2022-08-01', totalAmount: 600, realizedGainLoss: 0, fee: 7 },
+      ],
+    };
+    const { years } = computeYearlyIncome(txs, deps);
+    const y22 = years[0];
+    expect(y22.fees).toBe(7);
+  });
+
   it('applies the injected FX rate and ignores malformed dates', () => {
     const txs = {
       MSFT: [
@@ -262,6 +327,18 @@ describe('computeYearlyIncome — dividend income & yield-on-cost by calendar ye
 });
 
 describe('summarizeCashFlows', () => {
+  it('returns all-zero totals and null firstDate for empty or null input', () => {
+    const empty = summarizeCashFlows([]);
+    expect(empty.capitalIn).toBe(0);
+    expect(empty.cashReturned).toBe(0);
+    expect(empty.firstDate).toBeNull();
+    expect(empty.count).toBe(0);
+
+    const nullInput = summarizeCashFlows(null);
+    expect(nullInput.capitalIn).toBe(0);
+    expect(nullInput.firstDate).toBeNull();
+  });
+
   it('splits deployed vs returned cash and finds the earliest date', () => {
     const s = summarizeCashFlows([
       { date: '2021-06-01', amount: -500 },
