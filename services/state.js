@@ -9,6 +9,12 @@ const state = {
     portfolio: [],
     marketPrices: {},
     priceMetadata: {},
+    priceCurrency: {},         // {symbol: 'GBP'} — currency the LIVE QUOTE is in.
+                               // Kept separate from assets.currency because a
+                               // learned pricingTicker may be a US ADR, so the
+                               // quote's currency belongs to the price, not the
+                               // asset (writing it back would corrupt the EU
+                               // listing's own currency).
     pricesLoading: false,
     alphaVantageKey: '',
     finnhubKey: '',

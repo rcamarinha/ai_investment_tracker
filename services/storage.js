@@ -8,6 +8,7 @@ import { updateAuthBar, checkUserRole, cancelPasswordRecovery } from './auth.js'
 import { renderPortfolio, updateHistoryDisplay, saveTransactionsToStorage } from './portfolio.js';
 import { fetchAssetProfile, backfillFxRates } from './pricing.js';
 import { coerceTxDate } from './import-brokers.js';
+import { normalizeCurrencyCode, shouldOverwriteCurrency } from './money-core.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
 
@@ -203,6 +204,9 @@ export async function loadAppConfig() {
 
 // ── Asset DB Operations ─────────────────────────────────────────────────────
 
+// Set once if the DB predates migration 20260811 (assets.currency_source).
+let _currencySourceUnsupported = false;
+
 export async function saveAssetsToDB(assets) {
     if (!state.supabaseClient) return;
 
@@ -214,10 +218,26 @@ export async function saveAssetsToDB(assets) {
                 name: asset.name,
                 stock_exchange: asset.stock_exchange,
                 sector: asset.sector,
-                currency: asset.currency,
                 asset_type: asset.asset_type,
                 updated_at: new Date().toISOString()
             };
+            // Currency is written ONLY when the incoming value is at least as
+            // trustworthy as what's stored. buildAssetRecord() infers a currency
+            // from the ticker suffix and runs for every position on every price
+            // refresh, so an unconditional write clobbered the provider-reported
+            // currency that enrichment had just saved — assets.currency
+            // oscillated between the real value and the guess.
+            if (asset.currency) {
+                const stored = state.assetDatabase[asset.ticker] || {};
+                const incomingSource = asset.currency_source || 'profile';
+                if (!stored.currency || shouldOverwriteCurrency(incomingSource, stored.currency_source || 'suffix')) {
+                    const norm = normalizeCurrencyCode(asset.currency);
+                    if (norm) {
+                        upsertData.currency = norm.iso;
+                        upsertData.currency_source = incomingSource;
+                    }
+                }
+            }
             // Include ISIN if available (for ISIN→ticker lookup on future imports)
             if (asset.isin) upsertData.isin = asset.isin;
             // Provenance of the ISIN→ticker mapping ('user' = manually entered)
@@ -227,9 +247,24 @@ export async function saveAssetsToDB(assets) {
             // "Kept at cost" flag — always written (incl. false) so re-enabling sticks
             if (typeof asset.untracked === 'boolean') upsertData.untracked = asset.untracked;
 
-            const { error } = await state.supabaseClient
+            // currency_source arrives with migration 20260811. If that migration
+            // hasn't been applied yet, drop the column and retry rather than
+            // failing every asset write (which would break sector/name saving
+            // too). Detected once per session, not per row.
+            if (_currencySourceUnsupported) delete upsertData.currency_source;
+
+            let { error } = await state.supabaseClient
                 .from('assets')
                 .upsert(upsertData, { onConflict: 'ticker' });
+
+            if (error && /currency_source/.test(error.message || '')) {
+                console.warn('assets.currency_source column missing — run migration 20260811_assets_currency_source.sql. Falling back for this session.');
+                _currencySourceUnsupported = true;
+                delete upsertData.currency_source;
+                ({ error } = await state.supabaseClient
+                    .from('assets')
+                    .upsert(upsertData, { onConflict: 'ticker' }));
+            }
 
             if (error) {
                 console.warn(`Failed to upsert asset ${asset.ticker}:`, error.message);
@@ -258,12 +293,17 @@ export async function loadAssetsFromDB() {
         if (data && data.length > 0) {
             data.forEach(a => {
                 if (!a.ticker) return; // skip rows with missing ticker
+                // Self-heal legacy rows: a stored "GBp"/"GBX" is pence and must
+                // present as GBP everywhere above this line (the cache is not a
+                // record, so normalizing on read is safe and needs no migration).
+                const normCur = normalizeCurrencyCode(a.currency);
                 state.assetDatabase[a.ticker.toUpperCase()] = {
                     name: a.name,
                     ticker: a.ticker,
                     stockExchange: a.stock_exchange,
                     sector: a.sector,
-                    currency: a.currency,
+                    currency: normCur ? normCur.iso : null,
+                    currency_source: a.currency_source || (a.currency ? 'profile' : null),
                     assetType: normalizeAssetType(a.asset_type),
                     isin: a.isin || null,
                     source: a.source || null,

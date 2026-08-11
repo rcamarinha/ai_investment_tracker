@@ -15,6 +15,7 @@ import {
     savePriceHistoryToDB, enrichUnknownAssets
 } from './storage.js';
 import { analyzeMovers } from './analysis.js';
+import { normalizeQuote, normalizeCurrencyCode } from './money-core.js';
 // Pure exchange-suffix / batch-parse / freshness helpers — shared with the test
 // mirror (src/portfolio.js) so the shipped code is what the tests exercise.
 import {
@@ -424,7 +425,18 @@ export async function fetchStockPrice(symbol) {
         const q = await fetchQuoteViaProxy(pricingSymbol);
         if (q && q.price > 0) {
             console.log(`✓ ${symbol}: ${q.price} ${q.currency || ''} (EU proxy, ${q.exchange || 'Yahoo'})`);
-            return { price: q.price, source: `Yahoo (EU proxy${q.exchange ? `: ${q.exchange}` : ''})`, tier: 4, success: true };
+            // Yahoo reports "GBp" for London listings — normalizeQuote folds
+            // pence to pounds here, at the boundary, so nothing above this line
+            // ever sees a minor-unit code. This is the only tier that reports a
+            // currency at all, so it is the only one we can trust for one.
+            const norm = normalizeQuote({ price: q.price, currency: q.currency });
+            return {
+                price: norm ? norm.price : q.price,
+                currency: norm ? norm.currency : null,
+                currencySource: norm ? 'quote' : null,
+                source: `Yahoo (EU proxy${q.exchange ? `: ${q.exchange}` : ''})`,
+                tier: 4, success: true
+            };
         }
         reasons.push('EU proxy (Yahoo): no data');
     } catch (err) {
@@ -621,9 +633,27 @@ export async function fetchMarketPrices(opts = {}) {
     // freshness cache skipped. Used to avoid snapshotting/re-saving on a run that
     // fetched nothing (e.g. a 2nd "Update Prices" click within the 15-min window).
     const refreshedThisRun = new Set();
-    const recordSuccess = (sym, price, source) => {
+    /**
+     * @param {Object} opts
+     *   currency  - currency the quote is denominated in, when the tier reported
+     *               one (only the tier-4 proxy does). Wins outright.
+     *   pricedAs  - the ticker actually queried. When it differs from `sym` the
+     *               quote may be a US ADR for a European listing (the AI
+     *               resolver is explicitly told to "prefer a US-listed ADR"), so
+     *               its currency is NOT the asset's currency and we must not
+     *               guess — mark unknown and let the UI flag it.
+     */
+    const recordSuccess = (sym, price, source, opts = {}) => {
         state.marketPrices[sym] = price;
         state.priceMetadata[sym] = { timestamp: new Date().toISOString(), source, success: true };
+        const differentTicker = opts.pricedAs && String(opts.pricedAs).toUpperCase() !== String(sym).toUpperCase();
+        if (opts.currency) {
+            state.priceCurrency[sym] = opts.currency;          // known
+        } else if (differentTicker || opts.currencyUnknown) {
+            state.priceCurrency[sym] = null;                   // explicitly unknown
+        } else {
+            delete state.priceCurrency[sym];                   // infer from the asset
+        }
         refreshedThisRun.add(sym);
     };
 
@@ -640,7 +670,7 @@ export async function fetchMarketPrices(opts = {}) {
             const priced = await batchFetchFMP([...new Set(toFetch.map(queryOf))]);
             for (const sym of toFetch) {
                 const price = priced[queryOf(sym).toUpperCase()];
-                if (price > 0) recordSuccess(sym, price, 'Financial Modeling Prep (batch)');
+                if (price > 0) recordSuccess(sym, price, 'Financial Modeling Prep (batch)', { pricedAs: queryOf(sym) });
             }
             // Only drop symbols Phase A actually priced THIS run. Filtering on
             // priceMetadata.success here reused the stale success:true left by
@@ -660,7 +690,10 @@ export async function fetchMarketPrices(opts = {}) {
                     // true misses go to the AI resolver (Phase C), not a costly FMP fan-out.
                     const result = await fetchStockPrice(queryOf(symbol));
                     if (result.success) {
-                        recordSuccess(symbol, result.price, result.source + (result.alternativeSymbol ? ` (as ${result.alternativeSymbol})` : ''));
+                        recordSuccess(symbol, result.price, result.source + (result.alternativeSymbol ? ` (as ${result.alternativeSymbol})` : ''), {
+                            currency: result.currency,
+                            pricedAs: result.alternativeSymbol || queryOf(symbol)
+                        });
                     } else {
                         state.priceMetadata[symbol] = { timestamp: new Date().toISOString(), source: result.source, success: false, error: result.error };
                     }
@@ -697,9 +730,11 @@ export async function fetchMarketPrices(opts = {}) {
                         const r = await fetchStockPrice(s.ticker);
                         if (r.success) { price = r.price; source = `${r.source} (AI: ${s.ticker})`; }
                     }
-                    if (price > 0) { recordSuccess(sym, price, source); await persistPricingTicker(sym, s.ticker); return; }
+                    if (price > 0) { recordSuccess(sym, price, source, { pricedAs: s.ticker }); await persistPricingTicker(sym, s.ticker); return; }
                 }
-                if (Number(s.price) > 0) recordSuccess(sym, Number(s.price), 'Web search (AI)');
+                // A grounded AI price arrives with no currency field at all
+                // (see resolve-tickers/index.ts), so it cannot be converted safely.
+                if (Number(s.price) > 0) recordSuccess(sym, Number(s.price), 'Web search (AI)', { currencyUnknown: true });
             }, state.finnhubKey ? 3 : 2, 300);
             renderPortfolio();
         }
@@ -899,11 +934,18 @@ export async function fetchExchangeRates() {
 
 /**
  * Get the exchange rate for a specific currency to base currency.
- * Returns 1 if same as base or rate unknown.
+ * Returns null when the currency is unknown or no rate is available — a
+ * rate of 1 for an unknown currency silently reports foreign money as base
+ * money. Callers must exclude the amount rather than substitute it.
  */
 export function getExchangeRate(fromCurrency) {
-    if (!fromCurrency || fromCurrency === state.baseCurrency) return 1;
-    return state.exchangeRates[fromCurrency] || 1;
+    const norm = normalizeCurrencyCode(fromCurrency);
+    if (!norm) return null;
+    const base = state.baseCurrency || 'EUR';
+    if (norm.iso === base) return norm.factor;
+    const rate = Number(state.exchangeRates[norm.iso]);
+    if (!Number.isFinite(rate) || rate <= 0) return null;
+    return rate * norm.factor;
 }
 
 // ── Historical FX (trade-date rates) ─────────────────────────────────────────

@@ -5,6 +5,8 @@
  * that could silently drift).
  */
 
+import { normalizeCurrencyCode } from './money-core.js';
+
 // Exchange-suffix normalization. Many stored tickers use Finnhub's `search`
 // suffix format (.FRK/.AMS) which the price endpoints don't recognize; map them
 // to the FMP/Yahoo format (.DE/.AS). Already-valid suffixes pass through.
@@ -141,11 +143,13 @@ export function extractLlmJsonArray(text) {
  * @returns {Object|null} { BASE: rate|null } or null if currency is unusable
  */
 export function deriveFxToBases(eurTable, currency, bases = ['EUR', 'USD']) {
-    let cur = String(currency || '').toUpperCase();
-    if (!cur) return null;
-    // London quotes pence (GBX/GBp): 1 GBX = 0.01 GBP. ECB only carries GBP.
-    let subunit = 1;
-    if (cur === 'GBX' || cur === 'GBP.') { cur = 'GBP'; subunit = 0.01; }
+    // Normalize BEFORE any case folding: providers send the literal "GBp",
+    // and uppercasing it first turns pence into pounds at subunit 1 (a silent
+    // 100x). normalizeCurrencyCode owns the minor-unit table.
+    const norm = normalizeCurrencyCode(currency);
+    if (!norm) return null;
+    const cur = norm.iso;
+    const subunit = norm.factor;
     const table = eurTable || {};
     // 1 EUR = eurToCur units of the tx currency (identity for EUR itself)
     const eurToCur = cur === 'EUR' ? 1 : Number(table[cur]);

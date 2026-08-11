@@ -43,7 +43,26 @@ function txRateToBase(tx, fallbackCurrency) {
     const hist = tx.fxRates ? Number(tx.fxRates[base]) : NaN;
     if (Number.isFinite(hist) && hist > 0) return hist;
     state._fxFallbackCount = (state._fxFallbackCount || 0) + 1;
-    return getExchangeRate(tx.currency || fallbackCurrency);
+    return getExchangeRate(tx.currency || fallbackCurrency);   // may be null
+}
+
+/**
+ * The currency a holding's LIVE QUOTE is denominated in.
+ *
+ * Distinct from the asset's own currency on purpose: the ticker resolver is
+ * instructed to prefer a US-listed ADR when one exists, so a Paris listing can
+ * be priced from a USD quote. state.priceCurrency records what the quote tier
+ * actually reported:
+ *   - a string  → known (tier-4 proxy reports it; pence already folded)
+ *   - null      → explicitly unknown (priced under a different ticker, or an
+ *                 AI web-search price that carries no currency at all)
+ *   - absent    → nothing special happened; the asset's own currency applies
+ */
+function quoteCurrencyOf(symbol, assetCurrency) {
+    if (Object.prototype.hasOwnProperty.call(state.priceCurrency || {}, symbol)) {
+        return state.priceCurrency[symbol];      // string or null
+    }
+    return assetCurrency;
 }
 
 /**
@@ -57,9 +76,16 @@ function computeInvestedBase(p, txs, currency) {
     const investedNative = p.shares * p.avgPrice;
     if (!txs || txs.length === 0) return toBaseCurrency(investedNative, currency);
     let investedBase = 0;
+    let unconvertible = false;
     txs.forEach(tx => {
-        if (tx.type === 'buy') investedBase += (Number(tx.totalAmount) || 0) * txRateToBase(tx, currency);
+        if (tx.type !== 'buy') return;
+        const rate = txRateToBase(tx, currency);
+        // No rate for this trade's currency: the position's cost basis cannot be
+        // stated in base. Bail out rather than under-counting by skipping a leg.
+        if (rate == null) { unconvertible = true; return; }
+        investedBase += (Number(tx.totalAmount) || 0) * rate;
     });
+    if (unconvertible) return null;
     const totalBuyCostNative = txs.filter(t => t.type === 'buy')
         .reduce((s, t) => s + (t.totalAmount || t.shares * t.price), 0);
     const remainingRatio = totalBuyCostNative > 0
@@ -89,22 +115,43 @@ export function renderPortfolio(opts = {}) {
     let totalMarketValueBase = 0;
     let positionsWithPrices = 0;
 
+    // Holdings we cannot value in the base currency. They are EXCLUDED from
+    // every total rather than being converted at a guessed rate — an amount
+    // that can't be converted is never converted silently.
+    const excluded = [];
+
     filteredActivePositions.forEach(p => {
         const currency = getAssetCurrency(p.symbol);
         const investedNative = p.shares * p.avgPrice;
 
         // Invested: trade-date FX via the shared helper (falls back to live rates)
-        totalInvestedBase += computeInvestedBase(p, state.transactions[p.symbol], currency);
+        const investedBase = computeInvestedBase(p, state.transactions[p.symbol], currency);
 
-        // Market value in base currency: always use current exchange rate
+        // Market value: the QUOTE's currency, which is not always the asset's
+        // (a learned pricingTicker may be a US ADR for a European listing).
         const currentPrice = state.marketPrices[p.symbol];
-        if (currentPrice) {
-            totalMarketValueBase += toBaseCurrency(p.shares * currentPrice, currency);
-            positionsWithPrices++;
-        } else {
-            totalMarketValueBase += toBaseCurrency(investedNative, currency);
+        const quoteCurrency = quoteCurrencyOf(p.symbol, currency);
+        const marketBase = currentPrice
+            ? toBaseCurrency(p.shares * currentPrice, quoteCurrency)
+            : toBaseCurrency(investedNative, currency);
+
+        if (investedBase == null || marketBase == null) {
+            excluded.push({
+                symbol: p.symbol,
+                reason: (currentPrice && quoteCurrency == null) ? 'quote currency unknown'
+                    : currency == null ? 'currency unknown' : 'no exchange rate',
+            });
+            return;   // contributes 0 to both totals
         }
+
+        totalInvestedBase += investedBase;
+        totalMarketValueBase += marketBase;
+        if (currentPrice) positionsWithPrices++;
     });
+    state.excludedPositions = excluded;
+    if (excluded.length > 0) {
+        console.warn(`⚠ ${excluded.length} holding(s) excluded from totals:`, excluded);
+    }
     if (state._fxFallbackCount > 0) {
         console.log(`ℹ ${state._fxFallbackCount} transaction(s) converted at LIVE rates (trade-date FX not backfilled yet)`);
     }
@@ -164,6 +211,12 @@ export function renderPortfolio(opts = {}) {
                 </div>
             ` : ''}
             ${incomeFeesRow}
+            ${excluded.length > 0 ? `
+                <div style="color: var(--gold); font-size: 11px; margin-top: 6px;"
+                     title="${escapeHTML(excluded.map(e => `${e.symbol} (${e.reason})`).join(', '))}">
+                    ⚠ Excludes ${excluded.length} holding${excluded.length !== 1 ? 's' : ''} — currency unknown
+                </div>
+            ` : ''}
         </div>
         </div>
     `;
@@ -194,7 +247,9 @@ export function renderPortfolio(opts = {}) {
     const baseValOf = p => {
         const c = state.marketPrices[p.symbol];
         const mv = c !== undefined ? p.shares * c : p.shares * p.avgPrice;
-        return toBaseCurrency(mv, getAssetCurrency(p.symbol));
+        const cur = quoteCurrencyOf(p.symbol, getAssetCurrency(p.symbol));
+        const v = toBaseCurrency(mv, cur);
+        return v == null ? -Infinity : v;   // unvaluable holdings sort last
     };
     const gainPctOf = p => {
         const inv = p.shares * p.avgPrice;
@@ -227,9 +282,14 @@ export function renderPortfolio(opts = {}) {
         const marketValue = hasPrice ? pos.shares * currentPrice : invested; // native currency
         const gainLoss = marketValue - invested; // native currency P&L
         const gainLossPct = invested > 0 ? (gainLoss / invested) * 100 : 0;
-        // Weight uses base currency conversion
-        const marketValueBase = toBaseCurrency(marketValue, currency);
-        const weight = totalMarketValueBase > 0 ? (marketValueBase / totalMarketValueBase) * 100 : 0;
+        // Weight uses base currency conversion. When the holding can't be
+        // converted it has no meaningful weight — show none rather than a
+        // number derived from a guessed rate.
+        const quoteCurrency = quoteCurrencyOf(pos.symbol, currency);
+        const marketValueBase = toBaseCurrency(marketValue, hasPrice ? quoteCurrency : currency);
+        const isUnvaluable = marketValueBase == null;
+        const weight = (!isUnvaluable && totalMarketValueBase > 0)
+            ? (marketValueBase / totalMarketValueBase) * 100 : null;
         const pnlClass = gainLoss >= 0 ? 'up' : 'down';
 
         // Price metadata
@@ -278,8 +338,13 @@ export function renderPortfolio(opts = {}) {
         const positionSub = isActive
             ? `${pos.shares} shs \u00B7 avg ${formatCurrency(pos.avgPrice, currency)}`
             : 'Closed';
+        // The live price is shown in the QUOTE's currency (which may differ from
+        // the asset's when priced via an ADR), and the weight is omitted when
+        // the holding can't be converted into the base currency.
         const priceSub = isActive
-            ? (hasPrice ? `${formatCurrency(currentPrice, currency)} \u00B7 ${weight.toFixed(1)}%` : '\u23F3 Pending')
+            ? (hasPrice
+                ? `${formatCurrency(currentPrice, quoteCurrency || currency)}${weight != null ? ` \u00B7 ${weight.toFixed(1)}%` : ''}`
+                : '\u23F3 Pending')
             : '';
         const platformBadge = (pos.platform && pos.platform !== 'Unknown')
             ? `<span class="pos-platform">${escapeHTML(pos.platform)}</span>`
@@ -359,6 +424,11 @@ export function renderPortfolio(opts = {}) {
                         : (isActive && !hasPrice
                             ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="No live price \u2014 click to find the right ticker (search by name, enter one, or keep at cost)." onclick="resolveCardTicker('${escapedSymbol}')">\u26A0 no live price \u00B7 <u>resolve ticker</u></div>`
                             : ''))}
+                ${(isActive && isUnvaluable)
+                    ? `<div class="pos-sub" style="color: var(--gold);" title="${quoteCurrency == null && hasPrice
+                        ? 'This holding is priced under a different ticker (possibly a US ADR), so the quote currency is unknown. It is excluded from your totals rather than converted at a guessed rate.'
+                        : 'No exchange rate available for this currency. Excluded from totals rather than converted at a guessed rate.'}">\u26A0 ${quoteCurrency == null && hasPrice ? 'quote currency unknown' : 'no ' + base + ' rate'} \u00B7 excluded from totals</div>`
+                    : ''}
                 ${(() => {
                     // Show the EFFECTIVE ticker when it differs from the stored symbol,
                     // so a learned/user mapping is visible instead of invisible magic.
@@ -2319,6 +2389,11 @@ export async function savePortfolioSnapshot() {
 
     const activePositions = state.portfolio.filter(p => p.shares > 0);
 
+    // Holdings that can't be converted are excluded from the totals AND counted,
+    // so the saved point records that it was a partial valuation instead of
+    // quietly understating the portfolio forever.
+    let excludedCount = 0;
+
     activePositions.forEach(p => {
         const currency = getAssetCurrency(p.symbol);
         const investedNative = p.shares * p.avgPrice;
@@ -2326,15 +2401,18 @@ export async function savePortfolioSnapshot() {
         // Shared helper: trade-date FX + cost-based (split-invariant) remaining
         // ratio. This inline copy had drifted from renderPortfolio's TWICE
         // (missed both the split-ratio and FX fixes) — never inline it again.
-        totalInvested += computeInvestedBase(p, state.transactions[p.symbol], currency);
+        const investedBase = computeInvestedBase(p, state.transactions[p.symbol], currency);
 
-        // Market value in base currency: always use current exchange rate
+        // Market value in base currency: always use current exchange rate, and
+        // in the QUOTE's currency (a learned pricingTicker may be a US ADR).
         const currentPrice = state.marketPrices[p.symbol];
-        if (currentPrice) {
-            totalMarketValue += toBaseCurrency(p.shares * currentPrice, currency);
-        } else {
-            totalMarketValue += toBaseCurrency(investedNative, currency);
-        }
+        const marketBase = currentPrice
+            ? toBaseCurrency(p.shares * currentPrice, quoteCurrencyOf(p.symbol, currency))
+            : toBaseCurrency(investedNative, currency);
+
+        if (investedBase == null || marketBase == null) { excludedCount++; return; }
+        totalInvested += investedBase;
+        totalMarketValue += marketBase;
     });
 
     const snapshot = {
@@ -2343,7 +2421,8 @@ export async function savePortfolioSnapshot() {
         totalInvested,
         totalMarketValue,
         positionCount: activePositions.length,
-        pricesAvailable: Object.keys(state.marketPrices).length
+        pricesAvailable: Object.keys(state.marketPrices).length,
+        excludedPositions: excludedCount
     };
 
     state.portfolioHistory.push(snapshot);
