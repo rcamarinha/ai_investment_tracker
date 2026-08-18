@@ -72,13 +72,25 @@ Note: Several services have circular imports (e.g., pricing ↔ portfolio, stora
 
 After login, `loadHubValues(userId)` runs two parallel Supabase queries and populates the existing hub card DOM elements:
 
-- `#hubTotalValue` — stock cost basis + wine cellar value
-- `#hubStockValue` — SUM(shares × avg_price) from `positions`
-- `#hubStockDelta` — always shows `"cost basis"` (neutral grey); no live prices on hub page
-- `#hubWineValue` — SUM(estimated_value × qty) from `user_wines`
+- `#hubTotalValue` — stock market value + wine cellar value, **in EUR**; suffixed `*` when partial
+- `#hubStockValue` — `total_market_value_eur` from the **latest snapshot** carrying one
+- `#hubStockDelta` — `"as of 3 Aug"` (+ `"excludes N"`), or `"open Portfolio to calculate"` when no snapshot has a EUR total
+- `#hubWineValue` — SUM(estimated_value × qty) from `user_wines` (EUR by schema)
 - `#hubWineDelta` — % gain vs purchase price, or staleness label ("valued Xd ago")
 
-`clearHubValues()` resets all to `"— —"` on logout. No service module imports in index.html — queries are inline to avoid pulling in the full service dependency graph.
+`clearHubValues()` resets all to `"— —"` on logout.
+
+**Never sum `shares × avg_price` from `positions` here.** That table has no currency
+column, so the sum adds pounds to euros and to dollars; the old `computeStockValue()`
+did exactly that and stamped the result `€`. The hub instead *reads* the EUR figure the
+portfolio page already computed with per-trade FX, so there is only one implementation of
+currency conversion in the app. Snapshots without `total_market_value_eur` (legacy rows,
+written before the base currency was recorded) are **skipped, not assumed to be EUR**.
+
+index.html imports only `services/navbar.js` and `src/hub.js` — the latter is pure and
+dependency-free (zero imports), so it does not drag in the service graph. All other
+service modules remain forbidden here: `services/storage.js` pulls in pricing, portfolio
+and the rest.
 
 ### Filter-scoped summary stats
 

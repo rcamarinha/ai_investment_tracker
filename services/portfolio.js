@@ -38,12 +38,13 @@ function requireAuth(actionName) {
  * which, so using it froze invested/income totals in EUR regardless of the
  * currency toggle (identical numbers relabeled $).
  */
-function txRateToBase(tx, fallbackCurrency) {
-    const base = state.baseCurrency || 'EUR';
+function txRateToBase(tx, fallbackCurrency, targetBase) {
+    const base = targetBase || state.baseCurrency || 'EUR';
     const hist = tx.fxRates ? Number(tx.fxRates[base]) : NaN;
     if (Number.isFinite(hist) && hist > 0) return hist;
     state._fxFallbackCount = (state._fxFallbackCount || 0) + 1;
-    return getExchangeRate(tx.currency || fallbackCurrency);   // may be null
+    // Live fallback. Convert 1 unit of the tx currency into the target base.
+    return toBaseCurrency(1, tx.currency || fallbackCurrency, base);   // may be null
 }
 
 /**
@@ -72,14 +73,14 @@ function quoteCurrencyOf(symbol, assetCurrency) {
  * Buys convert at trade-date FX (fallback: live), scaled by the cost-based
  * remaining ratio (split-invariant — a split multiplies shares, not cost).
  */
-function computeInvestedBase(p, txs, currency) {
+function computeInvestedBase(p, txs, currency, targetBase) {
     const investedNative = p.shares * p.avgPrice;
-    if (!txs || txs.length === 0) return toBaseCurrency(investedNative, currency);
+    if (!txs || txs.length === 0) return toBaseCurrency(investedNative, currency, targetBase);
     let investedBase = 0;
     let unconvertible = false;
     txs.forEach(tx => {
         if (tx.type !== 'buy') return;
-        const rate = txRateToBase(tx, currency);
+        const rate = txRateToBase(tx, currency, targetBase);
         // No rate for this trade's currency: the position's cost basis cannot be
         // stated in base. Bail out rather than under-counting by skipping a leg.
         if (rate == null) { unconvertible = true; return; }
@@ -2393,10 +2394,18 @@ export async function savePortfolioSnapshot() {
     // so the saved point records that it was a partial valuation instead of
     // quietly understating the portfolio forever.
     let excludedCount = 0;
+    // Canonical EUR totals, computed regardless of which base the toggle is on.
+    // Without these the history chart plotted EUR and USD points on one axis and
+    // labelled them all '€', and the hub had no comparable number to read.
+    let totalInvestedEur = 0;
+    let totalMarketValueEur = 0;
+    let eurComplete = true;
 
     activePositions.forEach(p => {
         const currency = getAssetCurrency(p.symbol);
         const investedNative = p.shares * p.avgPrice;
+        const currentPrice = state.marketPrices[p.symbol];
+        const quoteCurrency = quoteCurrencyOf(p.symbol, currency);
 
         // Shared helper: trade-date FX + cost-based (split-invariant) remaining
         // ratio. This inline copy had drifted from renderPortfolio's TWICE
@@ -2405,14 +2414,23 @@ export async function savePortfolioSnapshot() {
 
         // Market value in base currency: always use current exchange rate, and
         // in the QUOTE's currency (a learned pricingTicker may be a US ADR).
-        const currentPrice = state.marketPrices[p.symbol];
         const marketBase = currentPrice
-            ? toBaseCurrency(p.shares * currentPrice, quoteCurrencyOf(p.symbol, currency))
+            ? toBaseCurrency(p.shares * currentPrice, quoteCurrency)
             : toBaseCurrency(investedNative, currency);
+
+        // Same figures, pinned to EUR.
+        const investedEur = computeInvestedBase(p, state.transactions[p.symbol], currency, 'EUR');
+        const marketEur = currentPrice
+            ? toBaseCurrency(p.shares * currentPrice, quoteCurrency, 'EUR')
+            : toBaseCurrency(investedNative, currency, 'EUR');
 
         if (investedBase == null || marketBase == null) { excludedCount++; return; }
         totalInvested += investedBase;
         totalMarketValue += marketBase;
+
+        if (investedEur == null || marketEur == null) { eurComplete = false; return; }
+        totalInvestedEur += investedEur;
+        totalMarketValueEur += marketEur;
     });
 
     const snapshot = {
@@ -2422,7 +2440,11 @@ export async function savePortfolioSnapshot() {
         totalMarketValue,
         positionCount: activePositions.length,
         pricesAvailable: Object.keys(state.marketPrices).length,
-        excludedPositions: excludedCount
+        excludedPositions: excludedCount,
+        // Canonical EUR pair — null (not 0) when any holding couldn't be priced
+        // in EUR, so a partial figure is never mistaken for a complete one.
+        totalInvestedEur: eurComplete ? totalInvestedEur : null,
+        totalMarketValueEur: eurComplete ? totalMarketValueEur : null
     };
 
     state.portfolioHistory.push(snapshot);
@@ -2535,7 +2557,19 @@ function updateChart() {
         const series = state.portfolioHistory.slice(-MAX_BARS);
         const omitted = state.portfolioHistory.length - series.length;
 
-        const allValues = series.flatMap(s => [s.totalInvested, s.totalMarketValue]);
+        // Plot the canonical EUR pair when present so a single axis means a
+        // single currency. Snapshots were previously stored in whatever base the
+        // toggle happened to be on, with no record of which, so EUR and USD
+        // points shared an axis and were all labelled '€'. Legacy rows (no EUR
+        // figure) fall back to their raw values and are drawn muted.
+        const chartVal = (sn, key) => {
+            const eur = key === 'invested' ? sn.totalInvestedEur : sn.totalMarketValueEur;
+            return eur == null ? (key === 'invested' ? sn.totalInvested : sn.totalMarketValue) : eur;
+        };
+        const isLegacy = sn => sn.totalMarketValueEur == null;
+        const anyLegacy = series.some(isLegacy);
+
+        const allValues = series.flatMap(s => [chartVal(s, 'invested'), chartVal(s, 'market')]);
         // Baseline at zero: bar height must be proportional to value. The old
         // `min * 0.95` baseline made every bar at the low end of the range
         // collapse to a ~0px stub while carrying most of the actual value.
@@ -2552,16 +2586,21 @@ function updateChart() {
         series.forEach((snapshot) => {
             const date = new Date(snapshot.timestamp);
             const label = `${date.getMonth() + 1}/${date.getDate()}`;
-            const marketHeight = barHeight(snapshot.totalMarketValue);
-            const investedHeight = barHeight(snapshot.totalInvested);
-            const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
+            const investedVal = chartVal(snapshot, 'invested');
+            const marketVal = chartVal(snapshot, 'market');
+            const marketHeight = barHeight(marketVal);
+            const investedHeight = barHeight(investedVal);
+            const gainLoss = marketVal - investedVal;
             const color = gainLoss >= 0 ? 'var(--up)' : 'var(--down)';
+            const legacy = isLegacy(snapshot);
+            const legacyStyle = legacy ? 'opacity: 0.4;' : '';
+            const legacyTitle = legacy ? '\nLegacy snapshot — base currency was not recorded, so this point may not be in EUR.' : '';
 
             chartHTML += `
-                <div style="flex: 0 0 40px; display: flex; flex-direction: column; align-items: center;">
+                <div style="flex: 0 0 40px; display: flex; flex-direction: column; align-items: center; ${legacyStyle}">
                     <div style="position: relative; width: 100%; height: 180px; display: flex; align-items: flex-end; justify-content: center; gap: 2px;">
-                        <div style="width: 45%; background: var(--gold); height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}"></div>
-                        <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0;" title="Market: ${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}"></div>
+                        <div style="width: 45%; background: var(--gold); height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(investedVal, legacy ? snapshot.baseCurrency : 'EUR')}${legacyTitle}"></div>
+                        <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0;" title="Market: ${formatCurrency(marketVal, legacy ? snapshot.baseCurrency : 'EUR')}${legacyTitle}"></div>
                     </div>
                     <div style="font-size: 10px; color: var(--text-secondary); margin-top: 5px; text-align: center;">${label}</div>
                 </div>
@@ -2570,9 +2609,11 @@ function updateChart() {
 
         chartHTML += '</div>';   // bar row
         chartHTML += '</div>';   // .table-scroll
-        if (omitted > 0) {
-            chartHTML += `<div style="font-size: 11px; color: var(--text-tertiary); margin-top: 8px; text-align: center;">showing last ${series.length} of ${state.portfolioHistory.length} snapshots</div>`;
-        }
+        const chartNotes = [];
+        if (omitted > 0) chartNotes.push(`showing last ${series.length} of ${state.portfolioHistory.length} snapshots`);
+        chartNotes.push('values in EUR');
+        if (anyLegacy) chartNotes.push('faded bars: base currency not recorded');
+        chartHTML += `<div style="font-size: 11px; color: var(--text-tertiary); margin-top: 8px; text-align: center;">${chartNotes.join(' · ')}</div>`;
         // flex-wrap lets the legend break between items; nowrap on the labels
         // stops "Market Value (Profit)" from breaking *within* a word into a
         // three-line stack when the row is narrower than the three items.

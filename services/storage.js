@@ -113,20 +113,41 @@ export async function savePortfolioDB() {
 
 // ── Snapshot DB Operations ──────────────────────────────────────────────────
 
+// Set once if the DB predates migration 20260812 (snapshots currency columns).
+let _snapshotBaseCurrencyUnsupported = false;
+
 export async function saveSnapshotToDB(snapshot) {
     if (!state.supabaseClient || !state.currentUser) return;
 
     try {
-        const { error } = await state.supabaseClient
-            .from('snapshots')
-            .insert({
-                user_id: state.currentUser.id,
-                timestamp: snapshot.timestamp,
-                total_invested: snapshot.totalInvested,
-                total_market_value: snapshot.totalMarketValue,
-                position_count: snapshot.positionCount,
-                prices_available: snapshot.pricesAvailable
-            });
+        const row = {
+            user_id: state.currentUser.id,
+            timestamp: snapshot.timestamp,
+            total_invested: snapshot.totalInvested,
+            total_market_value: snapshot.totalMarketValue,
+            position_count: snapshot.positionCount,
+            prices_available: snapshot.pricesAvailable
+        };
+        // Added by migration 20260812. Without these the snapshot doesn't record
+        // which currency it was taken in, which is what let EUR and USD points
+        // share one axis. Fall back (once per session) if the migration hasn't
+        // been applied rather than losing the snapshot entirely.
+        if (!_snapshotBaseCurrencyUnsupported) {
+            row.base_currency = snapshot.baseCurrency || null;
+            row.total_invested_eur = snapshot.totalInvestedEur ?? null;
+            row.total_market_value_eur = snapshot.totalMarketValueEur ?? null;
+            row.excluded_positions = snapshot.excludedPositions || 0;
+        }
+
+        let { error } = await state.supabaseClient.from('snapshots').insert(row);
+
+        if (error && /base_currency|total_invested_eur|total_market_value_eur|excluded_positions/.test(error.message || '')) {
+            console.warn('snapshots currency columns missing \u2014 run migration 20260812_snapshots_base_currency.sql. Falling back for this session.');
+            _snapshotBaseCurrencyUnsupported = true;
+            delete row.base_currency; delete row.total_invested_eur;
+            delete row.total_market_value_eur; delete row.excluded_positions;
+            ({ error } = await state.supabaseClient.from('snapshots').insert(row));
+        }
 
         if (error) throw error;
         console.log('\u2713 Snapshot saved to Supabase');
@@ -678,7 +699,14 @@ export async function loadFromDatabase() {
                 totalInvested: Number(s.total_invested),
                 totalMarketValue: Number(s.total_market_value),
                 positionCount: s.position_count,
-                pricesAvailable: s.prices_available
+                pricesAvailable: s.prices_available,
+                // NULL base_currency = legacy row, captured before the base was
+                // recorded. Left undefined rather than defaulted to EUR: we do
+                // not know, and pretending otherwise is the bug being fixed.
+                baseCurrency: s.base_currency || null,
+                totalInvestedEur: s.total_invested_eur == null ? null : Number(s.total_invested_eur),
+                totalMarketValueEur: s.total_market_value_eur == null ? null : Number(s.total_market_value_eur),
+                excludedPositions: s.excluded_positions || 0
             }));
             state.portfolioHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             localStorage.setItem('portfolioHistory', JSON.stringify(state.portfolioHistory));

@@ -153,17 +153,26 @@ export function getAssetCurrency(symbol) {
  * Minor-unit codes (GBp/GBX pence, ZAc, ILA) are folded to major units here,
  * so a London pence quote converts correctly instead of 100x high.
  */
-export function toBaseCurrency(amount, fromCurrency) {
+export function toBaseCurrency(amount, fromCurrency, targetBase) {
     const value = Number(amount);
     if (!Number.isFinite(value)) return null;
     const src = normalizeCurrencyCode(fromCurrency);
     if (!src) return null;
-    const base = state.baseCurrency || 'EUR';
+    const base = normalizeCurrencyCode(targetBase || state.baseCurrency || 'EUR');
+    if (!base) return null;
     const major = value * src.factor;
-    if (src.iso === base) return major;
-    const rate = Number(state.exchangeRates[src.iso]);
-    if (!Number.isFinite(rate) || rate <= 0) return null;
-    return major * rate;
+    if (src.iso === base.iso) return major;
+
+    // state.exchangeRates holds "1 CUR = X ACTIVE_BASE". Converting to a base
+    // other than the active one (used to store a canonical EUR total whatever
+    // the toggle says) is the ratio of the two: C→T = (C→active) / (T→active).
+    // T === active gives rate 1, so this reduces to the simple case.
+    const rateSrc = Number(state.exchangeRates[src.iso]);
+    const rateTarget = base.iso === (state.baseCurrency || 'EUR')
+        ? 1 : Number(state.exchangeRates[base.iso]);
+    if (!Number.isFinite(rateSrc) || rateSrc <= 0) return null;
+    if (!Number.isFinite(rateTarget) || rateTarget <= 0) return null;
+    return major * (rateSrc / rateTarget);
 }
 
 // ── Environment Detection ───────────────────────────────────────────────────
