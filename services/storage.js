@@ -41,6 +41,9 @@ export function initSupabase() {
                 state.portfolio = [];
                 state.portfolioHistory = [];
                 state.marketPrices = {};
+                state.priceCurrency = {};   // clear with prices, else one user's
+                                            // "currency unknown" excludes the next
+                                            // user's holding of the same ticker
                 state.priceMetadata = {};
                 state.transactions = {};
                 state.userRole = 'user';
@@ -675,6 +678,7 @@ export async function loadFromDatabase() {
         state.portfolio = [];
         state.portfolioHistory = [];
         state.marketPrices = {};
+        state.priceCurrency = {};
         state.priceMetadata = {};
         state.transactions = {};
 

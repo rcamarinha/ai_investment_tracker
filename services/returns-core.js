@@ -34,11 +34,17 @@ export function buildCashFlows(transactions, { rateFor, currencyFor } = {}) {
   const rf = rateFor || (() => 1);
   const cf = currencyFor || (() => null);
   const flows = [];
+  let skipped = 0;
   for (const [symbol, txs] of Object.entries(transactions || {})) {
     for (const tx of txs || []) {
       if (!tx || !tx.date) continue;
       const currency = cf(symbol);
       const rate = rf(tx, currency);
+      // A null/NaN rate must SKIP the flow, not scale it to zero. `x * null` is
+      // -0, and Number.isFinite(-0) is true, so an unconvertible buy was pushed
+      // as capital that cost nothing — and XIRR over a zero-cost position runs
+      // away without bound. computeYearlyIncome below already guards this way.
+      if (!Number.isFinite(rate)) { skipped++; continue; }
       const amt = Number(tx.totalAmount) || 0;
       const fee = Number(tx.fee) || 0;
       const tax = Number(tx.tax) || 0;
@@ -52,6 +58,9 @@ export function buildCashFlows(transactions, { rateFor, currencyFor } = {}) {
         flows.push({ date: tx.date, amount, type: tx.type, symbol });
       }
     }
+  }
+  if (skipped > 0) {
+    console.warn(`\u26A0 buildCashFlows skipped ${skipped} transaction(s) with no usable FX rate \u2014 returns are computed on the remainder.`);
   }
   return flows;
 }

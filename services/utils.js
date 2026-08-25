@@ -128,8 +128,18 @@ export function resolveAssetCurrency(symbol) {
         const norm = normalizeCurrencyCode(dbAsset.currency);
         if (norm) return { code: norm.iso, source: dbAsset.currency_source || 'profile' };
     }
-    // No stored currency: a suffix is a usable hint, a bare ISIN is not.
-    if (looksLikeISIN(symbol)) return { code: null, source: null };
+    // No stored currency. A bare ISIN carries no venue information of its own,
+    // but the ticker we learned to PRICE it with does: an ISIN quoted as AIR.PA
+    // is a euro instrument. Without this, an ISIN-keyed broker import (DeGiro)
+    // has no cost-basis currency, every holding is excluded, and the portfolio
+    // total reads zero — the resolver is the only thing that knows the venue.
+    if (looksLikeISIN(symbol)) {
+        const pricingTicker = dbAsset && dbAsset.pricingTicker;
+        if (pricingTicker && !looksLikeISIN(pricingTicker)) {
+            return { code: detectCurrency(detectStockExchange(pricingTicker)), source: 'suffix' };
+        }
+        return { code: null, source: null };
+    }
     const exchange = detectStockExchange(symbol);
     return { code: detectCurrency(exchange), source: 'suffix' };
 }

@@ -2424,11 +2424,16 @@ export async function savePortfolioSnapshot() {
             ? toBaseCurrency(p.shares * currentPrice, quoteCurrency, 'EUR')
             : toBaseCurrency(investedNative, currency, 'EUR');
 
-        if (investedBase == null || marketBase == null) { excludedCount++; return; }
+        // Order matters: a holding excluded from the BASE totals must also mark
+        // the EUR pair incomplete. Returning first left eurComplete true, so an
+        // EUR total missing this holding was written to the DB as a complete
+        // figure — and the hub reads exactly that number as your net worth.
+        if (investedEur == null || marketEur == null) eurComplete = false;
+        if (investedBase == null || marketBase == null) { excludedCount++; eurComplete = false; return; }
         totalInvested += investedBase;
         totalMarketValue += marketBase;
 
-        if (investedEur == null || marketEur == null) { eurComplete = false; return; }
+        if (investedEur == null || marketEur == null) return;
         totalInvestedEur += investedEur;
         totalMarketValueEur += marketEur;
     });
@@ -3013,6 +3018,12 @@ export function submitPosition() {
             const result = await fetchStockPrice(symbol);
             if (result.success) {
                 state.marketPrices[symbol] = result.price;
+                // Record the quote's currency here too. Dropping it left the
+                // holding permanently "currency unknown" — refreshing the card
+                // could never clear the flag, even once an authoritative,
+                // pence-folded currency came back from the proxy tier.
+                if (result.currency) state.priceCurrency[symbol] = result.currency;
+                else delete state.priceCurrency[symbol];
                 state.priceMetadata[symbol] = {
                     timestamp: new Date().toISOString(),
                     source: result.source,
@@ -3057,6 +3068,8 @@ export async function refreshSinglePrice(symbol) {
     const result = await fetchStockPrice(symbol);
     if (result.success) {
         state.marketPrices[symbol] = result.price;
+        if (result.currency) state.priceCurrency[symbol] = result.currency;
+        else delete state.priceCurrency[symbol];
         state.priceMetadata[symbol] = {
             timestamp: new Date().toISOString(),
             source: result.source,
@@ -3170,13 +3183,19 @@ export function loadTransactionsFromStorage() {
  * Returns { dividends, tax, netIncome, fees } (all base-currency).
  */
 function computeIncomeTotalsBase() {
-    const base = state.baseCurrency || 'EUR';
     let dividends = 0, tax = 0, fees = 0;
+    let excludedIncome = 0;
     for (const [symbol, txs] of Object.entries(state.transactions || {})) {
         for (const tx of txs) {
-            // Same currency resolution as the backfill (symbol's asset currency,
-            // not the base) so null-currency rows convert consistently everywhere.
-            const rate = txRateToBase(tx, getAssetCurrency(symbol) || base);
+            // Resolve the asset's own currency. The old `|| base` fallback here
+            // counted a dividend on an unknown-currency asset as if it were
+            // already in base — the same guess-when-you-don't-know the totals
+            // loop refuses — so it is gone.
+            const rate = txRateToBase(tx, getAssetCurrency(symbol));
+            // Unconvertible rows are SKIPPED and counted, not multiplied by null
+            // (which yields 0 and silently under-reports income and fees with
+            // nothing on screen to indicate anything is missing).
+            if (!Number.isFinite(rate)) { excludedIncome++; continue; }
             if (tx.type === 'dividend') {
                 dividends += (Number(tx.totalAmount) || 0) * rate;
                 tax += (Number(tx.tax) || 0) * rate;
@@ -3187,7 +3206,10 @@ function computeIncomeTotalsBase() {
             }
         }
     }
-    return { dividends, tax, netIncome: dividends - tax, fees };
+    if (excludedIncome > 0) {
+        console.warn(`⚠ ${excludedIncome} income/fee row(s) excluded from totals — no usable FX rate.`);
+    }
+    return { dividends, tax, netIncome: dividends - tax, fees, excluded: excludedIncome };
 }
 
 

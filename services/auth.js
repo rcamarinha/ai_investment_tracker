@@ -219,6 +219,7 @@ export async function handleLogout() {
         state.portfolio = [];
         state.portfolioHistory = [];
         state.marketPrices = {};
+        state.priceCurrency = {};   // must clear with prices: a stale null here keeps another session's holding excluded
         state.priceMetadata = {};
         state.transactions = {};
         state.selectedSector = null;

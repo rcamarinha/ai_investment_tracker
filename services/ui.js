@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { escapeHTML, formatCurrency, normalizeAssetType } from './utils.js';
+import { escapeHTML, formatCurrency, normalizeAssetType, getAssetCurrency, toBaseCurrency } from './utils.js';
 import { getSector } from '../data/sectors.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
 import { renderPortfolio } from './portfolio.js';
@@ -59,12 +59,37 @@ export function renderAllocationCharts() {
         return;
     }
 
-    let totalMarketValue = 0;
-    state.portfolio.forEach(p => {
+    // Value each holding in the BASE currency before aggregating. This module
+    // previously summed native amounts straight from the portfolio — adding
+    // pounds to euros to dollars and then rendering the result with a hard '€'.
+    // That is the same defect the hub's deleted computeStockValue() carried, and
+    // it distorted the bar widths and percentages too, so the sector slicer
+    // mis-ranked sectors. Holdings that cannot be converted are excluded, the
+    // same way the portfolio totals exclude them.
+    const base = state.baseCurrency || 'EUR';
+    const baseValueOf = (p) => {
+        const currency = getAssetCurrency(p.symbol);
         const currentPrice = state.marketPrices[p.symbol];
-        const invested = p.shares * p.avgPrice;
-        totalMarketValue += currentPrice ? p.shares * currentPrice : invested;
+        const quoteCurrency = Object.prototype.hasOwnProperty.call(state.priceCurrency || {}, p.symbol)
+            ? state.priceCurrency[p.symbol]
+            : currency;
+        return currentPrice
+            ? toBaseCurrency(p.shares * currentPrice, quoteCurrency)
+            : toBaseCurrency(p.shares * p.avgPrice, currency);
+    };
+
+    let totalMarketValue = 0;
+    let excludedFromCharts = 0;
+    const valued = [];
+    state.portfolio.forEach(p => {
+        const v = baseValueOf(p);
+        if (v == null) { excludedFromCharts++; return; }
+        valued.push({ p, v });
+        totalMarketValue += v;
     });
+    if (excludedFromCharts > 0) {
+        console.warn(`\u26A0 ${excludedFromCharts} holding(s) excluded from allocation charts \u2014 currency unknown.`);
+    }
 
     if (totalMarketValue === 0) {
         allocationSection.style.display = 'none';
@@ -75,24 +100,18 @@ export function renderAllocationCharts() {
     // from different sources ("Shares"/"Stock"/"Equity", "Shares (REIT)"/"REIT")
     // never split the same asset class into separate chart buckets.
     const typeAllocation = {};
-    state.portfolio.forEach(p => {
+    valued.forEach(({ p, v }) => {
         const assetType = normalizeAssetType(p.type);
-        const currentPrice = state.marketPrices[p.symbol];
-        const invested = p.shares * p.avgPrice;
-        const marketValue = currentPrice ? p.shares * currentPrice : invested;
         if (!typeAllocation[assetType]) typeAllocation[assetType] = 0;
-        typeAllocation[assetType] += marketValue;
+        typeAllocation[assetType] += v;
     });
 
     // Aggregate by sector
     const sectorAllocation = {};
-    state.portfolio.forEach(p => {
+    valued.forEach(({ p, v }) => {
         const sector = getSector(p.symbol);
-        const currentPrice = state.marketPrices[p.symbol];
-        const invested = p.shares * p.avgPrice;
-        const marketValue = currentPrice ? p.shares * currentPrice : invested;
         if (!sectorAllocation[sector]) sectorAllocation[sector] = 0;
-        sectorAllocation[sector] += marketValue;
+        sectorAllocation[sector] += v;
     });
 
     const sortedTypes = Object.entries(typeAllocation).sort((a, b) => b[1] - a[1]);
@@ -128,7 +147,7 @@ export function renderAllocationCharts() {
                         ${pct >= 10 ? pct.toFixed(1) + '%' : ''}
                     </div>
                 </div>
-                <div class="allocation-bar-value">${formatCurrency(value)}</div>
+                <div class="allocation-bar-value">${formatCurrency(value, base)}</div>
             </div>
         `;
     }).join('');
@@ -149,7 +168,7 @@ export function renderAllocationCharts() {
                             ${pct >= 10 ? pct.toFixed(1) + '%' : ''}
                         </div>
                     </div>
-                    <div class="allocation-bar-value">${formatCurrency(value)}</div>
+                    <div class="allocation-bar-value">${formatCurrency(value, base)}</div>
                 </div>
             `;
         }).join('');

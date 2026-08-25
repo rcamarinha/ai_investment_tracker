@@ -7,7 +7,7 @@
  */
 
 import state from './state.js';
-import { buildAssetRecord, getAssetCurrency } from './utils.js';
+import { buildAssetRecord, getAssetCurrency, detectCurrency, detectStockExchange } from './utils.js';
 import { renderPortfolio, renderMoversSection } from './portfolio.js';
 import { savePortfolioSnapshot } from './portfolio.js';
 import {
@@ -648,9 +648,19 @@ export async function fetchMarketPrices(opts = {}) {
         state.priceMetadata[sym] = { timestamp: new Date().toISOString(), source, success: true };
         const differentTicker = opts.pricedAs && String(opts.pricedAs).toUpperCase() !== String(sym).toUpperCase();
         if (opts.currency) {
-            state.priceCurrency[sym] = opts.currency;          // known
-        } else if (differentTicker || opts.currencyUnknown) {
-            state.priceCurrency[sym] = null;                   // explicitly unknown
+            state.priceCurrency[sym] = opts.currency;          // reported by the tier
+        } else if (opts.currencyUnknown) {
+            state.priceCurrency[sym] = null;                   // genuinely unknowable
+        } else if (differentTicker) {
+            // Priced under a different ticker. The quote's currency follows the
+            // ticker that was actually QUERIED, not the symbol we store: an ADR
+            // (EADSY -> USD) and the EU listing it stands in for (AIR.PA -> EUR)
+            // are both resolved correctly by the queried ticker's own suffix.
+            // Marking this "unknown" instead threw away information we have and
+            // excluded every resolver-priced holding from the totals — which,
+            // for an ISIN-keyed broker import where the resolver is the reason
+            // prices work at all, is most of the portfolio.
+            state.priceCurrency[sym] = detectCurrency(detectStockExchange(String(opts.pricedAs)));
         } else {
             delete state.priceCurrency[sym];                   // infer from the asset
         }
