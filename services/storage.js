@@ -410,11 +410,19 @@ export async function savePriceHistoryToDB(priceRecords) {
                 console.warn(`Skipping price for ${r.ticker}: not in asset DB`);
                 continue;
             }
+            // `|| 'USD'` used to live here: an unknown currency was WRITTEN TO
+            // THE DATABASE as USD, turning a momentary gap in knowledge into a
+            // permanent false record that later reads trusted. Persist the real
+            // currency or NULL; loadLatestPricesFromDB treats NULL as unknown
+            // and excludes the holding until it can be refreshed.
+            const norm = normalizeCurrencyCode(
+                r.currency || state.priceCurrency?.[ticker] || null
+            );
             rows.push({
                 user_id: state.currentUser.id,
                 ticker: ticker,
                 price: r.price,
-                currency: r.currency || 'USD',
+                currency: norm ? norm.iso : null,
                 source: r.source,
                 fetched_at: r.fetchedAt || new Date().toISOString()
             });
@@ -461,19 +469,35 @@ export async function loadLatestPricesFromDB() {
         if (data && data.length > 0) {
             const seen = new Set();
             let loadedCount = 0;
+            let unpricedCurrency = 0;
             data.forEach(row => {
                 if (!seen.has(row.ticker)) {
                     seen.add(row.ticker);
-                    state.marketPrices[row.ticker] = Number(row.price);
+                    // A cached price is only usable if we know what currency it
+                    // is in. This column was previously SELECTed and thrown
+                    // away, so a restored price silently inherited whatever
+                    // currency the asset happened to claim \u2014 reintroducing, on
+                    // every page load, the pence and ADR mix-ups the live path
+                    // now guards against. Rows written before v3.39 may hold
+                    // pence labelled GBP, so an unusable code is treated as
+                    // unknown (the holding is flagged and excluded) rather than
+                    // trusted.
+                    const norm = normalizeCurrencyCode(row.currency);
+                    state.marketPrices[row.ticker] = Number(row.price) * (norm ? norm.factor : 1);
+                    state.priceCurrency[row.ticker] = norm ? norm.iso : null;
                     state.priceMetadata[row.ticker] = {
                         timestamp: row.fetched_at,
                         source: row.source + ' (cached)',
                         success: true
                     };
+                    if (!norm) unpricedCurrency++;
                     loadedCount++;
                 }
             });
             console.log('\u2713 Loaded', loadedCount, 'cached prices from DB');
+            if (unpricedCurrency > 0) {
+                console.warn(`\u26a0 ${unpricedCurrency} cached price(s) have no usable currency \u2014 excluded from totals until refreshed.`);
+            }
         }
     } catch (err) {
         console.error('Failed to load latest prices from DB:', err);

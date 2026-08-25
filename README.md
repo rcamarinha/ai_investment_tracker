@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.40.1
+- **The price cache bypassed every currency guard added in v3.39.** Three holes, all on the `price_history` round-trip rather than the live pricing path: `loadLatestPricesFromDB()` SELECTed `currency` and then discarded it, so prices restored on page load silently re-inherited whatever currency the asset claimed; `savePriceHistoryToDB()` wrote `r.currency || 'USD'`, turning a momentary gap in knowledge into a permanent false record that later reads trusted; and the record builder stored the **asset's** currency rather than the **quote's**, so a holding priced under a learned ADR ticker persisted a USD price labelled EUR. Prices now round-trip with their real currency, `NULL` means unknown (the holding is flagged and excluded until refreshed), and a legacy row still holding raw pence is folded to pounds on read instead of being trusted.
+- +6 tests (867 total) covering the round-trip in both directions.
+
 ### v3.40.0
 - **The hub's headline net worth was adding pounds to euros. Fixed.** `loadHubValues()` summed `shares × avg_price` straight from the `positions` table — which has **no currency column** — and stamped the result `€`. With GBP and USD holdings that number was simply wrong, and it disagreed with the portfolio page, which computes the same figure correctly using per-trade FX. The hub now **reads** the canonical EUR total off the latest snapshot instead of computing its own. `computeStockValue()` is deleted; its removal is the fix, because nothing should ever total money across currencies again.
 - **Snapshots now record which currency they were taken in** (migration `20260812_snapshots_base_currency.sql`: `base_currency`, `total_invested_eur`, `total_market_value_eur`, `excluded_positions`). `savePortfolioSnapshot()` computes totals twice — once in the display base, once pinned to EUR — so the history chart finally plots **one currency on one axis**. Previously a snapshot taken with the USD toggle on was stored with no record of the base and rendered as `€`, reading ~8% high with nothing to indicate it.

@@ -820,10 +820,20 @@ export async function fetchMarketPrices(opts = {}) {
                 const meta = state.priceMetadata[symbol];
                 if (refreshedThisRun.has(symbol) && meta && meta.success && !meta.source.includes('(cached)')) {
                     const assetInfo = state.assetDatabase[symbol.toUpperCase()];
+                    // Store the currency of THIS QUOTE, not the asset's. They
+                    // differ whenever a holding is priced under a learned
+                    // pricingTicker (the resolver prefers US ADRs), and storing
+                    // the asset's currency there wrote a USD price labelled EUR
+                    // into price_history, where later loads trusted it. An
+                    // explicit null in state.priceCurrency means "unknown" and
+                    // must stay unknown rather than falling back to the asset.
+                    const knownQuoteCur = Object.prototype.hasOwnProperty.call(state.priceCurrency || {}, symbol);
                     priceRecords.push({
                         ticker: symbol.toUpperCase(),
                         price,
-                        currency: assetInfo ? assetInfo.currency : 'USD',
+                        currency: knownQuoteCur
+                            ? state.priceCurrency[symbol]
+                            : (assetInfo ? assetInfo.currency : null),
                         source: meta.source,
                         fetchedAt: now
                     });
