@@ -306,6 +306,47 @@ export async function fetchStockPrice(symbol) {
     // Per-tier failure reasons — surfaced in the resolve dialog so "no price"
     // is never a mystery (e.g. "Finnhub: no quote (US-only on free plan)").
     const reasons = [];
+    const pricingSymbol = normalizeForPricing(symbol);
+
+    // The quote proxy is the ONLY tier that reports a currency. Everything else
+    // returns a bare number, which the caller then has to interpret.
+    const tryQuoteProxy = async () => {
+        try {
+            // Query with the normalized (Yahoo-style) suffix — same form Yahoo expects.
+            const q = await fetchQuoteViaProxy(pricingSymbol);
+            if (q && q.price > 0) {
+                console.log(`✓ ${symbol}: ${q.price} ${q.currency || ''} (EU proxy, ${q.exchange || 'Yahoo'})`);
+                // Yahoo reports "GBp" for London listings — normalizeQuote folds
+                // pence to pounds here, at the boundary, so nothing above this
+                // line ever sees a minor-unit code.
+                const norm = normalizeQuote({ price: q.price, currency: q.currency });
+                return {
+                    price: norm ? norm.price : q.price,
+                    currency: norm ? norm.currency : null,
+                    currencySource: norm ? 'quote' : null,
+                    source: `Yahoo (EU proxy${q.exchange ? `: ${q.exchange}` : ''})`,
+                    tier: 4, success: true
+                };
+            }
+            reasons.push('EU proxy (Yahoo): no data');
+        } catch (err) {
+            console.log(`Quote proxy failed for ${symbol}:`, err.message);
+            reasons.push('EU proxy: unavailable');
+        }
+        return null;
+    };
+
+    // Venues that quote in MINOR UNITS go to the proxy first. London returns
+    // pence, and tiers 1-3 report no currency at all — so a pence number from
+    // FMP is indistinguishable from pounds and lands in the portfolio 100x
+    // high. Rather than guess what FMP does for `.L`, take the one tier that
+    // states its units. It is keyless and quota-free, so this also saves FMP
+    // budget on exactly the symbols it handles worst.
+    if (/\.(L|IL)$/i.test(pricingSymbol)) {
+        console.log(`${symbol}: minor-unit venue — trying currency-reporting proxy first`);
+        const early = await tryQuoteProxy();
+        if (early) return early;
+    }
 
     // TIER 1: Finnhub
     if (state.finnhubKey) {
@@ -331,7 +372,6 @@ export async function fetchStockPrice(symbol) {
     }
 
     // FMP / Alpha Vantage use FMP-style suffixes — remap Finnhub-style ones (.FRK→.DE)
-    const pricingSymbol = normalizeForPricing(symbol);
 
     // TIER 2: FMP (skipped when the daily quota is near the cap)
     if (state.fmpKey && !fmpQuotaExhausted()) {
@@ -420,28 +460,9 @@ export async function fetchStockPrice(symbol) {
     // the free API tiers structurally can't: EU-listed UCITS ETFs and other
     // Xetra/LSE/Euronext symbols. Also runs during ticker VALIDATION, closing the
     // trap where 🔎 search finds a correct EU ticker the quote tiers can't price.
-    try {
-        // Query with the normalized (Yahoo-style) suffix — same form Yahoo expects.
-        const q = await fetchQuoteViaProxy(pricingSymbol);
-        if (q && q.price > 0) {
-            console.log(`✓ ${symbol}: ${q.price} ${q.currency || ''} (EU proxy, ${q.exchange || 'Yahoo'})`);
-            // Yahoo reports "GBp" for London listings — normalizeQuote folds
-            // pence to pounds here, at the boundary, so nothing above this line
-            // ever sees a minor-unit code. This is the only tier that reports a
-            // currency at all, so it is the only one we can trust for one.
-            const norm = normalizeQuote({ price: q.price, currency: q.currency });
-            return {
-                price: norm ? norm.price : q.price,
-                currency: norm ? norm.currency : null,
-                currencySource: norm ? 'quote' : null,
-                source: `Yahoo (EU proxy${q.exchange ? `: ${q.exchange}` : ''})`,
-                tier: 4, success: true
-            };
-        }
-        reasons.push('EU proxy (Yahoo): no data');
-    } catch (err) {
-        console.log(`Quote proxy failed for ${symbol}:`, err.message);
-        reasons.push('EU proxy: unavailable');
+    {
+        const viaProxy = await tryQuoteProxy();
+        if (viaProxy) return viaProxy;
     }
 
     // All tiers failed — return the per-tier story, not a generic shrug.

@@ -2,8 +2,8 @@
  * Wine UI service — allocation charts.
  */
 
-import state from './state.js?v=3.41.0';
-import { showToast } from './utils.js?v=3.41.0';
+import state from './state.js?v=3.42.0';
+import { showToast } from './utils.js?v=3.42.0';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

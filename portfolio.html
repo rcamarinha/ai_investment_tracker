@@ -6,8 +6,8 @@
     <title>AI Financial Advisor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.41.0"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.41.0">
+    <script src="lib/supabase.js?v=3.42.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.42.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -20,11 +20,11 @@
     <div id="appNavbar" class="app-navbar"></div>
 
     <div class="container">
-        <div class="header">
+        <div class="header header-page">
             <div class="header-eyebrow">Equities · ETFs · Crypto</div>
             <h1>
                 <span data-i18n="portfolio.title">Portfolio</span>
-                <span class="header-version">v3.41.0</span>
+                <span class="header-version">v3.42.0</span>
             </h1>
             <p data-i18n="portfolio.subtitle">Live prices · AI analysis · 6 investment perspectives</p>
         </div>
@@ -61,12 +61,26 @@
                 </div>
             </div>
 
+            <!-- On a phone the primary action stays visible and the desk-work
+                 actions collapse behind a disclosure, so the first position card
+                 sits above the fold instead of below a wall of buttons. A
+                 <details> needs no JS and no extra state; CSS reverts it to a
+                 plain inline row on wider screens. -->
             <div class="action-bar" id="mainActionBar">
-                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="portfolio.btn.api_keys">🔑 API Keys</button>
-                <button class="btn btn-success" onclick="showAddPositionDialog()" data-i18n="portfolio.btn.add">➕ Add Position</button>
-                <button class="btn btn-primary" onclick="showImportDialog()" data-i18n="portfolio.btn.import">📋 Import from Spreadsheet</button>
                 <button class="btn btn-success" onclick="fetchMarketPrices({interactive:true})" id="refreshBtn" data-i18n="portfolio.btn.prices">🔄 Update Prices</button>
-                <button class="btn btn-warning" onclick="savePortfolioSnapshot()" data-i18n="portfolio.btn.snapshot">💾 Save Snapshot</button>
+                <!-- A checkbox, not <details>: a closed <details> hides its
+                     non-summary children outright, so `display: contents` cannot
+                     bring them back and the buttons disappear on desktop. This
+                     collapses on phones and dissolves into the same flat row
+                     above 640px, with no JS. -->
+                <input type="checkbox" id="moreActionsToggle" class="action-more-check" hidden>
+                <label for="moreActionsToggle" class="btn btn-primary action-more-toggle" data-i18n="portfolio.btn.more">⋯ More</label>
+                <div class="action-more-panel" id="moreActionsPanel">
+                    <button class="btn btn-success" onclick="showAddPositionDialog()" data-i18n="portfolio.btn.add">➕ Add Position</button>
+                    <button class="btn btn-primary" onclick="showImportDialog()" data-i18n="portfolio.btn.import">📋 Import from Spreadsheet</button>
+                    <button class="btn btn-warning" onclick="savePortfolioSnapshot()" data-i18n="portfolio.btn.snapshot">💾 Save Snapshot</button>
+                    <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="portfolio.btn.api_keys">🔑 API Keys</button>
+                </div>
             </div>
 
             <div id="moversSection" style="display: none;"></div>
