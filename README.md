@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.42.1
+- **The app version is now always visible, in the navbar.** v3.42.0 hid the portfolio page's header (which carried `v3.x.x`) and the hub's eyebrow (which carried the other copy) to get content above the fold on phones — leaving no way to tell *on the device* whether a deploy had actually landed. The navbar now shows a small build tag on every page, at every width, and `scripts/bump-version.js` keeps it in sync automatically.
+
 ### v3.42.0
 - **London tickers now go to the one price tier that states its units.** Tiers 1–3 return a bare number with no currency, so a pence quote for a `.L` symbol is indistinguishable from pounds and lands in the portfolio **100× high**. Rather than guess what FMP does for London, `.L`/`.IL` symbols are tried against the keyless quote proxy first — it reports a real currency and already folds `GBp → GBP` at the boundary. Verified with a stubbed proxy: `450 GBp → £4.50` at tier 4, where an FMP-first path would have recorded `450`. Non-pence symbols keep the cheap-first ordering, and this also saves FMP quota on exactly the symbols it handles worst.
 - **Mobile: the first position card is above the fold again — 434px, down from ~630px.** The portfolio page opened with a decorative header, the totals block, and *five* full-width buttons stacked before any actual holdings. Now only **Update Prices** stays on screen; Add Position / Import / Save Snapshot / API Keys collapse behind a **⋯ More** toggle. The decorative page header is hidden on phones (the navbar already names the page — the hub's hero is untouched), card padding drops from desktop's 25px to 16px, and the duplicated top nav links give way to the bottom tab bar.

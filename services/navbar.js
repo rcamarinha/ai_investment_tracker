@@ -19,6 +19,9 @@
 
 import { getLang, setLang, t, applyTranslations } from '../data/i18n.js';
 
+// Bumped by scripts/bump-version.js along with every other version string.
+const APP_VERSION = '3.42.1';
+
 // ── Google SVG icon (shared) ──────────────────────────────────────────────────
 
 const GOOGLE_SVG = `<svg width="16" height="16" viewBox="0 0 48 48" style="flex-shrink:0;">
@@ -138,6 +141,10 @@ export function renderNavbar(opts = {}) {
         <div class="navbar-inner">
             <a href="index.html" class="nav-brand${page === 'hub' ? ' active' : ''}"
                data-i18n="nav.hub">${t('nav.hub')}</a>
+            <!-- Always-visible build tag. The page headers that used to carry
+                 the version are hidden on phones to get content above the fold,
+                 which left no way to tell on a device whether a deploy landed. -->
+            <span class="nav-version" title="App version">v${APP_VERSION}</span>
             <nav class="nav-links">
                 <a href="portfolio.html"
                    class="nav-link${page === 'portfolio' ? ' active' : ''}"

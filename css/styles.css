@@ -3384,3 +3384,17 @@ body > #appNavbar + * {
         transform: translate(-50%, -50%);
     }
 }
+
+/* Persistent build tag in the navbar — the only place the version is visible
+   on a phone, since the page headers that carried it are hidden there. */
+.nav-version {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    opacity: 0.75;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-xs);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
