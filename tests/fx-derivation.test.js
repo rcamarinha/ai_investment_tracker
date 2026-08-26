@@ -70,6 +70,40 @@ describe('deriveFxToBases', () => {
     expect(fx.EUR).toBeCloseTo(0.01 / 0.85, 10);        // 1 GBX ≈ €0.0118
     expect(fx.USD).toBeCloseTo((1.10 / 0.85) * 0.01, 10);
   });
+
+  // This suite previously asserted only the literal 'GBX'. The value providers
+  // actually send is 'GBp', which the old uppercase-first code turned into
+  // 'GBP' at subunit 1 — a silent 100x that the tests could not see.
+  it('treats every real-world pence spelling identically to GBX', () => {
+    const gbx = deriveFxToBases(TABLE, 'GBX');
+    for (const spelling of ['GBp', 'gbx', 'GBP.', 'GBPX']) {
+      const fx = deriveFxToBases(TABLE, spelling);
+      expect(fx.EUR).toBeCloseTo(gbx.EUR, 12);
+      expect(fx.USD).toBeCloseTo(gbx.USD, 12);
+    }
+  });
+
+  it('pence is 100x smaller than pounds, not equal to it', () => {
+    const pence = deriveFxToBases(TABLE, 'GBp');
+    const pounds = deriveFxToBases(TABLE, 'GBP');
+    expect(pence.EUR).toBeCloseTo(pounds.EUR / 100, 12);
+    expect(pence.EUR).not.toBeCloseTo(pounds.EUR, 6);
+  });
+
+  it('ZAc (South African cents) converts via ZAR/100', () => {
+    const fx = deriveFxToBases({ ...TABLE, ZAR: 20 }, 'ZAc');
+    expect(fx.EUR).toBeCloseTo(0.01 / 20, 12);
+  });
+
+  it('a malformed currency code yields null rather than a 1:1 guess', () => {
+    expect(deriveFxToBases(TABLE, 'EUROS')).toBeNull();
+  });
+
+  it('a well-formed code with no table entry yields null RATES, never 1', () => {
+    const fx = deriveFxToBases(TABLE, 'WAT');
+    expect(fx.EUR).toBeNull();
+    expect(fx.USD).toBeNull();
+  });
 });
 
 describe('lookupFxTableForDate', () => {

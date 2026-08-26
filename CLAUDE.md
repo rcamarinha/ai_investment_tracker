@@ -72,13 +72,25 @@ Note: Several services have circular imports (e.g., pricing ↔ portfolio, stora
 
 After login, `loadHubValues(userId)` runs two parallel Supabase queries and populates the existing hub card DOM elements:
 
-- `#hubTotalValue` — stock cost basis + wine cellar value
-- `#hubStockValue` — SUM(shares × avg_price) from `positions`
-- `#hubStockDelta` — always shows `"cost basis"` (neutral grey); no live prices on hub page
-- `#hubWineValue` — SUM(estimated_value × qty) from `user_wines`
+- `#hubTotalValue` — stock market value + wine cellar value, **in EUR**; suffixed `*` when partial
+- `#hubStockValue` — `total_market_value_eur` from the **latest snapshot** carrying one
+- `#hubStockDelta` — `"as of 3 Aug"` (+ `"excludes N"`), or `"open Portfolio to calculate"` when no snapshot has a EUR total
+- `#hubWineValue` — SUM(estimated_value × qty) from `user_wines` (EUR by schema)
 - `#hubWineDelta` — % gain vs purchase price, or staleness label ("valued Xd ago")
 
-`clearHubValues()` resets all to `"— —"` on logout. No service module imports in index.html — queries are inline to avoid pulling in the full service dependency graph.
+`clearHubValues()` resets all to `"— —"` on logout.
+
+**Never sum `shares × avg_price` from `positions` here.** That table has no currency
+column, so the sum adds pounds to euros and to dollars; the old `computeStockValue()`
+did exactly that and stamped the result `€`. The hub instead *reads* the EUR figure the
+portfolio page already computed with per-trade FX, so there is only one implementation of
+currency conversion in the app. Snapshots without `total_market_value_eur` (legacy rows,
+written before the base currency was recorded) are **skipped, not assumed to be EUR**.
+
+index.html imports only `services/navbar.js` and `src/hub.js` — the latter is pure and
+dependency-free (zero imports), so it does not drag in the service graph. All other
+service modules remain forbidden here: `services/storage.js` pulls in pricing, portfolio
+and the rest.
 
 ### Filter-scoped summary stats
 
@@ -299,4 +311,5 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **Batch valuation result matching** — Results from the AI must be matched to bottles by `result.id` (a `Map` keyed by bottle ID), never by positional index. The AI can return fewer items than requested; index-based matching silently applies the wrong valuation to the wrong bottle
 - **Valuation pricing rules** — 6 rules enforced in both single and batch prompts: (1) Portuguese retailers first, (2) 23% IVA on ex-tax sources, (3) exact bottle format, (4) current in-stock only, (5) cross-reference ≥3 sources using median, (6) weight specialist merchants for rare/collectible wines
 - **index.html must not import service modules** — `services/storage.js` pulls in the full service graph (pricing, portfolio, etc.). Hub dashboard queries are written inline in the `<script>` block to avoid this dependency chain
+- **`services/`, `data/` and `src/` must NEVER be imported with a `?v=` query** — they are cache-busted by HTTP header (`max-age=0, must-revalidate` in `vercel.json`), not by URL. The browser keys the module registry on the full URL, so importing `./services/state.js?v=X` from an HTML entry point while the services import `./state.js` from each other creates **two separate module instances**: two `state` objects, and two copies of every module-level variable. That is not theoretical — it silently killed `setMissingTickerResolver()` (injected on one instance, read as `null` on the other, so the "resolve missing ticker" dialog never opened from re-enable/import) and made `state.baseCurrency` diverge from the toggle. `wine/` is the exception: it versions *every* URL consistently, so it stays `immutable` — see the next entry
 - **Wine module `?v=` strings must all match** — The browser module cache uses the full URL (including query string) as the cache key. If `wine.html` imports `state.js?v=X` and `cellar.js` imports `state.js?v=Y`, they become two separate module instances — mutations to one don't affect the other. Always keep all `?v=` strings in `wine.html` and within `wine/` in sync with the project version

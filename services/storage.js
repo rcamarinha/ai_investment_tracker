@@ -8,6 +8,7 @@ import { updateAuthBar, checkUserRole, cancelPasswordRecovery } from './auth.js'
 import { renderPortfolio, updateHistoryDisplay, saveTransactionsToStorage } from './portfolio.js';
 import { fetchAssetProfile, backfillFxRates } from './pricing.js';
 import { coerceTxDate } from './import-brokers.js';
+import { normalizeCurrencyCode, shouldOverwriteCurrency } from './money-core.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
 
@@ -40,6 +41,9 @@ export function initSupabase() {
                 state.portfolio = [];
                 state.portfolioHistory = [];
                 state.marketPrices = {};
+                state.priceCurrency = {};   // clear with prices, else one user's
+                                            // "currency unknown" excludes the next
+                                            // user's holding of the same ticker
                 state.priceMetadata = {};
                 state.transactions = {};
                 state.userRole = 'user';
@@ -112,20 +116,41 @@ export async function savePortfolioDB() {
 
 // ── Snapshot DB Operations ──────────────────────────────────────────────────
 
+// Set once if the DB predates migration 20260812 (snapshots currency columns).
+let _snapshotBaseCurrencyUnsupported = false;
+
 export async function saveSnapshotToDB(snapshot) {
     if (!state.supabaseClient || !state.currentUser) return;
 
     try {
-        const { error } = await state.supabaseClient
-            .from('snapshots')
-            .insert({
-                user_id: state.currentUser.id,
-                timestamp: snapshot.timestamp,
-                total_invested: snapshot.totalInvested,
-                total_market_value: snapshot.totalMarketValue,
-                position_count: snapshot.positionCount,
-                prices_available: snapshot.pricesAvailable
-            });
+        const row = {
+            user_id: state.currentUser.id,
+            timestamp: snapshot.timestamp,
+            total_invested: snapshot.totalInvested,
+            total_market_value: snapshot.totalMarketValue,
+            position_count: snapshot.positionCount,
+            prices_available: snapshot.pricesAvailable
+        };
+        // Added by migration 20260812. Without these the snapshot doesn't record
+        // which currency it was taken in, which is what let EUR and USD points
+        // share one axis. Fall back (once per session) if the migration hasn't
+        // been applied rather than losing the snapshot entirely.
+        if (!_snapshotBaseCurrencyUnsupported) {
+            row.base_currency = snapshot.baseCurrency || null;
+            row.total_invested_eur = snapshot.totalInvestedEur ?? null;
+            row.total_market_value_eur = snapshot.totalMarketValueEur ?? null;
+            row.excluded_positions = snapshot.excludedPositions || 0;
+        }
+
+        let { error } = await state.supabaseClient.from('snapshots').insert(row);
+
+        if (error && /base_currency|total_invested_eur|total_market_value_eur|excluded_positions/.test(error.message || '')) {
+            console.warn('snapshots currency columns missing \u2014 run migration 20260812_snapshots_base_currency.sql. Falling back for this session.');
+            _snapshotBaseCurrencyUnsupported = true;
+            delete row.base_currency; delete row.total_invested_eur;
+            delete row.total_market_value_eur; delete row.excluded_positions;
+            ({ error } = await state.supabaseClient.from('snapshots').insert(row));
+        }
 
         if (error) throw error;
         console.log('\u2713 Snapshot saved to Supabase');
@@ -203,6 +228,9 @@ export async function loadAppConfig() {
 
 // ── Asset DB Operations ─────────────────────────────────────────────────────
 
+// Set once if the DB predates migration 20260811 (assets.currency_source).
+let _currencySourceUnsupported = false;
+
 export async function saveAssetsToDB(assets) {
     if (!state.supabaseClient) return;
 
@@ -214,10 +242,26 @@ export async function saveAssetsToDB(assets) {
                 name: asset.name,
                 stock_exchange: asset.stock_exchange,
                 sector: asset.sector,
-                currency: asset.currency,
                 asset_type: asset.asset_type,
                 updated_at: new Date().toISOString()
             };
+            // Currency is written ONLY when the incoming value is at least as
+            // trustworthy as what's stored. buildAssetRecord() infers a currency
+            // from the ticker suffix and runs for every position on every price
+            // refresh, so an unconditional write clobbered the provider-reported
+            // currency that enrichment had just saved — assets.currency
+            // oscillated between the real value and the guess.
+            if (asset.currency) {
+                const stored = state.assetDatabase[asset.ticker] || {};
+                const incomingSource = asset.currency_source || 'profile';
+                if (!stored.currency || shouldOverwriteCurrency(incomingSource, stored.currency_source || 'suffix')) {
+                    const norm = normalizeCurrencyCode(asset.currency);
+                    if (norm) {
+                        upsertData.currency = norm.iso;
+                        upsertData.currency_source = incomingSource;
+                    }
+                }
+            }
             // Include ISIN if available (for ISIN→ticker lookup on future imports)
             if (asset.isin) upsertData.isin = asset.isin;
             // Provenance of the ISIN→ticker mapping ('user' = manually entered)
@@ -227,9 +271,24 @@ export async function saveAssetsToDB(assets) {
             // "Kept at cost" flag — always written (incl. false) so re-enabling sticks
             if (typeof asset.untracked === 'boolean') upsertData.untracked = asset.untracked;
 
-            const { error } = await state.supabaseClient
+            // currency_source arrives with migration 20260811. If that migration
+            // hasn't been applied yet, drop the column and retry rather than
+            // failing every asset write (which would break sector/name saving
+            // too). Detected once per session, not per row.
+            if (_currencySourceUnsupported) delete upsertData.currency_source;
+
+            let { error } = await state.supabaseClient
                 .from('assets')
                 .upsert(upsertData, { onConflict: 'ticker' });
+
+            if (error && /currency_source/.test(error.message || '')) {
+                console.warn('assets.currency_source column missing — run migration 20260811_assets_currency_source.sql. Falling back for this session.');
+                _currencySourceUnsupported = true;
+                delete upsertData.currency_source;
+                ({ error } = await state.supabaseClient
+                    .from('assets')
+                    .upsert(upsertData, { onConflict: 'ticker' }));
+            }
 
             if (error) {
                 console.warn(`Failed to upsert asset ${asset.ticker}:`, error.message);
@@ -258,12 +317,17 @@ export async function loadAssetsFromDB() {
         if (data && data.length > 0) {
             data.forEach(a => {
                 if (!a.ticker) return; // skip rows with missing ticker
+                // Self-heal legacy rows: a stored "GBp"/"GBX" is pence and must
+                // present as GBP everywhere above this line (the cache is not a
+                // record, so normalizing on read is safe and needs no migration).
+                const normCur = normalizeCurrencyCode(a.currency);
                 state.assetDatabase[a.ticker.toUpperCase()] = {
                     name: a.name,
                     ticker: a.ticker,
                     stockExchange: a.stock_exchange,
                     sector: a.sector,
-                    currency: a.currency,
+                    currency: normCur ? normCur.iso : null,
+                    currency_source: a.currency_source || (a.currency ? 'profile' : null),
                     assetType: normalizeAssetType(a.asset_type),
                     isin: a.isin || null,
                     source: a.source || null,
@@ -349,11 +413,19 @@ export async function savePriceHistoryToDB(priceRecords) {
                 console.warn(`Skipping price for ${r.ticker}: not in asset DB`);
                 continue;
             }
+            // `|| 'USD'` used to live here: an unknown currency was WRITTEN TO
+            // THE DATABASE as USD, turning a momentary gap in knowledge into a
+            // permanent false record that later reads trusted. Persist the real
+            // currency or NULL; loadLatestPricesFromDB treats NULL as unknown
+            // and excludes the holding until it can be refreshed.
+            const norm = normalizeCurrencyCode(
+                r.currency || state.priceCurrency?.[ticker] || null
+            );
             rows.push({
                 user_id: state.currentUser.id,
                 ticker: ticker,
                 price: r.price,
-                currency: r.currency || 'USD',
+                currency: norm ? norm.iso : null,
                 source: r.source,
                 fetched_at: r.fetchedAt || new Date().toISOString()
             });
@@ -400,19 +472,35 @@ export async function loadLatestPricesFromDB() {
         if (data && data.length > 0) {
             const seen = new Set();
             let loadedCount = 0;
+            let unpricedCurrency = 0;
             data.forEach(row => {
                 if (!seen.has(row.ticker)) {
                     seen.add(row.ticker);
-                    state.marketPrices[row.ticker] = Number(row.price);
+                    // A cached price is only usable if we know what currency it
+                    // is in. This column was previously SELECTed and thrown
+                    // away, so a restored price silently inherited whatever
+                    // currency the asset happened to claim \u2014 reintroducing, on
+                    // every page load, the pence and ADR mix-ups the live path
+                    // now guards against. Rows written before v3.39 may hold
+                    // pence labelled GBP, so an unusable code is treated as
+                    // unknown (the holding is flagged and excluded) rather than
+                    // trusted.
+                    const norm = normalizeCurrencyCode(row.currency);
+                    state.marketPrices[row.ticker] = Number(row.price) * (norm ? norm.factor : 1);
+                    state.priceCurrency[row.ticker] = norm ? norm.iso : null;
                     state.priceMetadata[row.ticker] = {
                         timestamp: row.fetched_at,
                         source: row.source + ' (cached)',
                         success: true
                     };
+                    if (!norm) unpricedCurrency++;
                     loadedCount++;
                 }
             });
             console.log('\u2713 Loaded', loadedCount, 'cached prices from DB');
+            if (unpricedCurrency > 0) {
+                console.warn(`\u26a0 ${unpricedCurrency} cached price(s) have no usable currency \u2014 excluded from totals until refreshed.`);
+            }
         }
     } catch (err) {
         console.error('Failed to load latest prices from DB:', err);
@@ -590,6 +678,7 @@ export async function loadFromDatabase() {
         state.portfolio = [];
         state.portfolioHistory = [];
         state.marketPrices = {};
+        state.priceCurrency = {};
         state.priceMetadata = {};
         state.transactions = {};
 
@@ -638,7 +727,14 @@ export async function loadFromDatabase() {
                 totalInvested: Number(s.total_invested),
                 totalMarketValue: Number(s.total_market_value),
                 positionCount: s.position_count,
-                pricesAvailable: s.prices_available
+                pricesAvailable: s.prices_available,
+                // NULL base_currency = legacy row, captured before the base was
+                // recorded. Left undefined rather than defaulted to EUR: we do
+                // not know, and pretending otherwise is the bug being fixed.
+                baseCurrency: s.base_currency || null,
+                totalInvestedEur: s.total_invested_eur == null ? null : Number(s.total_invested_eur),
+                totalMarketValueEur: s.total_market_value_eur == null ? null : Number(s.total_market_value_eur),
+                excludedPositions: s.excluded_positions || 0
             }));
             state.portfolioHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             localStorage.setItem('portfolioHistory', JSON.stringify(state.portfolioHistory));

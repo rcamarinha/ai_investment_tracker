@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Investment Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.37.0"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.37.0">
+    <script src="lib/supabase.js?v=3.42.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.42.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -23,7 +23,7 @@
 
         <!-- ── Hub Header ──────────────────────────────────────────────── -->
         <div class="header">
-            <div class="header-eyebrow" data-i18n="hub.eyebrow">Investment Hub · v3.37.0</div>
+            <div class="header-eyebrow" data-i18n="hub.eyebrow">Investment Hub · v3.42.0</div>
             <h1>
                 <span data-i18n="nav.hub">A language for <em>wealth</em></span>
             </h1>
@@ -109,7 +109,12 @@
     </nav>
 
     <script type="module">
-        import { renderNavbar, updateNavbarAuth } from './services/navbar.js?v=3.37.0';
+        import { renderNavbar, updateNavbarAuth } from './services/navbar.js';
+        // src/hub.js is PURE and dependency-free (no imports at all), so this
+        // does not drag in the service graph that CLAUDE.md warns about — it is
+        // the same module the hub tests exercise, which is the point: the hub's
+        // arithmetic is no longer a second, untested copy written inline here.
+        import { computeStockCardEUR, computeNetWorthEUR, hubAsOfLabel } from './src/hub.js';
 
         const SUPABASE_URL      = 'https://dybetrrhshqezokcxiid.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
@@ -215,27 +220,48 @@
 
         async function loadHubValues(userId) {
             try {
-                const [{ data: positions, error: posErr }, { data: wines, error: wineErr }] = await Promise.all([
-                    sbClient.from('positions').select('shares, avg_price').eq('user_id', userId),
+                // The stock figure comes from the latest SNAPSHOT's canonical EUR
+                // total, not from summing shares x avg_price over `positions` —
+                // that table has no currency column, so the old sum added pounds
+                // to euros and stamped the result '€'. The portfolio page already
+                // computes this correctly with per-trade FX; the hub reads it
+                // rather than keeping a third copy of currency conversion.
+                const [{ data: snaps, error: snapErr }, { data: wines, error: wineErr }] = await Promise.all([
+                    sbClient.from('snapshots')
+                        .select('timestamp, total_market_value_eur, excluded_positions')
+                        .eq('user_id', userId)
+                        .not('total_market_value_eur', 'is', null)
+                        .order('timestamp', { ascending: false })
+                        .limit(1),
                     sbClient.from('user_wines').select('qty, estimated_value, purchase_price, last_valued_at').eq('user_id', userId)
                 ]);
-                if (posErr)  console.warn('[hub] positions query:', posErr.message);
+                if (snapErr) console.warn('[hub] snapshots query:', snapErr.message);
                 if (wineErr) console.warn('[hub] user_wines query:', wineErr.message);
 
-                const stockValue = (positions || []).reduce((s, p) => s + (p.shares * p.avg_price), 0);
+                const stockCard = computeStockCardEUR((snaps || [])[0] || null);
 
                 const wineRows  = wines || [];
                 const wineValue = wineRows.reduce((s, w) => s + ((w.estimated_value || 0) * (w.qty || 1)), 0);
                 const wineCost  = wineRows.reduce((s, w) => s + ((w.purchase_price  || 0) * (w.qty || 1)), 0);
 
-                document.getElementById('hubTotalValue').textContent = hubFmt(stockValue + wineValue);
-                document.getElementById('hubStockValue').textContent = hubFmt(stockValue);
+                const net = computeNetWorthEUR(stockCard, wineValue);
+                document.getElementById('hubTotalValue').textContent =
+                    hubFmt(net.value) + (net.value != null && net.partial ? ' *' : '');
+                document.getElementById('hubStockValue').textContent = hubFmt(stockCard ? stockCard.value : null);
                 document.getElementById('hubWineValue').textContent  = hubFmt(wineValue);
 
                 const stockDeltaEl = document.getElementById('hubStockDelta');
                 if (stockDeltaEl) {
-                    stockDeltaEl.textContent = stockValue > 0 ? 'cost basis' : '';
-                    stockDeltaEl.className   = 'hub-card-delta neutral';
+                    if (!stockCard) {
+                        // No snapshot with a EUR total: say so plainly instead of
+                        // showing a number nobody computed.
+                        stockDeltaEl.textContent = 'open Portfolio to calculate';
+                    } else {
+                        const bits = [hubAsOfLabel(stockCard.asOf)].filter(Boolean);
+                        if (stockCard.excluded > 0) bits.push(`excludes ${stockCard.excluded}`);
+                        stockDeltaEl.textContent = bits.join(' · ');
+                    }
+                    stockDeltaEl.className = 'hub-card-delta neutral';
                 }
 
                 const wineDeltaEl = document.getElementById('hubWineDelta');

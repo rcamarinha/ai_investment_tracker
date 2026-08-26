@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>AI Financial Advisor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.37.0"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.37.0">
+    <script src="lib/supabase.js?v=3.42.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.42.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -20,11 +20,11 @@
     <div id="appNavbar" class="app-navbar"></div>
 
     <div class="container">
-        <div class="header">
+        <div class="header header-page">
             <div class="header-eyebrow">Equities · ETFs · Crypto</div>
             <h1>
                 <span data-i18n="portfolio.title">Portfolio</span>
-                <span class="header-version">v3.37.0</span>
+                <span class="header-version">v3.42.0</span>
             </h1>
             <p data-i18n="portfolio.subtitle">Live prices · AI analysis · 6 investment perspectives</p>
         </div>
@@ -61,12 +61,26 @@
                 </div>
             </div>
 
+            <!-- On a phone the primary action stays visible and the desk-work
+                 actions collapse behind a disclosure, so the first position card
+                 sits above the fold instead of below a wall of buttons. A
+                 <details> needs no JS and no extra state; CSS reverts it to a
+                 plain inline row on wider screens. -->
             <div class="action-bar" id="mainActionBar">
-                <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="portfolio.btn.api_keys">🔑 API Keys</button>
-                <button class="btn btn-success" onclick="showAddPositionDialog()" data-i18n="portfolio.btn.add">➕ Add Position</button>
-                <button class="btn btn-primary" onclick="showImportDialog()" data-i18n="portfolio.btn.import">📋 Import from Spreadsheet</button>
                 <button class="btn btn-success" onclick="fetchMarketPrices({interactive:true})" id="refreshBtn" data-i18n="portfolio.btn.prices">🔄 Update Prices</button>
-                <button class="btn btn-warning" onclick="savePortfolioSnapshot()" data-i18n="portfolio.btn.snapshot">💾 Save Snapshot</button>
+                <!-- A checkbox, not <details>: a closed <details> hides its
+                     non-summary children outright, so `display: contents` cannot
+                     bring them back and the buttons disappear on desktop. This
+                     collapses on phones and dissolves into the same flat row
+                     above 640px, with no JS. -->
+                <input type="checkbox" id="moreActionsToggle" class="action-more-check" hidden>
+                <label for="moreActionsToggle" class="btn btn-primary action-more-toggle" data-i18n="portfolio.btn.more">⋯ More</label>
+                <div class="action-more-panel" id="moreActionsPanel">
+                    <button class="btn btn-success" onclick="showAddPositionDialog()" data-i18n="portfolio.btn.add">➕ Add Position</button>
+                    <button class="btn btn-primary" onclick="showImportDialog()" data-i18n="portfolio.btn.import">📋 Import from Spreadsheet</button>
+                    <button class="btn btn-warning" onclick="savePortfolioSnapshot()" data-i18n="portfolio.btn.snapshot">💾 Save Snapshot</button>
+                    <button class="btn btn-key" id="apiKeyBtn" onclick="showApiKeyDialog()" data-i18n="portfolio.btn.api_keys">🔑 API Keys</button>
+                </div>
             </div>
 
             <div id="moversSection" style="display: none;"></div>
@@ -405,12 +419,12 @@
     -->
     <script type="module">
         // ── Import all modules ──────────────────────────────────────────────
-        import { renderNavbar } from './services/navbar.js?v=3.37.0';
-        import state from './services/state.js?v=3.37.0';
-        import { isArtifact } from './services/utils.js?v=3.37.0';
-        import { loadSectorCache } from './data/sectors.js?v=3.37.0';
+        import { renderNavbar } from './services/navbar.js';
+        import state from './services/state.js';
+        import { isArtifact } from './services/utils.js';
+        import { loadSectorCache } from './data/sectors.js';
         import { renderPerspectiveTabs, selectPerspective, toggleSectorFilter,
-                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './services/ui.js?v=3.37.0';
+                 showApiKeyDialog, closeApiKeyDialog, saveApiKeys, clearApiKeys } from './services/ui.js';
         import { renderPortfolio, showImportDialog, closeImportDialog,
                  importPositions, importTrades, handleTradeFile,
                  savePortfolioSnapshot, updateHistoryDisplay,
@@ -421,17 +435,17 @@
                  deleteTransactionRow,
                  toggleCardTx, togglePerformanceDetails, setPosSearch, setPosSort,
                  resolveMissingTickers, reEnablePricing, resolveCardTicker,
-                 loadTransactionsFromStorage } from './services/portfolio.js?v=3.37.0';
-        import { fetchMarketPrices, fetchExchangeRates, setMissingTickerResolver } from './services/pricing.js?v=3.37.0';
+                 loadTransactionsFromStorage } from './services/portfolio.js';
+        import { fetchMarketPrices, fetchExchangeRates, setMissingTickerResolver } from './services/pricing.js';
 
         // Interactive resolve-missing-ticker flow: pricing.js calls back into
         // the portfolio dialog (callback injection avoids a circular import).
         setMissingTickerResolver(resolveMissingTickers);
-        import { analyzeMarkets, getTradeIdeas } from './services/analysis.js?v=3.37.0';
-        import { initSupabase } from './services/storage.js?v=3.37.0';
+        import { analyzeMarkets, getTradeIdeas } from './services/analysis.js';
+        import { initSupabase } from './services/storage.js';
         import { handleLogin, handleSignup, handleLogout, handleGoogleLogin,
                  handleForgotPassword, handlePasswordReset, cancelPasswordRecovery,
-                 checkUserRole, updateActionVisibility } from './services/auth.js?v=3.37.0';
+                 checkUserRole, updateActionVisibility } from './services/auth.js';
 
         // ── Expose functions to onclick handlers ────────────────────────────
         window.showApiKeyDialog    = showApiKeyDialog;

@@ -38,12 +38,32 @@ function requireAuth(actionName) {
  * which, so using it froze invested/income totals in EUR regardless of the
  * currency toggle (identical numbers relabeled $).
  */
-function txRateToBase(tx, fallbackCurrency) {
-    const base = state.baseCurrency || 'EUR';
+function txRateToBase(tx, fallbackCurrency, targetBase) {
+    const base = targetBase || state.baseCurrency || 'EUR';
     const hist = tx.fxRates ? Number(tx.fxRates[base]) : NaN;
     if (Number.isFinite(hist) && hist > 0) return hist;
     state._fxFallbackCount = (state._fxFallbackCount || 0) + 1;
-    return getExchangeRate(tx.currency || fallbackCurrency);
+    // Live fallback. Convert 1 unit of the tx currency into the target base.
+    return toBaseCurrency(1, tx.currency || fallbackCurrency, base);   // may be null
+}
+
+/**
+ * The currency a holding's LIVE QUOTE is denominated in.
+ *
+ * Distinct from the asset's own currency on purpose: the ticker resolver is
+ * instructed to prefer a US-listed ADR when one exists, so a Paris listing can
+ * be priced from a USD quote. state.priceCurrency records what the quote tier
+ * actually reported:
+ *   - a string  → known (tier-4 proxy reports it; pence already folded)
+ *   - null      → explicitly unknown (priced under a different ticker, or an
+ *                 AI web-search price that carries no currency at all)
+ *   - absent    → nothing special happened; the asset's own currency applies
+ */
+function quoteCurrencyOf(symbol, assetCurrency) {
+    if (Object.prototype.hasOwnProperty.call(state.priceCurrency || {}, symbol)) {
+        return state.priceCurrency[symbol];      // string or null
+    }
+    return assetCurrency;
 }
 
 /**
@@ -53,13 +73,20 @@ function txRateToBase(tx, fallbackCurrency) {
  * Buys convert at trade-date FX (fallback: live), scaled by the cost-based
  * remaining ratio (split-invariant — a split multiplies shares, not cost).
  */
-function computeInvestedBase(p, txs, currency) {
+function computeInvestedBase(p, txs, currency, targetBase) {
     const investedNative = p.shares * p.avgPrice;
-    if (!txs || txs.length === 0) return toBaseCurrency(investedNative, currency);
+    if (!txs || txs.length === 0) return toBaseCurrency(investedNative, currency, targetBase);
     let investedBase = 0;
+    let unconvertible = false;
     txs.forEach(tx => {
-        if (tx.type === 'buy') investedBase += (Number(tx.totalAmount) || 0) * txRateToBase(tx, currency);
+        if (tx.type !== 'buy') return;
+        const rate = txRateToBase(tx, currency, targetBase);
+        // No rate for this trade's currency: the position's cost basis cannot be
+        // stated in base. Bail out rather than under-counting by skipping a leg.
+        if (rate == null) { unconvertible = true; return; }
+        investedBase += (Number(tx.totalAmount) || 0) * rate;
     });
+    if (unconvertible) return null;
     const totalBuyCostNative = txs.filter(t => t.type === 'buy')
         .reduce((s, t) => s + (t.totalAmount || t.shares * t.price), 0);
     const remainingRatio = totalBuyCostNative > 0
@@ -89,22 +116,43 @@ export function renderPortfolio(opts = {}) {
     let totalMarketValueBase = 0;
     let positionsWithPrices = 0;
 
+    // Holdings we cannot value in the base currency. They are EXCLUDED from
+    // every total rather than being converted at a guessed rate — an amount
+    // that can't be converted is never converted silently.
+    const excluded = [];
+
     filteredActivePositions.forEach(p => {
         const currency = getAssetCurrency(p.symbol);
         const investedNative = p.shares * p.avgPrice;
 
         // Invested: trade-date FX via the shared helper (falls back to live rates)
-        totalInvestedBase += computeInvestedBase(p, state.transactions[p.symbol], currency);
+        const investedBase = computeInvestedBase(p, state.transactions[p.symbol], currency);
 
-        // Market value in base currency: always use current exchange rate
+        // Market value: the QUOTE's currency, which is not always the asset's
+        // (a learned pricingTicker may be a US ADR for a European listing).
         const currentPrice = state.marketPrices[p.symbol];
-        if (currentPrice) {
-            totalMarketValueBase += toBaseCurrency(p.shares * currentPrice, currency);
-            positionsWithPrices++;
-        } else {
-            totalMarketValueBase += toBaseCurrency(investedNative, currency);
+        const quoteCurrency = quoteCurrencyOf(p.symbol, currency);
+        const marketBase = currentPrice
+            ? toBaseCurrency(p.shares * currentPrice, quoteCurrency)
+            : toBaseCurrency(investedNative, currency);
+
+        if (investedBase == null || marketBase == null) {
+            excluded.push({
+                symbol: p.symbol,
+                reason: (currentPrice && quoteCurrency == null) ? 'quote currency unknown'
+                    : currency == null ? 'currency unknown' : 'no exchange rate',
+            });
+            return;   // contributes 0 to both totals
         }
+
+        totalInvestedBase += investedBase;
+        totalMarketValueBase += marketBase;
+        if (currentPrice) positionsWithPrices++;
     });
+    state.excludedPositions = excluded;
+    if (excluded.length > 0) {
+        console.warn(`⚠ ${excluded.length} holding(s) excluded from totals:`, excluded);
+    }
     if (state._fxFallbackCount > 0) {
         console.log(`ℹ ${state._fxFallbackCount} transaction(s) converted at LIVE rates (trade-date FX not backfilled yet)`);
     }
@@ -164,6 +212,12 @@ export function renderPortfolio(opts = {}) {
                 </div>
             ` : ''}
             ${incomeFeesRow}
+            ${excluded.length > 0 ? `
+                <div style="color: var(--gold); font-size: 11px; margin-top: 6px;"
+                     title="${escapeHTML(excluded.map(e => `${e.symbol} (${e.reason})`).join(', '))}">
+                    ⚠ Excludes ${excluded.length} holding${excluded.length !== 1 ? 's' : ''} — currency unknown
+                </div>
+            ` : ''}
         </div>
         </div>
     `;
@@ -194,7 +248,9 @@ export function renderPortfolio(opts = {}) {
     const baseValOf = p => {
         const c = state.marketPrices[p.symbol];
         const mv = c !== undefined ? p.shares * c : p.shares * p.avgPrice;
-        return toBaseCurrency(mv, getAssetCurrency(p.symbol));
+        const cur = quoteCurrencyOf(p.symbol, getAssetCurrency(p.symbol));
+        const v = toBaseCurrency(mv, cur);
+        return v == null ? -Infinity : v;   // unvaluable holdings sort last
     };
     const gainPctOf = p => {
         const inv = p.shares * p.avgPrice;
@@ -227,9 +283,14 @@ export function renderPortfolio(opts = {}) {
         const marketValue = hasPrice ? pos.shares * currentPrice : invested; // native currency
         const gainLoss = marketValue - invested; // native currency P&L
         const gainLossPct = invested > 0 ? (gainLoss / invested) * 100 : 0;
-        // Weight uses base currency conversion
-        const marketValueBase = toBaseCurrency(marketValue, currency);
-        const weight = totalMarketValueBase > 0 ? (marketValueBase / totalMarketValueBase) * 100 : 0;
+        // Weight uses base currency conversion. When the holding can't be
+        // converted it has no meaningful weight — show none rather than a
+        // number derived from a guessed rate.
+        const quoteCurrency = quoteCurrencyOf(pos.symbol, currency);
+        const marketValueBase = toBaseCurrency(marketValue, hasPrice ? quoteCurrency : currency);
+        const isUnvaluable = marketValueBase == null;
+        const weight = (!isUnvaluable && totalMarketValueBase > 0)
+            ? (marketValueBase / totalMarketValueBase) * 100 : null;
         const pnlClass = gainLoss >= 0 ? 'up' : 'down';
 
         // Price metadata
@@ -278,8 +339,13 @@ export function renderPortfolio(opts = {}) {
         const positionSub = isActive
             ? `${pos.shares} shs \u00B7 avg ${formatCurrency(pos.avgPrice, currency)}`
             : 'Closed';
+        // The live price is shown in the QUOTE's currency (which may differ from
+        // the asset's when priced via an ADR), and the weight is omitted when
+        // the holding can't be converted into the base currency.
         const priceSub = isActive
-            ? (hasPrice ? `${formatCurrency(currentPrice, currency)} \u00B7 ${weight.toFixed(1)}%` : '\u23F3 Pending')
+            ? (hasPrice
+                ? `${formatCurrency(currentPrice, quoteCurrency || currency)}${weight != null ? ` \u00B7 ${weight.toFixed(1)}%` : ''}`
+                : '\u23F3 Pending')
             : '';
         const platformBadge = (pos.platform && pos.platform !== 'Unknown')
             ? `<span class="pos-platform">${escapeHTML(pos.platform)}</span>`
@@ -345,7 +411,7 @@ export function renderPortfolio(opts = {}) {
         <div class="pos-wrap">
         <div class="pos-card ${assetTypeClass}${isActive ? '' : ' inactive'}" title="${escapeHTML(pos.name || pos.symbol)}${pos.platform ? '\nPlatform: ' + escapeHTML(pos.platform) : ''}${sector !== 'Other' ? '\nSector: ' + escapeHTML(sector) : ''}">
             <div class="pos-icon ${assetTypeClass}">${tickerBadge}</div>
-            <div>
+            <div class="pos-main">
                 <div class="pos-name">
                     <span class="pos-status-dot" style="color:${statusColor}" title="${escapeHTML(statusText)}">${statusFlag}</span>
                     ${displayName}
@@ -359,6 +425,11 @@ export function renderPortfolio(opts = {}) {
                         : (isActive && !hasPrice
                             ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="No live price \u2014 click to find the right ticker (search by name, enter one, or keep at cost)." onclick="resolveCardTicker('${escapedSymbol}')">\u26A0 no live price \u00B7 <u>resolve ticker</u></div>`
                             : ''))}
+                ${(isActive && isUnvaluable)
+                    ? `<div class="pos-sub" style="color: var(--gold);" title="${quoteCurrency == null && hasPrice
+                        ? 'This holding is priced under a different ticker (possibly a US ADR), so the quote currency is unknown. It is excluded from your totals rather than converted at a guessed rate.'
+                        : 'No exchange rate available for this currency. Excluded from totals rather than converted at a guessed rate.'}">\u26A0 ${quoteCurrency == null && hasPrice ? 'quote currency unknown' : 'no ' + base + ' rate'} \u00B7 excluded from totals</div>`
+                    : ''}
                 ${(() => {
                     // Show the EFFECTIVE ticker when it differs from the stored symbol,
                     // so a learned/user mapping is visible instead of invisible magic.
@@ -369,13 +440,13 @@ export function renderPortfolio(opts = {}) {
                 })()}
                 ${(pos.dividends > 0) ? `<div class="pos-sub" style="color: var(--up);">\uD83D\uDCB0 ${formatCurrency(pos.dividends - (pos.taxWithheld || 0), currency)} income${(pos.avgPrice > 0 && pos.shares > 0) ? ` \u00B7 ${formatPercent((pos.dividends - (pos.taxWithheld || 0)) / (pos.avgPrice * pos.shares) * 100)} yld/cost` : ''}</div>` : ''}
                 ${platformBadge}
-                <div class="position-actions">${actionButtons}</div>
             </div>
             <div class="pos-right">
                 <div class="pos-value">${isActive ? formatCurrency(marketValue, currency) : '\u2014'}</div>
                 ${isActive ? `<div class="pos-change ${pnlClass}">${gainLoss >= 0 ? '+' : ''}${formatCurrency(gainLoss, currency)} (${formatPercent(gainLossPct)})</div>` : ''}
                 ${priceSub ? `<div class="pos-sub">${priceSub}</div>` : ''}
             </div>
+            <div class="position-actions">${actionButtons}</div>
         </div>
         ${txPanel}
         </div>
@@ -2319,22 +2390,52 @@ export async function savePortfolioSnapshot() {
 
     const activePositions = state.portfolio.filter(p => p.shares > 0);
 
+    // Holdings that can't be converted are excluded from the totals AND counted,
+    // so the saved point records that it was a partial valuation instead of
+    // quietly understating the portfolio forever.
+    let excludedCount = 0;
+    // Canonical EUR totals, computed regardless of which base the toggle is on.
+    // Without these the history chart plotted EUR and USD points on one axis and
+    // labelled them all '€', and the hub had no comparable number to read.
+    let totalInvestedEur = 0;
+    let totalMarketValueEur = 0;
+    let eurComplete = true;
+
     activePositions.forEach(p => {
         const currency = getAssetCurrency(p.symbol);
         const investedNative = p.shares * p.avgPrice;
+        const currentPrice = state.marketPrices[p.symbol];
+        const quoteCurrency = quoteCurrencyOf(p.symbol, currency);
 
         // Shared helper: trade-date FX + cost-based (split-invariant) remaining
         // ratio. This inline copy had drifted from renderPortfolio's TWICE
         // (missed both the split-ratio and FX fixes) — never inline it again.
-        totalInvested += computeInvestedBase(p, state.transactions[p.symbol], currency);
+        const investedBase = computeInvestedBase(p, state.transactions[p.symbol], currency);
 
-        // Market value in base currency: always use current exchange rate
-        const currentPrice = state.marketPrices[p.symbol];
-        if (currentPrice) {
-            totalMarketValue += toBaseCurrency(p.shares * currentPrice, currency);
-        } else {
-            totalMarketValue += toBaseCurrency(investedNative, currency);
-        }
+        // Market value in base currency: always use current exchange rate, and
+        // in the QUOTE's currency (a learned pricingTicker may be a US ADR).
+        const marketBase = currentPrice
+            ? toBaseCurrency(p.shares * currentPrice, quoteCurrency)
+            : toBaseCurrency(investedNative, currency);
+
+        // Same figures, pinned to EUR.
+        const investedEur = computeInvestedBase(p, state.transactions[p.symbol], currency, 'EUR');
+        const marketEur = currentPrice
+            ? toBaseCurrency(p.shares * currentPrice, quoteCurrency, 'EUR')
+            : toBaseCurrency(investedNative, currency, 'EUR');
+
+        // Order matters: a holding excluded from the BASE totals must also mark
+        // the EUR pair incomplete. Returning first left eurComplete true, so an
+        // EUR total missing this holding was written to the DB as a complete
+        // figure — and the hub reads exactly that number as your net worth.
+        if (investedEur == null || marketEur == null) eurComplete = false;
+        if (investedBase == null || marketBase == null) { excludedCount++; eurComplete = false; return; }
+        totalInvested += investedBase;
+        totalMarketValue += marketBase;
+
+        if (investedEur == null || marketEur == null) return;
+        totalInvestedEur += investedEur;
+        totalMarketValueEur += marketEur;
     });
 
     const snapshot = {
@@ -2343,7 +2444,12 @@ export async function savePortfolioSnapshot() {
         totalInvested,
         totalMarketValue,
         positionCount: activePositions.length,
-        pricesAvailable: Object.keys(state.marketPrices).length
+        pricesAvailable: Object.keys(state.marketPrices).length,
+        excludedPositions: excludedCount,
+        // Canonical EUR pair — null (not 0) when any holding couldn't be priced
+        // in EUR, so a partial figure is never mistaken for a complete one.
+        totalInvestedEur: eurComplete ? totalInvestedEur : null,
+        totalMarketValueEur: eurComplete ? totalMarketValueEur : null
     };
 
     state.portfolioHistory.push(snapshot);
@@ -2423,10 +2529,10 @@ export function updateHistoryDisplay() {
                                     <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" class="btn-icon-hover-danger">\u{1F5D1}\u{FE0F}</button>
                                 </div>
                             </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px;">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; font-size: 13px;">
                                 <div><div style="color: var(--text-secondary); font-size: 11px;">Invested${snapshot.baseCurrency ? ' (' + snapshot.baseCurrency + ')' : ''}</div><div style="color: var(--text-primary);">${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}</div></div>
                                 <div><div style="color: var(--text-secondary); font-size: 11px;">Market Value</div><div style="color: var(--text-primary);">${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}</div></div>
-                                <div><div style="color: var(--text-secondary); font-size: 11px;">Gain/Loss</div><div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss, snapshot.baseCurrency)} (${formatPercent(gainLossPct)})</div></div>
+                                <div><div style="color: var(--text-secondary); font-size: 11px;">Gain/Loss</div><div style="color: ${color}; font-weight: bold;">${formatCurrency(gainLoss, snapshot.baseCurrency)}<br><span style="font-weight: normal;">(${formatPercent(gainLossPct)})</span></div></div>
                             </div>
                         </div>
                     `;
@@ -2448,39 +2554,79 @@ function updateChart() {
         const chartDiv = document.getElementById('historyChart');
         if (!chartDiv) return;
 
-        const allValues = state.portfolioHistory.flatMap(s => [s.totalInvested, s.totalMarketValue]);
-        const minValue = Math.min(...allValues) * 0.95;
-        const maxValue = Math.max(...allValues) * 1.05;
-        const range = maxValue - minValue;
+        // Only the most recent snapshots are plotted: at 40px per column a long
+        // history renders as dozens of unreadable slivers, and (before the
+        // .table-scroll wrapper below) made the whole *document* wider than the
+        // viewport, which on iOS drags the sticky navbar out of view with it.
+        const MAX_BARS = 30;
+        const series = state.portfolioHistory.slice(-MAX_BARS);
+        const omitted = state.portfolioHistory.length - series.length;
+
+        // Plot the canonical EUR pair when present so a single axis means a
+        // single currency. Snapshots were previously stored in whatever base the
+        // toggle happened to be on, with no record of which, so EUR and USD
+        // points shared an axis and were all labelled '€'. Legacy rows (no EUR
+        // figure) fall back to their raw values and are drawn muted.
+        const chartVal = (sn, key) => {
+            const eur = key === 'invested' ? sn.totalInvestedEur : sn.totalMarketValueEur;
+            return eur == null ? (key === 'invested' ? sn.totalInvested : sn.totalMarketValue) : eur;
+        };
+        const isLegacy = sn => sn.totalMarketValueEur == null;
+        const anyLegacy = series.some(isLegacy);
+
+        const allValues = series.flatMap(s => [chartVal(s, 'invested'), chartVal(s, 'market')]);
+        // Baseline at zero: bar height must be proportional to value. The old
+        // `min * 0.95` baseline made every bar at the low end of the range
+        // collapse to a ~0px stub while carrying most of the actual value.
+        const peak = Math.max(...allValues, 0);
+        const range = peak > 0 ? peak * 1.05 : 1;   // never divide by zero
+        const barHeight = v => Math.max(0, Math.min(180, (v / range) * 180));
 
         let chartHTML = '<div style="background: var(--surface-2); padding: 20px; border-radius: 10px;">';
-        chartHTML += '<div style="display: flex; justify-content: space-around; gap: 8px; align-items: flex-end; height: 200px;">';
+        // .table-scroll keeps a long history inside its own scroll region
+        // instead of widening the page (css/styles.css — overflow-x:auto).
+        chartHTML += '<div class="table-scroll">';
+        chartHTML += '<div style="display: flex; justify-content: space-around; gap: 8px; align-items: flex-end; height: 200px; width: max-content; min-width: 100%;">';
 
-        state.portfolioHistory.forEach((snapshot) => {
+        series.forEach((snapshot) => {
             const date = new Date(snapshot.timestamp);
             const label = `${date.getMonth() + 1}/${date.getDate()}`;
-            const marketHeight = ((snapshot.totalMarketValue - minValue) / range) * 180;
-            const investedHeight = ((snapshot.totalInvested - minValue) / range) * 180;
-            const gainLoss = snapshot.totalMarketValue - snapshot.totalInvested;
+            const investedVal = chartVal(snapshot, 'invested');
+            const marketVal = chartVal(snapshot, 'market');
+            const marketHeight = barHeight(marketVal);
+            const investedHeight = barHeight(investedVal);
+            const gainLoss = marketVal - investedVal;
             const color = gainLoss >= 0 ? 'var(--up)' : 'var(--down)';
+            const legacy = isLegacy(snapshot);
+            const legacyStyle = legacy ? 'opacity: 0.4;' : '';
+            const legacyTitle = legacy ? '\nLegacy snapshot — base currency was not recorded, so this point may not be in EUR.' : '';
 
             chartHTML += `
-                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 40px;">
+                <div style="flex: 0 0 40px; display: flex; flex-direction: column; align-items: center; ${legacyStyle}">
                     <div style="position: relative; width: 100%; height: 180px; display: flex; align-items: flex-end; justify-content: center; gap: 2px;">
-                        <div style="width: 45%; background: var(--gold); height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(snapshot.totalInvested, snapshot.baseCurrency)}"></div>
-                        <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0;" title="Market: ${formatCurrency(snapshot.totalMarketValue, snapshot.baseCurrency)}"></div>
+                        <div style="width: 45%; background: var(--gold); height: ${investedHeight}px; border-radius: 3px 3px 0 0;" title="Invested: ${formatCurrency(investedVal, legacy ? snapshot.baseCurrency : 'EUR')}${legacyTitle}"></div>
+                        <div style="width: 45%; background: ${color}; height: ${marketHeight}px; border-radius: 3px 3px 0 0;" title="Market: ${formatCurrency(marketVal, legacy ? snapshot.baseCurrency : 'EUR')}${legacyTitle}"></div>
                     </div>
                     <div style="font-size: 10px; color: var(--text-secondary); margin-top: 5px; text-align: center;">${label}</div>
                 </div>
             `;
         });
 
-        chartHTML += '</div>';
+        chartHTML += '</div>';   // bar row
+        chartHTML += '</div>';   // .table-scroll
+        const chartNotes = [];
+        if (omitted > 0) chartNotes.push(`showing last ${series.length} of ${state.portfolioHistory.length} snapshots`);
+        chartNotes.push('values in EUR');
+        if (anyLegacy) chartNotes.push('faded bars: base currency not recorded');
+        chartHTML += `<div style="font-size: 11px; color: var(--text-tertiary); margin-top: 8px; text-align: center;">${chartNotes.join(' · ')}</div>`;
+        // flex-wrap lets the legend break between items; nowrap on the labels
+        // stops "Market Value (Profit)" from breaking *within* a word into a
+        // three-line stack when the row is narrower than the three items.
         chartHTML += `
-            <div style="display: flex; justify-content: center; gap: 20px; margin-top: 15px; font-size: 12px;">
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--gold); border-radius: 2px;"></div><span style="color: var(--text-primary);">Invested</span></div>
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--up); border-radius: 2px;"></div><span style="color: var(--text-primary);">Market Value (Profit)</span></div>
-                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--down); border-radius: 2px;"></div><span style="color: var(--text-primary);">Market Value (Loss)</span></div>
+            <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin-top: 15px; font-size: 12px;">
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--gold); border-radius: 2px; flex-shrink: 0;"></div><span style="color: var(--text-primary); white-space: nowrap;">Invested</span></div>
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--up); border-radius: 2px; flex-shrink: 0;"></div><span style="color: var(--text-primary); white-space: nowrap;">Market (profit)</span></div>
+                <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 12px; height: 12px; background: var(--down); border-radius: 2px; flex-shrink: 0;"></div><span style="color: var(--text-primary); white-space: nowrap;">Market (loss)</span></div>
             </div>
         `;
         chartHTML += '</div>';
@@ -2872,6 +3018,12 @@ export function submitPosition() {
             const result = await fetchStockPrice(symbol);
             if (result.success) {
                 state.marketPrices[symbol] = result.price;
+                // Record the quote's currency here too. Dropping it left the
+                // holding permanently "currency unknown" — refreshing the card
+                // could never clear the flag, even once an authoritative,
+                // pence-folded currency came back from the proxy tier.
+                if (result.currency) state.priceCurrency[symbol] = result.currency;
+                else delete state.priceCurrency[symbol];
                 state.priceMetadata[symbol] = {
                     timestamp: new Date().toISOString(),
                     source: result.source,
@@ -2916,6 +3068,8 @@ export async function refreshSinglePrice(symbol) {
     const result = await fetchStockPrice(symbol);
     if (result.success) {
         state.marketPrices[symbol] = result.price;
+        if (result.currency) state.priceCurrency[symbol] = result.currency;
+        else delete state.priceCurrency[symbol];
         state.priceMetadata[symbol] = {
             timestamp: new Date().toISOString(),
             source: result.source,
@@ -3029,13 +3183,19 @@ export function loadTransactionsFromStorage() {
  * Returns { dividends, tax, netIncome, fees } (all base-currency).
  */
 function computeIncomeTotalsBase() {
-    const base = state.baseCurrency || 'EUR';
     let dividends = 0, tax = 0, fees = 0;
+    let excludedIncome = 0;
     for (const [symbol, txs] of Object.entries(state.transactions || {})) {
         for (const tx of txs) {
-            // Same currency resolution as the backfill (symbol's asset currency,
-            // not the base) so null-currency rows convert consistently everywhere.
-            const rate = txRateToBase(tx, getAssetCurrency(symbol) || base);
+            // Resolve the asset's own currency. The old `|| base` fallback here
+            // counted a dividend on an unknown-currency asset as if it were
+            // already in base — the same guess-when-you-don't-know the totals
+            // loop refuses — so it is gone.
+            const rate = txRateToBase(tx, getAssetCurrency(symbol));
+            // Unconvertible rows are SKIPPED and counted, not multiplied by null
+            // (which yields 0 and silently under-reports income and fees with
+            // nothing on screen to indicate anything is missing).
+            if (!Number.isFinite(rate)) { excludedIncome++; continue; }
             if (tx.type === 'dividend') {
                 dividends += (Number(tx.totalAmount) || 0) * rate;
                 tax += (Number(tx.tax) || 0) * rate;
@@ -3046,7 +3206,10 @@ function computeIncomeTotalsBase() {
             }
         }
     }
-    return { dividends, tax, netIncome: dividends - tax, fees };
+    if (excludedIncome > 0) {
+        console.warn(`⚠ ${excludedIncome} income/fee row(s) excluded from totals — no usable FX rate.`);
+    }
+    return { dividends, tax, netIncome: dividends - tax, fees, excluded: excludedIncome };
 }
 
 

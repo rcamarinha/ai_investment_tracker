@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
     hubFmt,
-    computeStockValue,
+    computeStockCardEUR,
+    computeNetWorthEUR,
+    hubAsOfLabel,
     computeWineValue,
     computeWineCost,
     computeWineDelta,
@@ -50,46 +52,88 @@ describe('hubFmt', () => {
     });
 });
 
-// ── computeStockValue ─────────────────────────────────────────────────────────
+// ── computeStockCardEUR / computeNetWorthEUR ─────────────────────────────────
+//
+// These replace computeStockValue(positions), which summed shares x avg_price
+// from a table with no currency column — adding pounds to euros and labelling
+// the result '€'. The hub now reads the EUR total the portfolio page computed.
 
-describe('computeStockValue', () => {
-    it('sums shares × avg_price across all positions', () => {
-        const positions = [
-            { shares: 10, avg_price: 150 },
-            { shares: 5,  avg_price: 300 },
-        ];
-        expect(computeStockValue(positions)).toBe(10 * 150 + 5 * 300); // 3000
+describe('computeStockCardEUR', () => {
+    it('reads the canonical EUR total off a snapshot row', () => {
+        const card = computeStockCardEUR({
+            timestamp: '2026-08-03T10:00:00Z', total_market_value_eur: 79466.75, excluded_positions: 0,
+        });
+        expect(card.value).toBe(79466.75);
+        expect(card.asOf).toBe('2026-08-03T10:00:00Z');
+        expect(card.excluded).toBe(0);
     });
 
-    it('returns 0 for an empty array', () => {
-        expect(computeStockValue([])).toBe(0);
+    // Legacy rows predate the base-currency columns. We do not know what
+    // currency they were captured in, so they must not be shown as EUR.
+    it('returns null for a legacy row with no EUR total', () => {
+        expect(computeStockCardEUR({ timestamp: 't', total_market_value_eur: null })).toBeNull();
+        expect(computeStockCardEUR({ timestamp: 't' })).toBeNull();
     });
 
-    it('returns 0 for null', () => {
-        expect(computeStockValue(null)).toBe(0);
+    it('returns null when there is no snapshot at all', () => {
+        expect(computeStockCardEUR(null)).toBeNull();
+        expect(computeStockCardEUR(undefined)).toBeNull();
     });
 
-    it('handles a position with null avg_price', () => {
-        const positions = [{ shares: 5, avg_price: null }];
-        expect(computeStockValue(positions)).toBe(0);
+    it('rejects a non-numeric total rather than rendering NaN', () => {
+        expect(computeStockCardEUR({ total_market_value_eur: 'abc' })).toBeNull();
     });
 
-    it('handles a position with null shares', () => {
-        const positions = [{ shares: null, avg_price: 100 }];
-        expect(computeStockValue(positions)).toBe(0);
+    it('carries the excluded count through', () => {
+        expect(computeStockCardEUR({ total_market_value_eur: 100, excluded_positions: 2 }).excluded).toBe(2);
     });
 
-    it('handles a single position', () => {
-        expect(computeStockValue([{ shares: 100, avg_price: 50 }])).toBe(5000);
+    it('treats a zero total as a real value, not as missing', () => {
+        expect(computeStockCardEUR({ total_market_value_eur: 0 }).value).toBe(0);
+    });
+});
+
+describe('computeNetWorthEUR', () => {
+    it('adds the stock card to the wine cellar value', () => {
+        const net = computeNetWorthEUR({ value: 79466.75, excluded: 0 }, 5000);
+        expect(net.value).toBeCloseTo(84466.75, 6);
+        expect(net.partial).toBe(false);
     });
 
-    it('sums a large number of positions correctly', () => {
-        const positions = Array.from({ length: 10 }, (_, i) => ({
-            shares: 10,
-            avg_price: (i + 1) * 10,
-        }));
-        // 10*(10+20+30+...+100) = 10*550 = 5500
-        expect(computeStockValue(positions)).toBe(5500);
+    it('marks the total partial when holdings were excluded', () => {
+        expect(computeNetWorthEUR({ value: 100, excluded: 2 }, 50).partial).toBe(true);
+    });
+
+    // The important one: with no usable stock figure the hub must NOT fall back
+    // to a bare wine number that reads like a whole net worth.
+    it('is partial, never a confident number, when the stock side is missing', () => {
+        const net = computeNetWorthEUR(null, 5000);
+        expect(net.value).toBe(5000);
+        expect(net.partial).toBe(true);
+    });
+
+    it('returns null when there is nothing at all to report', () => {
+        expect(computeNetWorthEUR(null, 0).value).toBeNull();
+        expect(computeNetWorthEUR(null, 0).partial).toBe(true);
+    });
+
+    it('handles a missing wine value', () => {
+        expect(computeNetWorthEUR({ value: 100, excluded: 0 }, null).value).toBe(100);
+    });
+});
+
+describe('hubAsOfLabel', () => {
+    const NOW = new Date('2026-08-05T12:00:00Z').getTime();
+    it('labels today and yesterday in words', () => {
+        expect(hubAsOfLabel('2026-08-05T09:00:00Z', NOW)).toBe('as of today');
+        expect(hubAsOfLabel('2026-08-04T09:00:00Z', NOW)).toBe('as of yesterday');
+    });
+    it('falls back to a short date further back', () => {
+        expect(hubAsOfLabel('2026-07-30T09:00:00Z', NOW)).toMatch(/^as of /);
+    });
+    it('returns empty for missing or invalid timestamps', () => {
+        expect(hubAsOfLabel(null, NOW)).toBe('');
+        expect(hubAsOfLabel('not-a-date', NOW)).toBe('');
     });
 });
 

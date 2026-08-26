@@ -280,7 +280,7 @@ body {
     margin-bottom: 20px;
 }
 
-/* Card-style position row — uses .pos-card-mobile base from Design System v2 */
+/* Card-style position row */
 .position {
     background: var(--ink-3);
     border: 1px solid var(--border);
@@ -301,19 +301,6 @@ body {
     border-left-color: var(--border);
 }
 .position.inactive:hover { opacity: 0.7; }
-
-/* Middle column */
-.pos-card-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-}
-.pos-card-body .position-actions {
-    display: flex;
-    gap: 4px;
-    margin-top: 6px;
-}
 
 /* Status dot inline with name */
 .pos-status-dot {
@@ -1584,68 +1571,6 @@ body > #appNavbar + * {
 .hub-card-delta.neutral { color: var(--neutral); }
 
 
-/* ── Mobile Position Cards ──────────────────────────────────────────────── */
-
-.pos-card-mobile {
-    background: var(--ink-3);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 12px 14px;
-    display: grid;
-    grid-template-columns: 40px 1fr auto;
-    gap: 10px;
-    align-items: center;
-    transition: border-color 0.15s;
-}
-.pos-card-mobile:hover { border-color: var(--border-hover); }
-.pos-card-mobile.stock { border-left: 2px solid var(--gold-dim); }
-.pos-card-mobile.wine  { border-left: 2px solid var(--wine-dim); }
-
-.pos-icon-badge {
-    width: 40px; height: 40px;
-    border-radius: var(--r-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-weight: 700;
-    font-family: var(--font-mono);
-    letter-spacing: -0.02em;
-    flex-shrink: 0;
-}
-.pos-icon-badge.stock { background: var(--gold-glow);  color: var(--gold); }
-.pos-icon-badge.wine  { background: var(--wine-glow);  color: var(--wine-light); }
-
-.pos-card-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-bottom: 2px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.pos-card-sub {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-tertiary);
-}
-
-.pos-card-right { text-align: right; flex-shrink: 0; }
-
-.pos-card-value {
-    font-family: var(--font-mono);
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-bottom: 2px;
-}
-.pos-card-change {
-    font-family: var(--font-mono);
-    font-size: 10px;
-}
-.pos-card-change.up   { color: var(--up); }
-.pos-card-change.down { color: var(--down); }
 
 
 /* ── Chip / Filter Row ──────────────────────────────────────────────────── */
@@ -1778,7 +1703,7 @@ body > #appNavbar + * {
     bottom: 0; left: 0; right: 0;
     background: var(--ink-2);
     border-top: 1px solid var(--border);
-    padding: 10px 0 env(safe-area-inset-bottom, 10px);
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
     z-index: 90;
     justify-content: space-around;
 }
@@ -1805,7 +1730,7 @@ body > #appNavbar + * {
 
 @media (max-width: 640px) {
     .bottom-tab-nav { display: flex; }
-    .container { padding-bottom: 68px; } /* clearance for fixed bottom nav */
+    .container { padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px)); } /* clearance for fixed bottom nav */
 }
 
 
@@ -2447,7 +2372,7 @@ body > #appNavbar + * {
     bottom: 0; left: 0; right: 0;
     background: var(--ink-2);
     border-top: 1px solid var(--border);
-    padding: 10px 0 env(safe-area-inset-bottom, 10px);
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
     z-index: 90;
     justify-content: space-around;
 }
@@ -2638,7 +2563,7 @@ body > #appNavbar + * {
     border-radius: var(--r-lg);
     padding: 12px 14px;
     display: grid;
-    grid-template-columns: 40px 1fr auto;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
     gap: 10px;
     align-items: start;
     transition: border-color 0.15s;
@@ -2665,9 +2590,34 @@ body > #appNavbar + * {
 .pos-card.wine:hover   { border-left-color: var(--wine); }
 .position:hover        { border-left-color: var(--gold); }
 
-/* DS: .pos-icon → existing: .pos-icon-badge */
-.pos-icon,
-.pos-icon-badge {
+/* Card layout is stated on the tracks, not patched onto the items:
+   `minmax(0, 1fr)` is what lets the middle column shrink below its no-wrap
+   content. Without it that track keeps min-width:auto, so a long instrument
+   name shoves the value column off the right screen edge on a phone. */
+.pos-icon         { grid-column: 1; grid-row: 1 / span 2; }
+.pos-main         { grid-column: 2; grid-row: 1; min-width: 0; }
+.pos-right        { grid-column: 3; grid-row: 1; }
+.position-actions { grid-column: 2 / -1; grid-row: 2; }
+
+.pos-right .pos-value,
+.pos-right .pos-change { white-space: nowrap; }
+
+/* Phones: three columns leave the name ~70px ("Vanguar…" — unusable when many
+   holdings share a prefix). Drop to two columns and give the name the full
+   width, with value and actions on their own rows underneath. */
+@media (max-width: 480px) {
+    .pos-card {
+        grid-template-columns: 40px minmax(0, 1fr);
+        row-gap: 6px;
+    }
+    .pos-icon         { grid-row: 1; }
+    .pos-right        { grid-column: 2; grid-row: 2; text-align: left; }
+    .position-actions { grid-column: 1 / -1; grid-row: 3; flex-wrap: nowrap; }
+    .pos-name         { white-space: normal; overflow-wrap: anywhere; }
+}
+
+/* .pos-icon */
+.pos-icon {
     width: 40px; height: 40px;
     border-radius: var(--r-sm);
     display: flex;
@@ -2679,14 +2629,13 @@ body > #appNavbar + * {
     letter-spacing: -0.02em;
     flex-shrink: 0;
 }
-.pos-icon.stock,  .pos-icon-badge.stock  { background: var(--gold-glow);  color: var(--gold); }
+.pos-icon.stock  { background: var(--gold-glow);  color: var(--gold); }
 .pos-icon.etf                            { background: rgba(74,122,106,0.15); color: #6AAA92; }
 .pos-icon.crypto                         { background: rgba(90,106,170,0.15); color: #8A9ACA; }
-.pos-icon.wine,   .pos-icon-badge.wine   { background: var(--wine-glow);  color: var(--wine-light); }
+.pos-icon.wine   { background: var(--wine-glow);  color: var(--wine-light); }
 
-/* DS: .pos-name → existing: .pos-card-name */
-.pos-name,
-.pos-card-name {
+/* .pos-name */
+.pos-name {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-primary);
@@ -2696,9 +2645,8 @@ body > #appNavbar + * {
     text-overflow: ellipsis;
 }
 
-/* DS: .pos-sub → existing: .pos-card-sub */
-.pos-sub,
-.pos-card-sub {
+/* .pos-sub */
+.pos-sub {
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--text-tertiary);
@@ -2716,9 +2664,8 @@ body > #appNavbar + * {
     margin-top: 3px;
 }
 
-/* DS: .pos-value → existing: .pos-card-value */
-.pos-value,
-.pos-card-value {
+/* .pos-value */
+.pos-value {
     font-family: var(--font-mono);
     font-size: 13px;
     font-weight: 500;
@@ -2726,14 +2673,13 @@ body > #appNavbar + * {
     margin-bottom: 2px;
 }
 
-/* DS: .pos-change → existing: .pos-card-change */
-.pos-change,
-.pos-card-change {
+/* .pos-change */
+.pos-change {
     font-family: var(--font-mono);
     font-size: 10px;
 }
-.pos-change.up,   .pos-card-change.up   { color: var(--up); }
-.pos-change.down, .pos-card-change.down { color: var(--down); }
+.pos-change.up   { color: var(--up); }
+.pos-change.down { color: var(--down); }
 
 
 /* ── Form aliases ────────────────────────────────────────────────────────── */
@@ -3377,4 +3323,64 @@ body > #appNavbar + * {
 /* Dialogs get room to breathe on large monitors */
 @media (min-width: 1200px) {
     .ticker-picker-dialog { max-width: 640px; }
+}
+
+
+/* ── Action bar: mobile disclosure ────────────────────────────────────────── */
+/* Desktop keeps ONE flat row: the panel dissolves into the action bar via
+   display:contents and the toggle is hidden, so nothing changes above 640px. */
+.action-more-toggle { display: none; }
+.action-more-panel { display: contents; }
+
+@media (max-width: 640px) {
+    /* The page header is pure decoration on a phone — the navbar already
+       names the page — and it costs ~100px of the first screenful. Hidden on
+       the portfolio page only (.header-page); the hub's hero is its landing
+       identity and stays. */
+    .header-page { display: none; }
+    /* 25px of card padding on a 393px screen is desktop spacing on a phone. */
+    .card { padding: 16px; }
+    .header { padding: 16px 18px; }
+    .header-eyebrow,
+    .header > p { display: none; }
+    .header h1 { font-size: 22px; }
+
+    /* Top nav links duplicate the fixed bottom tab bar at this width. */
+    .nav-links { display: none; }
+
+    /* Collapse the desk-work actions behind "⋯ More". Only the primary action
+       (Update Prices) stays on screen. */
+    .action-more-toggle {
+        display: block;
+        width: 100%;
+        text-align: center;
+        cursor: pointer;
+    }
+    .action-more-panel { display: none; width: 100%; }
+    .action-more-check:checked ~ .action-more-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 8px;
+    }
+    .action-more-panel .btn { width: 100%; }
+
+    /* Allocation rows: let the value size to its content instead of clipping
+       inside a fixed 60px box, and give the label back the space. */
+    .allocation-bar-value { width: auto; min-width: 60px; flex-shrink: 0; }
+    .allocation-bar-label { width: 76px; }
+}
+
+/* Destructive icon buttons need a real hit area on touch: this deletes a
+   snapshot or a ledger row, and it measured 25x20. The visual size is kept —
+   the target is extended with a pseudo-element so the layout doesn't shift. */
+@media (pointer: coarse) {
+    .btn-icon-hover-danger { position: relative; }
+    .btn-icon-hover-danger::before {
+        content: '';
+        position: absolute;
+        top: 50%; left: 50%;
+        width: 44px; height: 44px;
+        transform: translate(-50%, -50%);
+    }
 }

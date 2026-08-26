@@ -4,6 +4,7 @@
 
 import state from './state.js';
 import { getSector } from '../data/sectors.js';
+import { normalizeCurrencyCode } from './money-core.js';
 
 // ── HTML / Formatting ───────────────────────────────────────────────────────
 
@@ -83,14 +84,20 @@ export function buildAssetRecord(position) {
     }
     const ticker = position.symbol.toUpperCase();
     const stockExchange = detectStockExchange(ticker);
-    const currency = detectCurrency(stockExchange);
     const sector = getSector(ticker);
+    // `currency` is a SUFFIX GUESS and is tagged as such. fetchMarketPrices()
+    // rebuilds this record for every position on every refresh, so emitting an
+    // untagged currency here silently overwrote the provider-reported one that
+    // enrichment had just stored — assets.currency oscillated between the real
+    // value and the guess depending on which write ran last.
+    // saveAssetsToDB() honours currency_source and will not downgrade.
     return {
         ticker,
         name: position.name || ticker,
         stock_exchange: stockExchange,
         sector,
-        currency,
+        currency: looksLikeISIN(ticker) ? null : detectCurrency(stockExchange),
+        currency_source: looksLikeISIN(ticker) ? null : 'suffix',
         asset_type: normalizeAssetType(position.type),
         untracked: !!position.untracked
     };
@@ -98,20 +105,84 @@ export function buildAssetRecord(position) {
 
 // ── Currency Helpers ────────────────────────────────────────────────────────
 
-/** Get native currency for a ticker (from DB, else detect from suffix). */
-export function getAssetCurrency(symbol) {
-    if (!symbol) return detectCurrency(detectStockExchange(''));
-    const dbAsset = state.assetDatabase[symbol.toUpperCase()];
-    if (dbAsset && dbAsset.currency) return dbAsset.currency;
-    return detectCurrency(detectStockExchange(symbol));
+/** ISIN pattern: 2 uppercase letters + 10 alphanumeric characters. */
+function looksLikeISIN(value) {
+    return /^[A-Z]{2}[A-Z0-9]{10}$/.test(String(value || '').toUpperCase());
 }
 
-/** Convert an amount from one currency to base currency using stored rates. */
-export function toBaseCurrency(amount, fromCurrency) {
-    if (!fromCurrency || fromCurrency === state.baseCurrency) return amount;
-    const rate = state.exchangeRates[fromCurrency];
-    if (rate) return amount * rate;
-    return amount; // fallback: no conversion if rate unknown
+/**
+ * Resolve an asset's native currency AND where that answer came from.
+ *
+ * Precedence (highest first): user override > quote > provider profile >
+ * ticker suffix. A bare ISIN carries no venue information, so it resolves to
+ * `null` — NOT 'USD'. The old code fell through detectStockExchange('') to
+ * 'US' → 'USD', which meant every unmapped-ISIN holding (typically bought in
+ * EUR) had its cost basis converted USD→EUR at ~0.92.
+ *
+ * @returns {{code: string|null, source: string|null}}
+ */
+export function resolveAssetCurrency(symbol) {
+    if (!symbol) return { code: null, source: null };
+    const dbAsset = state.assetDatabase[String(symbol).toUpperCase()];
+    if (dbAsset && dbAsset.currency) {
+        const norm = normalizeCurrencyCode(dbAsset.currency);
+        if (norm) return { code: norm.iso, source: dbAsset.currency_source || 'profile' };
+    }
+    // No stored currency. A bare ISIN carries no venue information of its own,
+    // but the ticker we learned to PRICE it with does: an ISIN quoted as AIR.PA
+    // is a euro instrument. Without this, an ISIN-keyed broker import (DeGiro)
+    // has no cost-basis currency, every holding is excluded, and the portfolio
+    // total reads zero — the resolver is the only thing that knows the venue.
+    if (looksLikeISIN(symbol)) {
+        const pricingTicker = dbAsset && dbAsset.pricingTicker;
+        if (pricingTicker && !looksLikeISIN(pricingTicker)) {
+            return { code: detectCurrency(detectStockExchange(pricingTicker)), source: 'suffix' };
+        }
+        return { code: null, source: null };
+    }
+    const exchange = detectStockExchange(symbol);
+    return { code: detectCurrency(exchange), source: 'suffix' };
+}
+
+/**
+ * Get native currency for a ticker. Returns null when genuinely unknown —
+ * callers must treat null as "cannot value this", not as a reason to guess.
+ */
+export function getAssetCurrency(symbol) {
+    return resolveAssetCurrency(symbol).code;
+}
+
+/**
+ * Convert an amount into the active base currency using live stored rates.
+ *
+ * Returns null when the amount cannot be converted (unknown currency code, or
+ * no rate available). It deliberately does NOT fall back to returning the
+ * unconverted amount: that fallback is what turned "we don't know" into a
+ * confident wrong number that flowed into totals, snapshots and the database.
+ *
+ * Minor-unit codes (GBp/GBX pence, ZAc, ILA) are folded to major units here,
+ * so a London pence quote converts correctly instead of 100x high.
+ */
+export function toBaseCurrency(amount, fromCurrency, targetBase) {
+    const value = Number(amount);
+    if (!Number.isFinite(value)) return null;
+    const src = normalizeCurrencyCode(fromCurrency);
+    if (!src) return null;
+    const base = normalizeCurrencyCode(targetBase || state.baseCurrency || 'EUR');
+    if (!base) return null;
+    const major = value * src.factor;
+    if (src.iso === base.iso) return major;
+
+    // state.exchangeRates holds "1 CUR = X ACTIVE_BASE". Converting to a base
+    // other than the active one (used to store a canonical EUR total whatever
+    // the toggle says) is the ratio of the two: C→T = (C→active) / (T→active).
+    // T === active gives rate 1, so this reduces to the simple case.
+    const rateSrc = Number(state.exchangeRates[src.iso]);
+    const rateTarget = base.iso === (state.baseCurrency || 'EUR')
+        ? 1 : Number(state.exchangeRates[base.iso]);
+    if (!Number.isFinite(rateSrc) || rateSrc <= 0) return null;
+    if (!Number.isFinite(rateTarget) || rateTarget <= 0) return null;
+    return major * (rateSrc / rateTarget);
 }
 
 // ── Environment Detection ───────────────────────────────────────────────────
