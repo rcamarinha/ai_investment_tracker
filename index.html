@@ -27,7 +27,7 @@
             <h1>
                 <span data-i18n="nav.hub">A language for <em>wealth</em></span>
             </h1>
-            <p data-i18n="hub.subtitle">Stocks &amp; wine — one private portfolio view</p>
+            <p data-i18n="hub.subtitle">Stocks, bank holdings, wine and spending — one private view of where you stand</p>
         </div>
 
         <div class="hub-layout">
@@ -95,6 +95,41 @@
                     <div class="hub-card-cta" data-i18n="hub.wine_cta">Open Cellar →</div>
                 </a>
 
+                <!-- Spend card -->
+                <a href="spend.html" class="hub-card-premium spend-hub">
+                    <div class="hub-card-glow-bg"></div>
+                    <div class="hub-card-eyebrow" data-i18n="hub.spend_eyebrow">Cash Flow · Scenarios</div>
+                    <div class="hub-card-name" data-i18n="hub.spend_title">Spend</div>
+                    <ul class="hub-features-list">
+                        <li data-i18n="hub.spend_f1">Multi-bank statement import</li>
+                        <li data-i18n="hub.spend_f2">Year-on-year comparison</li>
+                        <li data-i18n="hub.spend_f3">What-if scenarios</li>
+                    </ul>
+                    <div class="hub-card-value-row">
+                        <div class="hub-card-amount" id="hubSpendValue">— —</div>
+                        <div class="hub-card-delta" id="hubSpendDelta"></div>
+                    </div>
+                    <div class="hub-card-cta" data-i18n="hub.spend_cta">Open Spend →</div>
+                </a>
+
+
+                <!-- Bank Holdings card -->
+                <a href="holdings.html" class="hub-card-premium hold-hub">
+                    <div class="hub-card-glow-bg"></div>
+                    <div class="hub-card-eyebrow" data-i18n="hub.hold_eyebrow">Bonds · Funds · Deposits</div>
+                    <div class="hub-card-name" data-i18n="hub.hold_title">Bank Holdings</div>
+                    <ul class="hub-features-list">
+                        <li data-i18n="hub.hold_f1">Bonds and investment funds</li>
+                        <li data-i18n="hub.hold_f2">Valued from your statements</li>
+                        <li data-i18n="hub.hold_f3">Counts toward net worth</li>
+                    </ul>
+                    <div class="hub-card-value-row">
+                        <div class="hub-card-amount" id="hubHoldValue">— —</div>
+                        <div class="hub-card-delta" id="hubHoldDelta"></div>
+                    </div>
+                    <div class="hub-card-cta" data-i18n="hub.hold_cta">Open Bank Holdings →</div>
+                </a>
+
             </div><!-- /hub-cards-stack -->
 
         </div><!-- /hub-layout -->
@@ -106,6 +141,8 @@
         <a href="index.html"     class="bn-item active-hub"><span class="bn-icon">⊞</span>Hub</a>
         <a href="portfolio.html" class="bn-item"><span class="bn-icon">📈</span>Stocks</a>
         <a href="wine.html"      class="bn-item"><span class="bn-icon">🍷</span>Cellar</a>
+        <a href="spend.html"     class="bn-item"><span class="bn-icon">💸</span>Spend</a>
+        <a href="holdings.html"  class="bn-item"><span class="bn-icon">🏦</span>Bank</a>
     </nav>
 
     <script type="module">
@@ -226,17 +263,38 @@
                 // to euros and stamped the result '€'. The portfolio page already
                 // computes this correctly with per-trade FX; the hub reads it
                 // rather than keeping a third copy of currency conversion.
-                const [{ data: snaps, error: snapErr }, { data: wines, error: wineErr }] = await Promise.all([
+                //
+                // Current-month bounds for the spend card. Flow figures are
+                // period-bound; assets are not.
+                const now = new Date();
+                const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+                    .toISOString().slice(0, 10);
+                const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))
+                    .toISOString().slice(0, 10);
+
+                const [{ data: snaps, error: snapErr },
+                       { data: wines, error: wineErr },
+                       { data: spendRows, error: spendErr },
+                       { data: spendCats, error: catErr },
+                       { data: holdRows, error: holdErr }] = await Promise.all([
                     sbClient.from('snapshots')
                         .select('timestamp, total_market_value_eur, excluded_positions')
                         .eq('user_id', userId)
                         .not('total_market_value_eur', 'is', null)
                         .order('timestamp', { ascending: false })
                         .limit(1),
-                    sbClient.from('user_wines').select('qty, estimated_value, purchase_price, last_valued_at').eq('user_id', userId)
+                    sbClient.from('user_wines').select('qty, estimated_value, purchase_price, last_valued_at').eq('user_id', userId),
+                    sbClient.from('spend_transactions').select('amount, category')
+                        .eq('user_id', userId).gte('date', monthStart).lte('date', monthEnd),
+                    sbClient.from('spend_categories').select('name, is_income').eq('user_id', userId),
+                    sbClient.from('bank_holdings')
+                        .select('current_value, cost_basis, valued_as_of, archived').eq('user_id', userId)
                 ]);
-                if (snapErr) console.warn('[hub] snapshots query:', snapErr.message);
-                if (wineErr) console.warn('[hub] user_wines query:', wineErr.message);
+                if (snapErr)  console.warn('[hub] snapshots query:', snapErr.message);
+                if (wineErr)  console.warn('[hub] user_wines query:', wineErr.message);
+                if (spendErr) console.warn('[hub] spend_transactions query:', spendErr.message);
+                if (catErr)   console.warn('[hub] spend_categories query:', catErr.message);
+                if (holdErr)  console.warn('[hub] bank_holdings query:', holdErr.message);
 
                 const stockCard = computeStockCardEUR((snaps || [])[0] || null);
 
@@ -244,11 +302,90 @@
                 const wineValue = wineRows.reduce((s, w) => s + ((w.estimated_value || 0) * (w.qty || 1)), 0);
                 const wineCost  = wineRows.reduce((s, w) => s + ((w.purchase_price  || 0) * (w.qty || 1)), 0);
 
+                // Spend is a FLOW, not an asset — deliberately excluded from the
+                // net-worth total. Adding a month's cash movement to a balance
+                // sheet would make the headline number meaningless.
+                const incomeCats = new Set((spendCats || []).filter(c => c.is_income).map(c => c.name));
+                let spendIn = 0, spendOut = 0;
+                for (const r of spendRows || []) {
+                    if (r.category === 'transfer') continue;   // reserved: own-account movement
+                    const amt = Number(r.amount) || 0;
+                    if (incomeCats.has(r.category) || (amt > 0 && !r.category)) spendIn += Math.abs(amt);
+                    else spendOut += -amt;                      // refunds net down, same as the module
+                }
+
+                // Bank holdings ARE assets, so unlike spend they belong in net
+                // worth. bank_holdings.currency defaults to EUR and the module
+                // writes only EUR today, so this adds into the canonical EUR
+                // total without reintroducing the cross-currency sum that the
+                // snapshot-based stock figure above exists to avoid. If a
+                // non-EUR holding is ever stored, convert it before this line.
+                const holdActive = (holdRows || []).filter(h => !h.archived && h.current_value !== null);
+                const holdValue = holdActive.reduce((s, h) => s + Number(h.current_value || 0), 0);
+                let holdOldestDays = null;
+                for (const h of holdActive) {
+                    if (!h.valued_as_of) continue;
+                    const d = Math.round((Date.now() - Date.parse(h.valued_as_of + 'T00:00:00Z')) / 86400000);
+                    if (holdOldestDays === null || d > holdOldestDays) holdOldestDays = d;
+                }
+
                 const net = computeNetWorthEUR(stockCard, wineValue);
+                // A null net means no usable stock figure; holdings alone are
+                // still worth showing, and stay marked partial.
+                const totalValue = net.value === null
+                    ? (holdValue > 0 ? holdValue : null)
+                    : net.value + holdValue;
                 document.getElementById('hubTotalValue').textContent =
-                    hubFmt(net.value) + (net.value != null && net.partial ? ' *' : '');
+                    hubFmt(totalValue) + (totalValue != null && net.partial ? ' *' : '');
                 document.getElementById('hubStockValue').textContent = hubFmt(stockCard ? stockCard.value : null);
                 document.getElementById('hubWineValue').textContent  = hubFmt(wineValue);
+
+                const holdValueEl = document.getElementById('hubHoldValue');
+                const holdDeltaEl = document.getElementById('hubHoldDelta');
+                if (holdValueEl) {
+                    holdValueEl.textContent = holdActive.length ? hubFmt(holdValue) : '— —';
+                    if (holdDeltaEl) {
+                        if (!holdActive.length) {
+                            holdDeltaEl.textContent = '';
+                        } else if (holdOldestDays !== null && holdOldestDays > 40) {
+                            // Say it is old rather than showing a gain that leans on it.
+                            holdDeltaEl.textContent = `valued ${Math.round(holdOldestDays / 30)}mo ago`;
+                            holdDeltaEl.className = 'hub-card-delta neutral';
+                        } else {
+                            const cost = holdActive.reduce((s, h) => s + Number(h.cost_basis || 0), 0);
+                            const covered = holdActive
+                                .filter(h => Number(h.cost_basis) > 0)
+                                .reduce((s, h) => s + Number(h.current_value || 0), 0);
+                            if (cost > 0) {
+                                const pct = (covered - cost) / cost * 100;
+                                holdDeltaEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+                                holdDeltaEl.className = 'hub-card-delta ' + (pct >= 0 ? 'up' : 'down');
+                            } else {
+                                holdDeltaEl.textContent = 'from statements';
+                                holdDeltaEl.className = 'hub-card-delta neutral';
+                            }
+                        }
+                    }
+                }
+
+                const spendValueEl = document.getElementById('hubSpendValue');
+                const spendDeltaEl = document.getElementById('hubSpendDelta');
+                if (spendValueEl) {
+                    const hasData = (spendRows || []).length > 0;
+                    spendValueEl.textContent = hasData ? hubFmt(spendOut) : '— —';
+                    if (spendDeltaEl) {
+                        if (!hasData) {
+                            spendDeltaEl.textContent = '';
+                        } else if (spendIn > 0) {
+                            const rate = (spendIn - spendOut) / spendIn * 100;
+                            spendDeltaEl.textContent = `${rate.toFixed(0)}% saved`;
+                            spendDeltaEl.className = 'hub-card-delta ' + (rate >= 0 ? 'up' : 'down');
+                        } else {
+                            spendDeltaEl.textContent = 'this month';
+                            spendDeltaEl.className = 'hub-card-delta neutral';
+                        }
+                    }
+                }
 
                 const stockDeltaEl = document.getElementById('hubStockDelta');
                 if (stockDeltaEl) {
@@ -293,11 +430,11 @@
         }
 
         function clearHubValues() {
-            ['hubTotalValue', 'hubStockValue', 'hubWineValue'].forEach(id => {
+            ['hubTotalValue', 'hubStockValue', 'hubWineValue', 'hubSpendValue', 'hubHoldValue'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.textContent = '— —';
             });
-            ['hubStockDelta', 'hubWineDelta'].forEach(id => {
+            ['hubStockDelta', 'hubWineDelta', 'hubSpendDelta', 'hubHoldDelta'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.textContent = '';
             });
@@ -315,12 +452,16 @@
                     if (currentUser) loadHubValues(currentUser.id);
                     else clearHubValues();
                 });
+                // Backup for the rare race where INITIAL_SESSION fires before the
+                // listener registers. Guarded, because unguarded it re-ran the
+                // whole hub load on every page view — the listener has already
+                // done it — doubling every query, one of which scans a month of
+                // transactions. spend/ and wine/ both guard this the same way.
                 sbClient.auth.getSession().then(({ data: { session } }) => {
-                    currentUser = session?.user || null;
-                    if (currentUser) {
-                        refreshNavbarAuth();
-                        loadHubValues(currentUser.id);
-                    }
+                    if (currentUser || !session?.user) return;
+                    currentUser = session.user;
+                    refreshNavbarAuth();
+                    loadHubValues(currentUser.id);
                 }).catch(err => console.error('getSession failed:', err));
             } catch (err) {
                 console.error('Supabase init failed:', err);

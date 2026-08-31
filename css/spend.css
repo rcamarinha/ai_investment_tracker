@@ -1,0 +1,378 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Spend — module stylesheet.
+   Loaded AFTER css/styles.css, which owns the tokens, .card, .btn, .stat-tile,
+   .modal, .chip-filter, .seg-tab-* and .st-delta. Only genuinely new
+   components live here, following the css/wine.css pattern.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.spend-header      { border-left-color: var(--spend); }
+.spend-eyebrow     { color: var(--spend); }
+
+.btn-primary-spend { background: var(--spend); color: #04211B; }
+.btn-primary-spend:hover { background: var(--spend-light); }
+.btn-ghost-spend   { background: transparent; color: var(--spend-light); border: 1px solid var(--spend-line); }
+.btn-ghost-spend:hover { background: var(--spend-glow); }
+
+.seg-tab-item.active-spend {
+    background: linear-gradient(135deg, var(--spend-dim), #156456);
+    color: var(--spend-light);
+}
+.chip-filter.active-spend {
+    border-color: var(--spend-line);
+    color: var(--spend-light);
+    background: var(--spend-glow);
+}
+
+/* Hub card styling lives in css/styles.css beside .wine-hub — index.html does
+   not load this stylesheet. */
+
+/* ── Period bar ───────────────────────────────────────────────────────────
+   Sticky, because it drives every number below it. Scrolling past the control
+   that defines what you are reading is disorienting on a phone.
+   ─────────────────────────────────────────────────────────────────────── */
+.period-bar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--ink);
+    padding: 10px 0;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.period-bar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.period-nav {
+    display: flex; align-items: center; gap: 6px;
+    margin-left: auto;
+}
+.period-label {
+    font-family: var(--font-display);
+    font-size: 17px;
+    color: var(--text-primary);
+    min-width: 92px;
+    text-align: center;
+}
+.period-step {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-secondary); border-radius: var(--r-xs);
+    width: 32px; height: 32px; cursor: pointer; font-size: 14px;
+}
+.period-step:hover:not(:disabled) { border-color: var(--spend-line); color: var(--spend-light); }
+.period-step:disabled { opacity: 0.3; cursor: default; }
+
+/* The honest-absence label: shown instead of a delta when history is too
+   short to support the comparison being asked for. */
+.coverage-note {
+    font-size: 11px;
+    color: var(--warn, #E0A458);
+    background: rgba(224,164,88,0.10);
+    border: 1px solid rgba(224,164,88,0.25);
+    border-radius: var(--r-xs);
+    padding: 6px 10px;
+}
+
+/* ── Overview hero ────────────────────────────────────────────────────── */
+.overview-hero {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-bottom: 6px;
+}
+.hero-figure { display: flex; flex-direction: column; gap: 4px; }
+.hero-figure-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+.hero-figure-value {
+    font-family: var(--font-display);
+    font-size: 34px; line-height: 1.05; color: var(--text-primary);
+}
+.hero-figure-value.spend { color: var(--spend-light); }
+.hero-figure-sub { font-size: 12px; color: var(--text-secondary); }
+
+.trend-sparkline { height: 56px; margin-top: 6px; }
+.trend-sparkline svg { display: block; width: 100%; height: 100%; }
+
+@media (min-width: 640px) {
+    .overview-hero { grid-template-columns: repeat(3, 1fr); align-items: end; }
+}
+
+/* ── Paired comparison bars ───────────────────────────────────────────────
+   Current solid, baseline outlined, so the eye lands on what MOVED rather
+   than on what is merely large.
+   ─────────────────────────────────────────────────────────────────────── */
+.cmp-bar-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    /* It is a <button> so keyboard users can reach it; the chrome is stripped
+       rather than the semantics being dropped for looks. */
+    width: 100%;
+    background: none;
+    border-left: none; border-right: none; border-top: none;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+}
+.cmp-bar-row:focus-visible,
+.tx-open:focus-visible,
+.period-step:focus-visible {
+    outline: 2px solid var(--spend-light);
+    outline-offset: 2px;
+    border-radius: var(--r-xs);
+}
+.cmp-bar-row:last-child { border-bottom: none; }
+.cmp-bar-row:hover .cmp-bar-name { color: var(--spend-light); }
+.cmp-bar-row.active .cmp-bar-name { color: var(--spend-light); font-weight: 600; }
+.cmp-bar-row.dimmed { opacity: 0.4; }
+.cmp-bar-name { font-size: 13px; color: var(--text-primary); }
+.cmp-bar-figures { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; }
+.cmp-bar-track { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 3px; }
+.cmp-bar-current, .cmp-bar-baseline { height: 8px; border-radius: 2px; min-width: 2px; transition: width .25s ease; }
+.cmp-bar-current  { background: linear-gradient(90deg, var(--spend-dim), var(--spend)); }
+.cmp-bar-baseline { background: transparent; border: 1px solid var(--spend-line); height: 6px; }
+.cmp-bar-uncategorized .cmp-bar-name { color: var(--warn, #E0A458); font-style: italic; }
+
+/* ── Trend chart ──────────────────────────────────────────────────────── */
+.trend-chart { width: 100%; height: 180px; }
+.trend-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.trend-axis { font-family: var(--font-mono); font-size: 9px; fill: var(--text-secondary); }
+.trend-bar { fill: var(--spend-dim); transition: fill .2s ease; }
+.trend-bar.current { fill: var(--spend); }
+.trend-bar:hover { fill: var(--spend-light); }
+.trend-line { fill: none; stroke: var(--spend-light); stroke-width: 1.5; }
+
+/* ── Transactions ─────────────────────────────────────────────────────────
+   The one place this module differs structurally from the others: hundreds of
+   rows per month, not dozens of trades. Paginated rather than virtualised —
+   sufficient at this scale and far less to get wrong.
+   ─────────────────────────────────────────────────────────────────────── */
+.tx-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--ink-3);
+    padding: 10px 0 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.tx-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tx-table th {
+    text-align: left; padding: 8px 8px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-secondary); font-weight: 500;
+    border-bottom: 1px solid var(--border-hover);
+}
+.tx-table th.num, .tx-table td.num { text-align: right; }
+.tx-row { border-bottom: 1px solid var(--border); cursor: pointer; }
+.tx-row:last-child { border-bottom: none; }
+.tx-row:hover { background: rgba(255,255,255,0.02); }
+.tx-table td { padding: 0 8px; height: 48px; color: var(--text-primary); vertical-align: middle; }
+.tx-date { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+.tx-merchant { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tx-merchant-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-open {
+    background: none; border: none; padding: 0; margin: 0;
+    font: inherit; color: inherit; text-align: left; cursor: pointer;
+    min-width: 0; overflow: hidden;
+}
+
+/* Empty table body: .empty-state's 60px padding inside a 48px row reads as a
+   rendering fault, so the empty case gets its own restrained treatment. */
+.tx-empty-row td {
+    height: auto;
+    padding: 28px 8px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.tx-merchant-sub { display: block; font-size: 10px; color: var(--text-secondary); }
+.tx-account-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
+.tx-amount { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; }
+.tx-amount.out { color: var(--text-primary); }
+.tx-amount.in  { color: var(--up); }
+.tx-amount.transfer { color: var(--text-secondary); }
+.tx-cat-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; background: var(--surface); color: var(--text-secondary);
+    border: 1px solid var(--border); white-space: nowrap;
+}
+.tx-cat-badge.none {
+    color: var(--warn, #E0A458);
+    border-color: rgba(224,164,88,0.3);
+    background: rgba(224,164,88,0.08);
+}
+.tx-enriched-badge { font-size: 10px; color: var(--spend-light); }
+
+.pagination-controls {
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    margin-top: 14px; font-size: 12px; color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+/* ── Accounts ─────────────────────────────────────────────────────────── */
+.acct-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.acct-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px; border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--surface);
+}
+.acct-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; }
+.acct-body { flex: 1; min-width: 0; }
+.acct-bank { font-size: 14px; color: var(--text-primary); }
+.acct-label { font-size: 11px; color: var(--text-secondary); }
+.acct-linked { font-size: 10px; color: var(--spend-light); }
+.acct-count { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); flex: 0 0 auto; }
+.acct-card .btn { flex: 0 0 auto; white-space: nowrap; }
+.acct-dot { flex: 0 0 10px; }
+@media (min-width: 768px) { .acct-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* ── Column mapping dialog ────────────────────────────────────────────────
+   Shown once per bank. This is where a wrong guess gets caught, so the sample
+   values sit next to every choice rather than behind a preview toggle.
+   ─────────────────────────────────────────────────────────────────────── */
+.mapping-grid { display: flex; flex-direction: column; gap: 10px; }
+.mapping-row {
+    display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.mapping-row:last-child { border-bottom: none; }
+.mapping-field { font-size: 12px; color: var(--text-secondary); }
+.mapping-sample {
+    grid-column: 2; font-family: var(--font-mono); font-size: 10px;
+    color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mapping-warn { font-size: 11px; color: var(--warn, #E0A458); margin-top: 2px; }
+
+/* What's in the file. Shown before the dropdowns, because when no column name
+   is recognised the file's own contents are the only thing the user can
+   actually navigate by. */
+.mapping-preview {
+    margin-bottom: 16px; padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+}
+.mapping-preview-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-secondary); margin-bottom: 8px;
+}
+.mapping-col {
+    display: grid; grid-template-columns: 18px 1fr; gap: 2px 8px;
+    padding: 5px 0; border-top: 1px solid var(--border);
+}
+.mapping-col:first-of-type { border-top: none; }
+.mapping-col-n {
+    grid-row: span 2; font-family: var(--font-mono); font-size: 10px;
+    color: var(--text-secondary); text-align: right;
+}
+.mapping-col-name { font-size: 12px; color: var(--text-primary); }
+.mapping-col-vals {
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── Import review ────────────────────────────────────────────────────── */
+.review-banner {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: var(--r-sm); font-size: 12px;
+    background: rgba(224,164,88,0.10); border: 1px solid rgba(224,164,88,0.25);
+    color: var(--warn, #E0A458); margin-bottom: 14px;
+}
+.review-banner > span:first-child { flex: 0 0 auto; font-size: 14px; }
+.import-buckets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 14px 0; }
+.import-bucket {
+    padding: 10px; border-radius: var(--r-sm); border: 1px solid var(--border);
+    background: var(--surface); text-align: center;
+}
+.import-bucket-n { font-family: var(--font-mono); font-size: 18px; color: var(--text-primary); }
+.import-bucket-l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); }
+.import-bucket.new  .import-bucket-n { color: var(--spend-light); }
+.import-bucket.warn .import-bucket-n { color: var(--warn, #E0A458); }
+@media (min-width: 640px) { .import-buckets { grid-template-columns: repeat(4, 1fr); } }
+
+.merge-preview { font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); }
+.merge-preview .after { color: var(--spend-light); }
+
+/* ── Recurring ────────────────────────────────────────────────────────── */
+.recurring-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 10px;
+    padding: 12px 0; border-bottom: 1px solid var(--border); align-items: center;
+}
+.recurring-row:last-child { border-bottom: none; }
+.rec-name { font-size: 14px; color: var(--text-primary); }
+.rec-cadence { font-size: 11px; color: var(--text-secondary); }
+.rec-amount { font-family: var(--font-mono); font-size: 14px; color: var(--text-primary); text-align: right; }
+.rec-annual { font-family: var(--font-mono); font-size: 11px; color: var(--spend-light); text-align: right; }
+.rec-ended { font-size: 10px; color: var(--warn, #E0A458); }
+
+/* ── Simulator ────────────────────────────────────────────────────────────
+   Each lever shows the real current figure beneath its control, so the
+   hypothetical stays anchored to fact rather than floating free.
+   ─────────────────────────────────────────────────────────────────────── */
+.lever-row { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.lever-row:last-child { border-bottom: none; }
+.lever-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.lever-name { font-size: 13px; font-weight: 600; color: var(--text-primary); flex: 1; }
+.lever-value { font-family: var(--font-mono); font-size: 13px; color: var(--spend-light); }
+.lever-remove {
+    background: none; border: none; color: var(--text-secondary);
+    cursor: pointer; font-size: 16px; line-height: 1; padding: 4px;
+}
+.lever-remove:hover { color: var(--down); }
+.lever-slider { width: 100%; height: 28px; accent-color: var(--spend); cursor: pointer; }
+.lever-current { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+.projection-card {
+    position: sticky;
+    bottom: 0;
+    background: var(--ink-3);
+    border: 1px solid var(--spend-line);
+    border-radius: var(--r-md);
+    padding: 16px;
+    margin-top: 16px;
+}
+.projection-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-secondary); margin-bottom: 4px;
+}
+.projection-value {
+    font-family: var(--font-display); font-size: 30px; line-height: 1;
+    color: var(--spend-light); margin-bottom: 8px;
+}
+.projection-value.negative { color: var(--down); }
+.projection-breakdown {
+    display: flex; flex-wrap: wrap; gap: 6px 16px;
+    font-size: 12px; color: var(--text-secondary);
+}
+.projection-basis { font-size: 10px; color: var(--text-secondary); margin-top: 8px; }
+
+.scenario-chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+.col-hide-mobile { display: none; }
+
+@media (min-width: 768px) {
+    .col-hide-mobile { display: table-cell; }
+    th.col-hide-mobile { display: table-cell; }
+    .tx-toolbar { flex-direction: row; align-items: center; }
+    .tx-toolbar .form-input { flex: 1; }
+}
+
+@media (max-width: 640px) {
+    .period-label { font-size: 15px; min-width: 78px; }
+    .hero-figure-value { font-size: 28px; }
+    .projection-value { font-size: 26px; }
+}
+
+@media (min-width: 1024px) {
+    /* Levers left, projection right — the projection stops being sticky once
+       there is room to show it alongside. */
+    .simulator-layout { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
+    .projection-card { position: static; }
+}

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Holdings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="lib/supabase.js?v=3.37.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.37.0">
+    <link rel="stylesheet" href="css/holdings.css?v=3.37.0">
+
+    <script defer src="/_vercel/insights/script.js"></script>
+    <script defer src="/_vercel/speed-insights/script.js"></script>
+</head>
+<body>
+
+    <div id="appNavbar" class="app-navbar"></div>
+
+    <div class="container">
+
+        <div class="header hold-header">
+            <div class="header-eyebrow hold-eyebrow">Bonds · Funds · Deposits</div>
+            <h1>
+                <span data-i18n="hold.title">Bank Holdings</span>
+                <span class="header-version">v3.37.0</span>
+            </h1>
+            <p data-i18n="hold.subtitle">What your banks hold that the markets don't quote</p>
+        </div>
+
+        <div class="card">
+            <div id="holdingsSummary"></div>
+            <div class="action-buttons-row" style="margin-top:18px">
+                <button class="btn btn-sm btn-primary-hold" onclick="holdShowDialog()">+ Add holding</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="hold.list">Holdings</h2>
+            </div>
+            <div class="chip-scroll-row" id="holdingsFilters" style="margin-bottom:14px"></div>
+            <div id="holdingsList"></div>
+        </div>
+
+    </div>
+
+    <div class="modal-overlay" id="holdDialog" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="holdDialogTitle">Add holding</h3>
+                <button class="modal-close" onclick="holdCloseModal('holdDialog')">✕</button>
+            </div>
+            <div class="modal-form" id="holdDialogBody"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="holdCloseModal('holdDialog')">Cancel</button>
+                <button class="btn btn-success" onclick="holdSubmit()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <nav class="bottom-nav">
+        <a href="index.html"     class="bn-item"><span class="bn-icon">⊞</span>Hub</a>
+        <a href="portfolio.html" class="bn-item"><span class="bn-icon">📈</span>Stocks</a>
+        <a href="wine.html"      class="bn-item"><span class="bn-icon">🍷</span>Cellar</a>
+        <a href="spend.html"     class="bn-item"><span class="bn-icon">💸</span>Spend</a>
+        <a href="holdings.html"  class="bn-item active-hold"><span class="bn-icon">🏦</span>Bank</a>
+    </nav>
+
+    <script type="module">
+        import { renderNavbar } from './services/navbar.js?v=3.37.0';
+        import state from './holdings/state.js?v=3.37.0';
+        import {
+            initSupabase, handleLogin, handleSignup, handleLogout, handleGoogleLogin,
+            handleForgotPassword, handlePasswordReset, cancelPasswordRecovery
+        } from './holdings/storage.js?v=3.37.0';
+        import {
+            renderAll, showDialog, submit, remove, onTypeChange, setFilter, toggleArchived, bindDelegation
+        } from './holdings/ui.js?v=3.37.0';
+        import { closeModal, closeActiveModal } from './holdings/utils.js?v=3.37.0';
+
+        window._holdState        = state;
+        window.holdShowDialog    = showDialog;
+        window.holdEdit          = showDialog;
+        window.holdSubmit        = submit;
+        window.holdDelete        = remove;
+        window.holdOnTypeChange  = onTypeChange;
+        window.holdFilter        = setFilter;
+        window.holdToggleArchived = toggleArchived;
+        window.holdCloseModal    = closeModal;
+
+        window.handleLogin           = handleLogin;
+        window.handleSignup          = handleSignup;
+        window.handleLogout          = handleLogout;
+        window.handleGoogleLogin     = handleGoogleLogin;
+        window.handleForgotPassword  = handleForgotPassword;
+        window.handlePasswordReset   = handlePasswordReset;
+        window.cancelPasswordRecovery = cancelPasswordRecovery;
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { closeActiveModal(); return; }
+            const tag = document.activeElement?.tagName;
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+            if (e.key === 'n' || e.key === 'N') { e.preventDefault(); showDialog(); }
+        });
+
+        renderNavbar({ supabaseConfigured: true });
+        bindDelegation();
+        renderAll();                        // empty state paints before auth resolves
+        initSupabase(() => renderAll());
+    </script>
+</body>
+</html>

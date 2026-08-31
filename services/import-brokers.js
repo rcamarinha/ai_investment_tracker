@@ -130,7 +130,7 @@ export function coerceTxDate(tx) {
 // ── CSV tokenizing ───────────────────────────────────────────────────────────
 
 /** Detect the field separator of a CSV header line (comma or semicolon). */
-function detectCsvSeparator(headerLine) {
+export function detectCsvSeparator(headerLine) {
     const semis = (headerLine.match(/;/g) || []).length;
     const commas = (headerLine.match(/,/g) || []).length;
     const tabs = (headerLine.match(/\t/g) || []).length;
@@ -139,7 +139,7 @@ function detectCsvSeparator(headerLine) {
 }
 
 /** Split a single CSV line, honoring double-quoted fields. */
-function splitCsvLine(line, sep) {
+export function splitCsvLine(line, sep) {
     const out = [];
     let cur = '';
     let inQuotes = false;
@@ -164,7 +164,7 @@ function splitCsvLine(line, sep) {
 }
 
 /** Parse CSV text into { header: string[], rows: string[][], sep }. */
-function parseCsv(text) {
+export function parseCsv(text) {
     const lines = String(text || '').split(/\r?\n/).filter(l => l.trim() !== '');
     if (lines.length === 0) return { header: [], rows: [], sep: ',' };
     const sep = detectCsvSeparator(lines[0]);
@@ -175,7 +175,7 @@ function parseCsv(text) {
 
 /** Normalize a header cell: strip diacritics + punctuation, lowercase.
  *  e.g. "Preços" → "precos", "Quantidade" → "quantidade". */
-function normHeader(h) {
+export function normHeader(h) {
     return String(h)
         .normalize('NFD').replace(/[̀-ͯ]/g, '') // drop accents (ç→c, ê→e)
         .toLowerCase()
@@ -184,7 +184,7 @@ function normHeader(h) {
 }
 
 /** Find the index of the first header cell matching any of the given aliases. */
-function findCol(header, aliases) {
+export function findCol(header, aliases) {
     const lower = header.map(normHeader);
     for (let i = 0; i < lower.length; i++) {
         if (aliases.some(a => lower[i] === a || lower[i].includes(a))) return i;

@@ -1,0 +1,89 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bank Holdings — module stylesheet. Loaded after css/styles.css, which owns
+   the tokens, .card, .btn, .modal, .chip-filter, .st-delta and .empty-state.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.hold-header  { border-left-color: var(--hold); }
+.hold-eyebrow { color: var(--hold); }
+
+.btn-primary-hold { background: var(--hold); color: #050B16; }
+.btn-primary-hold:hover { background: var(--hold-light); }
+.btn-ghost-hold { background: transparent; color: var(--hold-light); border: 1px solid var(--hold-line); }
+.btn-ghost-hold:hover { background: var(--hold-glow); }
+.chip-filter.active-hold {
+    border-color: var(--hold-line); color: var(--hold-light); background: var(--hold-glow);
+}
+
+/* ── Summary ──────────────────────────────────────────────────────────── */
+.overview-hero {
+    display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 6px;
+}
+.hero-figure { display: flex; flex-direction: column; gap: 4px; }
+.hero-figure-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);
+}
+.hero-figure-value {
+    font-family: var(--font-display); font-size: 32px; line-height: 1.05; color: var(--text-primary);
+}
+.hero-figure-value.hold { color: var(--hold-light); }
+.hero-figure-sub { font-size: 12px; color: var(--text-secondary); }
+@media (min-width: 640px) { .overview-hero { grid-template-columns: repeat(3, 1fr); align-items: end; } }
+
+/* The honesty line. These figures are transcribed, never quoted live, and the
+   page says so rather than letting the styling imply otherwise. */
+.hold-disclaimer {
+    margin-top: 16px; padding: 10px 12px; font-size: 12px; line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--hold-glow); border: 1px solid var(--hold-line);
+    border-radius: var(--r-sm);
+}
+
+.hold-split { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: 12px; color: var(--text-secondary); }
+.hold-split-item { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── Holding cards ────────────────────────────────────────────────────── */
+.hold-card {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 14px; margin-bottom: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.hold-card:hover { border-color: var(--hold-line); }
+.hold-card:focus-visible { outline: 2px solid var(--hold-light); outline-offset: 2px; }
+.hold-card.archived { opacity: 0.55; }
+.hold-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; align-self: flex-start; margin-top: 5px; }
+.hold-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.hold-name { font-size: 14px; color: var(--text-primary); }
+.hold-meta { font-size: 11px; color: var(--text-secondary); }
+.hold-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.hold-figures { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto; }
+.hold-value { font-family: var(--font-mono); font-size: 15px; color: var(--text-primary); white-space: nowrap; }
+.hold-nocost { font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
+
+/* ── Provenance / freshness badges ────────────────────────────────────────
+   Colour is a secondary cue only — every badge states its meaning in words,
+   so nothing here depends on distinguishing amber from blue. */
+.val-badge {
+    display: inline-block; padding: 2px 7px; border-radius: 9px;
+    font-size: 10px; white-space: nowrap;
+    /* No fill: a 4% white tint lifted the background just enough to drop
+       --text-secondary to 4.48:1, under AA at 10px. The border carries the
+       shape on its own. */
+    background: transparent;
+    border: 1px solid var(--border); color: var(--text-secondary);
+}
+.val-badge.current { color: var(--up);   border-color: rgba(76,175,132,0.35); }
+.val-badge.ageing  { color: var(--warn); border-color: rgba(224,154,58,0.35); }
+.val-badge.stale,
+.val-badge.matured { color: var(--down-soft); border-color: rgba(214,86,86,0.35); }
+.val-badge.soon    { color: var(--warn); border-color: rgba(224,154,58,0.35); }
+.val-badge.source  { color: var(--hold-light); border-color: var(--hold-line); }
+.val-badge.unknown,
+.val-badge.future  { color: var(--warn); border-color: rgba(224,154,58,0.35); }
+
+@media (max-width: 480px) {
+    .hero-figure-value { font-size: 26px; }
+    .hold-card { align-items: flex-start; }
+    .hold-figures { align-self: flex-start; }
+}

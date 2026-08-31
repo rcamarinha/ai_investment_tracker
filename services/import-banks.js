@@ -1,0 +1,738 @@
+/**
+ * import-banks.js — pure statement ingestion for the Spend module.
+ *
+ * PURE by contract: no DOM, no network, no service imports beyond the pure CSV
+ * primitives in import-brokers.js. Tests import this file directly, so it must
+ * never grow a `src/` mirror (see CLAUDE.md).
+ *
+ * The design problem this file solves: every bank exports a different shape,
+ * and shapes change when a bank redesigns its download. Writing one parser per
+ * bank means writing another one next year, and a new user's bank is never in
+ * the list. So a format is LEARNED ONCE — auto-mapped where the column names
+ * are recognisable, mapped by hand where they are not, always user-confirmed —
+ * and stored as a profile. Every later import of that format replays the
+ * profile deterministically, at no cost and with no guessing.
+ *
+ * `needsAi` is reported for callers that can offer AI column inference. No such
+ * path exists yet; the fallback today is the manual mapping dialog, which is
+ * why the engine works for any bank in any language without a code change.
+ *
+ * Three problems live here and must not be conflated, because conflating any
+ * two corrupts the ledger while leaving the numbers looking plausible:
+ *   1. FORMAT       — same money, different file layout      → profiles
+ *   2. FIDELITY     — same movement, two records (MB WAY)    → merge, not dedupe
+ *   3. DUPLICATION  — same movement, imported twice          → fingerprint dedupe
+ */
+
+import {
+    parseFlexibleNumber, detectCsvSeparator, splitCsvLine, normHeader
+} from './import-brokers.js';
+import { normalizeRow, validateRow } from './import-contract.js?v=3.37.0';
+
+// ── header aliases ──────────────────────────────────────────────────────────
+// Portuguese first: these are PT retail bank exports, and the English aliases
+// are the fallback rather than the other way round.
+
+// Aliases verified against real exports from five PT banks (Bankinter, Banco
+// BEST, Santander Totta, Revolut, and one semicolon CSV export). Each entry
+// below that looks oddly specific is a real column header from one of them.
+const FIELD_ALIASES = {
+    date: ['data mov', 'data movimento', 'data operacao', 'data', 'date',
+           'transaction date', 'completed date', 'started date', 'booking date'],
+    // "Data-valor" normalises to "datavalor" — punctuation is stripped, so the
+    // spaced alias alone would miss it and the loose 'valor' alias could then
+    // hand the column to `amount`.
+    valueDate: ['data valor', 'datavalor', 'data de valor', 'value date', 'data efectiv'],
+    description: ['descricao', 'descritivo', 'description', 'movimento cred', 'movimento',
+                  'historico', 'detalhe', 'designacao', 'narrative', 'reference', 'concept'],
+    amount: ['montante', 'movimento cred deb', 'valor', 'amount', 'importancia', 'quantia', 'total'],
+    debit: ['dinheiro retirado', 'debito', 'debit', 'saida', 'levantamento', 'despesa',
+            'paid out', 'money out', 'a debito'],
+    credit: ['dinheiro recebido', 'credito', 'credit', 'entrada', 'deposito', 'receita',
+             'paid in', 'money in', 'a credito'],
+    balance: ['saldo contabilistico', 'saldo disponivel', 'saldo apos', 'saldo', 'balance'],
+    currency: ['moeda', 'currency', 'divisa', 'ccy']
+};
+
+// Fields that cannot share a column with anything else.
+const EXCLUSIVE_FIELDS = Object.keys(FIELD_ALIASES);
+
+/** Score how well a header cell names a field. Exact beats prefix beats substring. */
+function scoreAlias(normalized, alias) {
+    if (!normalized) return 0;
+    if (normalized === alias) return 100;
+    if (normalized.startsWith(alias)) return 60;
+    if (normalized.includes(alias)) return 30;
+    return 0;
+}
+
+/**
+ * Map header columns to fields.
+ *
+ * Assignment is globally greedy by score rather than field-by-field, because
+ * "Data Valor" must win the valueDate slot outright instead of being grabbed by
+ * `date`'s looser "data" alias, and "Valor" must not be stolen by it either.
+ */
+export function autoMapColumns(header = []) {
+    // normHeader strips punctuation but leaves the gap behind, so
+    // "Movimento Cred. / Deb." becomes "movimento cred  deb" with a double
+    // space and matches nothing. Collapse runs of whitespace before scoring.
+    // Done here rather than in normHeader, which the broker parsers share.
+    const normalized = header.map(h => normHeader(h).replace(/\s+/g, ' ').trim());
+    const candidates = [];
+
+    for (const field of EXCLUSIVE_FIELDS) {
+        FIELD_ALIASES[field].forEach((alias, aliasRank) => {
+            normalized.forEach((cell, col) => {
+                const base = scoreAlias(cell, alias);
+                if (!base) return;
+                // Earlier aliases are the more canonical spelling.
+                candidates.push({ field, col, score: base - aliasRank, alias });
+            });
+        });
+    }
+
+    candidates.sort((a, b) => b.score - a.score || a.col - b.col);
+    const takenField = new Set(), takenCol = new Set();
+    const columnMap = {}, scores = {};
+    for (const c of candidates) {
+        if (takenField.has(c.field) || takenCol.has(c.col)) continue;
+        takenField.add(c.field); takenCol.add(c.col);
+        columnMap[c.field] = c.col;
+        scores[c.field] = c.score;
+    }
+
+    const hasAmount = columnMap.amount !== undefined;
+    const hasDebitCredit = columnMap.debit !== undefined && columnMap.credit !== undefined;
+    const unresolved = [];
+    if (columnMap.date === undefined) unresolved.push('date');
+    if (columnMap.description === undefined) unresolved.push('description');
+    if (!hasAmount && !hasDebitCredit) unresolved.push('amount');
+
+    // A weak substring match is a guess, and a guess the user never sees is how
+    // a whole statement lands in the wrong column silently.
+    const weak = ['date', 'description', 'amount', 'debit', 'credit']
+        .filter(f => columnMap[f] !== undefined && scores[f] < 60);
+
+    return {
+        columnMap, scores, unresolved, weak,
+        amountMode: hasAmount ? 'signed' : hasDebitCredit ? 'debit_credit' : null,
+        confident: unresolved.length === 0 && weak.length === 0
+    };
+}
+
+// ── CSV sniffing ────────────────────────────────────────────────────────────
+
+/**
+ * Find the real header row and tokenize.
+ *
+ * PT bank exports routinely open with preamble lines — account holder, IBAN,
+ * date range, a blank line — before the header. Assuming line 0 is the header
+ * turns the entire file into one unparseable row.
+ */
+export function sniffCsv(text, options = {}) {
+    const maxPreamble = options.maxPreamble ?? 15;
+    const rawLines = String(text || '').split(/\r?\n/);
+    const lines = rawLines.filter(l => l.trim() !== '');
+    if (!lines.length) return { header: [], rows: [], sep: ',', skipRows: 0, headerLine: null };
+
+    // Width of the body: the header is the line whose column count the DATA
+    // rows agree with. This is a structural signal that works in any language,
+    // which matters because alias hits alone would make a statement in an
+    // unsupported language fail at *finding* its header, not merely at naming
+    // its columns.
+    const widthVotes = new Map();
+    for (let i = 0; i < lines.length; i++) {
+        const sep = detectCsvSeparator(lines[i]);
+        const n = splitCsvLine(lines[i], sep).length;
+        if (n >= 2) widthVotes.set(`${sep}|${n}`, (widthVotes.get(`${sep}|${n}`) || 0) + 1);
+    }
+    let bodyShape = null, bodyVotes = 0;
+    for (const [k, v] of widthVotes) if (v > bodyVotes) { bodyVotes = v; bodyShape = k; }
+
+    let bestIdx = 0, bestScore = -Infinity, bestSep = ',';
+    for (let i = 0; i < Math.min(maxPreamble, lines.length); i++) {
+        const sep = detectCsvSeparator(lines[i]);
+        const cells = splitCsvLine(lines[i], sep);
+        if (cells.length < 3) continue;
+        const mapped = autoMapColumns(cells);
+        // A header row names fields and holds few bare numbers.
+        const numericCells = cells.filter(c => c && !Number.isNaN(parseFlexibleNumber(c))).length;
+        const matchesBody = bodyShape === `${sep}|${cells.length}` ? 25 : 0;
+        const score = Object.keys(mapped.columnMap).length * 10
+            + matchesBody
+            + cells.length
+            - numericCells * 8
+            - i; // prefer the earliest row that qualifies
+        if (score > bestScore) { bestScore = score; bestIdx = i; bestSep = sep; }
+    }
+
+    const header = splitCsvLine(lines[bestIdx], bestSep);
+    const rows = lines.slice(bestIdx + 1)
+        .map(l => splitCsvLine(l, bestSep))
+        // Trailing summary/footer lines rarely match the header width.
+        .filter(cells => cells.length >= Math.max(2, Math.floor(header.length / 2)));
+
+    return { header, rows, sep: bestSep, skipRows: bestIdx, headerLine: lines[bestIdx] };
+}
+
+/**
+ * Stable identity for a file layout — how an incoming file finds its profile.
+ * Built from the normalised header so a bank changing capitalisation, accents
+ * or the separator does not orphan a profile the user already confirmed.
+ */
+export function headerSignature(header = []) {
+    const basis = header.map(normHeader).filter(Boolean).join('|');
+    let h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (let i = 0; i < basis.length; i++) {
+        const c = basis.charCodeAt(i);
+        h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+        h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0;
+    }
+    return `sig_${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+}
+
+// ── numbers and dates, resolved by profile rather than guessed per row ──────
+
+export function parseStyledNumber(raw, decimalStyle = 'eu') {
+    if (raw === null || raw === undefined) return NaN;
+    let s = String(raw).trim();
+    if (!s) return NaN;
+    s = s.replace(/[^0-9.,()\-+]/g, '');
+    s = s.replace(/^\((.+)\)$/, '-$1');
+    if (!s || s === '-' || s === '+') return NaN;
+    const neg = s.startsWith('-');
+    s = s.replace(/[+\-]/g, '');
+    if (decimalStyle === 'us') s = s.replace(/,/g, '');
+    else s = s.replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(s);
+    return Number.isNaN(n) ? NaN : (neg ? -n : n);
+}
+
+/**
+ * A comma as the last separator means European. Sampling the whole column beats
+ * deciding per row: "1.234" is 1234 in one convention and 1.234 in the other,
+ * and only the column as a whole disambiguates it.
+ */
+export function detectDecimalStyle(samples = []) {
+    let eu = 0, us = 0;
+    for (const raw of samples) {
+        const s = String(raw || '');
+        const lastDot = s.lastIndexOf('.'), lastComma = s.lastIndexOf(',');
+        if (lastDot === -1 && lastComma === -1) continue;
+        if (lastComma > lastDot) eu++;
+        else if (lastDot > lastComma) us++;
+    }
+    return { style: us > eu ? 'us' : 'eu', eu, us, ambiguous: eu === 0 && us === 0 };
+}
+
+// Ordered by how commonly a retail bank export uses them. Extend this list
+// rather than adding branches anywhere — it is data, and the mapping dialog
+// renders straight from it.
+export const DATE_FORMATS = ['dd-mm-yyyy', 'mm-dd-yyyy', 'yyyy-mm-dd', 'yyyy-dd-mm'];
+
+/**
+ * Infer the date layout from the whole column.
+ *
+ * dd-mm-yyyy and mm-dd-yyyy are indistinguishable for every day <= 12, so a
+ * per-row guess silently reorders a third of a statement. If the column never
+ * disambiguates itself, say so and let the confirmation dialog decide.
+ */
+export function detectDateFormat(samples = []) {
+    let g1Max = 0, g2Max = 0, sawIsoFirst = false, parsed = 0;
+    for (const raw of samples) {
+        const m = String(raw || '').trim().match(/^(\d{1,4})[-/.](\d{1,2})[-/.](\d{1,4})/);
+        if (!m) continue;
+        parsed++;
+        const g1 = +m[1], g2 = +m[2];
+        if (g1 > 31) sawIsoFirst = true;
+        g1Max = Math.max(g1Max, g1);
+        g2Max = Math.max(g2Max, g2);
+    }
+    if (!parsed) return { format: 'dd-mm-yyyy', ambiguous: true, samples: parsed };
+    if (sawIsoFirst) return { format: 'yyyy-mm-dd', ambiguous: false, samples: parsed };
+    if (g1Max > 12) return { format: 'dd-mm-yyyy', ambiguous: false, samples: parsed };
+    if (g2Max > 12) return { format: 'mm-dd-yyyy', ambiguous: false, samples: parsed };
+    // Every value <= 12 in both slots. PT is the sane default, but flag it.
+    return { format: 'dd-mm-yyyy', ambiguous: true, samples: parsed };
+}
+
+export function parseDateWithFormat(raw, format = 'dd-mm-yyyy') {
+    const m = String(raw || '').trim().match(/^(\d{1,4})[-/.](\d{1,2})[-/.](\d{1,4})/);
+    if (!m) return null;
+    let d, mo, y;
+    if (format === 'yyyy-mm-dd') { [, y, mo, d] = m; }
+    else if (format === 'yyyy-dd-mm') { [, y, d, mo] = m; }
+    else if (format === 'mm-dd-yyyy') { [, mo, d, y] = m; }
+    else { [, d, mo, y] = m; }
+    y = String(y); if (y.length === 2) y = '20' + y;
+    const iso = `${y.padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    return /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(iso) ? iso : null;
+}
+
+// ── profile drafting ────────────────────────────────────────────────────────
+
+/**
+ * Everything the confirmation dialog needs to show a proposed mapping.
+ * Never commits: the user confirms (or the AI fills the gaps) before a profile
+ * is saved, because a wrong mapping accepted silently poisons the whole ledger.
+ */
+export function buildProfileDraft(text, options = {}) {
+    const { header, rows, sep, skipRows, headerLine } = sniffCsv(text);
+    if (!header.length) {
+        return { ok: false, reason: 'empty-file', header: [], rows: [] };
+    }
+
+    const mapping = autoMapColumns(header);
+    const col = (f) => (mapping.columnMap[f] !== undefined ? mapping.columnMap[f] : null);
+    const sample = (idx, n = 40) =>
+        idx === null ? [] : rows.slice(0, n).map(r => r[idx]).filter(v => v !== undefined && v !== '');
+
+    const dateInfo = detectDateFormat(sample(col('date')));
+    const numericSamples = [
+        ...sample(col('amount')), ...sample(col('debit')), ...sample(col('credit'))
+    ];
+    const decimalInfo = detectDecimalStyle(numericSamples);
+
+    // If a signed-amount column never goes negative, either the bank ships
+    // debits as positives or this column is not what we think it is.
+    let invertSign = false, signNote = null;
+    if (col('amount') !== null) {
+        const values = sample(col('amount')).map(v => parseStyledNumber(v, decimalInfo.style));
+        const finite = values.filter(Number.isFinite);
+        if (finite.length && finite.every(v => v >= 0)) {
+            invertSign = true;
+            signNote = 'no negative values found — assuming debits are positive';
+        }
+    }
+
+    return {
+        ok: mapping.unresolved.length === 0,
+        signature: headerSignature(header),
+        header, headerLine, sep, skipRows,
+        rowCount: rows.length,
+        sampleRows: rows.slice(0, 5),
+        columnMap: mapping.columnMap,
+        amountMode: mapping.amountMode,
+        dateFormat: dateInfo.format,
+        dateAmbiguous: dateInfo.ambiguous,
+        decimalStyle: decimalInfo.style,
+        decimalAmbiguous: decimalInfo.ambiguous,
+        invertSign, signNote,
+        unresolved: mapping.unresolved,
+        weak: mapping.weak,
+        // Confident AND unambiguous is the only combination that may skip the
+        // dialog. Everything else asks — once per bank, then never again.
+        needsConfirmation: !mapping.confident || dateInfo.ambiguous || decimalInfo.ambiguous || invertSign,
+        needsAi: mapping.unresolved.length > 0,
+        sourceRole: options.sourceRole || 'statement'
+    };
+}
+
+// ── profile-driven parsing ──────────────────────────────────────────────────
+
+/**
+ * Find the row a saved profile describes, by matching its header SIGNATURE.
+ *
+ * Anchoring on content rather than on the stored `skipRows` line number is the
+ * whole point. A bank that adds or removes a preamble line — a new marketing
+ * message, a different address block — shifts every index by one. Replaying a
+ * remembered line number would then read the wrong row as the header and
+ * silently misalign every column in the file, producing a statement that
+ * imports "successfully" with the amounts in the wrong fields.
+ *
+ * Returns null when no line matches, which means the format genuinely changed
+ * and the user has to re-confirm rather than the parser guessing.
+ */
+export function locateHeaderBySignature(text, signature, options = {}) {
+    if (!signature) return null;
+    const maxScan = options.maxScan ?? 40;
+    const lines = String(text || '').split(/\r?\n/).filter(l => l.trim() !== '');
+    for (let i = 0; i < Math.min(maxScan, lines.length); i++) {
+        const sep = detectCsvSeparator(lines[i]);
+        const cells = splitCsvLine(lines[i], sep);
+        if (cells.length < 2) continue;
+        if (headerSignature(cells) === signature) {
+            return { index: i, sep, header: cells, lines };
+        }
+    }
+    return null;
+}
+
+export function parseWithProfile(text, profile = {}, options = {}) {
+    const accountId = options.accountId || profile.accountId || null;
+    const sourceLabel = options.source || profile.label || 'import';
+    const decimalStyle = profile.decimalStyle || 'eu';
+    const dateFormat = profile.dateFormat || 'dd-mm-yyyy';
+    const map = profile.columnMap || {};
+
+    // Replay the profile by locating its header, falling back to fresh
+    // detection only when the profile carries no signature (a hand-built
+    // profile, or one from before signatures were stored).
+    const anchored = locateHeaderBySignature(text, profile.signature);
+    let header, rows, headerIndex, headerDrift = false;
+
+    if (anchored) {
+        header = anchored.header;
+        headerIndex = anchored.index;
+        rows = anchored.lines.slice(anchored.index + 1)
+            .map(l => splitCsvLine(l, anchored.sep))
+            .filter(cells => cells.length >= Math.max(2, Math.floor(header.length / 2)));
+    } else {
+        const sniffed = sniffCsv(text);
+        header = sniffed.header;
+        rows = sniffed.rows;
+        headerIndex = sniffed.skipRows;
+        // The caller should re-confirm the mapping: we are parsing a file whose
+        // header no longer matches what this profile was built from.
+        headerDrift = !!profile.signature;
+    }
+
+    const at = (row, field) => {
+        const idx = map[field];
+        return idx === undefined || idx === null ? '' : (row[idx] ?? '');
+    };
+
+    const out = [], errors = [];
+    rows.forEach((row, i) => {
+        const lineNo = headerIndex + i + 2;
+        const rawDate = at(row, 'date');
+        const date = parseDateWithFormat(rawDate, dateFormat);
+        if (!date) {
+            if (String(row.join('')).trim()) {
+                errors.push({ line: lineNo, reason: 'unreadable date', cells: row });
+            }
+            return;
+        }
+
+        let amount = NaN;
+        if (map.amount !== undefined && map.amount !== null) {
+            amount = parseStyledNumber(at(row, 'amount'), decimalStyle);
+            if (profile.invertSign) amount = -amount;
+        } else {
+            const debit = parseStyledNumber(at(row, 'debit'), decimalStyle);
+            const credit = parseStyledNumber(at(row, 'credit'), decimalStyle);
+            if (Number.isFinite(debit) && debit !== 0) amount = -Math.abs(debit);
+            else if (Number.isFinite(credit) && credit !== 0) amount = Math.abs(credit);
+        }
+        if (!Number.isFinite(amount) || amount === 0) {
+            errors.push({ line: lineNo, reason: 'unreadable or zero amount', cells: row });
+            return;
+        }
+
+        // The running balance is carried as transport so balance-continuity
+        // verification can prove the column mapping was right. It is not ledger
+        // data and never reaches the database.
+        const balanceRaw = map.balance === undefined || map.balance === null
+            ? null : parseStyledNumber(at(row, 'balance'), decimalStyle);
+
+        const candidate = normalizeRow({
+            accountId, date,
+            description: at(row, 'description'),
+            amount,
+            currency: at(row, 'currency') || profile.currency || 'EUR',
+            balance: Number.isFinite(balanceRaw) ? balanceRaw : null,
+            source: sourceLabel,
+            sourceRole: profile.sourceRole || 'statement'
+        });
+
+        // Every adapter passes through the same gate, so a bad row is reported
+        // the same way whatever format it came from.
+        const { ok, errors: reasons } = validateRow(candidate);
+        if (!ok) {
+            errors.push({ line: lineNo, reason: reasons.join('; '), cells: row });
+            return;
+        }
+        out.push(candidate);
+    });
+
+    return {
+        rows: out, errors, header,
+        skipRows: headerIndex,
+        headerDrift,
+        parsed: out.length,
+        skipped: errors.length
+    };
+}
+
+// ── fingerprints and dedupe ─────────────────────────────────────────────────
+
+/**
+ * Matching form of a description: like the fingerprint form, but with long
+ * digit runs stripped. Card and reference numbers change on every single
+ * transaction, so a rule that keeps them matches exactly once and never again.
+ * Kept separate from `normalizeDescription` because fingerprints must NOT drop
+ * those digits — they are part of what makes a movement identifiable.
+ */
+function normalizeForMatching(value) {
+    return normalizeDescription(value).replace(/\b\d{3,}\b/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeDescription(value) {
+    return String(value || '')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
+ * Identity of a movement for re-import safety.
+ *
+ * Built from `rawDescription` deliberately. MB WAY enrichment overwrites
+ * `description`; fingerprinting the enriched text would make the same bank line
+ * look new on the next import and duplicate it.
+ */
+export function spendFingerprint(row) {
+    const date = String(row.date || '').slice(0, 10);
+    const amount = (Math.round(Number(row.amount) * 100) / 100).toFixed(2);
+    const desc = normalizeDescription(row.rawDescription || row.description).slice(0, 60);
+    const currency = String(row.currency || 'EUR').toUpperCase();
+    return `${date}|${desc}|${amount}|${currency}`;
+}
+
+/**
+ * Multiset counts, so two genuinely identical €5 coffees on one day both survive.
+ *
+ * The stored fingerprint of a repeat carries a `#n` occurrence suffix (see
+ * dedupeSpendRows), but an incoming row is always hashed to the BASE key. The
+ * suffix is therefore stripped when counting — otherwise the second and later
+ * copies of a repeated movement never match on re-import and get inserted
+ * again, silently duplicating every same-day repeat on each import.
+ */
+export function buildExistingFingerprints(transactions = []) {
+    const counts = new Map();
+    for (const tx of transactions) {
+        const stored = tx.fingerprint || spendFingerprint(tx);
+        const base = String(stored).replace(/#\d+$/, '');
+        counts.set(base, (counts.get(base) || 0) + 1);
+    }
+    return counts;
+}
+
+export function dedupeSpendRows(rows = [], existing = new Map()) {
+    const remaining = new Map(existing);
+    const fresh = [], duplicates = [];
+    const seenThisFile = new Map();
+
+    for (const row of rows) {
+        const fp = spendFingerprint(row);
+        const left = remaining.get(fp) || 0;
+        if (left > 0) {
+            remaining.set(fp, left - 1);
+            duplicates.push({ ...row, fingerprint: fp });
+            continue;
+        }
+        // Repeats inside one file are real, distinct movements — keep them, but
+        // suffix the stored fingerprint so the UNIQUE index does not reject them.
+        const n = seenThisFile.get(fp) || 0;
+        seenThisFile.set(fp, n + 1);
+        fresh.push({ ...row, fingerprint: n === 0 ? fp : `${fp}#${n}` });
+    }
+
+    return { fresh, duplicates };
+}
+
+// ── MB WAY enrichment ───────────────────────────────────────────────────────
+
+const EPSILON = 0.005;
+/** Above this, the triple search costs seconds and finds nothing useful. */
+const MAX_AGGREGATE_POOL = 40;
+
+/** Days since epoch, for O(1) date bucketing without repeated Date.parse. */
+function epochDay(iso) {
+    const t = Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`);
+    return Number.isNaN(t) ? null : Math.round(t / 86400000);
+}
+
+/**
+ * Merge a `detail` source (MB WAY, PayPal) into the statement ledger.
+ *
+ * MB WAY charges against a linked bank account, so every MB WAY movement ALSO
+ * appears on a bank statement — the bank line opaque ("COMPRA MBWAY 12,40"),
+ * the MB WAY line naming the merchant ("Pingo Doce"). Both describe one real
+ * transaction.
+ *
+ * This is deliberately NOT dedupe. Dedupe keeps whichever row arrived first and
+ * discards the other; if that is the bank row, the good description — the exact
+ * field categorisation depends on — is gone. So: one row survives, the
+ * statement's amount and date are authoritative, and the detail row donates its
+ * merchant and description.
+ *
+ * Unmatched detail rows are NOT errors and are NOT promoted to transactions.
+ * They are almost always timing (the bank has not posted yet). Promoting one
+ * invents money that never moved; dropping one loses the description forever.
+ * They wait in `pending` and are retried on the next statement import, which is
+ * what makes the result independent of import order.
+ */
+export function mergeDetailSource(statementRows = [], detailRows = [], options = {}) {
+    const windowDays = options.windowDays ?? 3;
+    const allowAggregates = options.allowAggregates !== false;
+
+    let tooDense = 0;
+    const merged = statementRows.map(r => ({ ...r }));
+    const claimed = new Set(merged.map((r, i) => (r.enrichedFrom ? i : -1)).filter(i => i >= 0));
+    const enriched = [], pending = [], aggregated = [];
+
+    const dayDiff = (a, b) => {
+        const da = Date.parse(`${String(a).slice(0, 10)}T00:00:00Z`);
+        const db = Date.parse(`${String(b).slice(0, 10)}T00:00:00Z`);
+        if (Number.isNaN(da) || Number.isNaN(db)) return null;
+        return Math.round((db - da) / 86400000);
+    };
+
+    const sortedDetails = [...detailRows].sort((a, b) => (a.date < b.date ? -1 : 1));
+    const unmatched = [];
+
+    // Pass 1 — one detail row to one statement row, nearest date first.
+    for (const detail of sortedDetails) {
+        let best = -1, bestGap = Infinity;
+        for (let i = 0; i < merged.length; i++) {
+            if (claimed.has(i)) continue;
+            const s = merged[i];
+            if (options.accountId && s.accountId !== options.accountId) continue;
+            if (Math.abs(Math.abs(s.amount) - Math.abs(detail.amount)) > EPSILON) continue;
+            if (Math.sign(s.amount) !== Math.sign(detail.amount)) continue;
+            const gap = dayDiff(s.date, detail.date);
+            if (gap === null || Math.abs(gap) > windowDays) continue;
+            if (Math.abs(gap) < bestGap) { bestGap = Math.abs(gap); best = i; }
+        }
+
+        if (best === -1) { unmatched.push(detail); continue; }
+
+        claimed.add(best);
+        const target = merged[best];
+        // Amount and date stay the bank's. Only the wording improves.
+        target.rawDescription = target.rawDescription || target.description;
+        target.description = detail.description || target.description;
+        target.merchant = detail.merchant || detail.description || target.merchant;
+        target.enrichedFrom = options.label || 'wallet';
+        enriched.push({ index: best, before: target.rawDescription, after: target.description });
+    }
+
+    // Pass 2 — several detail rows posted to the bank as one aggregated line.
+    // Bounded to pairs and triples: an unbounded subset-sum over a month of
+    // transactions is both slow and prone to coincidental matches.
+    //
+    // Used-ness is tracked in a Set rather than stamped onto the rows. The rows
+    // are the CALLER'S objects — in the importer they are live state — so
+    // writing a marker onto them broke this module's purity contract and made a
+    // second import in the same session silently skip them.
+    const usedDetails = new Set();
+    // Detail rows bucketed by day, so the candidate pool for a given statement
+    // row is a handful of lookups instead of a scan of every unmatched row.
+    const byDay = new Map();
+    if (allowAggregates && unmatched.length > 1) {
+        for (const d of unmatched) {
+            const key = epochDay(d.date);
+            if (key === null) continue;
+            if (!byDay.has(key)) byDay.set(key, []);
+            byDay.get(key).push(d);
+        }
+    }
+
+    if (allowAggregates && unmatched.length > 1) {
+        for (let i = 0; i < merged.length; i++) {
+            if (claimed.has(i)) continue;
+            const target = merged[i];
+            const centre = epochDay(target.date);
+            if (centre === null) continue;
+            const pool = [];
+            for (let off = -windowDays; off <= windowDays; off++) {
+                for (const d of byDay.get(centre + off) || []) {
+                    if (!usedDetails.has(d) && Math.sign(d.amount) === Math.sign(target.amount)) pool.push(d);
+                }
+            }
+            // A very dense window makes the triple search cubic for no useful
+            // result. Report it rather than spending seconds on it.
+            if (pool.length > MAX_AGGREGATE_POOL) { tooDense += 1; continue; }
+            const combo = findSubset(pool, target.amount, 3);
+            if (!combo) continue;
+            combo.forEach(d => usedDetails.add(d));
+            claimed.add(i);
+            target.rawDescription = target.rawDescription || target.description;
+            target.merchant = combo.map(d => d.merchant || d.description).join(' + ');
+            target.enrichedFrom = options.label || 'wallet';
+            target.needsReview = true; // a split posting is worth a human glance
+            aggregated.push({ index: i, parts: combo.length, amount: target.amount });
+        }
+    }
+
+    for (const d of unmatched) {
+        if (usedDetails.has(d)) continue;
+        pending.push({ ...d, fingerprint: d.fingerprint || spendFingerprint(d) });
+    }
+
+    return { merged, enriched, aggregated, pending, tooDense };
+}
+
+/** Bounded subset search: sizes 2..maxSize summing to `target` within EPSILON. */
+function findSubset(pool, target, maxSize) {
+    const n = pool.length;
+    for (let a = 0; a < n; a++) {
+        for (let b = a + 1; b < n; b++) {
+            if (Math.abs(pool[a].amount + pool[b].amount - target) <= EPSILON) return [pool[a], pool[b]];
+            if (maxSize < 3) continue;
+            for (let c = b + 1; c < n; c++) {
+                if (Math.abs(pool[a].amount + pool[b].amount + pool[c].amount - target) <= EPSILON) {
+                    return [pool[a], pool[b], pool[c]];
+                }
+            }
+        }
+    }
+    return null;
+}
+
+// ── rule-based categorisation (the cache in front of the AI) ────────────────
+
+export function applyRules(rows = [], rules = []) {
+    const ordered = [...rules].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+    let matched = 0;
+    const out = rows.map(row => {
+        if (row.category) return row;
+        const haystack = normalizeForMatching(`${row.description} ${row.merchant || ''}`);
+        for (const rule of ordered) {
+            let hit = false;
+            if (rule.matchType === 'regex') {
+                try { hit = new RegExp(rule.pattern, 'i').test(haystack); }
+                catch { hit = false; } // a bad saved regex must not break an import
+            } else {
+                hit = haystack.includes(normalizeDescription(rule.pattern));
+            }
+            if (!hit) continue;
+            matched++;
+            return {
+                ...row,
+                category: rule.category,
+                categorySource: 'rule',
+                categoryConfidence: 1,
+                merchant: row.merchant || rule.merchant || null
+            };
+        }
+        // Normalise to an explicit null: downstream code distinguishes
+        // "uncategorised" from "absent", and must never invent an "Other".
+        return row.category === undefined ? { ...row, category: null } : row;
+    });
+    return { rows: out, matched, unmatched: out.filter(r => !r.category) };
+}
+
+/** A manual correction becomes a rule, so the same merchant self-files next time. */
+export function ruleFromCorrection(transaction, category) {
+    const source = transaction.merchant || transaction.description || '';
+    const pattern = normalizeForMatching(source)
+        .split(' ')
+        .filter(w => w.length > 2 && !/^\d+$/.test(w))
+        .slice(0, 3)
+        .join(' ');
+    if (!pattern) return null;
+    return {
+        matchType: 'contains',
+        pattern,
+        category,
+        merchant: transaction.merchant || null,
+        priority: 10 // user-authored rules outrank anything inferred
+    };
+}
+
+export const __testing = { normalizeDescription, normalizeForMatching, findSubset, FIELD_ALIASES, scoreAlias };

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spend — Cash Flow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="lib/supabase.js?v=3.37.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.37.0">
+    <link rel="stylesheet" href="css/spend.css?v=3.37.0">
+
+    <!-- Vercel Analytics (Web Analytics) -->
+    <script defer src="/_vercel/insights/script.js"></script>
+    <!-- Vercel Speed Insights -->
+    <script defer src="/_vercel/speed-insights/script.js"></script>
+</head>
+<body>
+
+    <!-- ── Persistent navbar (rendered by navbar.js) ─────────────────────── -->
+    <div id="appNavbar" class="app-navbar"></div>
+
+    <div class="container">
+
+        <!-- ── Header ──────────────────────────────────────────────────── -->
+        <div class="header spend-header">
+            <div class="header-eyebrow spend-eyebrow">Cash Flow · Categories · Scenarios</div>
+            <h1>
+                <span data-i18n="spend.title">Spend</span>
+                <span class="header-version">v3.37.0</span>
+            </h1>
+            <p data-i18n="spend.subtitle">Where the money goes — and what changes if you change it</p>
+        </div>
+
+        <!-- ── Period bar: drives every number below it ─────────────────── -->
+        <div class="period-bar" id="periodBar"></div>
+
+        <div id="reviewBanner"></div>
+
+        <!-- ── Overview ────────────────────────────────────────────────── -->
+        <div class="card">
+            <div id="spendOverview"></div>
+            <div class="action-buttons-row" style="margin-top:18px">
+                <button class="btn btn-sm btn-primary-spend" onclick="spendShowQuickAdd()">+ Add transaction</button>
+                <button class="btn btn-sm btn-ghost-spend" onclick="spendShowImport()">↑ Import statement</button>
+                <button class="btn btn-sm btn-ghost-spend" onclick="spendFindTransfers()">↔ Find transfers</button>
+            </div>
+        </div>
+
+        <!-- ── Categories ──────────────────────────────────────────────── -->
+        <div class="card" id="categorySection">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="spend.categories">Where it went</h2>
+            </div>
+            <p class="form-helper" style="margin-bottom:12px">
+                Solid bar is this period, outline is the comparison. Tap a category to focus the trend below.
+            </p>
+            <div id="categoryBreakdown"></div>
+        </div>
+
+        <!-- ── Trend ───────────────────────────────────────────────────── -->
+        <div class="card" id="trendsSection">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="spend.trend">Evolution</h2>
+                <span class="form-helper" id="trendLabel"></span>
+            </div>
+            <div class="trend-chart" id="trendChart"></div>
+        </div>
+
+        <!-- ── Recurring ───────────────────────────────────────────────── -->
+        <div class="card" id="recurringSection">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="spend.recurring">Recurring</h2>
+                <span class="form-helper" id="recurringSummary"></span>
+            </div>
+            <div id="recurringList"></div>
+        </div>
+
+        <!-- ── Simulator ───────────────────────────────────────────────── -->
+        <div class="card" id="simulatorSection">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="spend.simulator">What if…</h2>
+            </div>
+            <p class="form-helper" style="margin-bottom:12px">
+                Change something and see what it does to a year. Nothing here is written to your ledger.
+            </p>
+            <div id="simulatorHost"></div>
+        </div>
+
+        <!-- ── Accounts ────────────────────────────────────────────────── -->
+        <div class="card" id="accountsSection">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="spend.accounts">Accounts</h2>
+                <button class="btn btn-sm btn-ghost-spend" onclick="spendShowAccountDialog()">+ Add</button>
+            </div>
+            <div class="acct-grid" id="accountsList"></div>
+        </div>
+
+        <!-- ── Transactions ────────────────────────────────────────────── -->
+        <div class="card" id="transactionsSection">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="spend.transactions">Transactions</h2>
+                <span class="form-helper" id="txCount"></span>
+            </div>
+
+            <div class="tx-toolbar">
+                <input class="form-input" id="txSearch" type="search" placeholder="Search description, merchant, category…"
+                       oninput="spendSetTxSearch(this.value)">
+                <div class="chip-scroll-row">
+                    <button class="chip-filter active-spend" data-tx-filter="all"      onclick="spendSetTxFilter('all')">All</button>
+                    <button class="chip-filter"              data-tx-filter="spend"    onclick="spendSetTxFilter('spend')">Spending</button>
+                    <button class="chip-filter"              data-tx-filter="income"   onclick="spendSetTxFilter('income')">Income</button>
+                    <button class="chip-filter"              data-tx-filter="transfer" onclick="spendSetTxFilter('transfer')">Transfers</button>
+                    <button class="chip-filter"              data-tx-filter="review"   onclick="spendSetTxFilter('review')">Needs review</button>
+                </div>
+            </div>
+
+            <div style="overflow-x:auto">
+                <table class="tx-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th class="col-hide-mobile">Category</th>
+                            <th class="num">Amount</th>
+                            <th class="num col-hide-mobile"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="txBody"></tbody>
+                </table>
+            </div>
+            <div class="pagination-controls" id="txPagination"></div>
+        </div>
+
+        <!-- ── Import ──────────────────────────────────────────────────── -->
+        <div class="card" id="importSection">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="spend.import">Import</h2>
+            </div>
+            <p class="form-helper" style="margin-bottom:14px">
+                A bank's format is learned once. After you confirm the first import from a bank,
+                every later file from it is read automatically.
+            </p>
+            <div id="importHost"></div>
+        </div>
+
+    </div>
+
+    <!-- ═══ Dialogs ═══════════════════════════════════════════════════════ -->
+
+    <div class="modal-overlay" id="txEditDialog" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Transaction</h3>
+                <button class="modal-close" onclick="spendCloseModal('txEditDialog')">✕</button>
+            </div>
+            <div class="modal-form" id="txEditBody"></div>
+            <div class="modal-actions">
+                <button class="btn btn-danger btn-sm" onclick="spendRemoveTx()">Delete</button>
+                <button class="btn btn-secondary" onclick="spendCloseModal('txEditDialog')">Cancel</button>
+                <button class="btn btn-success" onclick="spendSaveTxEdit()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="quickAddDialog" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Add transaction</h3>
+                <button class="modal-close" onclick="spendCloseModal('quickAddDialog')">✕</button>
+            </div>
+            <div class="modal-form">
+                <div class="form-group">
+                    <label class="form-label">Account</label>
+                    <select class="form-select" id="quickAddAccount"></select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <input class="form-input" id="quickAddDesc" placeholder="Coffee, taxi, cash…">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Amount</label>
+                    <input class="form-input" id="quickAddAmount" type="number" step="0.01" inputmode="decimal" placeholder="12.40">
+                    <label class="form-helper" style="display:flex;align-items:center;gap:6px;margin-top:8px">
+                        <input type="checkbox" id="quickAddIncome"> This is money coming in
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Category</label>
+                    <select class="form-select" id="quickAddCat"></select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Date</label>
+                    <input class="form-input" id="quickAddDate" type="date">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="spendCloseModal('quickAddDialog')">Cancel</button>
+                <button class="btn btn-success" onclick="spendSubmitQuickAdd()">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="mappingDialog" style="display: none;">
+        <div class="modal" style="max-width:560px">
+            <div class="modal-header">
+                <h3 class="modal-title">Confirm this bank's columns</h3>
+                <button class="modal-close" onclick="spendCloseModal('mappingDialog')">✕</button>
+            </div>
+            <div class="modal-form" id="mappingBody"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="spendCloseModal('mappingDialog')">Cancel</button>
+                <button class="btn btn-success" onclick="spendConfirmMapping()">Confirm &amp; import</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="accountDialog" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="accountDialogTitle">Add account</h3>
+                <button class="modal-close" onclick="spendCloseModal('accountDialog')">✕</button>
+            </div>
+            <div class="modal-form" id="accountDialogBody"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="spendCloseModal('accountDialog')">Cancel</button>
+                <button class="btn btn-success" onclick="spendSubmitAccount()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Bottom nav (mobile) ─────────────────────────────────────────── -->
+    <nav class="bottom-nav">
+        <a href="index.html"     class="bn-item"><span class="bn-icon">⊞</span>Hub</a>
+        <a href="portfolio.html" class="bn-item"><span class="bn-icon">📈</span>Stocks</a>
+        <a href="wine.html"      class="bn-item"><span class="bn-icon">🍷</span>Cellar</a>
+        <a href="spend.html"     class="bn-item active-spend"><span class="bn-icon">💸</span>Spend</a>
+        <a href="holdings.html"  class="bn-item"><span class="bn-icon">🏦</span>Bank</a>
+    </nav>
+
+    <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
+    <script type="module">
+        import { renderNavbar } from './services/navbar.js?v=3.37.0';
+        import state from './spend/state.js?v=3.37.0';
+        import {
+            initSupabase, handleLogin, handleSignup, handleLogout, handleGoogleLogin,
+            handleForgotPassword, handlePasswordReset, cancelPasswordRecovery,
+            ensureDefaultCategories
+        } from './spend/storage.js?v=3.37.0';
+        import {
+            renderAll, setGrain, stepPeriod, setCompareMode, toggleOneOffs, selectCategory,
+            setTxSearch, setTxFilter, setPage, editTx, saveTxEdit, removeTx,
+            showQuickAdd, submitQuickAdd, findTransfers, bindDelegation
+        } from './spend/ledger.js?v=3.37.0';
+        import { showAccountDialog, onAccountTypeChange, submitAccount, removeAccount } from './spend/accounts.js?v=3.37.0';
+        import { renderImportSection, handleFile, confirmMapping, commitImport, cancelImport } from './spend/importer.js?v=3.37.0';
+        import { closeModal, closeActiveModal, showToast } from './spend/utils.js?v=3.37.0';
+
+        // ── Expose to onclick handlers ─────────────────────────────────────
+        // Prefixed to avoid colliding with the stock/wine globals a shared
+        // navbar could otherwise reach.
+        window._spendState        = state;
+        window.spendSetGrain      = setGrain;
+        window.spendStepPeriod    = stepPeriod;
+        window.spendSetCompare    = setCompareMode;
+        window.spendToggleOneOffs = toggleOneOffs;
+        window.spendSelectCategory = selectCategory;
+        window.spendSetTxSearch   = setTxSearch;
+        window.spendSetTxFilter   = setTxFilter;
+        window.spendSetPage       = setPage;
+        window.spendEditTx        = editTx;
+        window.spendSaveTxEdit    = saveTxEdit;
+        window.spendRemoveTx      = removeTx;
+        window.spendShowQuickAdd  = showQuickAdd;
+        window.spendSubmitQuickAdd = submitQuickAdd;
+        window.spendFindTransfers = findTransfers;
+        window.spendShowAccountDialog = showAccountDialog;
+        window.spendEditAccount   = showAccountDialog;
+        window.spendOnAccountTypeChange = onAccountTypeChange;
+        window.spendSubmitAccount = submitAccount;
+        window.spendDeleteAccount = removeAccount;
+        window.spendCloseModal    = closeModal;
+
+        window.spendRenderImport  = renderImportSection;
+        window.spendHandleFile    = handleFile;
+        window.spendConfirmMapping = confirmMapping;
+        window.spendCommitImport  = commitImport;
+        window.spendCancelImport  = cancelImport;
+        window.spendShowImport    = () => {
+            document.getElementById('importSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            document.getElementById('importFile')?.focus();
+        };
+
+        // Navbar auth handlers (the navbar markup uses inline onclick).
+        window.handleLogin           = handleLogin;
+        window.handleSignup          = handleSignup;
+        window.handleLogout          = handleLogout;
+        window.handleGoogleLogin     = handleGoogleLogin;
+        window.handleForgotPassword  = handleForgotPassword;
+        window.handlePasswordReset   = handlePasswordReset;
+        window.cancelPasswordRecovery = cancelPasswordRecovery;
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { closeActiveModal(); return; }
+            const tag = document.activeElement?.tagName;
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+            if (e.key === 'n' || e.key === 'N') { e.preventDefault(); showQuickAdd(); }
+        });
+
+        // ── Boot ───────────────────────────────────────────────────────────
+        renderNavbar({ supabaseConfigured: true });
+        bindDelegation();
+
+        // Render the empty state immediately; auth resolves asynchronously and
+        // repopulates. A blank page while the session loads reads as broken.
+        renderAll();
+
+        initSupabase(async () => {
+            await ensureDefaultCategories();
+            renderAll();
+        });
+    </script>
+</body>
+</html>
