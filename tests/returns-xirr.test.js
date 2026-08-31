@@ -1,6 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { buildCashFlows, xirr, xnpv, summarizeCashFlows, computeYearlyIncome, computeYearlyXirr } from '../services/returns-core.js';
 
+describe('xnpv — net present value of dated flows', () => {
+  it('returns 0 for empty or null flows', () => {
+    expect(xnpv(0.1, [])).toBe(0);
+    expect(xnpv(0.1, null)).toBe(0);
+  });
+
+  it('at rate=0 equals the undiscounted sum of all amounts', () => {
+    const flows = [
+      { date: '2021-01-01', amount: -1000 },
+      { date: '2021-07-01', amount: 200 },
+      { date: '2022-01-01', amount: 900 },
+    ];
+    expect(xnpv(0, flows)).toBeCloseTo(100, 6); // −1000 + 200 + 900
+  });
+});
+
 describe('xirr — money-weighted annualized return', () => {
   it('returns exactly 10% for a 1-year 1000→1100 flow (365-day span)', () => {
     const rate = xirr([
@@ -168,6 +184,20 @@ describe('computeYearlyXirr — per-calendar-year money-weighted return', () => 
   it('returns [] when the ledger has no dated flows', () => {
     expect(computeYearlyXirr({}, { rateFor: rateOne, currencyFor: noCurrency, currentValue: 0 })).toEqual([]);
   });
+
+  it('null currentValue marks the current year insufficient', () => {
+    const txs = { AAPL: [{ type: 'buy', date: '2023-01-15', totalAmount: 1000, fee: 0 }] };
+    const rows = computeYearlyXirr(txs, {
+      rateFor: rateOne, currencyFor: noCurrency,
+      boundaryValueFor: () => 1000,
+      currentValue: null,
+      today: '2023-06-01',
+    });
+    const y2023 = rows.find(r => r.year === '2023');
+    expect(y2023.insufficient).toBe(true);
+    expect(y2023.closeValue).toBeNull();
+    expect(y2023.rate).toBeNull();
+  });
 });
 
 describe('computeYearlyIncome — dividend income & yield-on-cost by calendar year', () => {
@@ -246,6 +276,42 @@ describe('computeYearlyIncome — dividend income & yield-on-cost by calendar ye
     const { years, totals } = computeYearlyIncome(txs, deps);
     expect(years[0].fees).toBe(14); // 2 (trade) + 12 (custody)
     expect(totals.fees).toBe(14);
+  });
+
+  it('isin_change does not update capital events (no cost-basis change)', () => {
+    const txs = {
+      OLDCO: [
+        { type: 'buy', date: '2021-06-01', totalAmount: 1000, fee: 0 },
+        { type: 'isin_change', date: '2021-12-01', shares: 10, note: 'rename' },
+      ],
+      NEWCO: [
+        { type: 'dividend', date: '2022-06-01', totalAmount: 50, tax: 0 },
+      ],
+    };
+    const { years } = computeYearlyIncome(txs, deps);
+    const y22 = years.find(y => y.year === '2022');
+    expect(y22.investedStart).toBe(1000);
+    expect(y22.investedEnd).toBe(1000);
+  });
+
+  it('aggregates dividends from two symbols in the same year into a single bucket', () => {
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2022-01-01', totalAmount: 1000, fee: 0 },
+        { type: 'dividend', date: '2022-06-01', totalAmount: 40, tax: 4 },
+      ],
+      MSFT: [
+        { type: 'buy', date: '2022-01-01', totalAmount: 2000, fee: 0 },
+        { type: 'dividend', date: '2022-09-01', totalAmount: 60, tax: 9 },
+      ],
+    };
+    const { years, totals } = computeYearlyIncome(txs, deps);
+    expect(years).toHaveLength(1);
+    const y22 = years[0];
+    expect(y22.dividends).toBe(100);
+    expect(y22.tax).toBe(13);
+    expect(y22.netIncome).toBe(87);
+    expect(totals.dividends).toBe(100);
   });
 
   it('applies the injected FX rate and ignores malformed dates', () => {
