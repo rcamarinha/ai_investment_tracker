@@ -21,7 +21,7 @@
  * Currently implemented: OFX / QFX (1.x SGML and 2.x XML).
  */
 
-import { normalizeRow, validateRow } from './import-contract.js?v=3.37.0';
+import { normalizeRow, validateRow } from './import-contract.js';
 
 // ── detection ───────────────────────────────────────────────────────────────
 

@@ -5,19 +5,19 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.37.0';
+import state from './state.js?v=3.42.1';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour
-} from './utils.js?v=3.37.0';
+} from './utils.js?v=3.42.1';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule, incomeCategoryNames
-} from './storage.js?v=3.37.0';
+} from './storage.js?v=3.42.1';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario
-} from '../services/spend-core.js?v=3.37.0';
-import { spendFingerprint, ruleFromCorrection } from '../services/import-banks.js?v=3.37.0';
+} from '../services/spend-core.js';
+import { spendFingerprint, ruleFromCorrection } from '../services/import-banks.js';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 

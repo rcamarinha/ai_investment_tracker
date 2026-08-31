@@ -24,16 +24,13 @@
  *   3. DUPLICATION  — same movement, imported twice          → fingerprint dedupe
  */
 
-// Versioned deliberately. This change ADDED `export` to five previously
-// private helpers in import-brokers.js, and /services/ is served
-// `immutable, max-age=31536000` — so a returning user holds a cached copy
-// without those exports. An un-versioned import would resolve to that stale
-// copy, and a missing named export is a hard module error, taking the whole
-// Spend page down for exactly the users who already had it working.
+// Bare, like every other services/ → services/ import. That path is
+// cache-busted by header (max-age=0, must-revalidate), and a `?v=` query here
+// would create a SECOND module instance — the bug v3.41.0 removed.
 import {
     parseFlexibleNumber, detectCsvSeparator, splitCsvLine, normHeader
-} from './import-brokers.js?v=3.37.0';
-import { normalizeRow, validateRow } from './import-contract.js?v=3.37.0';
+} from './import-brokers.js';
+import { normalizeRow, validateRow } from './import-contract.js';
 
 // ── header aliases ──────────────────────────────────────────────────────────
 // Portuguese first: these are PT retail bank exports, and the English aliases
