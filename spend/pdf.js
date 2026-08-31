@@ -1,0 +1,222 @@
+/**
+ * spend/pdf.js — PDF statements, from file to verified rows.
+ *
+ * The pipeline, and why each step exists:
+ *
+ *   file → positioned text → reconstructed LINES → prefilter → chunk
+ *        → extraction service → contract rows → balance verification
+ *
+ * The app's older PDF reader did `items.map(i => i.str).join(' ')`, discarding
+ * every coordinate and flattening a page into one unreadable line. That is why
+ * PDFs previously looked like they needed a large model: the table was
+ * destroyed before anything could read it. Keeping the layout is what lets a
+ * cheap model do this reliably — and lets us send a fraction of the tokens.
+ *
+ * Nothing here trusts the model. Every returned row goes through the same
+ * contract validator as CSV and OFX, and then through a balance-continuity
+ * check against the statement's own running balance. Rows that do not
+ * reconcile are flagged for review rather than written to the ledger.
+ */
+
+import state from './state.js?v=3.42.1';
+import { escapeHTML } from './utils.js?v=3.42.1';
+import { groupIntoLines, findCandidateLines, detectStatementYear, checkBalanceChain }
+    from '../services/import-pdf.js';
+import { normalizeRow, validateRow } from '../services/import-contract.js';
+
+/** Characters per request. The server rejects above 15K. */
+const CHUNK_CHARS = 12000;
+/** Under the 60s edge-function ceiling, so a stall surfaces as a real error. */
+const REQUEST_TIMEOUT_MS = 55000;
+
+// ── file → lines ────────────────────────────────────────────────────────────
+
+/**
+ * Extract layout-reconstructed lines from a PDF.
+ *
+ * pdf.js is vendored in /lib because the CSP is `script-src 'self'` — it must
+ * never be loaded from a CDN.
+ */
+export async function extractPdfLines(file) {
+    const pdfjsLib = await import('../lib/pdf.min.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../lib/pdf.worker.min.mjs', import.meta.url).href;
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+    const lines = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        // pdf.js items already carry `transform` and `width`; groupIntoLines
+        // needs both to rebuild the printed rows.
+        for (const line of groupIntoLines(content.items)) lines.push({ ...line, page: p });
+    }
+    return { lines, pageCount: pdf.numPages };
+}
+
+/**
+ * Keep what the model needs and drop the rest.
+ *
+ * A statement is mostly boilerplate — one bank prints ~20 lines of terms per
+ * page. Sending candidate transaction rows plus a little header context is the
+ * difference between ~5 requests and ~25 for a long export, and it removes the
+ * text most likely to be mistaken for a transaction.
+ */
+export function prefilterLines(lines = []) {
+    const candidates = new Set(findCandidateLines(lines).map(l => l.text));
+    // Header context: the first lines of the document usually carry the
+    // statement period, which is how a row printed as "31/07" gets its year.
+    const header = lines.slice(0, 12).map(l => l.text);
+    const body = lines.filter(l => candidates.has(l.text)).map(l => l.text);
+    return { header, body, year: detectStatementYear(lines) };
+}
+
+export function chunkLines(bodyLines = [], maxChars = CHUNK_CHARS) {
+    const chunks = [];
+    let current = '';
+    for (const line of bodyLines) {
+        if (current && current.length + line.length + 1 > maxChars) { chunks.push(current); current = ''; }
+        current += (current ? '\n' : '') + line;
+    }
+    if (current.trim()) chunks.push(current);
+    return chunks;
+}
+
+// ── extraction service ──────────────────────────────────────────────────────
+
+async function freshToken() {
+    const { data } = await state.supabaseClient.auth.getSession();
+    const session = data?.session;
+    if (!session) throw new Error('Not signed in.');
+    // Refresh only when the token is about to expire. Refreshing every time
+    // rotates the single-use refresh token and breaks long multi-chunk runs.
+    const expiresIn = (session.expires_at || 0) * 1000 - Date.now();
+    if (expiresIn < 60000) {
+        const { data: refreshed } = await state.supabaseClient.auth.refreshSession();
+        return refreshed?.session?.access_token || session.access_token;
+    }
+    return session.access_token;
+}
+
+async function callExtractor(statementText, hint) {
+    const token = await freshToken();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+        const res = await fetch(`${state.supabaseUrl}/functions/v1/extract-statement`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                apikey: state.supabaseAnonKey,
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ statementText, hint }),
+            signal: controller.signal
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || `Extraction failed (${res.status})`);
+        return payload;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// ── model output → verified rows ────────────────────────────────────────────
+
+/** Coerce whatever the model returned through the same gate as every adapter. */
+export function normalizeAiRows(rawRows = [], { accountId, currency = 'EUR', source = 'pdf' } = {}) {
+    const rows = [], rejected = [];
+    for (const raw of rawRows) {
+        const candidate = normalizeRow({
+            accountId,
+            date: typeof raw?.date === 'string' ? raw.date : null,
+            description: raw?.description,
+            amount: raw?.amount,
+            currency: raw?.currency || currency,
+            balance: raw?.balance ?? null,
+            source,
+            sourceRole: 'statement'
+        });
+        const { ok, errors } = validateRow(candidate);
+        if (ok) rows.push(candidate);
+        else rejected.push({ reason: errors.join('; '), raw });
+    }
+    return { rows, rejected };
+}
+
+/**
+ * Check the model's arithmetic against the statement's own running balance.
+ *
+ * This is what makes an AI-read statement safe to import: the balance chain is
+ * a property of the document, not of the extraction, so a hallucinated or
+ * mis-signed amount breaks it. Rows in a broken chain are flagged rather than
+ * dropped — the movement probably happened, we just cannot vouch for the number.
+ */
+export function verifyRows(rows = []) {
+    const chain = checkBalanceChain(rows);
+    if (chain.valid || chain.checked === 0) {
+        return { rows, chain, flagged: 0 };
+    }
+    let flagged = 0;
+    const out = rows.map((row, i) => {
+        if (i === 0 || row.balance === null || rows[i - 1].balance === null) return row;
+        const expected = row.balance - rows[i - 1].balance;
+        if (Math.abs(expected - row.amount) <= 0.011) return row;
+        flagged++;
+        return { ...row, needsReview: true, note: 'amount does not reconcile with the statement balance' };
+    });
+    return { rows: out, chain, flagged };
+}
+
+// ── orchestration ───────────────────────────────────────────────────────────
+
+/**
+ * Read a PDF statement end to end.
+ * `onProgress(done, total)` reports chunk progress; a long export is several
+ * requests and silence for 30 seconds reads as a hang.
+ */
+export async function importPdfStatement(file, { accountId, hint, onProgress } = {}) {
+    const { lines, pageCount } = await extractPdfLines(file);
+    if (!lines.length) {
+        return { rows: [], errors: [{ reason: 'No text found — this looks like a scanned image rather than a text PDF.' }], parsed: 0, skipped: 1, format: 'pdf' };
+    }
+
+    const { header, body, year } = prefilterLines(lines);
+    if (!body.length) {
+        return { rows: [], errors: [{ reason: 'No dated transaction lines found in this document.' }], parsed: 0, skipped: 1, format: 'pdf' };
+    }
+
+    const chunks = chunkLines(body);
+    const contextHint = [hint, year ? `The statement period is in ${year}.` : null,
+        `Document header:\n${header.join('\n')}`].filter(Boolean).join('\n');
+
+    const collected = [], errors = [];
+    let provider = null;
+    for (let i = 0; i < chunks.length; i++) {
+        onProgress?.(i, chunks.length);
+        try {
+            const payload = await callExtractor(chunks[i], contextHint);
+            provider = payload.provider || provider;
+            collected.push(...(payload.rows || []));
+        } catch (err) {
+            errors.push({ reason: `Chunk ${i + 1} of ${chunks.length}: ${err.message}` });
+        }
+    }
+    onProgress?.(chunks.length, chunks.length);
+
+    const { rows: normalized, rejected } = normalizeAiRows(collected, { accountId, source: file.name || 'pdf' });
+    for (const r of rejected) errors.push({ reason: r.reason });
+
+    // Chronological, so the balance chain is checked in the order the statement
+    // printed it rather than the order the model happened to emit.
+    normalized.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const { rows, chain, flagged } = verifyRows(normalized);
+
+    return {
+        rows, errors, parsed: rows.length, skipped: errors.length,
+        format: 'pdf', provider, pageCount, chunks: chunks.length,
+        chain, flagged, statementYear: year
+    };
+}
+
+export const __testing = { CHUNK_CHARS };

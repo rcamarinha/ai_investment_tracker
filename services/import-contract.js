@@ -81,7 +81,15 @@ export function normalizeRow(input = {}, defaults = {}) {
         // Optional transport only: the statement's running balance, carried so
         // balance-continuity verification can check the parse. Not part of the
         // ledger and not persisted.
-        balance: Number.isFinite(Number(src.balance)) ? round2(Number(src.balance)) : null,
+        //
+        // null/undefined/'' must stay null, NOT become 0: Number(null) is 0 and
+        // passes isFinite, so a row with no printed balance would enter the
+        // continuity check as a real zero and either raise false alarms or hide
+        // a genuine break. "No balance shown" and "balance is zero" are
+        // different facts about the statement.
+        balance: (src.balance === null || src.balance === undefined || src.balance === '')
+            ? null
+            : (Number.isFinite(Number(src.balance)) ? round2(Number(src.balance)) : null),
 
         needsReview: !!src.needsReview,
         note: src.note ?? null
