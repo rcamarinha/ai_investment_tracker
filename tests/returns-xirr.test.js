@@ -93,6 +93,17 @@ describe('buildCashFlows — ledger → dated base-currency flows', () => {
     );
     expect(flows).toEqual([]);
   });
+
+  it('skips isin_change like split (no cash flow)', () => {
+    const txs = {
+      OLD: [{ type: 'isin_change', date: '2022-01-01', shares: 10 }],
+      NEW: [{ type: 'buy', date: '2022-06-01', totalAmount: 500, fee: 0 }],
+    };
+    const flows = buildCashFlows(txs, { rateFor: rateOne, currencyFor: noCurrency });
+    // isin_change produces no cash flow; only the buy is included
+    expect(flows).toHaveLength(1);
+    expect(flows[0].type).toBe('buy');
+  });
 });
 
 describe('computeYearlyXirr — per-calendar-year money-weighted return', () => {
@@ -167,6 +178,28 @@ describe('computeYearlyXirr — per-calendar-year money-weighted return', () => 
 
   it('returns [] when the ledger has no dated flows', () => {
     expect(computeYearlyXirr({}, { rateFor: rateOne, currencyFor: noCurrency, currentValue: 0 })).toEqual([]);
+  });
+
+  it('computes a fully-past year when both boundary values are available', () => {
+    const txs = { AAPL: [{ type: 'buy', date: '2021-06-01', totalAmount: 1000, fee: 0 }] };
+    const rows = computeYearlyXirr(txs, {
+      rateFor: rateOne, currencyFor: noCurrency,
+      boundaryValueFor: d => {
+        if (d <= '2021-06-01') return 0;
+        if (d === '2022-01-01') return 1200;
+        if (d === '2023-01-01') return 1500;
+        return null;
+      },
+      currentValue: 1800,
+      today: '2023-06-01',
+    });
+    const y2022 = rows.find(r => r.year === '2022');
+    expect(y2022.insufficient).toBe(false);
+    expect(y2022.openValue).toBe(1200);
+    expect(y2022.closeValue).toBe(1500);
+    expect(y2022.rate).not.toBeNull();
+    // A year that opens at 1200 and closes at 1500 with no additional flows is a gain
+    expect(y2022.rate).toBeGreaterThan(0);
   });
 });
 
@@ -259,6 +292,34 @@ describe('computeYearlyIncome — dividend income & yield-on-cost by calendar ye
     expect(years).toHaveLength(1);
     expect(years[0].netIncome).toBeCloseTo(81, 6); // (100 − 10) × 0.9
   });
+
+  it('uses sell proceeds as cost basis when realizedGainLoss is absent', () => {
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2021-01-01', totalAmount: 1000, fee: 0 },
+        // realizedGainLoss omitted → cost basis = proceeds = 700
+        { type: 'sell', date: '2021-06-01', totalAmount: 700, fee: 0 },
+        { type: 'dividend', date: '2022-06-01', totalAmount: 30, tax: 0 },
+      ],
+    };
+    const { years } = computeYearlyIncome(txs, { rateFor: () => 1, currencyFor: () => null });
+    const y22 = years.find(y => y.year === '2022');
+    // Remaining invested = 1000 − 700 = 300 (cost basis = proceeds since no realizedGainLoss)
+    expect(y22.investedStart).toBe(300);
+    expect(y22.yieldOnCost).toBeCloseTo(30 / 300, 6);
+  });
+
+  it('buckets the sell trade fee into the fees column for that year', () => {
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2021-01-01', totalAmount: 700, fee: 0 },
+        { type: 'sell', date: '2022-05-01', totalAmount: 800, fee: 4, realizedGainLoss: 100 },
+      ],
+    };
+    const { years } = computeYearlyIncome(txs, { rateFor: () => 1, currencyFor: () => null });
+    const y22 = years.find(y => y.year === '2022');
+    expect(y22.fees).toBe(4);
+  });
 });
 
 describe('summarizeCashFlows', () => {
@@ -273,5 +334,19 @@ describe('summarizeCashFlows', () => {
     expect(s.cashReturned).toBe(340);
     expect(s.firstDate).toBe('2021-01-01');
     expect(s.count).toBe(4);
+  });
+
+  it('returns all-zero totals and null firstDate for empty or null input', () => {
+    const empty = summarizeCashFlows([]);
+    expect(empty.capitalIn).toBe(0);
+    expect(empty.cashReturned).toBe(0);
+    expect(empty.firstDate).toBeNull();
+    expect(empty.count).toBe(0);
+
+    const nullInput = summarizeCashFlows(null);
+    expect(nullInput.capitalIn).toBe(0);
+    expect(nullInput.cashReturned).toBe(0);
+    expect(nullInput.firstDate).toBeNull();
+    expect(nullInput.count).toBe(0);
   });
 });
