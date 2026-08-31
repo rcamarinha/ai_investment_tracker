@@ -41,6 +41,26 @@
     --wine-glow: rgba(155,58,90,0.18);
     --wine-line: rgba(196,96,124,0.35);
 
+    /* Spend — teal. Sits in the cool half of the spectrum so the three tools
+       stay distinguishable at a glance against gold (stock) and wine. */
+    --spend:      #1FA084;
+    --spend-light:#2AB5A0;
+    --spend-dim:  #0D5D50;
+    --spend-glow: rgba(31,160,132,0.15);
+    --spend-line: rgba(42,181,160,0.35);
+
+    /* Bank Holdings — slate blue. Fourth accent: cool like spend's teal but
+       clearly bluer, so the two never read as the same module at a glance. */
+    --hold:      #5B84C4;
+    --hold-light:#7FA6E0;
+    --hold-dim:  #25406B;
+    --hold-glow: rgba(91,132,196,0.15);
+    --hold-line: rgba(127,166,224,0.35);
+
+    /* A lighter red for small text on a red-tinted ground, where --down itself
+       falls just under WCAG AA. */
+    --down-soft: #EA7A7A;
+
     /* Semantic up/down/neutral */
     --up:      #4CAF84;
     --down:    #E05A5A;
@@ -1509,7 +1529,19 @@ body > #appNavbar + * {
     box-shadow: 0 4px 24px rgba(0,0,0,0.4);
 }
 .hub-card-premium:hover.stock-hub { box-shadow: 0 8px 32px rgba(201,168,76,0.15); }
+.hub-card-premium.spend-hub {
+    background: linear-gradient(135deg, #0F1F1C, #101C1A);
+    border: 1px solid var(--spend-line);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
 .hub-card-premium:hover.wine-hub  { box-shadow: 0 8px 32px rgba(155,58,90,0.18); }
+.hub-card-premium.hold-hub {
+    background: linear-gradient(135deg, #131A28, #141B26);
+    border: 1px solid var(--hold-line);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+.hub-card-premium:hover.spend-hub { box-shadow: 0 8px 32px rgba(31,160,132,0.18); }
+.hub-card-premium:hover.hold-hub  { box-shadow: 0 8px 32px rgba(91,132,196,0.18); }
 
 .hub-card-glow-bg {
     position: absolute;
@@ -1521,6 +1553,8 @@ body > #appNavbar + * {
 }
 .stock-hub .hub-card-glow-bg { background: var(--gold-glow); }
 .wine-hub  .hub-card-glow-bg { background: var(--wine-glow); }
+.spend-hub .hub-card-glow-bg { background: var(--spend-glow); }
+.hold-hub  .hub-card-glow-bg { background: var(--hold-glow); }
 
 .hub-card-eyebrow {
     font-family: var(--font-mono);
@@ -1531,6 +1565,8 @@ body > #appNavbar + * {
 }
 .stock-hub .hub-card-eyebrow { color: var(--gold-dim); }
 .wine-hub  .hub-card-eyebrow { color: var(--wine-dim); }
+.spend-hub .hub-card-eyebrow { color: var(--spend-dim); }
+.hold-hub  .hub-card-eyebrow { color: var(--hold-dim); }
 
 .hub-card-name {
     font-family: var(--font-display);
@@ -1541,6 +1577,8 @@ body > #appNavbar + * {
 }
 .stock-hub .hub-card-name { color: var(--gold); }
 .wine-hub  .hub-card-name { color: var(--wine-light); }
+.spend-hub .hub-card-name { color: var(--spend-light); }
+.hold-hub  .hub-card-name { color: var(--hold-light); }
 
 .hub-card-sub {
     font-size: 12px;
@@ -1679,7 +1717,9 @@ body > #appNavbar + * {
     font-size: 12px;
     font-weight: 500;
     text-align: center;
-    color: var(--text-tertiary);
+    /* --text-tertiary is 2.42:1 on the card at 12px, below WCAG AA. An
+       unselected tab is still a label people have to read to use the control. */
+    color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.2s;
     border: none;
@@ -1916,6 +1956,8 @@ body > #appNavbar + * {
 }
 .stock-hub .hub-card-cta { color: var(--gold);       border-color: var(--gold-dim); }
 .wine-hub  .hub-card-cta { color: var(--wine-light);  border-color: var(--wine-dim); }
+.spend-hub .hub-card-cta { color: var(--spend-light); border-color: var(--spend-dim); }
+.hold-hub  .hub-card-cta { color: var(--hold-light);  border-color: var(--hold-dim); }
 
 
 /* ── Hero metric section ─────────────────────────────────────────────────── */
@@ -2401,6 +2443,8 @@ body > #appNavbar + * {
 .bn-item.active-hub   { color: var(--text-primary); }
 .bn-item.active-stock { color: var(--gold); }
 .bn-item.active-wine  { color: var(--wine-light); }
+.bn-item.active-spend { color: var(--spend-light); }
+.bn-item.active-hold  { color: var(--hold-light); }
 .bn-item:hover        { color: var(--text-secondary); }
 
 
@@ -3398,3 +3442,24 @@ body > #appNavbar + * {
     white-space: nowrap;
     flex-shrink: 0;
 }
+/* ── Delta chip ───────────────────────────────────────────────────────────
+   Cross-module: a signed change against a baseline. Direction is expressed
+   from the reader's point of view — callers decide whether up or down is the
+   good news and pass the matching class — so spending less reads as positive.
+   ─────────────────────────────────────────────────────────────────────── */
+.st-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: var(--r-xs);
+    white-space: nowrap;
+}
+.st-delta.up   { color: var(--up);      background: rgba(52,168,110,0.12); }
+/* --down on its own tint is 3.99:1 at 11px — just under AA. --down-soft is the
+   lighter red that clears it, without changing --down for other consumers. */
+.st-delta.down { color: var(--down-soft); background: rgba(214,86,86,0.12); }
+.st-delta.flat { color: var(--text-secondary); background: rgba(255,255,255,0.05); }

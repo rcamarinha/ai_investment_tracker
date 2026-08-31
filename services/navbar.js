@@ -44,6 +44,8 @@ function getCurrentPage() {
     const path = window.location.pathname;
     if (path.includes('portfolio.html')) return 'portfolio';
     if (path.includes('wine.html'))      return 'wine';
+    if (path.includes('spend.html'))     return 'spend';
+    if (path.includes('holdings.html'))  return 'holdings';
     return 'hub';
 }
 
@@ -152,6 +154,12 @@ export function renderNavbar(opts = {}) {
                 <a href="wine.html"
                    class="nav-link${page === 'wine' ? ' active' : ''}"
                    data-i18n="nav.wine">${t('nav.wine')}</a>
+                <a href="spend.html"
+                   class="nav-link${page === 'spend' ? ' active' : ''}"
+                   data-i18n="nav.spend">${t('nav.spend')}</a>
+                <a href="holdings.html"
+                   class="nav-link${page === 'holdings' ? ' active' : ''}"
+                   data-i18n="nav.holdings">${t('nav.holdings')}</a>
             </nav>
             <div class="nav-actions">
                 <button class="lang-toggle" onclick="navbarToggleLang()"
