@@ -93,6 +93,18 @@ describe('buildCashFlows — ledger → dated base-currency flows', () => {
     );
     expect(flows).toEqual([]);
   });
+
+  it('isin_change produces no cash flow', () => {
+    const txs = {
+      OLDTICKER: [
+        { type: 'buy', date: '2022-01-01', totalAmount: 500, fee: 0 },
+        { type: 'isin_change', date: '2022-06-01', shares: 10, note: 'renamed to NEWTICKER' },
+      ],
+    };
+    const flows = buildCashFlows(txs, { rateFor: rateOne, currencyFor: noCurrency });
+    expect(flows).toHaveLength(1);
+    expect(flows[0].type).toBe('buy');
+  });
 });
 
 describe('computeYearlyXirr — per-calendar-year money-weighted return', () => {
@@ -167,6 +179,33 @@ describe('computeYearlyXirr — per-calendar-year money-weighted return', () => 
 
   it('returns [] when the ledger has no dated flows', () => {
     expect(computeYearlyXirr({}, { rateFor: rateOne, currencyFor: noCurrency, currentValue: 0 })).toEqual([]);
+  });
+
+  it('non-first fully-past year with both boundaries returns a defined rate', () => {
+    // Activity starts 2021. By 2022 both open (2022-01-01) and close (2023-01-01) are known.
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2021-06-01', totalAmount: 1000, fee: 0 },
+        { type: 'buy', date: '2022-06-01', totalAmount: 200, fee: 0 },
+      ],
+    };
+    const rows = computeYearlyXirr(txs, {
+      rateFor: rateOne, currencyFor: noCurrency,
+      boundaryValueFor: d => {
+        if (d === '2022-01-01') return 1100;  // open 2022
+        if (d === '2023-01-01') return 1400;  // close 2022
+        if (d <= '2021-06-01') return 0;
+        return null;
+      },
+      currentValue: 1500,
+      today: '2023-06-01',
+    });
+    const y2022 = rows.find(r => r.year === '2022');
+    expect(y2022).toBeDefined();
+    expect(y2022.insufficient).toBe(false);
+    expect(y2022.rate).not.toBeNull();
+    // open=1100, mid-year buy=200, close=1400 → positive return
+    expect(y2022.rate).toBeGreaterThan(0);
   });
 });
 
@@ -259,6 +298,37 @@ describe('computeYearlyIncome — dividend income & yield-on-cost by calendar ye
     expect(years).toHaveLength(1);
     expect(years[0].netIncome).toBeCloseTo(81, 6); // (100 − 10) × 0.9
   });
+
+  it('sell without realizedGainLoss uses proceeds as cost basis', () => {
+    // When realizedGainLoss is absent (NaN / undefined), cost = proceeds.
+    // A sell in 2021 deducts 700 from the cost basis; investedStart of 2022
+    // should be 1000 − 700 = 300 (rather than 1000 − 0 = 1000 if proceeds
+    // were ignored).
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2021-01-01', totalAmount: 1000, fee: 0 },
+        { type: 'sell', date: '2021-06-01', totalAmount: 700, fee: 0 }, // no realizedGainLoss
+        { type: 'dividend', date: '2022-06-01', totalAmount: 30, tax: 0 },
+      ],
+    };
+    const { years } = computeYearlyIncome(txs, deps);
+    const y22 = years.find(y => y.year === '2022');
+    // cost basis sold = proceeds = 700 → invested at start of 2022 = 1000 − 700 = 300
+    expect(y22.investedStart).toBe(300);
+  });
+
+  it('fee on a sell row goes into the fees bucket for that year', () => {
+    const txs = {
+      AAPL: [
+        { type: 'buy', date: '2022-01-01', totalAmount: 1000, fee: 0 },
+        { type: 'sell', date: '2022-08-01', totalAmount: 600, realizedGainLoss: 0, fee: 3 },
+      ],
+    };
+    const { years, totals } = computeYearlyIncome(txs, deps);
+    const y22 = years.find(y => y.year === '2022');
+    expect(y22.fees).toBe(3);
+    expect(totals.fees).toBe(3);
+  });
 });
 
 describe('summarizeCashFlows', () => {
@@ -273,5 +343,19 @@ describe('summarizeCashFlows', () => {
     expect(s.cashReturned).toBe(340);
     expect(s.firstDate).toBe('2021-01-01');
     expect(s.count).toBe(4);
+  });
+
+  it('returns all zeros and null firstDate for empty or null input', () => {
+    const empty = summarizeCashFlows([]);
+    expect(empty.capitalIn).toBe(0);
+    expect(empty.cashReturned).toBe(0);
+    expect(empty.firstDate).toBeNull();
+    expect(empty.count).toBe(0);
+
+    const nil = summarizeCashFlows(null);
+    expect(nil.capitalIn).toBe(0);
+    expect(nil.cashReturned).toBe(0);
+    expect(nil.firstDate).toBeNull();
+    expect(nil.count).toBe(0);
   });
 });
