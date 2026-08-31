@@ -69,6 +69,11 @@ export function normalizeRow(input = {}, defaults = {}) {
         categoryConfidence: src.categoryConfidence ?? null,
 
         // provenance
+        // The source system's own id for this movement, where it has one (OFX
+        // FITID, CAMT AcctSvcrRef). Carried for traceability only — dedupe
+        // stays content-based, so the same movement arriving once from a CSV
+        // and later from an OFX export is still recognised as one row.
+        externalId: src.externalId ?? null,
         source: src.source ?? null,
         sourceRole: src.sourceRole === 'detail' ? 'detail' : 'statement',
         enrichedFrom: src.enrichedFrom ?? null,

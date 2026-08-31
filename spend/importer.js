@@ -25,6 +25,7 @@ import {
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     DATE_FORMATS
 } from '../services/import-banks.js?v=3.37.0';
+import { parseStandard } from '../services/import-standards.js?v=3.37.0';
 
 const el = id => document.getElementById(id);
 
@@ -63,10 +64,11 @@ export function renderImportSection() {
         </div>
         <div class="form-group">
             <label class="form-label" for="importFile">Statement file</label>
-            <input class="form-input" type="file" id="importFile" accept=".csv,.tsv,.txt,.pdf"
+            <input class="form-input" type="file" id="importFile" accept=".csv,.tsv,.txt,.ofx,.qfx,.qbo,.xml,.pdf"
                    onchange="spendHandleFile(this)">
             <span class="form-helper">
-                CSV or TSV. ${known ? `${known} bank format${known === 1 ? '' : 's'} already learned — those import without asking anything.` : 'The first import from a bank asks you to confirm its columns once, then never again.'}
+                <strong>OFX or QFX imports with no setup at all</strong> — it's a standard format, so nothing needs mapping.
+                CSV and TSV work too: ${known ? `${known} format${known === 1 ? '' : 's'} already learned, and those import without asking anything.` : 'the first file from a bank asks you to confirm its columns once, then never again.'}
             </span>
         </div>
         <div id="importStatus"></div>`;
@@ -110,6 +112,24 @@ export async function handleFile(input) {
 // ── profile resolution ──────────────────────────────────────────────────────
 
 function analyze() {
+    // Interchange formats are self-describing, so they need no profile, no
+    // mapping dialog and no AI — the whole point of supporting them. Try them
+    // before falling through to the learn-a-format path.
+    const standard = parseStandard(state.importText, {
+        accountId: state.importAccountId,
+        source: state.importFileName || 'statement',
+        sourceRole: state.accounts.find(a => a.id === state.importAccountId)?.type === 'wallet' ? 'detail' : 'statement'
+    });
+    if (standard) {
+        if (standard.unsupported) {
+            status(`<div class="review-banner"><span>⚠</span><span>${escapeHTML(standard.message)}</span></div>`);
+            return;
+        }
+        const account = state.accounts.find(a => a.id === state.importAccountId);
+        ingest(standard, { sourceRole: account?.type === 'wallet' ? 'detail' : 'statement' });
+        return;
+    }
+
     const draft = buildProfileDraft(state.importText);
     if (!draft.header?.length) {
         status(`<div class="review-banner"><span>⚠</span><span>That file has no readable rows.</span></div>`);
@@ -285,13 +305,26 @@ export async function confirmMapping() {
 
 function runImport(profile) {
     const accountId = state.importAccountId;
-    const account = state.accounts.find(a => a.id === accountId);
-    const isDetail = (profile.sourceRole || 'statement') === 'detail';
-
     const parsed = parseWithProfile(state.importText, profile, { accountId, source: profile.label });
+    ingest(parsed, { profile, sourceRole: profile.sourceRole || 'statement' });
+}
+
+/**
+ * Everything after parsing: enrich → categorise → dedupe → review.
+ *
+ * Takes a parse RESULT rather than a file, so every adapter — the profile-based
+ * tabular reader, the interchange-standard readers, and in future the PDF
+ * extractor — funnels through one pipeline. Nothing below this line knows or
+ * cares which format the rows came from.
+ */
+function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
+    const accountId = state.importAccountId;
+    const account = state.accounts.find(a => a.id === accountId);
+    const isDetail = sourceRole === 'detail';
+
     if (!parsed.rows.length) {
         status(`<div class="review-banner"><span>⚠</span><span>
-            No usable rows — ${parsed.skipped} line${parsed.skipped === 1 ? '' : 's'} could not be read.</span></div>`);
+            No usable rows${parsed.skipped ? ` — ${parsed.skipped} line${parsed.skipped === 1 ? '' : 's'} could not be read` : ''}.</span></div>`);
         return;
     }
 
@@ -340,7 +373,8 @@ function runImport(profile) {
         : dedupeSpendRows(ruled.rows, existing);
 
     state.importResult = {
-        profile, isDetail, fresh, duplicates, enriched, aggregated, pending, replayed,
+        profile, isDetail, format: parsed.format || 'csv',
+        fresh, duplicates, enriched, aggregated, pending, replayed,
         errors: parsed.errors, uncategorised: fresh.filter(r => !r.category).length
     };
     showReport();
@@ -356,7 +390,15 @@ function showReport() {
         <td>${escapeHTML((t.merchant || t.description).slice(0, 42))}</td>
         <td class="num tx-amount ${t.amount > 0 ? 'in' : 'out'}">${escapeHTML(fmtMoney(t.amount, t.currency))}</td></tr>`).join('');
 
+    // Say why no mapping was needed. Otherwise a file that imports with no
+    // questions looks like the app skipped a step rather than like the format
+    // being self-describing.
+    const formatNote = r.format && r.format !== 'csv'
+        ? `<p class="form-helper" style="margin-bottom:10px">Read as <strong>${escapeHTML(r.format.toUpperCase())}</strong> — a standard bank format, so nothing needed configuring.</p>`
+        : '';
+
     status(`
+        ${formatNote}
         <div class="import-buckets">
             ${bucket(r.isDetail ? r.enriched.length : r.fresh.length, r.isDetail ? 'improved' : 'new', 'new')}
             ${bucket(r.duplicates.length, 'already had')}
