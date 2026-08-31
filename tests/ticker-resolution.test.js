@@ -21,6 +21,22 @@ describe('normalizeForPricing', () => {
     expect(normalizeForPricing('MC.PA')).toBe('MC.PA');
     expect(normalizeForPricing('AAPL')).toBe('AAPL');
   });
+
+  // Regression guard for the LSE minor-unit routing added in v3.42.0.
+  // services/pricing.js routes .L and .IL symbols to the currency-reporting
+  // proxy first (the only tier that distinguishes GBp pence from GBP pounds).
+  // That routing checks /\.(L|IL)$/i on the NORMALIZED form — so Finnhub-style
+  // LON/LSE aliases MUST resolve to .L before the regex is applied, or the
+  // protection is silently skipped and a pence quote lands in the DB 100x high.
+  it('normalizes London Stock Exchange alias suffixes to .L (minor-unit venue)', () => {
+    expect(normalizeForPricing('VOD.LON')).toBe('VOD.L');
+    expect(normalizeForPricing('BATS.LSE')).toBe('BATS.L');
+  });
+
+  it('passes .L and .IL through unchanged so the minor-unit regex matches', () => {
+    expect(normalizeForPricing('VOD.L')).toBe('VOD.L');
+    expect(normalizeForPricing('DPLM.IL')).toBe('DPLM.IL');
+  });
 });
 
 describe('buildAlternativeSymbols', () => {
