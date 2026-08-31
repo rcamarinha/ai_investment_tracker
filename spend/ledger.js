@@ -557,6 +557,10 @@ export function bindDelegation(root = document) {
             case 'tx':       event.stopPropagation(); editTx(d.id); break;
             case 'page':     setPage(Number(d.n)); break;
             case 'filter':   setTxFilter(d.filter); break;
+            // Owned by importer.js; routed through window for the same reason
+            // renderImportSection is — avoiding a needless import cycle.
+            case 'commit-import': window.spendCommitImport?.(); break;
+            case 'cancel-import': window.spendCancelImport?.(); break;
             default: break;
         }
     });

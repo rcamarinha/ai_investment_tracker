@@ -416,11 +416,11 @@ function showReport() {
             ${r.fresh.length > 6 ? `<p class="form-helper">…and ${r.fresh.length - 6} more.</p>` : ''}` : ''}
         <p class="form-helper" style="margin-top:10px">Nothing is saved until you press the button.</p>
         <div class="action-buttons-row" style="margin-top:8px">
-            <button class="btn btn-sm btn-primary-spend" onclick="spendCommitImport()"
+            <button class="btn btn-sm btn-primary-spend" data-act="commit-import"
                     ${!r.fresh.length && !r.pending.length ? 'disabled' : ''}>
                 ${r.fresh.length || r.pending.length ? 'Add to ledger' : 'Nothing to add'}
             </button>
-            <button class="btn btn-sm btn-ghost-spend" onclick="spendCancelImport()">Cancel</button>
+            <button class="btn btn-sm btn-ghost-spend" data-act="cancel-import">Cancel</button>
         </div>`);
 }
 

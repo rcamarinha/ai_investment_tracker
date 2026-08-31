@@ -175,6 +175,44 @@ describe('parseOfx', () => {
     });
 });
 
+describe('parseOfx — statement types', () => {
+    const CC = `OFXHEADER:100
+<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS>
+<CURDEF>EUR
+<CCACCTFROM><ACCTID>4111</CCACCTFROM>
+<BANKTRANLIST>
+<STMTTRN><DTPOSTED>20260305<TRNAMT>-42.10<FITID>c1<NAME>CARD SHOP</STMTTRN>
+</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>`;
+
+    it('reads a credit-card statement', () => {
+        const r = parseOfx(CC);
+        expect(r.rows).toHaveLength(1);
+        expect(r.rows[0]).toMatchObject({ merchant: 'CARD SHOP', amount: -42.1 });
+        expect(r.accounts[0].acctId).toBe('4111');
+    });
+
+    it('reads BOTH when a file holds a bank account and a card', () => {
+        // What a bank exports when you ask for everything. Matching bank blocks
+        // first and only falling back to card blocks dropped every card row.
+        const mixed = `OFXHEADER:100
+<OFX>
+<BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR
+<BANKACCTFROM><ACCTID>1</BANKACCTFROM><BANKTRANLIST>
+<STMTTRN><DTPOSTED>20260305<TRNAMT>-10.00<FITID>b1<NAME>BANK ROW</STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1>
+<CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>GBP
+<CCACCTFROM><ACCTID>4111</CCACCTFROM><BANKTRANLIST>
+<STMTTRN><DTPOSTED>20260306<TRNAMT>-20.00<FITID>c1<NAME>CARD ROW</STMTTRN>
+</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>
+</OFX>`;
+        const r = parseOfx(mixed);
+        expect(r.rows.map(x => x.merchant)).toEqual(['BANK ROW', 'CARD ROW']);
+        // and each keeps its own currency
+        expect(r.rows.map(x => x.currency)).toEqual(['EUR', 'GBP']);
+        expect(r.accounts.map(a => a.acctId)).toEqual(['1', '4111']);
+    });
+});
+
 describe('parseStandard', () => {
     it('dispatches OFX', () => {
         expect(parseStandard(OFX_1).format).toBe('ofx');

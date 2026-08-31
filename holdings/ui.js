@@ -184,6 +184,7 @@ export function bindDelegation(root = document) {
         if (d.act === 'edit') showDialog(d.id);
         else if (d.act === 'filter') setFilter('type' in d ? d.type : null);
         else if (d.act === 'archived') toggleArchived();
+        else if (d.act === 'delete') remove();
     });
 }
 
@@ -252,7 +253,7 @@ export function showDialog(id = null) {
                 <input type="checkbox" id="hArchived" ${h.archived ? 'checked' : ''}>
                 Archived — keep the record but exclude it from totals
             </label>
-            <button class="btn btn-sm btn-danger" style="margin-top:10px" onclick="holdDelete()">Delete holding</button>` : ''}`;
+            <button class="btn btn-sm btn-danger" style="margin-top:10px" data-act="delete">Delete holding</button>` : ''}`;
     openModal('holdDialog');
     onTypeChange();
 }

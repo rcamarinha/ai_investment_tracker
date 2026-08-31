@@ -97,13 +97,17 @@ export function parseOfx(text, options = {}) {
     // A file can carry several statements (one per account). Split on the
     // statement-response blocks so each transaction keeps its own account and
     // currency rather than inheriting the first one's.
-    const stmtBlocks = src.match(/<STMTRS>[\s\S]*?(?=<\/STMTRS>|<STMTRS>|$)/gi)
-        || src.match(/<CCSTMTRS>[\s\S]*?(?=<\/CCSTMTRS>|<CCSTMTRS>|$)/gi)
-        || [src];
+    //
+    // Bank (STMTRS) and credit-card (CCSTMTRS) blocks are matched by ONE
+    // expression. Trying bank first and falling back to card meant a file
+    // holding both — a current account and a card, which is exactly what a bank
+    // exports when you ask for everything — parsed the bank rows and dropped
+    // every card row without a word.
+    const stmtBlocks = src.match(/<(?:CC)?STMTRS>[\s\S]*?(?=<\/(?:CC)?STMTRS>|<(?:CC)?STMTRS>|$)/gi) || [src];
 
     for (const block of stmtBlocks) {
         const currency = (tagValue(block, 'CURDEF') || defaultCurrency).toUpperCase();
-        const acctId = tagValue(block, 'ACCTID');
+        const acctId = tagValue(block, 'ACCTID');   // same tag under BANKACCTFROM and CCACCTFROM
         const bankId = tagValue(block, 'BANKID');
         if (acctId) accounts.push({ acctId, bankId, currency });
 
