@@ -3150,7 +3150,11 @@ function recordTransaction(symbol, type, shares, price, date, totalAmount, costB
     // something. Failures are silent — the row falls back to live rates.
     backfillFxRates({ force: true }).then(changed => {
         if (changed) { saveTransactionsToStorage(); renderPortfolio(); }
-    }).catch(() => {});
+    }).catch(err => {
+        // Was `.catch(() => {})`. A permanently broken FX backfill produced no
+        // signal of any kind — the figures were simply wrong, quietly, forever.
+        console.warn('FX backfill failed:', err?.message || err);
+    });
 }
 
 export function saveTransactionsToStorage() {

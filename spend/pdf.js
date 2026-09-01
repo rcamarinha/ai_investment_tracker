@@ -113,8 +113,16 @@ async function callExtractor(statementText, hint) {
             body: JSON.stringify({ statementText, hint }),
             signal: controller.signal
         });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(payload.error || `Extraction failed (${res.status})`);
+        // Read as text first: a gateway 500 is often an HTML page, and
+        // res.json() would discard the only description of what went wrong,
+        // leaving a bare "Extraction failed (500)".
+        const raw = await res.text();
+        let payload = {};
+        try { payload = raw ? JSON.parse(raw) : {}; } catch { /* not JSON */ }
+        if (!res.ok) {
+            const detail = payload.error || raw.replace(/<[^>]*>/g, ' ').trim().slice(0, 200);
+            throw new Error(detail ? `Extraction failed (${res.status}): ${detail}` : `Extraction failed (${res.status})`);
+        }
         return payload;
     } catch (err) {
         // A bare "Failed to fetch" means the request never reached application

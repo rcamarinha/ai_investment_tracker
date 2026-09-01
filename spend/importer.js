@@ -27,6 +27,7 @@ import {
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
 import { importPdfStatement } from './pdf.js?v=3.42.1';
+import { reportHandled } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
 
@@ -521,7 +522,14 @@ export async function commitImport() {
         renderAll();
         renderImportSection();
     } catch (err) {
-        showToast('Could not save: ' + err.message, 'error', 7000);
+        // Re-importing is safe — the fingerprint upsert skips anything already
+        // written — but only if the message says so. "Could not save" alone
+        // reads as total loss and invites a panicked retry of the whole file.
+        const saved = Number(err?.saved) || 0;
+        showToast(saved
+            ? `Saved ${saved} before failing — press Add again to finish the rest. (${err.message})`
+            : 'Could not save: ' + err.message, 'error', 9000);
+        reportHandled(err, { action: 'commit-import', rows: saved });
         showReport();
     }
 }

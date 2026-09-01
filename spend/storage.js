@@ -361,7 +361,16 @@ export async function saveTransactions(rows) {
             .from('spend_transactions')
             .upsert(slice, { onConflict: 'user_id,account_id,fingerprint', ignoreDuplicates: false })
             .select();
-        if (error) throw error;
+        if (error) {
+            // Chunks before this one are already committed. Throwing a bare
+            // error made commitImport say "Could not save", implying nothing
+            // was written — so the user would retry the whole file believing
+            // they had lost it. Carry the count so the message can be true.
+            const partial = new Error(error.message);
+            partial.saved = saved;
+            partial.remaining = payload.length - saved;
+            throw partial;
+        }
         saved += (data || []).length;
         for (const row of data || []) {
             const mapped = txFromRow(row);

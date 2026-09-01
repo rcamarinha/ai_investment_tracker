@@ -323,12 +323,26 @@
                 // total without reintroducing the cross-currency sum that the
                 // snapshot-based stock figure above exists to avoid. If a
                 // non-EUR holding is ever stored, convert it before this line.
-                const holdActive = (holdRows || []).filter(h => !h.archived && h.current_value !== null);
-                const holdValue = holdActive.reduce((s, h) => s + Number(h.current_value || 0), 0);
+                // Holdings are valued by hand or transcribed from a statement,
+                // so a figure has an age. Anything past a quarter is excluded
+                // from the net-worth total rather than counted at face value:
+                // the Bank Holdings page labels a stale valuation honestly, and
+                // letting the hub silently absorb a year-old number into the
+                // headline undoes exactly that. Excluded holdings still appear
+                // on their own card, marked stale, so nothing disappears.
+                const HOLD_STALE_DAYS = 100;
+                const ageOf = (h) => h.valued_as_of
+                    ? Math.round((Date.now() - Date.parse(h.valued_as_of + 'T00:00:00Z')) / 86400000)
+                    : null;
+                const holdAll = (holdRows || []).filter(h => !h.archived && h.current_value !== null);
+                const holdFresh = holdAll.filter(h => { const d = ageOf(h); return d !== null && d <= HOLD_STALE_DAYS; });
+                const holdStale = holdAll.filter(h => !holdFresh.includes(h));
+                const holdValue = holdFresh.reduce((s, h) => s + Number(h.current_value || 0), 0);
+                const holdStaleValue = holdStale.reduce((s, h) => s + Number(h.current_value || 0), 0);
                 let holdOldestDays = null;
-                for (const h of holdActive) {
-                    if (!h.valued_as_of) continue;
-                    const d = Math.round((Date.now() - Date.parse(h.valued_as_of + 'T00:00:00Z')) / 86400000);
+                for (const h of holdAll) {
+                    const d = ageOf(h);
+                    if (d === null) continue;
                     if (holdOldestDays === null || d > holdOldestDays) holdOldestDays = d;
                 }
 
@@ -338,25 +352,33 @@
                 const totalValue = net.value === null
                     ? (holdValue > 0 ? holdValue : null)
                     : net.value + holdValue;
+                // The asterisk now also covers holdings left out for being
+                // stale — otherwise the total silently shrinks with no reason.
+                const isPartial = net.partial || holdStale.length > 0;
                 document.getElementById('hubTotalValue').textContent =
-                    hubFmt(totalValue) + (totalValue != null && net.partial ? ' *' : '');
+                    hubFmt(totalValue) + (totalValue != null && isPartial ? ' *' : '');
                 document.getElementById('hubStockValue').textContent = hubFmt(stockCard ? stockCard.value : null);
                 document.getElementById('hubWineValue').textContent  = hubFmt(wineValue);
 
                 const holdValueEl = document.getElementById('hubHoldValue');
                 const holdDeltaEl = document.getElementById('hubHoldDelta');
                 if (holdValueEl) {
-                    holdValueEl.textContent = holdActive.length ? hubFmt(holdValue) : '— —';
+                    holdValueEl.textContent = holdAll.length ? hubFmt(holdValue) : '— —';
                     if (holdDeltaEl) {
-                        if (!holdActive.length) {
+                        if (!holdAll.length) {
                             holdDeltaEl.textContent = '';
+                        } else if (holdStale.length) {
+                            // Name what is missing from the total, in money.
+                            holdDeltaEl.textContent =
+                                `${hubFmt(holdStaleValue)} not counted — too old`;
+                            holdDeltaEl.className = 'hub-card-delta neutral';
                         } else if (holdOldestDays !== null && holdOldestDays > 40) {
                             // Say it is old rather than showing a gain that leans on it.
                             holdDeltaEl.textContent = `valued ${Math.round(holdOldestDays / 30)}mo ago`;
                             holdDeltaEl.className = 'hub-card-delta neutral';
                         } else {
-                            const cost = holdActive.reduce((s, h) => s + Number(h.cost_basis || 0), 0);
-                            const covered = holdActive
+                            const cost = holdFresh.reduce((s, h) => s + Number(h.cost_basis || 0), 0);
+                            const covered = holdFresh
                                 .filter(h => Number(h.cost_basis) > 0)
                                 .reduce((s, h) => s + Number(h.current_value || 0), 0);
                             if (cost > 0) {
