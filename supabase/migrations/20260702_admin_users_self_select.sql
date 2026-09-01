@@ -1,3 +1,6 @@
+-- Made idempotent: this file previously errored on a second run, and every
+-- other migration here is safe to re-run, so the odd one out is a trap.
+
 -- Admin role: single source of truth = membership in admin_users.
 --
 -- Previously the client read the `adminEmails` app_config row to decide admin
@@ -7,10 +10,10 @@
 -- directly, so it needs a per-user SELECT policy: each user may read ONLY their
 -- own row. This proves membership without letting anyone enumerate all admins.
 
+DROP POLICY IF EXISTS "Users can read their own admin row" ON admin_users;
 CREATE POLICY "Users can read their own admin row"
     ON admin_users FOR SELECT
     USING (auth.uid() = user_id);
-
 -- The `adminEmails` app_config row is now unused (checkUserRole no longer reads
 -- it). Kept in place harmlessly; remove it if you want a clean config table:
 --   DELETE FROM app_config WHERE key = 'adminEmails';

@@ -6,5 +6,11 @@
 
 ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_type_check;
 
-ALTER TABLE transactions ADD CONSTRAINT transactions_type_check
-  CHECK (type IN ('buy', 'sell', 'dividend', 'fee', 'split', 'isin_change'));
+-- ADD CONSTRAINT has no IF NOT EXISTS, so a second run errors 42710 even though
+-- the DROP above is guarded. Every other migration here is safe to re-run; an
+-- odd one out is a trap for whoever replays the folder against a new project.
+DO $$ BEGIN
+    ALTER TABLE transactions ADD CONSTRAINT transactions_type_check
+      CHECK (type IN ('buy', 'sell', 'dividend', 'fee', 'split', 'isin_change'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
