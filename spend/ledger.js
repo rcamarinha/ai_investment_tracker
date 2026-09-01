@@ -36,7 +36,33 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
  * sentinel value ever has to be serialised or parsed back.
  */
 export const UNCATEGORISED = Symbol('uncategorised');
-const currentPeriod = () => state.period || periodKey(todayISO(), state.grain);
+/**
+ * The period to show when the user has not chosen one.
+ *
+ * NOT simply today's month. Statements are historical: importing a year of them
+ * on the 1st of a new month leaves the current month legitimately empty, so
+ * defaulting to "now" showed 0,00 € across every figure and "Nothing here"
+ * in the ledger — immediately after a successful 387-row import. The data was
+ * fine; the page was looking at the wrong month, which reads as total failure.
+ *
+ * So: land on the most recent period that actually has transactions, and fall
+ * back to today only when there are none at all. Explicit navigation still
+ * wins — stepping to an empty month sets state.period and is honoured.
+ */
+export function defaultPeriod() {
+    const grain = state.grain;
+    if (!state.transactions.length) return periodKey(todayISO(), grain);
+    let latest = null;
+    for (const t of state.transactions) {
+        const k = periodKey(t.date, grain);
+        if (k && (latest === null || k > latest)) latest = k;
+    }
+    const today = periodKey(todayISO(), grain);
+    // Never jump forward past today, only back to where the data ends.
+    return latest && latest < today ? latest : today;
+}
+
+const currentPeriod = () => state.period || defaultPeriod();
 
 function el(id) { return document.getElementById(id); }
 
@@ -125,7 +151,14 @@ function coverageNote(cmp) {
         return `<div class="coverage-note">Baseline is only partly covered by imported history — the comparison understates it.</div>`;
     }
     if (cmp.aligned) {
-        return `<div class="coverage-note">${cmp.alignLabel} — comparing the first ${cmp.elapsedDays} days of each period, so a part-finished month is not read as a collapse.</div>`;
+        const d = cmp.elapsedDays;
+        // One or two days in, a like-for-like comparison is arithmetically
+        // correct and practically meaningless — a single large charge swings it
+        // hundreds of percent. Say so rather than presenting it as a finding.
+        const caveat = d <= 2
+            ? ` Only ${d} day${d === 1 ? '' : 's'} in, so treat the change as noise.`
+            : '';
+        return `<div class="coverage-note">${cmp.alignLabel} — comparing the first ${d} day${d === 1 ? '' : 's'} of each period, so a part-finished month is not read as a collapse.${caveat}</div>`;
     }
     return '';
 }
@@ -303,11 +336,15 @@ export function renderRecurring(found = detectRecurring(state.transactions, { to
     if (!host) return;
 
     const summary = el('recurringSummary');
-    const monthlyTotal = found.filter(r => !r.likelyEnded).reduce((s, r) => s + r.monthlyEquivalent, 0);
+    const active = found.filter(r => !r.likelyEnded);
+    const monthlyTotal = active.reduce((s, r) => s + r.monthlyEquivalent, 0);
     if (summary) {
-        summary.innerHTML = found.length
-            ? `${found.length} detected · <strong style="color:var(--spend-light)">${escapeHTML(fmtMoney(monthlyTotal))}/mo</strong> · ${escapeHTML(fmtMoney(monthlyTotal * 12))}/yr`
-            : '';
+        // Showing "1 detected · 0,00 €/mo" is a contradiction. When everything
+        // found looks cancelled, say that instead of printing a zero.
+        summary.innerHTML = !found.length ? ''
+            : active.length
+                ? `${active.length} active · <strong style="color:var(--spend-light)">${escapeHTML(fmtMoney(monthlyTotal))}/mo</strong> · ${escapeHTML(fmtMoney(monthlyTotal * 12))}/yr`
+                : `${found.length} found, ${found.length === 1 ? 'it looks' : 'all look'} cancelled`;
     }
 
     if (!found.length) {
@@ -465,7 +502,13 @@ export function renderTransactions() {
     if (count) count.textContent = rows.length ? `${rows.length} transaction${rows.length === 1 ? '' : 's'}` : '';
 
     if (!rows.length) {
-        host.innerHTML = `<tr class="tx-empty-row"><td colspan="5">Nothing here for ${escapeHTML(fmtPeriod(currentPeriod(), state.grain))}.</td></tr>`;
+        // "Nothing here" alone implies the import failed. If there ARE
+        // transactions, just not in this period, say where they are.
+        const elsewhere = state.transactions.length;
+        const hint = elsewhere
+            ? ` ${elsewhere} transaction${elsewhere === 1 ? '' : 's'} in other periods — use the arrows above.`
+            : '';
+        host.innerHTML = `<tr class="tx-empty-row"><td colspan="5">Nothing here for ${escapeHTML(fmtPeriod(currentPeriod(), state.grain))}.${escapeHTML(hint)}</td></tr>`;
         renderPagination(0, 1);
         return;
     }
@@ -574,7 +617,7 @@ function showAccountDialogFor(id) { window.spendShowAccountDialog?.(id); }
 
 export function setGrain(grain) {
     state.grain = grain;
-    state.period = null;   // a grain change invalidates the stored period key
+    state.period = null;   // invalidates the stored key; defaultPeriod() re-derives
     state.txPage = 0;
     renderAll();
 }

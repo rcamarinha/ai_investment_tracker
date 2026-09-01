@@ -467,3 +467,37 @@ describe('projectScenario', () => {
         expect(JSON.stringify(history)).toBe(snapshot);
     });
 });
+
+// ── period defaulting is in spend/ledger.js, but the rule it encodes matters
+// enough to pin: a ledger whose newest row is months old must not present an
+// empty "today" as if the import had failed.
+describe('period defaulting rule', () => {
+    const latestPeriodWithData = (transactions, todayKey, grain = 'month') => {
+        if (!transactions.length) return todayKey;
+        let latest = null;
+        for (const t of transactions) {
+            const k = periodKey(t.date, grain);
+            if (k && (latest === null || k > latest)) latest = k;
+        }
+        return latest && latest < todayKey ? latest : todayKey;
+    };
+
+    it('lands on the newest month that has data, not on an empty today', () => {
+        const rows = [tx('2026-07-10', -20), tx('2026-08-14', -30)];
+        expect(latestPeriodWithData(rows, '2026-09')).toBe('2026-08');
+    });
+
+    it('stays on today when today already has data', () => {
+        const rows = [tx('2026-08-14', -30), tx('2026-09-01', -5)];
+        expect(latestPeriodWithData(rows, '2026-09')).toBe('2026-09');
+    });
+
+    it('never jumps forward past today, even with a future-dated row', () => {
+        const rows = [tx('2026-08-14', -30), tx('2027-01-01', -5)];
+        expect(latestPeriodWithData(rows, '2026-09')).toBe('2026-09');
+    });
+
+    it('falls back to today on an empty ledger', () => {
+        expect(latestPeriodWithData([], '2026-09')).toBe('2026-09');
+    });
+});
