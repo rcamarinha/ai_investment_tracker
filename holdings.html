@@ -69,6 +69,8 @@
     </nav>
 
     <script type="module">
+        import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
+        installErrorReporting({ page: 'holdings', version: '3.42.1' });
         import { renderNavbar } from './services/navbar.js?v=3.42.1';
         import state from './holdings/state.js?v=3.42.1';
         import {
@@ -108,7 +110,8 @@
         renderNavbar({ supabaseConfigured: true });
         bindDelegation();
         renderAll();                        // empty state paints before auth resolves
-        initSupabase(() => renderAll());
+        setTelemetryClient(state.supabaseClient);
+        initSupabase(() => { setTelemetryClient(state.supabaseClient); renderAll(); });
     </script>
 </body>
 </html>

@@ -12,6 +12,7 @@ const state = {
     supabaseUrl: 'https://dybetrrhshqezokcxiid.supabase.co',
     supabaseAnonKey: 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz',
     supabaseClient: null,
+    loadFailed: false,
     currentUser: null,
     passwordRecoveryMode: false
 };

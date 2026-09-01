@@ -1,25 +1,24 @@
 /**
- * extract-statement — turn bank-statement text into ledger rows.
+ * categorize-transactions — assign a spending category to each transaction.
  *
- * Secrets (set with `supabase secrets set`):
- *   GEMINI_WINE           — primary. Already set for the wine module; reused
- *                           deliberately rather than adding a second key.
- *   ANTHROPIC_API_KEY     — fallback only, used when Gemini errors or is unset.
+ * Secrets: GEMINI_WINE (primary), ANTHROPIC_API_KEY (fallback). Same pair the
+ * other functions use; nothing new to configure.
  *
- * MODEL CHOICE: this is structured extraction, not reasoning — read lines,
- * emit JSON. The cheapest capable model is the correct one, so Gemini Flash
- * leads and Claude Haiku backs it up. Nothing here needs a frontier model, and
- * using one would multiply the cost of a routine monthly import for no gain.
+ * MODEL CHOICE: classification against a fixed, user-supplied list. Cheap
+ * models are correct here — a frontier model would multiply the cost of a
+ * routine monthly import for no accuracy that matters, since anything the model
+ * is unsure about goes to human review anyway.
  *
- * WHAT THE CLIENT SENDS: layout-reconstructed LINES, not a flat text dump.
- * The app's older PDF reader joined every fragment on a page with spaces,
- * destroying the table before the model ever saw it. Sending real lines is
- * what makes a small model sufficient here.
+ * WHAT IT RECEIVES: id, description, amount and direction. Never a balance,
+ * never an account, never the raw bank text. The caller has already removed
+ * everything it can settle without a model — rows matched by a learned rule,
+ * transfers paired between the user's own accounts, and credits matching a
+ * known income category.
  *
- * WHAT PROTECTS THE LEDGER: the client re-checks every returned row against the
- * statement's own running balance (balance[n] - balance[n-1] === amount[n]).
- * Rows that do not reconcile go to review rather than into the ledger, so a
- * model mistake is caught arithmetically instead of trusted.
+ * WHAT PROTECTS THE LEDGER: the caller matches answers back by id (never by
+ * position), refuses categories outside the user's own list, files only results
+ * at or above a confidence threshold, and forces anything unusually large into
+ * review regardless of confidence.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -33,7 +32,7 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 
-const MAX_TEXT_LENGTH = 15000;   // the client chunks to 12K; this is the hard stop
+const MAX_BATCH = 60;   // the client batches at 40; this is the hard stop
 
 const ALLOWED_ORIGINS = [
   "https://cacoventures.com",
@@ -76,24 +75,25 @@ function jsonResponse(data: unknown, status: number, corsHeaders: Record<string,
   });
 }
 
-function buildPrompt(statementText: string, hint?: string): string {
-  return `You are a precise bank-statement parser. Extract every completed MONEY MOVEMENT from the statement lines below.
+interface TxIn { id: string; description: string; amount: number; direction: string }
+
+function buildPrompt(transactions: TxIn[], categories: string[]): string {
+  return `You are categorising bank transactions for a personal finance ledger.
+
+Assign each transaction exactly one category from this list, and nothing else:
+${categories.map((c) => `- ${c}`).join("\n")}
 
 Rules:
 - Output ONLY a JSON array. No markdown, no commentary, no preamble.
-- Each element: {"date":"YYYY-MM-DD","description":"<what it was>","amount":<signed number>,"currency":"<ISO code>","balance":<running balance or null>}
-- "amount" is SIGNED: negative when money left the account, positive when it arrived. Never output the absolute value.
-- "balance" is the running balance printed on that row, if the statement shows one. Use null when it does not. Do NOT invent it, and never put the balance in "amount".
-- Amounts may use European formatting (1.234,56). Convert to a plain number: 1234.56.
-- Some statements print only day and month. Use the statement period or header to resolve the year. If the year genuinely cannot be determined, omit that row rather than guessing.
-- A statement may contain SEVERAL sections with different layouts (current account, card transactions, funds). Extract movements from all of them.
-- IGNORE: opening/closing balance summaries, subtotals, interest-rate tables, legal or marketing text, page headers and footers, and anything that is not a single dated movement.
-- If there are no movements, output [].
-${hint ? "\nLayout note for this bank: " + hint + "\n" : ""}
-Statement lines:
-"""
-${statementText}
-"""`;
+- Each element: {"id":"<the id given>","category":"<one of the categories above>","confidence":<0 to 1>}
+- Echo the "id" EXACTLY as given. Never invent, reorder or renumber ids.
+- Return one element per input transaction. If you cannot tell, still return the element with your best category and a LOW confidence — do not omit it.
+- "confidence" is your genuine certainty. Use below 0.5 when the description is opaque (a bare reference number, an unfamiliar acronym). Anything under the caller's threshold goes to a human, so a low score is useful, not a failure.
+- Descriptions are Portuguese retail-bank text and are often abbreviated or truncated. Common forms: "COMPRAS C.DEB <merchant>" is a debit-card purchase; "LEVANTAMENTO"/"ATM" is a cash withdrawal; "TRF"/"TRANSF" is a transfer; "PAG SERVICOS" is a bill payment; "COMISSAO"/"IMPOSTO" are bank fees and taxes.
+- A negative amount is money leaving the account, a positive amount is money arriving. Never assign a spending category to money arriving.
+
+Transactions:
+${JSON.stringify(transactions)}`;
 }
 
 async function callGemini(prompt: string): Promise<string> {
@@ -204,37 +204,36 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Invalid or expired token. Please sign in again." }, 401, corsHeaders);
   }
 
-  let body: { statementText?: string; hint?: string };
+  let body: { transactions?: TxIn[]; categories?: string[] };
   try {
     body = await req.json();
   } catch {
     return jsonResponse({ error: "Invalid JSON body" }, 400, corsHeaders);
   }
 
-  const statementText = (body.statementText || "").trim();
-  if (!statementText) return jsonResponse({ error: "statementText is required" }, 400, corsHeaders);
-  if (statementText.length > MAX_TEXT_LENGTH) {
-    return jsonResponse(
-      { error: `statementText exceeds ${MAX_TEXT_LENGTH} characters - chunk it client-side.` },
-      413, corsHeaders,
-    );
+  const transactions = Array.isArray(body.transactions) ? body.transactions : [];
+  const categories = Array.isArray(body.categories) ? body.categories.filter(Boolean) : [];
+  if (!transactions.length) return jsonResponse({ error: "transactions is required" }, 400, corsHeaders);
+  if (!categories.length) return jsonResponse({ error: "categories is required" }, 400, corsHeaders);
+  if (transactions.length > MAX_BATCH) {
+    return jsonResponse({ error: `Batch of ${transactions.length} exceeds ${MAX_BATCH} - split it client-side.` }, 413, corsHeaders);
   }
 
-  const prompt = buildPrompt(statementText, body.hint);
+  const prompt = buildPrompt(transactions, categories);
 
   let text = "";
   let provider = "gemini";
   try {
     text = await callGemini(prompt);
   } catch (geminiErr) {
-    console.error("[extract-statement] gemini failed:", geminiErr);
+    console.error("[categorize-transactions] gemini failed:", geminiErr);
     provider = "claude";
     try {
       text = await callClaude(prompt);
     } catch (claudeErr) {
-      console.error("[extract-statement] claude failed:", claudeErr);
+      console.error("[categorize-transactions] claude failed:", claudeErr);
       // Generic to the caller; details stay in the logs.
-      return jsonResponse({ error: "Extraction service is unavailable right now." }, 502, corsHeaders);
+      return jsonResponse({ error: "Categorisation service is unavailable right now." }, 502, corsHeaders);
     }
   }
 
@@ -242,16 +241,16 @@ Deno.serve(async (req) => {
   try {
     rows = parseRows(text);
   } catch (parseErr) {
-    console.error("[extract-statement] unparseable model output:", parseErr);
+    console.error("[categorize-transactions] unparseable model output:", parseErr);
     // 502, not 200-with-nothing: the client must be able to tell a section that
     // genuinely held no transactions from one that was lost.
     return jsonResponse(
-      { error: `The extraction service returned something unreadable (${(parseErr as Error).message.slice(0, 120)}).` },
+      { error: `The categorisation service returned something unreadable (${(parseErr as Error).message.slice(0, 120)}).` },
       502, corsHeaders,
     );
   }
   return jsonResponse(
-    { rows, provider, model: provider === "gemini" ? GEMINI_MODEL : CLAUDE_MODEL, promptChars: statementText.length },
+    { results: rows, provider, model: provider === "gemini" ? GEMINI_MODEL : CLAUDE_MODEL, asked: transactions.length },
     200, corsHeaders,
   );
 });

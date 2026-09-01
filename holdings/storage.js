@@ -35,7 +35,11 @@ export function initSupabase(onLoad) {
             if (!state.currentUser && session?.user) {
                 state.currentUser = session.user;
                 updateAuthBar();
-                loadFromDatabase().then(onLoad);
+                loadFromDatabase().then(onLoad).catch(err => {
+                    console.error('Load failed:', err);
+                    state.loadFailed = true;
+                    try { onLoad?.(); } catch { /* render anyway */ }
+                });
             }
         }).catch(err => console.warn('getSession fallback error:', err));
 

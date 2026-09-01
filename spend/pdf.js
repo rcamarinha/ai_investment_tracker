@@ -211,15 +211,24 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
         `Document header:\n${header.join('\n')}`].filter(Boolean).join('\n');
 
     const collected = [], errors = [];
-    let provider = null;
+    let provider = null, chunksFailed = 0;
     for (let i = 0; i < chunks.length; i++) {
         onProgress?.(i, chunks.length);
         try {
             const payload = await callExtractor(chunks[i], contextHint);
             provider = payload.provider || provider;
-            collected.push(...(payload.rows || []));
+            const got = payload.rows || [];
+            // A section full of dated lines that yields nothing is a failure,
+            // not an empty section. Left unreported it loses ~40 transactions
+            // per chunk while the import still says "success".
+            if (!got.length && /\d{1,2}[/.-]\d{1,2}/.test(chunks[i])) {
+                chunksFailed++;
+                errors.push({ reason: `Section ${i + 1} of ${chunks.length} returned no transactions despite containing dated lines — it was probably truncated.` });
+            }
+            collected.push(...got);
         } catch (err) {
-            errors.push({ reason: `Chunk ${i + 1} of ${chunks.length}: ${err.message}` });
+            chunksFailed++;
+            errors.push({ reason: `Section ${i + 1} of ${chunks.length}: ${err.message}` });
         }
     }
     onProgress?.(chunks.length, chunks.length);
@@ -234,7 +243,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
 
     return {
         rows, errors, parsed: rows.length, skipped: errors.length,
-        format: 'pdf', provider, pageCount, chunks: chunks.length,
+        format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year
     };
 }

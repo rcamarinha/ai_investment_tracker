@@ -210,6 +210,35 @@
 }
 .tx-enriched-badge { font-size: 10px; color: var(--spend-light); }
 
+/* ── Pending category suggestion ──────────────────────────────────────────
+   Shown on the row, not in a modal: fifty modals is data entry. Accept and
+   reject sit inline so a review is one pass down the list.
+   ─────────────────────────────────────────────────────────────────────── */
+.tx-suggestion { display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.tx-cat-badge.suggested {
+    color: var(--spend-light);
+    border-color: var(--spend-line);
+    background: var(--spend-glow);
+    border-style: dashed;              /* proposed, not filed */
+}
+.tx-confidence {
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary);
+}
+.tx-sugg-btn {
+    width: 26px; height: 26px; flex: 0 0 26px;
+    border-radius: var(--r-xs); cursor: pointer; font-size: 12px; line-height: 1;
+    background: transparent; border: 1px solid var(--border); color: var(--text-secondary);
+}
+.tx-sugg-btn.accept:hover { color: var(--up);        border-color: rgba(76,175,132,0.5); }
+.tx-sugg-btn.reject:hover { color: var(--down-soft); border-color: rgba(214,86,86,0.5); }
+.tx-sugg-btn:focus-visible { outline: 2px solid var(--spend-light); outline-offset: 2px; }
+
+@media (max-width: 767px) {
+    /* The category column is hidden on phones, so surface the suggestion count
+       in the bulk bar rather than per row. */
+    .tx-suggestion { display: none; }
+}
+
 .pagination-controls {
     display: flex; align-items: center; justify-content: center; gap: 12px;
     margin-top: 14px; font-size: 12px; color: var(--text-secondary);

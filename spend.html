@@ -104,6 +104,7 @@
                 <span class="form-helper" id="txCount"></span>
             </div>
 
+            <div id="reviewBulkBar"></div>
             <div class="tx-toolbar">
                 <input class="form-input" id="txSearch" type="search" placeholder="Search description, merchant, category…"
                        oninput="spendSetTxSearch(this.value)">
@@ -241,6 +242,8 @@
 
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
+        import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
+        installErrorReporting({ page: 'spend', version: '3.42.1' });
         import { renderNavbar } from './services/navbar.js?v=3.42.1';
         import state from './spend/state.js?v=3.42.1';
         import {
@@ -253,6 +256,8 @@
             setTxSearch, setTxFilter, setPage, editTx, saveTxEdit, removeTx,
             showQuickAdd, submitQuickAdd, findTransfers, bindDelegation
         } from './spend/ledger.js?v=3.42.1';
+        import { categoriseAll, acceptSuggestion, rejectSuggestion, acceptAllConfident }
+            from './spend/categorize.js?v=3.42.1';
         import { showAccountDialog, onAccountTypeChange, submitAccount, removeAccount } from './spend/accounts.js?v=3.42.1';
         import { renderImportSection, handleFile, confirmMapping, commitImport, cancelImport } from './spend/importer.js?v=3.42.1';
         import { closeModal, closeActiveModal, showToast } from './spend/utils.js?v=3.42.1';
@@ -281,6 +286,39 @@
         window.spendSubmitAccount = submitAccount;
         window.spendDeleteAccount = removeAccount;
         window.spendCloseModal    = closeModal;
+
+        // ── categorisation ─────────────────────────────────────────────────
+        window.spendCategorise = async () => {
+            const banner = document.querySelector('[data-act="categorise"]');
+            if (banner) { banner.disabled = true; banner.textContent = 'Working…'; }
+            try {
+                const r = await categoriseAll({
+                    onProgress: (done, total) => {
+                        if (banner) banner.textContent = total > 1 ? `Batch ${done}/${total}…` : 'Working…';
+                    }
+                });
+                if (!r) return;
+                const parts = [];
+                if (r.ruleMatched) parts.push(`${r.ruleMatched} by your rules`);
+                if (r.applied) parts.push(`${r.applied} categorised`);
+                if (r.review) parts.push(`${r.review} need a look`);
+                if (r.skippedTransfer) parts.push(`${r.skippedTransfer} transfers skipped`);
+                showToast(parts.length ? parts.join(' · ') : 'Nothing left to categorise.');
+                if (r.failures) showToast(`${r.failures} batch(es) failed — press Categorise again to retry those.`, 'warning', 7000);
+                renderAll();
+            } catch (err) {
+                showToast('Could not categorise: ' + err.message, 'error', 7000);
+            } finally {
+                if (banner) { banner.disabled = false; banner.textContent = 'Categorise'; }
+            }
+        };
+        window.spendAcceptSuggestion = async (id) => { await acceptSuggestion(id); renderAll(); };
+        window.spendRejectSuggestion = (id) => { rejectSuggestion(id); renderAll(); };
+        window.spendAcceptConfident  = async () => {
+            const n = await acceptAllConfident();
+            showToast(n ? `${n} confirmed.` : 'None were confident enough to accept in bulk.');
+            renderAll();
+        };
 
         window.spendRenderImport  = renderImportSection;
         window.spendHandleFile    = handleFile;
@@ -316,7 +354,9 @@
         // repopulates. A blank page while the session loads reads as broken.
         renderAll();
 
+        setTelemetryClient(state.supabaseClient);
         initSupabase(async () => {
+            setTelemetryClient(state.supabaseClient);
             await ensureDefaultCategories();
             renderAll();
         });
