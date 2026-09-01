@@ -116,6 +116,26 @@ async function callExtractor(statementText, hint) {
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload.error || `Extraction failed (${res.status})`);
         return payload;
+    } catch (err) {
+        // A bare "Failed to fetch" means the request never reached application
+        // code, so the server could not explain itself. There are only a few
+        // causes and the user cannot distinguish them from the browser, so name
+        // them rather than passing the raw message through.
+        if (err?.name === 'AbortError') {
+            throw new Error(`The extraction service took longer than ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s and was cancelled.`);
+        }
+        if (err instanceof TypeError) {
+            const local = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(window.location.origin);
+            throw new Error(
+                'Could not reach the extraction service. Either it is not deployed yet ' +
+                '(run: supabase functions deploy extract-statement)' +
+                (local
+                    ? ', or you are on localhost, which the function\'s CORS policy blocks by default ' +
+                      '(set ALLOW_LOCAL_ORIGINS=true on the project to permit it).'
+                    : '.')
+            );
+        }
+        throw err;
     } finally {
         clearTimeout(timer);
     }

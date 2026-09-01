@@ -41,12 +41,31 @@ const ALLOWED_ORIGINS = [
   "https://ai-investment-tracker.vercel.app",
 ];
 
+/**
+ * Local development, opt-in.
+ *
+ * Every edge function in this project allows only the three production origins,
+ * so none of them can be exercised from `localhost` — the preflight is refused
+ * and the browser reports a bare "Failed to fetch" with no clue why. Set
+ * ALLOW_LOCAL_ORIGINS=true on a dev project to permit it. It stays OFF by
+ * default so production CORS is never widened by accident, and auth is still
+ * required either way.
+ */
+const ALLOW_LOCAL = (Deno.env.get("ALLOW_LOCAL_ORIGINS") || "").toLowerCase() === "true";
+const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  return ALLOW_LOCAL && LOCAL_ORIGIN.test(origin);
+}
+
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get("origin") || "";
   return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    "Access-Control-Allow-Origin": isAllowedOrigin(origin) ? origin : ALLOWED_ORIGINS[0],
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
   };
 }
 
