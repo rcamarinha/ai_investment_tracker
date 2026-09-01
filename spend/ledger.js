@@ -462,10 +462,17 @@ function renderReviewBanner() {
     if (flagged) bits.push(`${flagged} need review`);
     if (pending) bits.push(`${pending} MB WAY rows waiting for a bank line`);
 
-    host.innerHTML = bits.length
-        ? `<div class="review-banner"><span>⚠</span><span>${escapeHTML(bits.join(' · '))}</span>
-             <button class="btn btn-sm btn-ghost-spend" style="margin-left:auto" data-act="filter" data-filter="review">Show</button></div>`
-        : '';
+    const suggestions = (state.reviewQueue || []).length;
+
+    host.innerHTML = `
+        ${bits.length ? `<div class="review-banner"><span>⚠</span><span>${escapeHTML(bits.join(' · '))}</span>
+             <button class="btn btn-sm btn-ghost-spend" style="margin-left:auto" data-act="filter" data-filter="review">Show</button></div>` : ''}
+        ${uncategorised && !suggestions ? `<div class="review-banner"><span>◎</span><span>
+             ${uncategorised} transaction${uncategorised === 1 ? '' : 's'} without a category — the breakdown below can't show where the money went until they're filed.</span>
+             <button class="btn btn-sm btn-primary-spend" style="margin-left:auto" data-act="categorise">Categorise</button></div>` : ''}
+        ${suggestions ? `<div class="review-banner"><span>◎</span><span>
+             ${suggestions} suggestion${suggestions === 1 ? '' : 's'} waiting for your confirmation.</span>
+             <button class="btn btn-sm btn-ghost-spend" style="margin-left:auto" data-act="filter" data-filter="review">Review</button></div>` : ''}`;
 }
 
 // ── transactions ────────────────────────────────────────────────────────────
@@ -485,7 +492,11 @@ function visibleTransactions() {
             case 'spend': if (t.amount >= 0 || t.category === 'transfer') return false; break;
             case 'income': if (t.amount <= 0 || t.category === 'transfer') return false; break;
             case 'transfer': if (t.category !== 'transfer' && !t.transferPairId) return false; break;
-            case 'review': if (!t.needsReview && t.category) return false; break;
+            case 'review': {
+                const suggested = (state.reviewQueue || []).some(r => r.id === t.id);
+                if (!t.needsReview && t.category && !suggested) return false;
+                break;
+            }
         }
         if (!q) return true;
         return `${t.description} ${t.merchant || ''} ${t.category || ''}`.toLowerCase().includes(q);
@@ -541,7 +552,7 @@ export function renderTransactions() {
                 </span>
             </td>
             <td class="col-hide-mobile">
-                <span class="tx-cat-badge ${t.category ? '' : 'none'}">${escapeHTML(t.category || 'uncategorised')}</span>
+                ${suggestionFor(t.id) || `<span class="tx-cat-badge ${t.category ? '' : 'none'}">${escapeHTML(t.category || 'uncategorised')}</span>`}
             </td>
             <td class="num tx-amount ${cls}">${escapeHTML(fmtMoney(t.amount, t.currency))}</td>
             <td class="num col-hide-mobile">
@@ -551,6 +562,39 @@ export function renderTransactions() {
     }).join('');
 
     renderPagination(rows.length, pages);
+    renderReviewBulkBar();
+}
+
+/**
+ * A pending suggestion, shown on the row rather than in a modal.
+ *
+ * Fifty modals is data entry. Accept and reject sit inline so a review is a
+ * pass down a list, and the model's reason is stated — "not confident enough"
+ * and "unusually large" call for different scrutiny.
+ */
+function renderReviewBulkBar() {
+    const host = el('reviewBulkBar');
+    if (!host) return;
+    const n = (state.reviewQueue || []).length;
+    host.innerHTML = n ? `<div class="review-banner">
+        <span>◎</span><span>${n} suggestion${n === 1 ? '' : 's'} to confirm. Accepting one also teaches a rule, so that merchant files itself next time.</span>
+        <button class="btn btn-sm btn-primary-spend" style="margin-left:auto" data-act="accept-confident">Accept all confident</button>
+    </div>` : '';
+}
+
+function suggestionFor(id) {
+    const s = (state.reviewQueue || []).find(r => r.id === id);
+    if (!s) return '';
+    const pct = Number.isFinite(Number(s.confidence)) ? `${Math.round(s.confidence * 100)}%` : '—';
+    return `
+        <span class="tx-suggestion" title="${escapeHTML(s.reason || '')}">
+            <span class="tx-cat-badge suggested">${escapeHTML(s.suggestedCategory)}</span>
+            <span class="tx-confidence">${pct}</span>
+            <button type="button" class="tx-sugg-btn accept" data-act="accept-suggestion" data-id="${escapeHTML(id)}"
+                    aria-label="Accept ${escapeHTML(s.suggestedCategory)}">✓</button>
+            <button type="button" class="tx-sugg-btn reject" data-act="reject-suggestion" data-id="${escapeHTML(id)}"
+                    aria-label="Reject ${escapeHTML(s.suggestedCategory)}">✕</button>
+        </span>`;
 }
 
 function renderPagination(total, pages) {
@@ -605,6 +649,10 @@ export function bindDelegation(root = document) {
             case 'filter':   setTxFilter(d.filter); break;
             // Owned by importer.js; routed through window for the same reason
             // renderImportSection is — avoiding a needless import cycle.
+            case 'categorise':         window.spendCategorise?.(); break;
+            case 'accept-suggestion':  window.spendAcceptSuggestion?.(d.id); break;
+            case 'reject-suggestion':  window.spendRejectSuggestion?.(d.id); break;
+            case 'accept-confident':   window.spendAcceptConfident?.(); break;
             case 'commit-import': window.spendCommitImport?.(); break;
             case 'cancel-import': window.spendCancelImport?.(); break;
             default: break;
