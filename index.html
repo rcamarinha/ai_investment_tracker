@@ -147,6 +147,8 @@
     </nav>
 
     <script type="module">
+        import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
+        installErrorReporting({ page: 'hub', version: '3.42.1' });
         import { renderNavbar, updateNavbarAuth } from './services/navbar.js';
         // src/hub.js is PURE and dependency-free (no imports at all), so this
         // does not drag in the service graph that CLAUDE.md warns about — it is
@@ -445,6 +447,7 @@
         if (typeof supabase !== 'undefined') {
             try {
                 sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                setTelemetryClient(sbClient);
                 sbClient.auth.onAuthStateChange((event, session) => {
                     currentUser = session?.user || null;
                     if (event === 'PASSWORD_RECOVERY') passwordRecoveryMode = true;

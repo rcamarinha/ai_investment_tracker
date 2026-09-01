@@ -421,6 +421,8 @@
         Or deploy to GitHub Pages / any static host.
     -->
     <script type="module">
+        import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
+        installErrorReporting({ page: 'portfolio', version: '3.42.1' });
         // ── Import all modules ──────────────────────────────────────────────
         import { renderNavbar } from './services/navbar.js';
         import state from './services/state.js';
@@ -596,6 +598,7 @@
             state.supabaseAnonKey = storedSBKey;
         }
         initSupabase();
+        setTelemetryClient(state.supabaseClient);
 
         // Fetch exchange rates (non-blocking, re-renders when done)
         fetchExchangeRates().then(() => {
@@ -623,13 +626,9 @@
         }
 
         // Global error handlers
-        window.onerror = function(message, source, lineno, colno, error) {
-            console.error('=== GLOBAL ERROR ===', message, source, lineno, colno, error);
-            if (message && message !== 'Script error.') {
-                alert('JavaScript Error:\n\n' + message + '\n\nLine: ' + lineno);
-            }
-            return true;
-        };
+        // Replaced by services/telemetry.js, installed at the top of this
+        // module. The old handler alert()ed the raw message at the user and
+        // then returned true, which also hid the error from the console.
 
         window.onunhandledrejection = function(event) {
             console.error('=== UNHANDLED REJECTION ===', event.reason);

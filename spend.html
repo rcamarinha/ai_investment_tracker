@@ -241,6 +241,8 @@
 
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
+        import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
+        installErrorReporting({ page: 'spend', version: '3.42.1' });
         import { renderNavbar } from './services/navbar.js?v=3.42.1';
         import state from './spend/state.js?v=3.42.1';
         import {
@@ -316,7 +318,9 @@
         // repopulates. A blank page while the session loads reads as broken.
         renderAll();
 
+        setTelemetryClient(state.supabaseClient);
         initSupabase(async () => {
+            setTelemetryClient(state.supabaseClient);
             await ensureDefaultCategories();
             renderAll();
         });

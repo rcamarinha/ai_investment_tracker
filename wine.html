@@ -327,6 +327,8 @@
 
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
+        import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
+        installErrorReporting({ page: 'wine', version: '3.42.1' });
         // ── Imports ────────────────────────────────────────────────────────────
         import { renderNavbar } from './services/navbar.js';
         import state from './wine/state.js?v=3.42.1';
@@ -769,6 +771,7 @@
         // Try to initialize Supabase (callback re-renders cellar after DB load)
         const supabaseOk = initSupabase(() => {
             applyValuationCache();
+        setTelemetryClient(state.supabaseClient);
             renderCellar();
         });
 
