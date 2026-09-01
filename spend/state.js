@@ -47,6 +47,7 @@ const state = {
     loading: false,
     importing: false,
     ledgerTruncated: false,
+    loadFailed: false,
 
     // ── auth ────────────────────────────────────────────────────────────────
     supabaseUrl: 'https://dybetrrhshqezokcxiid.supabase.co',

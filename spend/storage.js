@@ -36,7 +36,15 @@ export function initSupabase(onLoad) {
 
             if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
                 if (state.currentUser) {
-                    loadFromDatabase().then(onLoad);
+                    // .catch is not optional: onLoad is async, no page installs
+                    // an unhandledrejection handler, and a load failure would
+                    // otherwise vanish while the UI renders a convincing empty
+                    // state that is indistinguishable from "no data yet".
+                    loadFromDatabase().then(onLoad).catch(err => {
+                        console.error('Load failed:', err);
+                        state.loadFailed = true;
+                        try { onLoad?.(); } catch { /* render anyway */ }
+                    });
                 } else if (event === 'INITIAL_SESSION') {
                     if (onLoad) onLoad();
                 }
@@ -52,7 +60,11 @@ export function initSupabase(onLoad) {
             if (!state.currentUser && session?.user) {
                 state.currentUser = session.user;
                 updateAuthBar();
-                loadFromDatabase().then(onLoad);
+                loadFromDatabase().then(onLoad).catch(err => {
+                    console.error('Load failed:', err);
+                    state.loadFailed = true;
+                    try { onLoad?.(); } catch { /* render anyway */ }
+                });
             }
         }).catch(err => console.warn('getSession fallback error:', err));
 

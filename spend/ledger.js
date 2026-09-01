@@ -454,6 +454,9 @@ function renderReviewBanner() {
     const pending = state.pendingDetails.length;
 
     const bits = [];
+    // An empty dashboard after a failed load looks exactly like an empty
+    // account. Say which it is.
+    if (state.loadFailed) bits.push('could not load your data — figures below are incomplete, try reloading');
     if (state.ledgerTruncated) bits.push('older history not loaded — comparisons may understate');
     if (uncategorised) bits.push(`${uncategorised} uncategorised`);
     if (flagged) bits.push(`${flagged} need review`);

@@ -105,7 +105,17 @@ async function callGemini(prompt: string): Promise<string> {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       // Deterministic: the same statement must extract identically every time,
       // or a re-import silently produces different rows.
-      generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+      //
+      // Thinking is disabled and the output budget raised because this is a
+      // 2.5-series model: thinking tokens are charged against maxOutputTokens,
+      // so a long section could exhaust the budget mid-JSON and come back
+      // truncated. Transcription needs no reasoning, and paying for it here
+      // bought a silent failure mode.
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 16384,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
     signal: AbortSignal.timeout(25000),
   });
@@ -114,7 +124,13 @@ async function callGemini(prompt: string): Promise<string> {
     throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
   }
   const data = await res.json();
-  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const candidate = data.candidates?.[0];
+  // A truncated answer must fail loudly so the Claude fallback runs, rather
+  // than yielding half a JSON array that parses to nothing.
+  if (candidate?.finishReason && candidate.finishReason !== "STOP") {
+    throw new Error(`Gemini stopped early (${candidate.finishReason})`);
+  }
+  const parts = candidate?.content?.parts ?? [];
   return parts.map((p: { text?: string }) => p.text ?? "").join("");
 }
 
@@ -143,20 +159,31 @@ async function callClaude(prompt: string): Promise<string> {
   return (data.content ?? []).find((c: { type: string }) => c.type === "text")?.text ?? "";
 }
 
-/** Models occasionally wrap JSON in fences or add a stray trailing comma. */
+/**
+ * Models occasionally wrap JSON in fences or add a stray trailing comma.
+ *
+ * Throws rather than returning [] when the text cannot be parsed. "The model
+ * said there are no transactions" and "the response was truncated mid-JSON" are
+ * completely different facts, and collapsing them into an empty array made a
+ * lost section of ~40 transactions look like a successful import of none.
+ */
 function parseRows(text: string): unknown[] {
   let s = (text || "").trim();
+  if (!s) throw new Error("empty response from model");
   s = s.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
   const start = s.indexOf("[");
   const end = s.lastIndexOf("]");
-  if (start === -1 || end === -1 || end < start) return [];
+  if (start === -1) throw new Error(`no JSON array in response: ${s.slice(0, 200)}`);
+  if (end === -1 || end < start) throw new Error(`response truncated before the array closed: ${s.slice(0, 200)}`);
   s = s.slice(start, end + 1).replace(/,\s*([\]}])/g, "$1");
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(s);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+    parsed = JSON.parse(s);
+  } catch (err) {
+    throw new Error(`unparseable JSON: ${(err as Error).message}`);
   }
+  if (!Array.isArray(parsed)) throw new Error("model returned a non-array");
+  return parsed;
 }
 
 Deno.serve(async (req) => {
@@ -211,6 +238,20 @@ Deno.serve(async (req) => {
     }
   }
 
-  const rows = parseRows(text);
-  return jsonResponse({ rows, provider, model: provider === "gemini" ? GEMINI_MODEL : CLAUDE_MODEL }, 200, corsHeaders);
+  let rows: unknown[];
+  try {
+    rows = parseRows(text);
+  } catch (parseErr) {
+    console.error("[extract-statement] unparseable model output:", parseErr);
+    // 502, not 200-with-nothing: the client must be able to tell a section that
+    // genuinely held no transactions from one that was lost.
+    return jsonResponse(
+      { error: `The extraction service returned something unreadable (${(parseErr as Error).message.slice(0, 120)}).` },
+      502, corsHeaders,
+    );
+  }
+  return jsonResponse(
+    { rows, provider, model: provider === "gemini" ? GEMINI_MODEL : CLAUDE_MODEL, promptChars: statementText.length },
+    200, corsHeaders,
+  );
 });

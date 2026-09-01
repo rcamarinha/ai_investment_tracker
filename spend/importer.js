@@ -411,7 +411,16 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
     state.importResult = {
         profile, isDetail, format: parsed.format || 'csv',
         fresh, duplicates, enriched, aggregated, pending, replayed,
-        errors: parsed.errors, uncategorised: fresh.filter(r => !r.category).length
+        errors: parsed.errors, uncategorised: fresh.filter(r => !r.category).length,
+        // Carried through from the adapter. Dropping these made showReport()
+        // read `chain.checked` as undefined and print "this statement prints no
+        // running balance" for EVERY pdf import — the one guardrail that makes
+        // AI extraction safe was reporting itself as absent.
+        chain: parsed.chain || null,
+        flagged: parsed.flagged || 0,
+        provider: parsed.provider || null,
+        chunks: parsed.chunks || 0,
+        chunksFailed: parsed.chunksFailed || 0
     };
     showReport();
 }
@@ -451,13 +460,19 @@ function showReport() {
             ${bucket(r.pending.length, 'not on the bank yet', r.pending.length ? 'warn' : '')}
             ${bucket(r.errors.length, 'unreadable', r.errors.length ? 'warn' : '')}
         </div>
+        ${r.chunksFailed ? `<div class="review-banner"><span>⚠</span><span>
+            ${r.chunksFailed} of ${r.chunks} sections of this document could not be read, so transactions from
+            ${r.chunksFailed === 1 ? 'it are' : 'them are'} missing. Re-importing is safe — anything already added is skipped.</span></div>` : ''}
+        ${r.flagged ? `<div class="review-banner"><span>⚠</span><span>
+            ${r.flagged} row${r.flagged === 1 ? '' : 's'} did not reconcile with the statement's running balance and
+            ${r.flagged === 1 ? 'is' : 'are'} marked for review.</span></div>` : ''}
         ${r.uncategorised ? `<p class="form-helper">${r.uncategorised} of them have no category yet — you can file them from the ledger, and each correction teaches a rule.</p>` : ''}
         ${r.pending.length ? `<p class="form-helper">
             ${r.pending.length} payment${r.pending.length === 1 ? '' : 's'} from this wallet ${r.pending.length === 1 ? 'has' : 'have'} no matching line on the bank statement yet —
             usually because the bank hasn't posted ${r.pending.length === 1 ? 'it' : 'them'}. They're kept aside and matched automatically next time you import that account.</p>` : ''}
         ${r.aggregated.length ? `<p class="form-helper">${r.aggregated.length} bank line${r.aggregated.length === 1 ? '' : 's'} looked like several wallet payments posted together — flagged for review.</p>` : ''}
-        ${r.errors.length ? `<details><summary class="form-helper">Show ${r.errors.length} unreadable line${r.errors.length === 1 ? '' : 's'}</summary>
-            <div class="merge-preview">${r.errors.slice(0, 12).map(e => `line ${e.line}: ${escapeHTML(e.reason)}`).join('<br>')}</div></details>` : ''}
+        ${r.errors.length ? `<details><summary class="form-helper">Show ${r.errors.length} problem${r.errors.length === 1 ? '' : 's'}</summary>
+            <div class="merge-preview">${r.errors.slice(0, 12).map(e => `${e.line !== undefined ? `line ${e.line}: ` : ''}${escapeHTML(e.reason)}`).join('<br>')}</div></details>` : ''}
         ${sample ? `<table class="tx-table" style="margin-top:12px"><tbody>${sample}</tbody></table>
             ${r.fresh.length > 6 ? `<p class="form-helper">…and ${r.fresh.length - 6} more.</p>` : ''}` : ''}
         <p class="form-helper" style="margin-top:10px">Nothing is saved until you press the button.</p>
