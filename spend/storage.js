@@ -471,7 +471,7 @@ export async function saveRule(rule) {
         updated_at: new Date().toISOString()
     };
     const { data, error } = await state.supabaseClient
-        .from('spend_rules').upsert(row).select().single();
+        .from('spend_rules').upsert(row, { onConflict: 'user_id,match_type,pattern' }).select().single();
     if (error) throw error;
     const mapped = ruleFromRow(data);
     const idx = state.rules.findIndex(r => r.id === mapped.id);

@@ -72,7 +72,7 @@ BEGIN
     CREATE POLICY "Users can insert own bank_holdings" ON bank_holdings FOR INSERT WITH CHECK (auth.uid() = user_id);
 
     DROP POLICY IF EXISTS "Users can update own bank_holdings" ON bank_holdings;
-    CREATE POLICY "Users can update own bank_holdings" ON bank_holdings FOR UPDATE USING (auth.uid() = user_id);
+    CREATE POLICY "Users can update own bank_holdings" ON bank_holdings FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
     DROP POLICY IF EXISTS "Users can delete own bank_holdings" ON bank_holdings;
     CREATE POLICY "Users can delete own bank_holdings" ON bank_holdings FOR DELETE USING (auth.uid() = user_id);
