@@ -307,6 +307,14 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.43.0
+- **Two new tools: Spend and Bank Holdings.** Spend is the flow layer the suite lacked — a transaction ledger, category breakdown, year-on-year comparison, recurring-charge detection and a projection baseline. Bank Holdings covers bonds and funds held at retail banks that no market API can price; roughly €157k that had been invisible to net worth.
+- **Statement import that does not know about any particular bank.** A format is learned once and replayed for free thereafter: OFX/QFX needs no configuration at all (the format is specified, so `TRNAMT` is the amount by definition), CSV/TSV asks you to confirm its columns once, and PDF goes to a cheap extraction service. Verified against a real 971-row export — parsed in full, no AI call, and its running-balance chain reconciles across all 970 adjacent pairs. A statement in a language the alias table has never seen imports without a code change.
+- **AI categorisation that does as little AI as possible.** Learned rules run first (one correction categorised 140 of 971 real rows), transfers and known income are settled structurally, and only the long tail reaches Gemini Flash. Results are matched by id rather than position, categories outside your own list are refused, and anything at least 3× the batch median goes to review whatever its confidence — a large one-off filed as routine spend is worse than one left uncategorised, because a gap is visible and a wrong category is not.
+- **Nothing an AI returns is trusted.** Extracted rows are re-checked against the statement's own running balance; a mis-signed or hallucinated amount breaks the chain and is flagged for review rather than written to the ledger.
+- **Custom categories, and a savings rate that stops lying.** Categories can be added, renamed and merged. A category can be marked *saved or invested*, so money moved to a pension or a child's trust fund is recorded as an outflow but not counted as consumption — on a real month that reads 60% rather than 43.3%.
+- **Client error reporting on all five pages.** Replaces a single handler that `alert()`ed raw messages and swallowed them. Messages are redacted in the browser before they are sent (amounts, IBANs, long reference digits) and context is an allow-list, because an error here can quote a bank description.
+
 ### v3.42.1
 - **The app version is now always visible, in the navbar.** v3.42.0 hid the portfolio page's header (which carried `v3.x.x`) and the hub's eyebrow (which carried the other copy) to get content above the fold on phones — leaving no way to tell *on the device* whether a deploy had actually landed. The navbar now shows a small build tag on every page, at every width, and `scripts/bump-version.js` keeps it in sync automatically.
 
