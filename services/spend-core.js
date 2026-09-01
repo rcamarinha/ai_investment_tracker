@@ -127,7 +127,11 @@ function amountOf(tx) {
  */
 export function summarize(transactions = [], opts = {}) {
     const incomeCategories = new Set(opts.incomeCategories || []);
-    let income = 0, spend = 0;
+    // Categories whose outflows are saved or invested rather than consumed —
+    // a pension, a brokerage top-up, a child's trust fund. The money left the
+    // account, so it is not "still here", but it was not spent either.
+    const savingsCategories = new Set(opts.savingsCategories || []);
+    let income = 0, spend = 0, savedInvested = 0;
     const byCategory = new Map();
 
     for (const tx of transactions) {
@@ -142,7 +146,13 @@ export function summarize(transactions = [], opts = {}) {
         }
         // Outflow, or a refund against a spend category.
         const magnitude = -amt; // positive for outflow, negative for a refund
-        spend += magnitude;
+        if (savingsCategories.has(cat)) {
+            // Counted as an outflow of cash, but never as consumption — putting
+            // it in `spend` would understate the savings rate every month.
+            savedInvested += magnitude;
+        } else {
+            spend += magnitude;
+        }
         const key = cat || '__uncategorized__';
         byCategory.set(key, (byCategory.get(key) || 0) + magnitude);
     }
@@ -150,7 +160,12 @@ export function summarize(transactions = [], opts = {}) {
     return {
         income: round2(income),
         spend: round2(spend),
+        savedInvested: round2(savedInvested),
         net: round2(income - spend),
+        // What actually remained in the account: what was not consumed, minus
+        // what was moved out to be saved. `net` and this are different facts
+        // and the UI must never present one as the other.
+        cashRetained: round2(income - spend - savedInvested),
         savingsRate: income > 0 ? round4((income - spend) / income) : null,
         byCategory: [...byCategory.entries()]
             .map(([category, amount]) => ({
@@ -247,10 +262,16 @@ export function comparePeriods(transactions = [], options = {}) {
         today = null,
         excludeOneOffs = false,
         alignPartial = true,
-        incomeCategories = []
+        incomeCategories = [],
+        savingsCategories = []
     } = options;
 
-    const opts = { incomeCategories };
+    // Pass the classification options through as a whole rather than rebuilding
+    // a narrowed object. Listing them by hand silently dropped
+    // savingsCategories when it was added, so every figure counted a
+    // trust-fund contribution as consumption — the exact bug the flag exists to
+    // prevent, reintroduced one layer down.
+    const opts = { incomeCategories, savingsCategories };
     const curRange = periodRange(period, grain);
     const baselineKey = resolveBaseline(period, grain, mode);
     const coverage = coverageOf(transactions);
@@ -354,7 +375,8 @@ export function buildTrendSeries(transactions = [], options = {}) {
     const {
         grain = 'month', periods = 24, category = null,
         endPeriod = periodKey(options.today || new Date(), grain),
-        incomeCategories = []
+        incomeCategories = [],
+        savingsCategories = []
     } = options;
 
     const rows = category === null
@@ -362,7 +384,7 @@ export function buildTrendSeries(transactions = [], options = {}) {
         : transactions.filter(tx => (tx.category || null) === category);
 
     const byPeriod = new Map(
-        rollupByPeriod(rows, grain, { incomeCategories }).map(r => [r.period, r])
+        rollupByPeriod(rows, grain, { incomeCategories, savingsCategories }).map(r => [r.period, r])
     );
 
     const series = [];
