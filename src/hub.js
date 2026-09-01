@@ -57,16 +57,17 @@ export function computeStockCardEUR(row) {
  *
  * @param {{value: number, excluded: number}|null} stockCard
  * @param {number} wineValue - EUR by schema (wine is priced in EUR by definition)
+ * @param {number} [holdingsValue] - Bank holdings total in EUR (bonds, funds, deposits)
  * @returns {{value: number|null, partial: boolean}}
  */
-export function computeNetWorthEUR(stockCard, wineValue) {
+export function computeNetWorthEUR(stockCard, wineValue, holdingsValue) {
     const wine = Number(wineValue) || 0;
+    const hold = Number(holdingsValue) || 0;
     if (!stockCard) {
-        // No usable stock figure: report the wine alone, clearly marked partial,
-        // never a bare number implying it is the whole portfolio.
-        return { value: wine > 0 ? wine : null, partial: true };
+        const nonStock = wine + hold;
+        return { value: nonStock > 0 ? nonStock : null, partial: true };
     }
-    return { value: stockCard.value + wine, partial: (stockCard.excluded || 0) > 0 };
+    return { value: stockCard.value + wine + hold, partial: (stockCard.excluded || 0) > 0 };
 }
 
 /**

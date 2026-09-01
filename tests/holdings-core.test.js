@@ -105,6 +105,22 @@ describe('summarizeHoldings', () => {
         expect(s).toMatchObject({ count: 0, total: 0, gain: null, costCoverage: 0 });
         expect(s.oldestValuation.level).toBe('unknown');
     });
+
+    it('excludes non-EUR holdings from the total rather than mixing currencies', () => {
+        const usdHolding = { ...fund, id: 'u1', currency: 'USD', currentValue: 50000, costBasis: 45000 };
+        const s = summarizeHoldings([bond, usdHolding], { today: TODAY });
+        expect(s.count).toBe(1);
+        expect(s.total).toBe(98205);
+        expect(s.skippedCurrency).toBe(1);
+    });
+
+    it('treats missing or EUR currency as EUR (included in total)', () => {
+        const noExplicitCurrency = { ...bond, currency: undefined };
+        const s = summarizeHoldings([noExplicitCurrency, fund], { today: TODAY });
+        expect(s.count).toBe(2);
+        expect(s.total).toBe(157601.36);
+        expect(s.skippedCurrency).toBe(0);
+    });
 });
 
 describe('maturityStatus', () => {

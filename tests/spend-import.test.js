@@ -334,6 +334,11 @@ describe('dedupe', () => {
         const withOneMore = [...withRepeats, { date: '2026-03-31', description: 'LEVANTAMENTO GALP U', amount: -200, currency: 'EUR' }];
         const third = dedupeSpendRows(withOneMore, buildExistingFingerprints(first.fresh));
         expect(third.fresh).toHaveLength(1);
+        // The fresh row's fingerprint must NOT collide with any existing fingerprint.
+        // Before the fix, it got the base fingerprint (no #N suffix) which collided
+        // with the first stored row, causing a silent upsert overwrite.
+        const existingFps = new Set(first.fresh.map(r => r.fingerprint));
+        expect(existingFps.has(third.fresh[0].fingerprint)).toBe(false);
     });
 
     it('keeps two genuinely identical charges on the same day', () => {

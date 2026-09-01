@@ -52,7 +52,13 @@ CREATE TABLE IF NOT EXISTS spend_accounts (
 
     -- MB WAY (and other wallets) charge against a funding account. Linking them
     -- is what lets the importer know a wallet row should enrich, not duplicate.
-    linked_account_id UUID REFERENCES spend_accounts(id) ON DELETE SET NULL,
+    -- Composite FK enforces same-user ownership (bare FK bypasses RLS).
+    linked_account_id UUID,
+    CONSTRAINT spend_accounts_linked_account_user_fk
+        FOREIGN KEY (linked_account_id, user_id)
+        REFERENCES spend_accounts(id, user_id) ON DELETE SET NULL,
+    CONSTRAINT spend_accounts_no_self_link
+        CHECK (linked_account_id IS NULL OR linked_account_id != id),
 
     colour            TEXT,               -- dot colour in the ledger, per-account provenance
     last_imported_at  TIMESTAMPTZ,
@@ -61,6 +67,7 @@ CREATE TABLE IF NOT EXISTS spend_accounts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_spend_accounts_user_id ON spend_accounts(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_spend_accounts_id_user ON spend_accounts(id, user_id);
 
 
 -- ────────────────────────────────────────────
@@ -69,7 +76,10 @@ CREATE INDEX IF NOT EXISTS idx_spend_accounts_user_id ON spend_accounts(user_id)
 CREATE TABLE IF NOT EXISTS spend_bank_profiles (
     id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    account_id      UUID REFERENCES spend_accounts(id) ON DELETE CASCADE,
+    account_id      UUID,
+    CONSTRAINT spend_bank_profiles_account_user_fk
+        FOREIGN KEY (account_id, user_id)
+        REFERENCES spend_accounts(id, user_id) ON DELETE CASCADE,
 
     label           TEXT,
     -- 'statement' = the ledger of record (a bank export).
@@ -92,7 +102,7 @@ CREATE TABLE IF NOT EXISTS spend_bank_profiles (
     decimal_style   TEXT DEFAULT 'eu' CHECK (decimal_style IN ('eu','us')),
     -- TRUE when debits arrive positive and must be negated.
     invert_sign     BOOLEAN NOT NULL DEFAULT FALSE,
-    skip_rows       INTEGER NOT NULL DEFAULT 0,
+    skip_rows       INTEGER NOT NULL DEFAULT 0 CHECK (skip_rows >= 0),
     balance_col     TEXT,               -- present in most PT exports; must never be read as an amount
     value_date_col  TEXT,
     pdf_hint        TEXT,               -- layout hint passed to the AI extractor for PDF-only banks
@@ -105,6 +115,8 @@ CREATE TABLE IF NOT EXISTS spend_bank_profiles (
 CREATE INDEX IF NOT EXISTS idx_spend_bank_profiles_user_id ON spend_bank_profiles(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_spend_bank_profiles_sig
     ON spend_bank_profiles(user_id, signature);
+CREATE INDEX IF NOT EXISTS idx_spend_bank_profiles_account
+    ON spend_bank_profiles(account_id) WHERE account_id IS NOT NULL;
 
 
 -- ────────────────────────────────────────────
@@ -135,16 +147,17 @@ CREATE TABLE IF NOT EXISTS spend_recurring (
     category       TEXT,
     amount         NUMERIC NOT NULL,
     currency       TEXT NOT NULL DEFAULT 'EUR',
-    cadence_days   INTEGER NOT NULL,
+    cadence_days   INTEGER NOT NULL CHECK (cadence_days > 0),
     next_expected  DATE,
     status         TEXT NOT NULL DEFAULT 'active'
                    CHECK (status IN ('active','paused','cancelled')),
-    confidence     NUMERIC,
+    confidence     NUMERIC CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
     created_at     TIMESTAMPTZ DEFAULT now(),
     updated_at     TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_spend_recurring_user_id ON spend_recurring(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_spend_recurring_id_user ON spend_recurring(id, user_id);
 
 
 -- ────────────────────────────────────────────
@@ -153,7 +166,10 @@ CREATE INDEX IF NOT EXISTS idx_spend_recurring_user_id ON spend_recurring(user_i
 CREATE TABLE IF NOT EXISTS spend_transactions (
     id                  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id             UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    account_id          UUID NOT NULL REFERENCES spend_accounts(id) ON DELETE CASCADE,
+    account_id          UUID NOT NULL,
+    CONSTRAINT spend_transactions_account_user_fk
+        FOREIGN KEY (account_id, user_id)
+        REFERENCES spend_accounts(id, user_id) ON DELETE CASCADE,
 
     date                DATE NOT NULL,
     description         TEXT NOT NULL,
@@ -168,11 +184,17 @@ CREATE TABLE IF NOT EXISTS spend_transactions (
 
     category            TEXT,                      -- NULL = uncategorised; 'transfer' reserved
     category_source     TEXT CHECK (category_source IN ('rule','ai','manual')),
-    category_confidence NUMERIC,
+    category_confidence NUMERIC CHECK (category_confidence IS NULL OR (category_confidence >= 0 AND category_confidence <= 1)),
 
     enriched_from       TEXT,                      -- 'mbway' | NULL
-    transfer_pair_id    UUID,                      -- links both sides of an internal transfer
-    recurring_id        UUID REFERENCES spend_recurring(id) ON DELETE SET NULL,
+    transfer_pair_id    UUID,
+    recurring_id        UUID,
+    CONSTRAINT spend_transactions_transfer_pair_fk
+        FOREIGN KEY (transfer_pair_id, user_id)
+        REFERENCES spend_transactions(id, user_id) ON DELETE SET NULL,
+    CONSTRAINT spend_transactions_recurring_user_fk
+        FOREIGN KEY (recurring_id, user_id)
+        REFERENCES spend_recurring(id, user_id) ON DELETE SET NULL,
 
     source              TEXT,                      -- profile label or 'manual'
     fingerprint         TEXT NOT NULL,
@@ -187,6 +209,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_spend_tx_fingerprint
     ON spend_transactions(user_id, account_id, fingerprint);
 
 CREATE INDEX IF NOT EXISTS idx_spend_transactions_user_id ON spend_transactions(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_spend_transactions_id_user ON spend_transactions(id, user_id);
 -- First table in the suite with thousands of rows per user: every dashboard
 -- query is a date-range scan, so this index is not optional.
 CREATE INDEX IF NOT EXISTS idx_spend_transactions_user_date
@@ -205,7 +228,10 @@ CREATE INDEX IF NOT EXISTS idx_spend_transactions_recurring
 CREATE TABLE IF NOT EXISTS spend_pending_details (
     id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id        UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    account_id     UUID REFERENCES spend_accounts(id) ON DELETE CASCADE,
+    account_id     UUID,
+    CONSTRAINT spend_pending_details_account_user_fk
+        FOREIGN KEY (account_id, user_id)
+        REFERENCES spend_accounts(id, user_id) ON DELETE CASCADE,
     date           DATE NOT NULL,
     description    TEXT NOT NULL,
     merchant       TEXT,
@@ -219,6 +245,8 @@ CREATE TABLE IF NOT EXISTS spend_pending_details (
 CREATE INDEX IF NOT EXISTS idx_spend_pending_user_id ON spend_pending_details(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_spend_pending_fingerprint
     ON spend_pending_details(user_id, fingerprint);
+CREATE INDEX IF NOT EXISTS idx_spend_pending_account
+    ON spend_pending_details(account_id) WHERE account_id IS NOT NULL;
 
 
 -- ────────────────────────────────────────────
@@ -240,6 +268,8 @@ CREATE TABLE IF NOT EXISTS spend_rules (
 );
 
 CREATE INDEX IF NOT EXISTS idx_spend_rules_user_id ON spend_rules(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_spend_rules_user_pattern
+    ON spend_rules(user_id, match_type, pattern);
 
 
 -- ────────────────────────────────────────────
@@ -286,7 +316,7 @@ BEGIN
         EXECUTE format('CREATE POLICY "Users can insert own %s" ON %I FOR INSERT WITH CHECK (auth.uid() = user_id)', t, t);
 
         EXECUTE format('DROP POLICY IF EXISTS "Users can update own %s" ON %I', t, t);
-        EXECUTE format('CREATE POLICY "Users can update own %s" ON %I FOR UPDATE USING (auth.uid() = user_id)', t, t);
+        EXECUTE format('CREATE POLICY "Users can update own %s" ON %I FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)', t, t);
 
         EXECUTE format('DROP POLICY IF EXISTS "Users can delete own %s" ON %I', t, t);
         EXECUTE format('CREATE POLICY "Users can delete own %s" ON %I FOR DELETE USING (auth.uid() = user_id)', t, t);

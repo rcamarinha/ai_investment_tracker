@@ -152,25 +152,31 @@ const fromRow = r => ({
     maturityDate: r.maturity_date, note: r.note, archived: !!r.archived
 });
 
-const toRow = (h, userId) => ({
-    ...(h.id ? { id: h.id } : {}),
-    user_id: userId,
-    bank_name: h.bankName,
-    name: h.name,
-    holding_type: h.holdingType || 'other',
-    isin: h.isin || null,
-    currency: h.currency || 'EUR',
-    units: h.units ?? null,
-    nominal: h.nominal ?? null,
-    cost_basis: h.costBasis ?? null,
-    current_value: Number(h.currentValue),
-    valued_as_of: String(h.valuedAsOf).slice(0, 10),
-    valuation_source: h.valuationSource || 'manual',
-    maturity_date: h.maturityDate || null,
-    note: h.note || null,
-    archived: !!h.archived,
-    updated_at: new Date().toISOString()
-});
+const toRow = (h, userId) => {
+    const cv = Number(h.currentValue);
+    if (!Number.isFinite(cv)) throw new Error('currentValue must be a finite number');
+    const vDate = String(h.valuedAsOf || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(vDate)) throw new Error('valuedAsOf must be a YYYY-MM-DD date');
+    return {
+        ...(h.id ? { id: h.id } : {}),
+        user_id: userId,
+        bank_name: h.bankName,
+        name: h.name,
+        holding_type: h.holdingType || 'other',
+        isin: h.isin || null,
+        currency: h.currency || 'EUR',
+        units: h.units ?? null,
+        nominal: h.nominal ?? null,
+        cost_basis: h.costBasis ?? null,
+        current_value: cv,
+        valued_as_of: vDate,
+        valuation_source: h.valuationSource || 'manual',
+        maturity_date: h.maturityDate || null,
+        note: h.note || null,
+        archived: !!h.archived,
+        updated_at: new Date().toISOString()
+    };
+};
 
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
