@@ -303,7 +303,8 @@ export async function loadFromDatabase() {
         }
         state.categories = (categories.data || []).map(r => ({
             id: r.id, name: r.name, icon: r.icon, colour: r.colour,
-            sortOrder: r.sort_order, isIncome: !!r.is_income
+            sortOrder: r.sort_order, isIncome: !!r.is_income,
+            countsAsSavings: !!r.counts_as_savings
         }));
         state.rules = (rules.data || []).map(ruleFromRow);
         state.recurring = (recurring.data || []).map(r => ({
@@ -563,17 +564,108 @@ export async function ensureDefaultCategories() {
         ['Salary', '💼', true], ['Other income', '➕', true]
     ];
     const payload = defaults.map(([name, icon, isIncome], i) => ({
-        user_id: state.currentUser.id, name, icon, sort_order: i, is_income: isIncome
+        user_id: state.currentUser.id, name, icon, sort_order: i,
+        is_income: isIncome, counts_as_savings: false
     }));
     const { data, error } = await state.supabaseClient
         .from('spend_categories').insert(payload).select();
     if (error) { console.warn('Could not seed categories:', error.message); return; }
     state.categories = (data || []).map(r => ({
         id: r.id, name: r.name, icon: r.icon, colour: r.colour,
-        sortOrder: r.sort_order, isIncome: !!r.is_income
+        sortOrder: r.sort_order, isIncome: !!r.is_income, countsAsSavings: !!r.counts_as_savings
     }));
 }
 
 export function incomeCategoryNames() {
     return state.categories.filter(c => c.isIncome).map(c => c.name);
+}
+
+/** Categories whose outflows are saved or invested rather than consumed. */
+export function savingsCategoryNames() {
+    return state.categories.filter(c => c.countsAsSavings).map(c => c.name);
+}
+
+// ── category CRUD ───────────────────────────────────────────────────────────
+
+export async function saveCategory(category) {
+    if (!requireAuth('save a category')) return null;
+    const name = String(category.name || '').trim();
+    if (!name) throw new Error('A category needs a name.');
+    if (name.toLowerCase() === 'transfer') {
+        // 'transfer' is reserved by isTransfer() throughout the maths; a
+        // user-made category with that name would silently vanish from every
+        // total.
+        throw new Error('"transfer" is reserved — pick another name.');
+    }
+    const clash = state.categories.find(c =>
+        c.name.toLowerCase() === name.toLowerCase() && c.id !== category.id);
+    if (clash) throw new Error(`You already have a category called "${clash.name}".`);
+
+    const row = {
+        ...(category.id ? { id: category.id } : {}),
+        user_id: state.currentUser.id,
+        name,
+        icon: category.icon || null,
+        colour: category.colour || null,
+        sort_order: category.sortOrder ?? state.categories.length,
+        is_income: !!category.isIncome,
+        counts_as_savings: !!category.countsAsSavings
+    };
+    const { data, error } = await state.supabaseClient
+        .from('spend_categories').upsert(row).select().single();
+    if (error) throw error;
+
+    const mapped = { id: data.id, name: data.name, icon: data.icon, colour: data.colour,
+        sortOrder: data.sort_order, isIncome: !!data.is_income, countsAsSavings: !!data.counts_as_savings };
+    const i = state.categories.findIndex(c => c.id === mapped.id);
+    const previousName = i >= 0 ? state.categories[i].name : null;
+    if (i >= 0) state.categories[i] = mapped; else state.categories.push(mapped);
+
+    // A rename must rewrite history, not fork it: transactions store the
+    // category by name, so leaving old rows on the old name would make a
+    // year-on-year comparison run against a category that no longer exists.
+    if (previousName && previousName !== mapped.name) {
+        await reassignCategory(previousName, mapped.name);
+    }
+    return mapped;
+}
+
+/** Move every transaction from one category name to another (or to none). */
+export async function reassignCategory(fromName, toName) {
+    if (!requireAuth('move transactions') || !fromName) return 0;
+    const { error } = await state.supabaseClient
+        .from('spend_transactions')
+        .update({ category: toName || null })
+        .eq('user_id', state.currentUser.id)
+        .eq('category', fromName);
+    if (error) throw error;
+
+    let moved = 0;
+    for (const t of state.transactions) {
+        if (t.category === fromName) { t.category = toName || null; moved++; }
+    }
+    // Rules pointing at the old name would keep recreating it on the next import.
+    for (const r of state.rules) if (r.category === fromName) r.category = toName || null;
+    return moved;
+}
+
+/**
+ * Delete a category, moving its transactions somewhere first.
+ *
+ * Reassignment is mandatory rather than optional, which also makes this the
+ * merge operation — merging is just reassigning A to B and deleting A. Building
+ * both would be two features for one behaviour.
+ */
+export async function deleteCategory(id, { reassignTo = null } = {}) {
+    if (!requireAuth('delete a category')) return 0;
+    const category = state.categories.find(c => c.id === id);
+    if (!category) return 0;
+
+    const moved = await reassignCategory(category.name, reassignTo);
+
+    const { error } = await state.supabaseClient
+        .from('spend_categories').delete().eq('id', id).eq('user_id', state.currentUser.id);
+    if (error) throw error;
+    state.categories = state.categories.filter(c => c.id !== id);
+    return moved;
 }

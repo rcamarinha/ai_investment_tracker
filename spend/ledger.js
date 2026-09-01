@@ -11,7 +11,8 @@ import {
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour
 } from './utils.js?v=3.42.1';
 import {
-    updateTransaction, deleteTransaction, saveTransactions, saveRule, incomeCategoryNames
+    updateTransaction, deleteTransaction, saveTransactions, saveRule,
+    incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
 } from './storage.js?v=3.42.1';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
@@ -74,7 +75,8 @@ function currentComparison() {
         mode: state.compareMode,
         today: todayISO(),
         excludeOneOffs: state.excludeOneOffs,
-        incomeCategories: incomeCategoryNames()
+        incomeCategories: incomeCategoryNames(),
+        savingsCategories: savingsCategoryNames()
     });
 }
 
@@ -91,6 +93,7 @@ export function renderAll() {
     state.recurringDetected = recurring;
     renderRecurring(recurring);
     renderBaseline(recurring);
+    renderCategories();
     renderAccounts();
     renderTransactions();
     renderReviewBanner();
@@ -200,6 +203,8 @@ export function renderOverview(cmp = currentComparison()) {
             <div class="hero-figure">
                 <span class="hero-figure-label">Saved</span>
                 <span class="hero-figure-value">${escapeHTML(fmtMoney(current.net))}</span>
+                ${current.savedInvested ? `<span class="hero-figure-sub">
+                    of which ${escapeHTML(fmtMoney(current.savedInvested))} moved to savings or investments</span>` : ''}
                 <span class="hero-figure-sub">
                     ${rate === null ? '<span class="st-delta flat">no income recorded</span>'
                         : `${fmtPct(rate)} savings rate ${d.savingsRatePts !== null && d.savingsRatePts !== undefined
@@ -214,7 +219,8 @@ export function renderOverview(cmp = currentComparison()) {
 function renderSparkline() {
     const series = buildTrendSeries(state.transactions, {
         grain: state.grain, periods: 12, endPeriod: currentPeriod(),
-        incomeCategories: incomeCategoryNames()
+        incomeCategories: incomeCategoryNames(),
+        savingsCategories: savingsCategoryNames()
     });
     const values = series.map(s => s.spend);
     if (!values.some(v => v > 0)) return '';
@@ -286,7 +292,8 @@ export function renderTrends() {
     const series = buildTrendSeries(source, {
         grain: state.grain, periods, endPeriod: currentPeriod(),
         category: uncatOnly ? null : state.selectedCategory,
-        incomeCategories: incomeCategoryNames()
+        incomeCategories: incomeCategoryNames(),
+        savingsCategories: savingsCategoryNames()
     });
 
     const label = el('trendLabel');
@@ -408,6 +415,106 @@ export function renderBaseline(recurring = state.recurringDetected || []) {
             What-if levers land next: cut a category, cancel a subscription, change income —
             and see the effect on this number.
         </p>`;
+}
+
+// ── categories ──────────────────────────────────────────────────────────────
+
+export function renderCategories() {
+    const host = el('categoriesList');
+    if (!host) return;
+
+    const counts = new Map();
+    for (const t of state.transactions) if (t.category) counts.set(t.category, (counts.get(t.category) || 0) + 1);
+
+    host.innerHTML = state.categories.length
+        ? state.categories.map(c => `
+            <button type="button" class="cat-row" data-act="edit-category" data-id="${escapeHTML(c.id)}">
+                <span class="cat-name">${escapeHTML(`${c.icon || ''} ${c.name}`.trim())}</span>
+                <span class="cat-kind">${c.isIncome ? 'income' : c.countsAsSavings ? 'saved / invested' : 'spending'}</span>
+                <span class="cat-count">${counts.get(c.name) || 0}</span>
+            </button>`).join('')
+        : `<div class="empty-state">No categories yet.</div>`;
+}
+
+export function showCategoryDialog(id = null) {
+    const c = id ? state.categories.find(x => x.id === id) : null;
+    state.editingCategoryId = id;
+    const inUse = c ? state.transactions.filter(t => t.category === c.name).length : 0;
+
+    const others = state.categories.filter(x => x.id !== id);
+    el('categoryDialogTitle').textContent = c ? 'Edit category' : 'New category';
+    el('categoryDialogBody').innerHTML = `
+        <div class="form-group">
+            <label class="form-label" for="catName">Name</label>
+            <input class="form-input" id="catName" placeholder="Kids' trust fund" value="${escapeHTML(c?.name || '')}">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="catIcon">Icon <span style="color:var(--text-secondary)">(optional)</span></label>
+            <input class="form-input" id="catIcon" maxlength="4" placeholder="🎓" value="${escapeHTML(c?.icon || '')}">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="catKind">What kind of money is this?</label>
+            <select class="form-select" id="catKind">
+                <option value="spend"   ${!c?.isIncome && !c?.countsAsSavings ? 'selected' : ''}>Spending — money consumed</option>
+                <option value="savings" ${c?.countsAsSavings ? 'selected' : ''}>Saved or invested — leaves the account but isn't spent</option>
+                <option value="income"  ${c?.isIncome ? 'selected' : ''}>Income — money coming in</option>
+            </select>
+            <span class="form-helper">
+                Pick <strong>saved or invested</strong> for things like a pension, a brokerage top-up or a
+                child's trust fund. The money still leaves your account, but it isn't counted as spending,
+                so your savings rate stays honest.
+            </span>
+        </div>
+        ${c ? `
+            <div class="form-group">
+                <label class="form-label" for="catReassign">If you delete this, move its ${inUse} transaction${inUse === 1 ? '' : 's'} to</label>
+                <select class="form-select" id="catReassign">
+                    <option value="">Leave them uncategorised</option>
+                    ${others.map(o => `<option value="${escapeHTML(o.name)}">${escapeHTML(o.name)}</option>`).join('')}
+                </select>
+                <button class="btn btn-sm btn-danger" style="margin-top:10px" data-act="delete-category">Delete category</button>
+                <span class="form-helper">Moving them to another category is also how you merge two categories.</span>
+            </div>` : ''}`;
+    openModal('categoryDialog');
+}
+
+export async function submitCategory() {
+    const kind = el('catKind').value;
+    const category = {
+        ...(state.editingCategoryId ? { id: state.editingCategoryId } : {}),
+        name: el('catName').value.trim(),
+        icon: el('catIcon').value.trim() || null,
+        isIncome: kind === 'income',
+        countsAsSavings: kind === 'savings'
+    };
+    try {
+        await saveCategory(category);
+        closeModal('categoryDialog');
+        showToast('Category saved.');
+        renderAll();
+    } catch (err) { showToast(err.message, 'error', 6000); }
+}
+
+export async function removeCategory() {
+    const id = state.editingCategoryId;
+    const c = state.categories.find(x => x.id === id);
+    if (!c) return;
+    const reassignTo = el('catReassign')?.value || null;
+    const inUse = state.transactions.filter(t => t.category === c.name).length;
+
+    const ok = await showConfirm(
+        inUse
+            ? `Delete "${c.name}" and move its ${inUse} transaction${inUse === 1 ? '' : 's'} to ${reassignTo || 'no category'}?`
+            : `Delete "${c.name}"?`,
+        { danger: true, confirmLabel: 'Delete' });
+    if (!ok) return;
+
+    try {
+        const moved = await deleteCategory(id, { reassignTo });
+        closeModal('categoryDialog');
+        showToast(moved ? `Deleted — ${moved} transaction${moved === 1 ? '' : 's'} moved.` : 'Category deleted.');
+        renderAll();
+    } catch (err) { showToast('Could not delete: ' + err.message, 'error'); }
 }
 
 // ── accounts ────────────────────────────────────────────────────────────────
@@ -649,6 +756,9 @@ export function bindDelegation(root = document) {
             case 'filter':   setTxFilter(d.filter); break;
             // Owned by importer.js; routed through window for the same reason
             // renderImportSection is — avoiding a needless import cycle.
+            case 'edit-category':      showCategoryDialog(d.id); break;
+            case 'new-category':       showCategoryDialog(null); break;
+            case 'delete-category':    removeCategory(); break;
             case 'categorise':         window.spendCategorise?.(); break;
             case 'accept-suggestion':  window.spendAcceptSuggestion?.(d.id); break;
             case 'reject-suggestion':  window.spendRejectSuggestion?.(d.id); break;

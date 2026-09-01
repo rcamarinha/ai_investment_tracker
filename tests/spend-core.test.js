@@ -94,6 +94,51 @@ describe('summarize', () => {
         expect(s.byCategory).toEqual([{ category: null, amount: 50 }]);
     });
 
+    it('does not count money moved to savings as consumption', () => {
+        // A trust-fund contribution is neither spend nor a transfer between the
+        // user's own accounts. Calling it spend understates the savings rate
+        // every month, and that rate feeds every projection the app makes.
+        const rows = [
+            tx('2026-03-01', 3000, { category: 'Salary' }),
+            tx('2026-03-05', -1200, { category: 'Housing' }),
+            tx('2026-03-10', -500, { category: "Kids' trust" })
+        ];
+        const s = summarize(rows, { incomeCategories: ['Salary'], savingsCategories: ["Kids' trust"] });
+        expect(s.income).toBe(3000);
+        expect(s.spend).toBe(1200);              // consumption only
+        expect(s.savedInvested).toBe(500);
+        expect(s.savingsRate).toBe(0.6);         // (3000 - 1200) / 3000
+    });
+
+    it('distinguishes what was not consumed from what is still in the account', () => {
+        // Both are true and they are different numbers; conflating them would
+        // overstate the cash actually available.
+        const rows = [
+            tx('2026-03-01', 3000, { category: 'Salary' }),
+            tx('2026-03-05', -1200, { category: 'Housing' }),
+            tx('2026-03-10', -500, { category: "Kids' trust" })
+        ];
+        const s = summarize(rows, { incomeCategories: ['Salary'], savingsCategories: ["Kids' trust"] });
+        expect(s.net).toBe(1800);           // income minus consumption
+        expect(s.cashRetained).toBe(1300);  // ...minus what was moved out to save
+    });
+
+    it('still shows a savings category in the breakdown, so the money is visible', () => {
+        const rows = [
+            tx('2026-03-01', 3000, { category: 'Salary' }),
+            tx('2026-03-10', -500, { category: "Kids' trust" })
+        ];
+        const s = summarize(rows, { incomeCategories: ['Salary'], savingsCategories: ["Kids' trust"] });
+        expect(s.byCategory).toEqual([{ category: "Kids' trust", amount: 500 }]);
+    });
+
+    it('behaves exactly as before when no category is marked as savings', () => {
+        // The column defaults false, so existing ledgers must be unaffected.
+        const rows = [tx('2026-03-01', 3000, { category: 'Salary' }), tx('2026-03-05', -1200, { category: 'Housing' })];
+        const s = summarize(rows, { incomeCategories: ['Salary'] });
+        expect(s).toMatchObject({ income: 3000, spend: 1200, savedInvested: 0, net: 1800, cashRetained: 1800 });
+    });
+
     it('returns a null savings rate when there is no income to divide by', () => {
         expect(summarize([tx('2026-03-01', -50)]).savingsRate).toBeNull();
     });
@@ -148,6 +193,30 @@ describe('comparePeriods', () => {
         tx('2026-03-06', -500, { category: 'Dining' })
     ];
     const opts = { grain: 'month', period: '2026-03', incomeCategories: ['Salary'] };
+
+    it('carries savings categories into every derived figure', () => {
+        // comparePeriods and buildTrendSeries used to rebuild a narrowed options
+        // object, dropping savingsCategories one layer down — so the headline
+        // counted a trust-fund contribution as spending even though summarize()
+        // handled it correctly.
+        const rows = [
+            tx('2026-03-01', 3000, { category: 'Salary' }),
+            tx('2026-03-05', -1200, { category: 'Housing' }),
+            tx('2026-03-10', -500, { category: 'Trust' })
+        ];
+        const opts = { grain: 'month', period: '2026-03', mode: 'none',
+                       incomeCategories: ['Salary'], savingsCategories: ['Trust'] };
+        const r = comparePeriods(rows, opts);
+        expect(r.current.spend).toBe(1200);
+        expect(r.current.savedInvested).toBe(500);
+        expect(r.current.savingsRate).toBe(0.6);
+
+        const series = buildTrendSeries(rows, {
+            grain: 'month', periods: 1, endPeriod: '2026-03',
+            incomeCategories: ['Salary'], savingsCategories: ['Trust']
+        });
+        expect(series[0].spend).toBe(1200);
+    });
 
     it('compares against the previous period', () => {
         const r = comparePeriods(twoYears, { ...opts, mode: 'previous' });

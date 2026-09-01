@@ -88,6 +88,15 @@
             <div id="simulatorHost"></div>
         </div>
 
+        <!-- ── Categories ──────────────────────────────────────────────── -->
+        <div class="card" id="categoriesSection">
+            <div class="card-header-row">
+                <h2 class="section-heading" data-i18n="spend.categories_manage">Categories</h2>
+                <button class="btn btn-sm btn-ghost-spend" data-act="new-category">+ Add</button>
+            </div>
+            <div id="categoriesList"></div>
+        </div>
+
         <!-- ── Accounts ────────────────────────────────────────────────── -->
         <div class="card" id="accountsSection">
             <div class="card-header-row">
@@ -217,6 +226,20 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="categoryDialog" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="categoryDialogTitle">New category</h3>
+                <button class="modal-close" onclick="spendCloseModal('categoryDialog')">✕</button>
+            </div>
+            <div class="modal-form" id="categoryDialogBody"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="spendCloseModal('categoryDialog')">Cancel</button>
+                <button class="btn btn-success" onclick="spendSubmitCategory()">Save</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="accountDialog" style="display: none;">
         <div class="modal">
             <div class="modal-header">
@@ -254,7 +277,8 @@
         import {
             renderAll, setGrain, stepPeriod, setCompareMode, toggleOneOffs, selectCategory,
             setTxSearch, setTxFilter, setPage, editTx, saveTxEdit, removeTx,
-            showQuickAdd, submitQuickAdd, findTransfers, bindDelegation
+            showQuickAdd, submitQuickAdd, findTransfers, bindDelegation,
+            showCategoryDialog, submitCategory, removeCategory
         } from './spend/ledger.js?v=3.42.1';
         import { categoriseAll, acceptSuggestion, rejectSuggestion, acceptAllConfident }
             from './spend/categorize.js?v=3.42.1';
@@ -286,6 +310,9 @@
         window.spendSubmitAccount = submitAccount;
         window.spendDeleteAccount = removeAccount;
         window.spendCloseModal    = closeModal;
+        window.spendShowCategoryDialog = showCategoryDialog;
+        window.spendSubmitCategory     = submitCategory;
+        window.spendRemoveCategory     = removeCategory;
 
         // ── categorisation ─────────────────────────────────────────────────
         window.spendCategorise = async () => {
