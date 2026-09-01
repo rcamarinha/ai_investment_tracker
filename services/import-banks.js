@@ -701,7 +701,7 @@ export function applyRules(rows = [], rules = []) {
                 try { hit = new RegExp(rule.pattern, 'i').test(haystack); }
                 catch { hit = false; } // a bad saved regex must not break an import
             } else {
-                hit = haystack.includes(normalizeDescription(rule.pattern));
+                hit = matchesTokens(haystack, rule.pattern);
             }
             if (!hit) continue;
             matched++;
@@ -718,6 +718,33 @@ export function applyRules(rows = [], rules = []) {
         return row.category === undefined ? { ...row, category: null } : row;
     });
     return { rows: out, matched, unmatched: out.filter(r => !r.category) };
+}
+
+/**
+ * Does every word of the pattern appear in the text, in order?
+ *
+ * NOT a substring test. `ruleFromCorrection` drops words shorter than three
+ * characters when it builds a pattern, but the text being searched keeps them —
+ * so "COMPRAS C.DEB UBER" became the haystack "compras c deb uber" while the
+ * learned rule was "compras deb uber", and a substring test found nothing.
+ * Portuguese bank descriptions are full of short tokens (C.DEB, S.A, p/), so
+ * correcting a category taught a rule that silently matched no future row —
+ * which is the whole point of the feature.
+ *
+ * Matching on an ordered token subsequence tolerates the dropped words and any
+ * other noise the bank inserts between them, while still requiring the
+ * distinctive words to appear in the right order.
+ */
+export function matchesTokens(haystack, pattern) {
+    const want = normalizeForMatching(pattern).split(' ').filter(Boolean);
+    if (!want.length) return false;
+    const have = String(haystack || '').split(' ').filter(Boolean);
+    let i = 0;
+    for (const token of have) {
+        if (token === want[i]) i++;
+        if (i === want.length) return true;
+    }
+    return false;
 }
 
 /** A manual correction becomes a rule, so the same merchant self-files next time. */

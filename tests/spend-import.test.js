@@ -736,3 +736,49 @@ describe('mergeDetailSource — purity and bounds', () => {
         expect(shape(before)).toEqual(shape(after));
     });
 });
+
+
+describe('rules learned from a correction actually match', () => {
+    it('tolerates the short words the pattern builder drops', () => {
+        // ruleFromCorrection drops words under three characters, but the text
+        // being searched keeps them. A substring test therefore matched NOTHING
+        // for the majority of real Portuguese descriptions — "COMPRAS C.DEB
+        // UBER" searched as "compras c deb uber" against the rule "compras deb
+        // uber". Correcting a category taught a rule that never fired again,
+        // which is the entire point of the feature.
+        const rule = ruleFromCorrection({ description: 'COMPRAS C.DEB UBER' }, 'Transport');
+        expect(rule.pattern).toBe('compras deb uber');
+
+        const rows = [
+            { description: 'COMPRAS C.DEB UBER', amount: -8.9 },
+            { description: 'COMPRAS C.DEB UBER B.', amount: -4.99 },
+            { description: 'COMPRAS C.DEB UBER T', amount: -6.2 }
+        ];
+        expect(applyRules(rows, [rule]).matched).toBe(3);
+    });
+
+    it('still requires every distinctive word, in order', () => {
+        const rule = ruleFromCorrection({ description: 'COMPRAS C.DEB UBER' }, 'Transport');
+        const others = [
+            { description: 'COMPRAS C.DEB APPLE.C', amount: -9.99 },   // no "uber"
+            { description: 'UBER COMPRAS DEB', amount: -5 },           // wrong order
+            { description: 'LEVANTAMENTO ATM', amount: -200 }
+        ];
+        expect(applyRules(others, [rule]).matched).toBe(0);
+    });
+
+    it('does not let a generic prefix swallow unrelated merchants', () => {
+        // "compras deb" alone would match every card purchase in the account.
+        const uber = ruleFromCorrection({ description: 'COMPRAS C.DEB UBER' }, 'Transport');
+        const rows = [
+            { description: 'COMPRAS C.DEB CONTINENTE', amount: -40 },
+            { description: 'COMPRAS C.DEB FARMACIA', amount: -12 }
+        ];
+        expect(applyRules(rows, [uber]).matched).toBe(0);
+    });
+
+    it('matches across noise the bank inserts between the words', () => {
+        const rule = ruleFromCorrection({ description: 'SOLINCA HEALTH CLUB' }, 'Health');
+        expect(applyRules([{ description: 'SOLINCA 4471 HEALTH F CLUB PORTO', amount: -28 }], [rule]).matched).toBe(1);
+    });
+});
