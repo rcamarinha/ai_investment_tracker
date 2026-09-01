@@ -151,7 +151,14 @@ function coverageNote(cmp) {
         return `<div class="coverage-note">Baseline is only partly covered by imported history — the comparison understates it.</div>`;
     }
     if (cmp.aligned) {
-        return `<div class="coverage-note">${cmp.alignLabel} — comparing the first ${cmp.elapsedDays} days of each period, so a part-finished month is not read as a collapse.</div>`;
+        const d = cmp.elapsedDays;
+        // One or two days in, a like-for-like comparison is arithmetically
+        // correct and practically meaningless — a single large charge swings it
+        // hundreds of percent. Say so rather than presenting it as a finding.
+        const caveat = d <= 2
+            ? ` Only ${d} day${d === 1 ? '' : 's'} in, so treat the change as noise.`
+            : '';
+        return `<div class="coverage-note">${cmp.alignLabel} — comparing the first ${d} day${d === 1 ? '' : 's'} of each period, so a part-finished month is not read as a collapse.${caveat}</div>`;
     }
     return '';
 }
