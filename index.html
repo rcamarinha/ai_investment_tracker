@@ -311,7 +311,7 @@
                 for (const r of spendRows || []) {
                     if (r.category === 'transfer') continue;   // reserved: own-account movement
                     const amt = Number(r.amount) || 0;
-                    if (incomeCats.has(r.category) || (amt > 0 && !r.category)) spendIn += Math.abs(amt);
+                    if (incomeCats.has(r.category) || (amt > 0 && !r.category)) spendIn += amt;
                     else spendOut += -amt;                      // refunds net down, same as the module
                 }
 

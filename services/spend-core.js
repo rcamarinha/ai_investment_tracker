@@ -137,7 +137,7 @@ export function summarize(transactions = [], opts = {}) {
         const cat = tx.category || null;
 
         if (incomeCategories.has(cat) || (amt > 0 && !cat)) {
-            income += Math.abs(amt);
+            income += amt;
             continue;
         }
         // Outflow, or a refund against a spend category.
@@ -397,6 +397,7 @@ export function detectInternalTransfers(transactions = [], options = {}) {
     for (const out of outs) {
         for (const inc of ins) {
             if (out.accountId === inc.accountId) continue;
+            if ((out.currency || 'EUR') !== (inc.currency || 'EUR')) continue;
             if (Math.abs(Math.abs(amountOf(out)) - amountOf(inc)) > epsilon) continue;
             const gap = daysBetween(out.date, inc.date);
             if (gap === null || Math.abs(gap) > windowDays) continue;
