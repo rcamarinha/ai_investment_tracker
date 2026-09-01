@@ -267,7 +267,11 @@ export function onTypeChange() {
     if (mat) mat.style.display = type === 'bond' ? 'block' : 'none';
 }
 
+let saving = false;
+
 export async function submit() {
+    if (saving) return;
+
     const name = el('hName').value.trim();
     const bankName = el('hBank').value.trim();
     const value = parseFloat(el('hValue').value);
@@ -302,12 +306,14 @@ export async function submit() {
         currency: 'EUR'
     };
 
+    saving = true;
     try {
         await saveHolding(holding);
         closeModal('holdDialog');
         showToast('Saved.');
         renderAll();
     } catch (err) { showToast('Could not save: ' + err.message, 'error', 7000); }
+    finally { saving = false; }
 }
 
 export async function remove() {

@@ -120,6 +120,29 @@ describe('computeNetWorthEUR', () => {
     it('handles a missing wine value', () => {
         expect(computeNetWorthEUR({ value: 100, excluded: 0 }, null).value).toBe(100);
     });
+
+    it('includes bank holdings in the net worth total', () => {
+        const net = computeNetWorthEUR({ value: 80000, excluded: 0 }, 5000, 157000);
+        expect(net.value).toBeCloseTo(242000, 0);
+        expect(net.partial).toBe(false);
+    });
+
+    it('reports holdings alone (no stocks, no wine) as partial', () => {
+        const net = computeNetWorthEUR(null, 0, 157000);
+        expect(net.value).toBe(157000);
+        expect(net.partial).toBe(true);
+    });
+
+    it('combines wine and holdings when stocks are missing', () => {
+        const net = computeNetWorthEUR(null, 5000, 100000);
+        expect(net.value).toBe(105000);
+        expect(net.partial).toBe(true);
+    });
+
+    it('treats undefined holdingsValue as zero', () => {
+        const net = computeNetWorthEUR({ value: 100, excluded: 0 }, 50);
+        expect(net.value).toBe(150);
+    });
 });
 
 describe('hubAsOfLabel', () => {

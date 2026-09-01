@@ -288,7 +288,8 @@
                         .eq('user_id', userId).gte('date', monthStart).lte('date', monthEnd),
                     sbClient.from('spend_categories').select('name, is_income').eq('user_id', userId),
                     sbClient.from('bank_holdings')
-                        .select('current_value, cost_basis, valued_as_of, archived').eq('user_id', userId)
+                        .select('current_value, cost_basis, valued_as_of, archived, currency')
+                        .eq('user_id', userId).eq('currency', 'EUR')
                 ]);
                 if (snapErr)  console.warn('[hub] snapshots query:', snapErr.message);
                 if (wineErr)  console.warn('[hub] user_wines query:', wineErr.message);
@@ -329,14 +330,9 @@
                     if (holdOldestDays === null || d > holdOldestDays) holdOldestDays = d;
                 }
 
-                const net = computeNetWorthEUR(stockCard, wineValue);
-                // A null net means no usable stock figure; holdings alone are
-                // still worth showing, and stay marked partial.
-                const totalValue = net.value === null
-                    ? (holdValue > 0 ? holdValue : null)
-                    : net.value + holdValue;
+                const net = computeNetWorthEUR(stockCard, wineValue, holdValue);
                 document.getElementById('hubTotalValue').textContent =
-                    hubFmt(totalValue) + (totalValue != null && net.partial ? ' *' : '');
+                    hubFmt(net.value) + (net.value != null && net.partial ? ' *' : '');
                 document.getElementById('hubStockValue').textContent = hubFmt(stockCard ? stockCard.value : null);
                 document.getElementById('hubWineValue').textContent  = hubFmt(wineValue);
 

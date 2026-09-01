@@ -85,7 +85,9 @@ export function summarizeHoldings(holdings = [], options = {}) {
     let total = 0, cost = 0, costKnown = 0, oldestDays = null, oldestDate = null;
     const byType = new Map(), byBank = new Map();
 
+    let skippedCurrency = 0;
     for (const h of active) {
+        if (h.currency && h.currency !== 'EUR') { skippedCurrency++; continue; }
         const value = Number(h.currentValue);
         total += value;
 
@@ -110,8 +112,9 @@ export function summarizeHoldings(holdings = [], options = {}) {
     const gain = cost > 0 ? { absolute: round2(costKnown - cost), pct: round4((costKnown - cost) / cost) } : null;
 
     return {
-        count: active.length,
+        count: active.length - skippedCurrency,
         total: round2(total),
+        skippedCurrency,
         gain,
         costCoverage: total > 0 ? round4(costKnown / total) : 0,
         oldestValuation: { days: oldestDays, date: oldestDate, ...valuationFreshness(oldestDate, today) },
