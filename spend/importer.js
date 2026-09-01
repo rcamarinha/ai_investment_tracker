@@ -26,6 +26,7 @@ import {
     DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
+import { importPdfStatement } from './pdf.js?v=3.42.1';
 
 const el = id => document.getElementById(id);
 
@@ -89,12 +90,8 @@ export async function handleFile(input) {
     state.importAccountId = el('importAccount')?.value || state.accounts[0]?.id;
 
     if (/\.pdf$/i.test(file.name)) {
-        // Honest refusal beats a silent no-op. The PDF path needs the
-        // extract-statement edge function, which is not deployed yet.
-        status(`<div class="review-banner"><span>⚠</span><span>
-            PDF statements aren't supported yet — that path needs the AI extraction service, which isn't deployed.
-            CSV or TSV works today.</span></div>`);
         input.value = '';
+        await runPdfImport(file);
         return;
     }
 
@@ -107,6 +104,45 @@ export async function handleFile(input) {
         status(`<div class="review-banner"><span>⚠</span><span>Could not read that file: ${escapeHTML(err.message)}</span></div>`);
     }
     input.value = '';
+}
+
+/**
+ * PDF statements go to the extraction service.
+ *
+ * Not because a PDF is unreadable in principle — a single-section statement
+ * parses deterministically — but because real statements interleave several
+ * sections with different layouts on the same printed row, and no single line
+ * pattern describes them. Measured on a real one: the deterministic reader
+ * reconciled 14% of rows and correctly refused the rest.
+ *
+ * What arrives back is not trusted. It passes the same contract validator as
+ * every other adapter, then a balance-continuity check against the statement's
+ * own running balance.
+ */
+async function runPdfImport(file) {
+    const accountId = state.importAccountId;
+    const account = state.accounts.find(a => a.id === accountId);
+    const profile = state.profiles.find(p => p.accountId === accountId && p.formatKind === 'pdf');
+
+    status(`<p class="form-helper">Reading ${escapeHTML(file.name)}…</p>`);
+    try {
+        const result = await importPdfStatement(file, {
+            accountId,
+            hint: profile?.pdfHint || null,
+            onProgress: (done, total) => status(
+                `<p class="form-helper">Reading ${escapeHTML(file.name)} — ${done} of ${total} section${total === 1 ? '' : 's'}…</p>`)
+        });
+
+        if (!result.rows.length) {
+            const why = result.errors[0]?.reason || 'Nothing could be read from this document.';
+            status(`<div class="review-banner"><span>⚠</span><span>${escapeHTML(why)}</span></div>`);
+            return;
+        }
+        state.importText = null;
+        ingest(result, { sourceRole: account?.type === 'wallet' ? 'detail' : 'statement' });
+    } catch (err) {
+        status(`<div class="review-banner"><span>⚠</span><span>Could not read that PDF: ${escapeHTML(err.message)}</span></div>`);
+    }
 }
 
 // ── profile resolution ──────────────────────────────────────────────────────
@@ -393,9 +429,19 @@ function showReport() {
     // Say why no mapping was needed. Otherwise a file that imports with no
     // questions looks like the app skipped a step rather than like the format
     // being self-describing.
-    const formatNote = r.format && r.format !== 'csv'
-        ? `<p class="form-helper" style="margin-bottom:10px">Read as <strong>${escapeHTML(r.format.toUpperCase())}</strong> — a standard bank format, so nothing needed configuring.</p>`
-        : '';
+    let formatNote = '';
+    if (r.format === 'pdf') {
+        const chain = r.chain || {};
+        const verdict = chain.checked
+            ? (chain.valid
+                ? `all ${chain.checked} balance checks reconcile`
+                : `${r.flagged} row${r.flagged === 1 ? '' : 's'} flagged — the amount doesn't match the statement's running balance`)
+            : 'this statement prints no running balance, so the amounts could not be cross-checked';
+        formatNote = `<p class="form-helper" style="margin-bottom:10px">
+            Read from PDF${r.provider ? ` by ${escapeHTML(r.provider)}` : ''} — ${escapeHTML(verdict)}.</p>`;
+    } else if (r.format && r.format !== 'csv') {
+        formatNote = `<p class="form-helper" style="margin-bottom:10px">Read as <strong>${escapeHTML(r.format.toUpperCase())}</strong> — a standard bank format, so nothing needed configuring.</p>`;
+    }
 
     status(`
         ${formatNote}

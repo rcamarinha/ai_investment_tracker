@@ -60,6 +60,16 @@ describe('normalizeRow', () => {
         expect(normalizeRow(good).balance).toBeNull();
     });
 
+    it('keeps "no balance shown" distinct from "balance is zero"', () => {
+        // Number(null) is 0 and passes isFinite, so an absent balance would
+        // otherwise enter the continuity check as a real zero — raising false
+        // alarms, or hiding a genuine break.
+        expect(normalizeRow({ ...good, balance: null }).balance).toBeNull();
+        expect(normalizeRow({ ...good, balance: undefined }).balance).toBeNull();
+        expect(normalizeRow({ ...good, balance: '' }).balance).toBeNull();
+        expect(normalizeRow({ ...good, balance: 0 }).balance).toBe(0);
+    });
+
     it('applies defaults without letting them override the row', () => {
         const r = normalizeRow({ ...good, currency: 'GBP' }, { accountId: 'a1', currency: 'EUR' });
         expect(r.accountId).toBe('a1');

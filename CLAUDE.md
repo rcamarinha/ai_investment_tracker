@@ -41,6 +41,12 @@ ai_investment_tracker/
 │       │   └── index.ts        # Edge function: extract trades from unstructured statement text (Revolut PDF / BancoBest)
 │       ├── resolve-tickers/
 │       │   └── index.ts        # Edge function: Gemini(+Google Search)→Claude(+web_search) fallback that finds a priceable ticker (and last-resort grounded price) for symbols all price APIs reject; validated client-side
+│       ├── extract-statement/
+│       │   └── index.ts        # Edge function: bank-statement lines → ledger rows. Gemini 2.5 Flash
+│       │                       # (GEMINI_WINE, shared with wine) primary, Claude Haiku fallback —
+│       │                       # extraction is not reasoning, so the cheap models are correct here.
+│       │                       # Client sends layout-reconstructed LINES, not a flat text dump, and
+│       │                       # re-checks every returned row against the statement's running balance.
 │       ├── quote-proxy/
 │       │   └── index.ts        # Edge function: server-side Yahoo chart quotes (keyless; broad EU coverage incl. Xetra/LSE/Euronext, returns currency) — Tier 4 of fetchStockPrice for EU-listed UCITS ETFs etc. that free API tiers can't quote (Yahoo is CORS-blocked from the browser, hence the proxy)
 │       └── wine-ai/
@@ -308,6 +314,9 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **Edge function auth** — `verify_jwt` is OFF in `config.toml`; auth is handled manually via `supabase.auth.getUser()` inside each function (gateway JWT check is incompatible with `sb_publishable_` keys)
 - **Edge function prompt limits** — Server enforces 15K char max prompts; classification, analysis, and `extract-trades` must batch/truncate on the client side (`importTrades()` chunks statement text to ≤12K)
 - **Never interpolate a value into an `onclick=""` attribute** — an attribute is HTML-decoded by the parser *before* its contents are compiled as JavaScript, so `escapeHTML` does **not** protect that position: a value containing `'` breaks out and executes. Use `data-` attributes with a delegated listener (see `bindDelegation` in `spend/ledger.js`), where values are only ever read back as strings.
+- **PDF statements go through the extraction service, not a parser** — a single-section statement parses deterministically (`services/import-pdf.js` reconstructs printed lines from pdf.js coordinates), but real statements interleave several sections with different layouts on the same printed row. Measured on a real one, a single line pattern reconciled 14% of rows. Do **not** try to fix this by splitting lines on x-gaps: within a row the description→amount gap is as large as the gap between two side-by-side sections, so it strips amounts off legitimate rows — it raised pattern coverage from 33% to 91% while leaving every balance check broken.
+- **Balance continuity is what makes AI-read statements safe** — `balance[n] - balance[n-1] === amount[n]` is a property of the document, not of the extraction, so a hallucinated or mis-signed amount breaks it. Rows that fail are flagged for review, never silently imported. It also selects the right deterministic line pattern: choosing by coverage alone picks the loosest pattern, which reads the balance column as the amount.
+- **`Number(null)` is `0` and passes `isFinite`** — this has bitten three separate times (`isActive`, the row contract's `balance`, `findOneOffs`). "Absent" and "zero" are different facts about money; check for null/undefined/'' explicitly before coercing.
 - **Trades vs positions imports** — `importTrades()` writes the **transaction ledger** (every buy/sell) and then derives positions; `importPositions()` writes a **positions snapshot** only. Re-importing a broker export is safe because `dedupeTrades()` skips already-imported moves. `services/import-brokers.js` must stay **pure** (no DOM/network) — tests import it directly, so don't add a `src/` mirror for it
 - **Batch valuation result matching** — Results from the AI must be matched to bottles by `result.id` (a `Map` keyed by bottle ID), never by positional index. The AI can return fewer items than requested; index-based matching silently applies the wrong valuation to the wrong bottle
 - **Valuation pricing rules** — 6 rules enforced in both single and batch prompts: (1) Portuguese retailers first, (2) 23% IVA on ex-tax sources, (3) exact bottle format, (4) current in-stock only, (5) cross-reference ≥3 sources using median, (6) weight specialist merchants for rare/collectible wines
