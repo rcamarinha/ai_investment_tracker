@@ -529,9 +529,14 @@ export function dedupeSpendRows(rows = [], existing = new Map()) {
         }
         // Repeats inside one file are real, distinct movements — keep them, but
         // suffix the stored fingerprint so the UNIQUE index does not reject them.
+        // The suffix must account for BOTH rows already in the DB and rows seen
+        // earlier in this file, otherwise the Nth fresh row collides with an
+        // existing row's fingerprint and the upsert silently overwrites it.
+        const existingCount = existing.get(fp) || 0;
         const n = seenThisFile.get(fp) || 0;
         seenThisFile.set(fp, n + 1);
-        fresh.push({ ...row, fingerprint: n === 0 ? fp : `${fp}#${n}` });
+        const suffix = existingCount + n;
+        fresh.push({ ...row, fingerprint: suffix === 0 ? fp : `${fp}#${suffix}` });
     }
 
     return { fresh, duplicates };

@@ -142,6 +142,15 @@ describe('summarize', () => {
     it('returns a null savings rate when there is no income to divide by', () => {
         expect(summarize([tx('2026-03-01', -50)]).savingsRate).toBeNull();
     });
+
+    it('reduces income on a salary clawback instead of doubling it', () => {
+        const rows = [
+            tx('2026-03-01', 3000, { category: 'Salary' }),
+            tx('2026-03-15', -3000, { category: 'Salary' })
+        ];
+        const s = summarize(rows, { incomeCategories: ['Salary'] });
+        expect(s.income).toBe(0);
+    });
 });
 
 describe('rollupByPeriod / buildTrendSeries', () => {
@@ -362,6 +371,14 @@ describe('detectInternalTransfers', () => {
         expect(s.income).toBe(2000);
         expect(s.spend).toBe(400);
         expect(s.savingsRate).toBe(0.8);
+    });
+
+    it('does not pair legs with different currencies', () => {
+        const rows = [
+            tx('2026-03-01', -500, { id: 'a', accountId: 'x', currency: 'USD' }),
+            tx('2026-03-01', 500, { id: 'b', accountId: 'y', currency: 'EUR' })
+        ];
+        expect(detectInternalTransfers(rows).pairs).toHaveLength(0);
     });
 });
 

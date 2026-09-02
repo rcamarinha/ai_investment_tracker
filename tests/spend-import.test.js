@@ -343,6 +343,22 @@ describe('dedupe', () => {
         expect(fresh[0].fingerprint).not.toBe(fresh[1].fingerprint); // UNIQUE index would reject a tie
     });
 
+    it('offsets the suffix by the existing count so a new copy does not collide', () => {
+        const threeCopies = Array.from({ length: 3 }, () =>
+            ({ date: '2026-03-31', description: 'ATM', amount: -200, currency: 'EUR' }));
+        const first = dedupeSpendRows(threeCopies, new Map());
+        expect(first.fresh).toHaveLength(3);
+        const existing = buildExistingFingerprints(first.fresh);
+
+        const fourCopies = Array.from({ length: 4 }, () =>
+            ({ date: '2026-03-31', description: 'ATM', amount: -200, currency: 'EUR' }));
+        const second = dedupeSpendRows(fourCopies, existing);
+        expect(second.fresh).toHaveLength(1);
+        expect(second.duplicates).toHaveLength(3);
+        const usedFingerprints = new Set(first.fresh.map(r => r.fingerprint));
+        expect(usedFingerprints.has(second.fresh[0].fingerprint)).toBe(false);
+    });
+
     it('keeps a fingerprint stable once MB WAY has rewritten the description', () => {
         const bankRow = { date: '2026-03-05', description: 'COMPRA MBWAY 12,40', rawDescription: 'COMPRA MBWAY 12,40', amount: -12.4, currency: 'EUR' };
         const before = spendFingerprint(bankRow);
