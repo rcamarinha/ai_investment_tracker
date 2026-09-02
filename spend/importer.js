@@ -470,9 +470,13 @@ function showReport() {
             ${r.chunksFailed === 1 ? 'it are' : 'them are'} missing. Re-importing is safe — anything already added is skipped.</span></div>` : ''}
         ${r.detail && r.detail.total ? `<p class="form-helper">
             ${r.detail.total} line${r.detail.total === 1 ? '' : 's'} in this document itemise another movement
-            (card purchases listed under the card payment). ${r.detail.enriched ? `${r.detail.enriched} improved the
-            description of the movement ${r.detail.enriched === 1 ? 'it belongs' : 'they belong'} to. ` : ''}They are
-            not added as separate transactions, because their money is already in the payment row.</p>` : ''}
+            (card purchases listed under the card payment), so they are not added as separate transactions —
+            their money is already in the payment row.
+            ${r.detail.enriched ? `${r.detail.enriched} improved the description of the payment
+            ${r.detail.enriched === 1 ? 'it belongs' : 'they belong'} to. ` : ''}
+            ${r.detail.unmatched ? `<strong>${r.detail.unmatched}</strong> could not be tied to a payment, so
+            ${r.detail.unmatched === 1 ? 'its detail was' : 'their detail was'} not recorded anywhere —
+            the spending is still counted in the payment total, but not itemised.` : ''}</p>` : ''}
         ${r.flagged ? `<div class="review-banner"><span>⚠</span><span>
             ${r.flagged} row${r.flagged === 1 ? '' : 's'} did not reconcile with the statement's running balance and
             ${r.flagged === 1 ? 'is' : 'are'} marked for review.</span></div>` : ''}

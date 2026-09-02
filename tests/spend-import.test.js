@@ -782,3 +782,30 @@ describe('rules learned from a correction actually match', () => {
         expect(applyRules([{ description: 'SOLINCA 4471 HEALTH F CLUB PORTO', amount: -28 }], [rule]).matched).toBe(1);
     });
 });
+
+// A realistic card bill is one payment plus N purchases. Pass 1 needs an exact
+// 1:1 amount match and pass 2 only searches combinations of up to three, so
+// anything busier than a three-purchase month attaches to nothing. Recording
+// that here so the limit is a known property rather than a surprise.
+describe('card bill enrichment limits', () => {
+    const bill = purchases => {
+        const total = +purchases.reduce((a, b) => a + b, 0).toFixed(2);
+        const statement = [{ accountId: 'a1', date: '2026-07-06', description: 'PAG.CTA.CARTAO',
+                             amount: -total, balance: 1088.51 }];
+        const detail = purchases.map((p, i) => ({ accountId: 'a1', date: '2026-07-05',
+                             description: `MERCHANT ${i + 1}`, amount: -p, balance: null }));
+        return mergeDetailSource(statement, detail, { label: 'card', accountId: 'a1' });
+    };
+
+    it('ties a three-purchase bill to its payment', () => {
+        const r = bill([150.00, 200.49, 205.00]);
+        expect(r.aggregated).toHaveLength(1);
+        expect(r.pending).toHaveLength(0);
+    });
+
+    it('leaves a busier bill entirely unmatched', () => {
+        const r = bill([150, 60.20, 45.10, 88.00, 32.19, 75.00, 40.00, 65.00]);
+        expect(r.aggregated).toHaveLength(0);
+        expect(r.pending).toHaveLength(8);
+    });
+});
