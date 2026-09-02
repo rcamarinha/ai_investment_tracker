@@ -2,10 +2,14 @@
 -- spend-reset.sql — clear imported Spend data so a statement can be re-imported
 --                   from scratch.
 --
+-- Run supabase/maintenance/spend-report.sql FIRST and check the counts.
+--
 -- NOT a migration. It lives outside supabase/migrations/ deliberately: nothing
 -- here should ever run as part of a deploy.
 --
--- Run it in the Supabase SQL editor. STEP 1 only reads; STEP 2 deletes.
+-- The whole file is ONE statement. Paste all of it and run it — do not select
+-- part of it. (The semicolons inside the block belong to the block; a tool that
+-- splits on ";" will cut it into fragments that are not valid on their own.)
 --
 -- Scoped to ONE user by email. The SQL editor runs as the service role, so
 -- auth.uid() is null there and RLS is not in force — the user_id filter in
@@ -14,39 +18,10 @@
 --
 -- bank_holdings is never touched: it is the Holdings module, entered by hand,
 -- and re-typing it is not part of testing an import.
+--
+-- Counts are reported as NOTICEs. If the SQL editor does not show them, run
+-- spend-report.sql again afterwards to confirm the tables are empty.
 -- ============================================================================
-
-
--- ── STEP 1 — look before you delete ─────────────────────────────────────────
--- Read-only. Run this on its own first and check the numbers are the ones you
--- expect to lose.
-
-SELECT
-    t.label,
-    t.rows
-FROM (
-    SELECT 1 AS ord, 'transactions'    AS label, count(*) AS rows FROM spend_transactions   WHERE user_id = (SELECT id FROM auth.users WHERE email = 'rcamarinha@gmail.com')
-    UNION ALL
-    SELECT 2, 'pending details',  count(*) FROM spend_pending_details WHERE user_id = (SELECT id FROM auth.users WHERE email = 'rcamarinha@gmail.com')
-    UNION ALL
-    SELECT 3, 'recurring',        count(*) FROM spend_recurring       WHERE user_id = (SELECT id FROM auth.users WHERE email = 'rcamarinha@gmail.com')
-    UNION ALL
-    SELECT 4, 'bank profiles',    count(*) FROM spend_bank_profiles   WHERE user_id = (SELECT id FROM auth.users WHERE email = 'rcamarinha@gmail.com')
-    UNION ALL
-    SELECT 5, 'rules',            count(*) FROM spend_rules           WHERE user_id = (SELECT id FROM auth.users WHERE email = 'rcamarinha@gmail.com')
-    UNION ALL
-    SELECT 6, 'accounts   (kept by default)',   count(*) FROM spend_accounts   WHERE user_id = (SELECT id FROM auth.users WHERE email = 'rcamarinha@gmail.com')
-    UNION ALL
-    SELECT 7, 'categories (kept by default)',   count(*) FROM spend_categories WHERE user_id = (SELECT id FROM auth.users WHERE email = 'rcamarinha@gmail.com')
-    UNION ALL
-    SELECT 8, 'scenarios  (kept by default)',   count(*) FROM spend_scenarios  WHERE user_id = (SELECT id FROM auth.users WHERE email = 'rcamarinha@gmail.com')
-) t
-ORDER BY t.ord;
-
-
--- ── STEP 2 — delete ─────────────────────────────────────────────────────────
--- Edit the settings at the top of the block, then run the whole block.
--- It is one statement, so it either all applies or none of it does.
 
 DO $$
 DECLARE
