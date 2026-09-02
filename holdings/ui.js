@@ -7,12 +7,12 @@
  * how old it is and where it came from. That is the feature, not decoration.
  */
 
-import state from './state.js?v=3.43.0';
+import state from './state.js?v=3.43.1';
 import {
     escapeHTML, fmtMoney, fmtPct, showToast, showConfirm,
     openModal, closeModal, typeColour
-} from './utils.js?v=3.43.0';
-import { saveHolding, deleteHolding, requireAuth } from './storage.js?v=3.43.0';
+} from './utils.js?v=3.43.1';
+import { saveHolding, deleteHolding, requireAuth } from './storage.js?v=3.43.1';
 import {
     summarizeHoldings, holdingGain, valuationFreshness, maturityStatus, HOLDING_TYPES
 } from '../services/holdings-core.js';

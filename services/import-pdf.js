@@ -126,7 +126,17 @@ export function checkBalanceChain(rows = [], tolerance = 0.011) {
         checked++;
         if (Math.abs((b.balance - a.balance) - b.amount) > tolerance) breaks++;
     }
-    return { checked, breaks, valid: checked > 0 && breaks === 0, ratio: checked ? 1 - breaks / checked : null };
+    // `checked` alone cannot tell "verified" from "unverifiable": one checkable
+    // pair in four hundred rows also yields breaks === 0. `coverage` is the
+    // share of adjacent pairs the document actually let us test, so a caller can
+    // report how much of the parse is vouched for instead of a bare boolean.
+    const pairs = Math.max(rows.length - 1, 0);
+    return {
+        checked, breaks, pairs,
+        coverage: pairs ? checked / pairs : 0,
+        valid: checked > 0 && breaks === 0,
+        ratio: checked ? 1 - breaks / checked : null
+    };
 }
 
 /**

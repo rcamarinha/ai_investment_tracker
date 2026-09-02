@@ -135,3 +135,44 @@ describe('verifyRows — the safety net for model output', () => {
         expect(verifyRows([chainOk[0]]).flagged).toBe(0);
     });
 });
+
+// ── card-detail sections ────────────────────────────────────────────────────
+//
+// Reproduces a real misread: a card purchase printed under the card section was
+// ingested as an account movement. Because those sections print charges without
+// a minus, it landed as +150 INCOME while the €555,49 card payment that already
+// contained it was also counted — overstating income and understating spend at
+// once, from one line.
+describe('card-detail rows', () => {
+    const raw = [
+        { date: '2026-07-06', description: 'TRF.IMED. DE JOSE MANUEL VALGA CAMARINHA', amount: 644.00, balance: 1644.00 },
+        { date: '2026-07-06', description: '6416965-00-PAG.CTA.CARTAO', amount: -555.49, balance: 1088.51 },
+        { date: '2026-07-05', description: 'REVOLUTION SPORT', amount: -150.00, balance: null, role: 'detail' }
+    ];
+
+    it('marks a detail row as detail, not as a statement movement', () => {
+        const { rows } = normalizeAiRows(raw, { accountId: 'a1' });
+        expect(rows.map(r => r.sourceRole)).toEqual(['statement', 'statement', 'detail']);
+    });
+
+    it('keeps the chain intact across an interleaved detail row', () => {
+        // The detail row sits BETWEEN two statement rows. Before the fix it broke
+        // adjacency for both neighbouring pairs, so they went unchecked while the
+        // result still reported valid.
+        const { rows } = normalizeAiRows([raw[0], raw[2], raw[1]], { accountId: 'a1' });
+        const { chain, flagged } = verifyRows(rows);
+        expect(chain.checked).toBe(1);
+        expect(chain.valid).toBe(true);
+        expect(flagged).toBe(0);
+    });
+
+    it('still catches a genuine break once details are excluded', () => {
+        const bad = [
+            { date: '2026-07-06', description: 'A', amount: 644.00, balance: 1644.00 },
+            { date: '2026-07-06', description: 'B', amount: -100.00, balance: 1088.51 } // should be -555.49
+        ];
+        const { rows } = normalizeAiRows(bad, { accountId: 'a1' });
+        const { flagged } = verifyRows(rows);
+        expect(flagged).toBe(1);
+    });
+});
