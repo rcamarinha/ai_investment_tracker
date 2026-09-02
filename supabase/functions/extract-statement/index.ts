@@ -81,12 +81,27 @@ function buildPrompt(statementText: string, hint?: string): string {
 
 Rules:
 - Output ONLY a JSON array. No markdown, no commentary, no preamble.
-- Each element: {"date":"YYYY-MM-DD","description":"<what it was>","amount":<signed number>,"currency":"<ISO code>","balance":<running balance or null>}
+- Each element: {"date":"YYYY-MM-DD","description":"<what it was>","amount":<signed number>,"currency":"<ISO code>","balance":<running balance or null>,"role":"statement"|"detail"}
 - "amount" is SIGNED: negative when money left the account, positive when it arrived. Never output the absolute value.
 - "balance" is the running balance printed on that row, if the statement shows one. Use null when it does not. Do NOT invent it, and never put the balance in "amount".
 - Amounts may use European formatting (1.234,56). Convert to a plain number: 1234.56.
 - Some statements print only day and month. Use the statement period or header to resolve the year. If the year genuinely cannot be determined, omit that row rather than guessing.
-- A statement may contain SEVERAL sections with different layouts (current account, card transactions, funds). Extract movements from all of them.
+- "role" says what the line IS. This matters more than any other field:
+  - "statement" = a movement that changed the ACCOUNT balance. This is the default.
+  - "detail"    = a line that ITEMISES another movement instead of being one itself:
+                  individual purchases listed under a credit-card section, MB WAY or
+                  wallet breakdowns, instalment schedules. The account did not move
+                  separately for these. Their total IS one of the "statement" rows
+                  (typically the card payment), so counting them as movements would
+                  count the same money twice.
+- Decide "role" from STRUCTURE, not wording. A line printed under a card or detail
+  heading is "detail". So is a dated line with no running balance while the movements
+  around it each have one.
+- Sign "detail" rows like everything else: a card PURCHASE is money leaving, so it is
+  NEGATIVE, even where the card section prints it without a minus because the whole
+  section is understood to be charges.
+- Extract every section, but label it. Do not drop the detail lines and do not promote
+  them to movements.
 - IGNORE: opening/closing balance summaries, subtotals, interest-rate tables, legal or marketing text, page headers and footers, and anything that is not a single dated movement.
 - If there are no movements, output [].
 ${hint ? "\nLayout note for this bank: " + hint + "\n" : ""}

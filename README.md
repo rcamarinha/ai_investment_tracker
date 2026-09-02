@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.43.1
+- **Card sections are read as itemisation, not as movements.** A purchase listed under a credit-card section is detail of the card payment already on the statement, so ingesting it added the same money twice — and because those sections print charges without a minus, the duplicate landed as *income*. One line therefore overstated income and understated spend at the same time. Detail lines are still read, because they say what a lump "PAG.CTA.CARTAO" was actually spent on, but they improve the description of the movement they belong to instead of becoming one.
+- **The balance guardrail stopped skipping the rows that needed it most.** Rows with no running balance were passed over silently, and "nothing was checkable" counted as a pass. Detail rows have no balance by nature, so interleaving them also broke the check for the ordinary rows *around* them — a few card lines could leave most of a statement unverified while the import reported that all checks reconciled. Imports now report how many of the possible checks actually ran.
+- **A category cannot contradict the arithmetic.** Money that left the account is never filed as income, whatever confidence the model returns; it goes to review. A refund — a positive amount on a spending category — is still allowed, because that one is real.
+
 ### v3.43.0
 - **Two new tools: Spend and Bank Holdings.** Spend is the flow layer the suite lacked — a transaction ledger, category breakdown, year-on-year comparison, recurring-charge detection and a projection baseline. Bank Holdings covers bonds and funds held at retail banks that no market API can price; roughly €157k that had been invisible to net worth.
 - **Statement import that does not know about any particular bank.** A format is learned once and replayed for free thereafter: OFX/QFX needs no configuration at all (the format is specified, so `TRNAMT` is the amount by definition), CSV/TSV asks you to confirm its columns once, and PDF goes to a cheap extraction service. Verified against a real 971-row export — parsed in full, no AI call, and its running-balance chain reconciles across all 970 adjacent pairs. A statement in a language the alias table has never seen imports without a code change.

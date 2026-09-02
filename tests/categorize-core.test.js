@@ -144,3 +144,32 @@ describe('summarizeRun', () => {
         expect(s).toMatchObject({ skippedTransfer: 12, skippedIncome: 8 });
     });
 });
+
+// A negative amount classed as income is a contradiction, not a low-confidence
+// guess: the real case was a -555,49 card payment suggested as "Other income".
+// Confidence cannot settle it, so the check runs ahead of the threshold.
+describe('sign versus category kind', () => {
+    const income = ['Other income', 'Salary'];
+
+    it('sends an income category on money leaving the account to review', () => {
+        const txs = [{ id: '1', amount: -555.49, description: 'PAG.CTA.CARTAO' }];
+        const res = applyAiResults(txs, [{ id: '1', category: 'Other income', confidence: 0.99 }],
+            { validCategories: [...income, 'Card'], incomeCategories: income });
+        expect(res.applied).toHaveLength(0);
+        expect(res.review[0].reason).toMatch(/money left the account/);
+    });
+
+    it('still applies an income category to money arriving', () => {
+        const txs = [{ id: '1', amount: 644.00, description: 'TRF.IMED.' }];
+        const res = applyAiResults(txs, [{ id: '1', category: 'Other income', confidence: 0.99 }],
+            { validCategories: income, incomeCategories: income });
+        expect(res.applied).toHaveLength(1);
+    });
+
+    it('allows a refund: positive amount on a spend category', () => {
+        const txs = [{ id: '1', amount: 30.00, description: 'REFUND' }];
+        const res = applyAiResults(txs, [{ id: '1', category: 'Groceries', confidence: 0.95 }],
+            { validCategories: ['Groceries'], incomeCategories: income });
+        expect(res.applied).toHaveLength(1);
+    });
+});

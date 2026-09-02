@@ -13,9 +13,9 @@
  * Nothing here files a category the user cannot see and undo.
  */
 
-import state from './state.js?v=3.43.0';
-import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.43.0';
-import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.43.0';
+import state from './state.js?v=3.43.1';
+import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.43.1';
+import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.43.1';
 import { applyRules, ruleFromCorrection } from '../services/import-banks.js';
 import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun }
     from '../services/categorize-core.js';
@@ -100,7 +100,8 @@ export async function categoriseAll({ onProgress } = {}) {
         try {
             const payload = await callCategoriser(toPrompt(batches[i]), categories);
             const { applied, review, unanswered } = applyAiResults(batches[i], payload.results || [], {
-                validCategories: categories
+                validCategories: categories,
+                incomeCategories: incomeCategoryNames()
             });
             allApplied.push(...applied);
             allReview.push(...review);

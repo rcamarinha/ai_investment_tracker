@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.43.0';
-import { escapeHTML, fmtMoney, fmtDate, showToast, openModal, closeModal } from './utils.js?v=3.43.0';
+import state from './state.js?v=3.43.1';
+import { escapeHTML, fmtMoney, fmtDate, showToast, openModal, closeModal } from './utils.js?v=3.43.1';
 import {
     saveTransactions, saveProfile, savePendingDetails, clearPendingDetails, requireAuth
-} from './storage.js?v=3.43.0';
-import { renderAll } from './ledger.js?v=3.43.0';
+} from './storage.js?v=3.43.1';
+import { renderAll } from './ledger.js?v=3.43.1';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.43.0';
+import { importPdfStatement } from './pdf.js?v=3.43.1';
 import { reportHandled } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
@@ -421,7 +421,8 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         flagged: parsed.flagged || 0,
         provider: parsed.provider || null,
         chunks: parsed.chunks || 0,
-        chunksFailed: parsed.chunksFailed || 0
+        chunksFailed: parsed.chunksFailed || 0,
+        detail: parsed.detail || null
     };
     showReport();
 }
@@ -442,9 +443,12 @@ function showReport() {
     let formatNote = '';
     if (r.format === 'pdf') {
         const chain = r.chain || {};
+        // How MUCH of the parse is vouched for, not just whether the checks that
+        // ran passed. One checkable pair in four hundred rows also yields "all
+        // checks reconcile", which reads as verification and is not.
         const verdict = chain.checked
             ? (chain.valid
-                ? `all ${chain.checked} balance checks reconcile`
+                ? `${chain.checked} of ${chain.pairs} balance checks reconcile`
                 : `${r.flagged} row${r.flagged === 1 ? '' : 's'} flagged — the amount doesn't match the statement's running balance`)
             : 'this statement prints no running balance, so the amounts could not be cross-checked';
         formatNote = `<p class="form-helper" style="margin-bottom:10px">
@@ -464,6 +468,11 @@ function showReport() {
         ${r.chunksFailed ? `<div class="review-banner"><span>⚠</span><span>
             ${r.chunksFailed} of ${r.chunks} sections of this document could not be read, so transactions from
             ${r.chunksFailed === 1 ? 'it are' : 'them are'} missing. Re-importing is safe — anything already added is skipped.</span></div>` : ''}
+        ${r.detail && r.detail.total ? `<p class="form-helper">
+            ${r.detail.total} line${r.detail.total === 1 ? '' : 's'} in this document itemise another movement
+            (card purchases listed under the card payment). ${r.detail.enriched ? `${r.detail.enriched} improved the
+            description of the movement ${r.detail.enriched === 1 ? 'it belongs' : 'they belong'} to. ` : ''}They are
+            not added as separate transactions, because their money is already in the payment row.</p>` : ''}
         ${r.flagged ? `<div class="review-banner"><span>⚠</span><span>
             ${r.flagged} row${r.flagged === 1 ? '' : 's'} did not reconcile with the statement's running balance and
             ${r.flagged === 1 ? 'is' : 'are'} marked for review.</span></div>` : ''}

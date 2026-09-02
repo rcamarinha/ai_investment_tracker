@@ -85,6 +85,7 @@ function median(values) {
 export function applyAiResults(transactions = [], results = [], options = {}) {
     const threshold = options.confidenceThreshold ?? DEFAULT_CONFIDENCE;
     const validCategories = options.validCategories ? new Set(options.validCategories) : null;
+    const incomeCategories = new Set(options.incomeCategories ?? []);
     const byId = new Map();
     for (const r of results) if (r && r.id !== undefined && r.id !== null) byId.set(String(r.id), r);
 
@@ -100,6 +101,16 @@ export function applyAiResults(transactions = [], results = [], options = {}) {
         if (validCategories && !validCategories.has(result.category)) {
             review.push({ ...tx, suggestedCategory: result.category, confidence: result.confidence ?? null,
                 reason: 'suggested a category that does not exist' });
+            continue;
+        }
+
+        // Money that LEFT the account is not income, whatever the model scored it.
+        // This is arithmetic, not preference, so it outranks confidence entirely.
+        // The reverse is deliberately not enforced: a positive amount on a spend
+        // category is a refund, which is legitimate and common.
+        if (incomeCategories.has(result.category) && Number(tx.amount) < 0) {
+            review.push({ ...tx, suggestedCategory: result.category, confidence: result.confidence ?? null,
+                reason: 'classed as income but the money left the account' });
             continue;
         }
 

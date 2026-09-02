@@ -18,11 +18,12 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.43.0';
-import { escapeHTML } from './utils.js?v=3.43.0';
+import state from './state.js?v=3.43.1';
+import { escapeHTML } from './utils.js?v=3.43.1';
 import { groupIntoLines, findCandidateLines, detectStatementYear, checkBalanceChain }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
+import { mergeDetailSource } from '../services/import-banks.js';
 
 /** Characters per request. The server rejects above 15K. */
 const CHUNK_CHARS = 12000;
@@ -163,7 +164,10 @@ export function normalizeAiRows(rawRows = [], { accountId, currency = 'EUR', sou
             currency: raw?.currency || currency,
             balance: raw?.balance ?? null,
             source,
-            sourceRole: 'statement'
+            // The model's structural call, not a guess from the wording. A card
+            // purchase listed under the card section is 'detail': its money is
+            // already in the statement row that pays the card.
+            sourceRole: raw?.role === 'detail' ? 'detail' : 'statement'
         });
         const { ok, errors } = validateRow(candidate);
         if (ok) rows.push(candidate);
@@ -181,14 +185,23 @@ export function normalizeAiRows(rawRows = [], { accountId, currency = 'EUR', sou
  * dropped — the movement probably happened, we just cannot vouch for the number.
  */
 export function verifyRows(rows = []) {
-    const chain = checkBalanceChain(rows);
-    if (chain.valid || chain.checked === 0) {
-        return { rows, chain, flagged: 0 };
-    }
+    // Detail rows are excluded before the chain is built, not skipped inside it.
+    // They carry no running balance by nature, and leaving them interleaved
+    // breaks ADJACENCY for the statement rows around them: every pair touching a
+    // detail row was silently passed over, so a handful of card lines could
+    // disable verification for most of the document while still reporting valid.
+    const statementRows = rows.filter(r => r.sourceRole !== 'detail');
+    const chain = checkBalanceChain(statementRows);
+    if (chain.valid) return { rows, chain, flagged: 0 };
+
     let flagged = 0;
-    const out = rows.map((row, i) => {
-        if (i === 0 || row.balance === null || rows[i - 1].balance === null) return row;
-        const expected = row.balance - rows[i - 1].balance;
+    let prev = null;
+    const out = rows.map(row => {
+        if (row.sourceRole === 'detail') return row;
+        const before = prev;
+        prev = row;
+        if (!before || row.balance === null || before.balance === null) return row;
+        const expected = row.balance - before.balance;
         if (Math.abs(expected - row.amount) <= 0.011) return row;
         flagged++;
         return { ...row, needsReview: true, note: 'amount does not reconcile with the statement balance' };
@@ -247,12 +260,34 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     // Chronological, so the balance chain is checked in the order the statement
     // printed it rather than the order the model happened to emit.
     normalized.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    const { rows, chain, flagged } = verifyRows(normalized);
+    const { rows: verified, chain, flagged } = verifyRows(normalized);
+
+    // Detail lines never enter the ledger as movements. The card bill is already
+    // one statement row; adding its itemisation alongside counts the same money
+    // twice, and card sections print charges unsigned, so those duplicates land
+    // as INCOME — overstating income and understating spend at the same time.
+    //
+    // They are still worth reading: the itemisation says what a lump
+    // "PAG.CTA.CARTAO" was actually spent on, which is the best categorisation
+    // signal in the document. So they go through the same merge path the MB WAY
+    // detail export uses — improving the wording of the row that already exists,
+    // never creating one.
+    const detailRows = verified.filter(r => r.sourceRole === 'detail');
+    const statementRows = verified.filter(r => r.sourceRole !== 'detail');
+
+    let rows = statementRows, enrichedCount = 0, unmatchedDetail = detailRows.length;
+    if (detailRows.length) {
+        const merge = mergeDetailSource(statementRows, detailRows, { label: 'card', accountId });
+        rows = merge.merged;
+        enrichedCount = merge.enriched.length + merge.aggregated.length;
+        unmatchedDetail = merge.pending.length;
+    }
 
     return {
         rows, errors, parsed: rows.length, skipped: errors.length,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
-        chain, flagged, statementYear: year
+        chain, flagged, statementYear: year,
+        detail: { total: detailRows.length, enriched: enrichedCount, unmatched: unmatchedDetail }
     };
 }
 
