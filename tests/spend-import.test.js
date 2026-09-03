@@ -4,7 +4,7 @@ import {
     locateHeaderBySignature,
     parseStyledNumber, detectDecimalStyle, detectDateFormat, parseDateWithFormat,
     spendFingerprint, buildExistingFingerprints, dedupeSpendRows,
-    mergeDetailSource, applyRules, ruleFromCorrection, DATE_FORMATS
+    mergeDetailSource, applyRules, ruleFromCorrection, matchesTokens, DATE_FORMATS
 } from '../services/import-banks.js';
 
 // ── fixtures: shaped like the real thing, preamble rows and all ─────────────
@@ -780,5 +780,50 @@ describe('rules learned from a correction actually match', () => {
     it('matches across noise the bank inserts between the words', () => {
         const rule = ruleFromCorrection({ description: 'SOLINCA HEALTH CLUB' }, 'Health');
         expect(applyRules([{ description: 'SOLINCA 4471 HEALTH F CLUB PORTO', amount: -28 }], [rule]).matched).toBe(1);
+    });
+});
+
+// ── matchesTokens — ordered subsequence matching ─────────────────────────────
+//
+// This function is the core of the rule-matching bug fix ("Fix learned rules
+// that could never match"). The old implementation used substring search, so
+// "compras deb uber" never matched "compras c deb uber" because the dropped
+// short tokens left a gap. The replacement requires every token of the pattern
+// to appear in the haystack IN ORDER, tolerating arbitrary text between them.
+describe('matchesTokens', () => {
+    it('returns false for an empty pattern', () => {
+        expect(matchesTokens('compras uber', '')).toBe(false);
+    });
+
+    it('returns false for an empty haystack', () => {
+        expect(matchesTokens('', 'uber')).toBe(false);
+    });
+
+    it('matches when every token is present in order', () => {
+        expect(matchesTokens('compras deb uber', 'compras deb uber')).toBe(true);
+    });
+
+    it('tolerates extra tokens between the pattern words', () => {
+        // The bank inserts "C.DEB" between "compras" and "uber", which
+        // normalises to a short token ("c") and is dropped by ruleFromCorrection.
+        // matchesTokens must treat it as noise, not a mismatch.
+        expect(matchesTokens('compras c deb uber', 'compras deb uber')).toBe(true);
+    });
+
+    it('rejects tokens that appear in the wrong order', () => {
+        // Ordered subsequence: "uber compras deb" has all three words but not
+        // in the sequence the pattern requires.
+        expect(matchesTokens('uber compras deb', 'compras deb uber')).toBe(false);
+    });
+
+    it('rejects a partial match where not all tokens are present', () => {
+        expect(matchesTokens('compras deb apple', 'compras deb uber')).toBe(false);
+    });
+
+    it('normalises the pattern before matching (caller pre-normalises the haystack)', () => {
+        // applyRules normalises the haystack before passing it to matchesTokens.
+        // The function normalises the pattern itself, so an un-normalised pattern
+        // (e.g. a user-supplied correction stored in a rule) still matches.
+        expect(matchesTokens('compras c deb uber', 'COMPRAS DEB UBER')).toBe(true);
     });
 });

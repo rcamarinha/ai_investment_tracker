@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     groupIntoLines, findCandidateLines, proposeLinePattern, detectStatementYear,
-    parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
+    parseWithLineProfile, buildPdfDraft, LINE_PATTERNS, checkBalanceChain
 } from '../services/import-pdf.js';
 
 // pdf.js item shape: { str, transform: [a,b,c,d,x,y] }
@@ -187,5 +187,77 @@ describe('buildPdfDraft', () => {
     it('reports failure rather than a bad guess on an unreadable document', () => {
         expect(buildPdfDraft([{ text: 'scanned image, no text', xs: [], y: 0 }]))
             .toMatchObject({ ok: false, matched: 0 });
+    });
+});
+
+// ── checkBalanceChain — coverage accounting ──────────────────────────────────
+//
+// The fix in "Read card sections as itemisation, not as movements" added the
+// `pairs` and `coverage` fields so callers can distinguish "nothing was
+// checkable" from "everything checked and passed". Without this distinction,
+// interleaved detail rows (which carry null balance) could disable verification
+// for the surrounding statement rows while `valid` still appeared true because
+// `checked === 0 && breaks === 0`.
+describe('checkBalanceChain — coverage accounting', () => {
+    const row = (amount, balance) => ({ amount, balance });
+
+    it('reports zero pairs and zero coverage for an empty statement', () => {
+        expect(checkBalanceChain([])).toMatchObject({
+            checked: 0, breaks: 0, pairs: 0, coverage: 0, valid: false, ratio: null
+        });
+    });
+
+    it('reports zero pairs for a single-row statement (nothing to compare)', () => {
+        expect(checkBalanceChain([row(-10, 990)])).toMatchObject({
+            checked: 0, breaks: 0, pairs: 0, coverage: 0, valid: false, ratio: null
+        });
+    });
+
+    it('reports full coverage when every adjacent pair has a balance', () => {
+        const rows = [row(-10, 990), row(100, 1090)];
+        // 1090 - 990 = 100 = b.amount ✓
+        expect(checkBalanceChain(rows)).toMatchObject({
+            checked: 1, breaks: 0, pairs: 1, coverage: 1, valid: true, ratio: 1
+        });
+    });
+
+    it('reports zero coverage when all balances are null — the "nothing checkable" case', () => {
+        // This is the regression guard for the pre-fix behaviour: `checked === 0`
+        // and `breaks === 0` used to produce `valid: false` purely by coincidence,
+        // but a caller testing `breaks === 0` alone would treat it as verified.
+        // `coverage: 0` makes the unverifiable state explicit.
+        const rows = [row(-10, null), row(-20, null), row(100, null)];
+        const r = checkBalanceChain(rows);
+        expect(r.pairs).toBe(2);
+        expect(r.checked).toBe(0);
+        expect(r.coverage).toBe(0);
+        expect(r.valid).toBe(false);
+    });
+
+    it('reports fractional coverage when only some pairs can be checked', () => {
+        // Row 2 has a null balance — the pairs around it are uncheckable.
+        const rows = [row(-10, 990), row(-10, 980), row(-20, null), row(100, 1000)];
+        // Pair (0,1): 980 - 990 = -10 ✓ → checked
+        // Pair (1,2): b.balance null → skip
+        // Pair (2,3): a.balance null → skip
+        const r = checkBalanceChain(rows);
+        expect(r.pairs).toBe(3);
+        expect(r.checked).toBe(1);
+        expect(r.coverage).toBeCloseTo(1 / 3);
+        expect(r.valid).toBe(true);   // the one checkable pair is clean
+    });
+
+    it('reports a break when the amount contradicts the balance delta', () => {
+        const rows = [row(-10, 990), row(-20, 970)];
+        // 970 - 990 = -20, but amount = -20 → actually this is CORRECT
+        // Let's use a wrong amount instead:
+        const broken = [row(-10, 990), row(-10, 970)];
+        // 970 - 990 = -20 ≠ -10
+        const r = checkBalanceChain(broken);
+        expect(r.checked).toBe(1);
+        expect(r.breaks).toBe(1);
+        expect(r.coverage).toBe(1);
+        expect(r.valid).toBe(false);
+        expect(r.ratio).toBe(0);
     });
 });

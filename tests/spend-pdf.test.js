@@ -163,6 +163,12 @@ describe('card-detail rows', () => {
         const { chain, flagged } = verifyRows(rows);
         expect(chain.checked).toBe(1);
         expect(chain.valid).toBe(true);
+        // Detail rows are stripped before checkBalanceChain runs, leaving exactly
+        // 2 statement rows → 1 pair. All pairs have non-null balances, so coverage
+        // is 1.0. Before the fix, the detail row broke adjacency so checked was 0
+        // and coverage was 0 — "nothing verifiable" masquerading as "passed".
+        expect(chain.pairs).toBe(1);
+        expect(chain.coverage).toBe(1);
         expect(flagged).toBe(0);
     });
 
