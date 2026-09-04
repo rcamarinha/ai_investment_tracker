@@ -4,7 +4,7 @@ import {
     locateHeaderBySignature,
     parseStyledNumber, detectDecimalStyle, detectDateFormat, parseDateWithFormat,
     spendFingerprint, buildExistingFingerprints, dedupeSpendRows,
-    mergeDetailSource, expandCardDetail, markCardSettlements, applyRules, ruleFromCorrection, DATE_FORMATS
+    mergeDetailSource, expandCardDetail, markCardSettlements, planCardRouting, applyRules, ruleFromCorrection, DATE_FORMATS
 } from '../services/import-banks.js';
 
 // ── fixtures: shaped like the real thing, preamble rows and all ─────────────
@@ -932,5 +932,42 @@ describe('markCardSettlements', () => {
     it('leaves a row the user already called a transfer', () => {
         const already = [{ ...statement[0], category: 'transfer' }];
         expect(markCardSettlements(already, detail).linked).toHaveLength(0);
+    });
+});
+
+// One statement PDF describes two accounts. Routing the card section to its own
+// linked account is what stops the spending and its repayment landing in the
+// same ledger, where they double-count.
+describe('planCardRouting', () => {
+    const checking = { id: 'chk', type: 'checking', label: 'Bankinter à ordem' };
+    const card     = { id: 'c1',  type: 'card', label: 'Bankinter Classic ...2061', linkedAccountId: 'chk' };
+
+    it('matches a card by the digits printed in the heading', () => {
+        const [p] = planCardRouting(['******042061****'], [checking, card], 'chk');
+        expect(p).toMatchObject({ action: 'use', accountId: 'c1' });
+    });
+
+    it('falls back to the single card linked to the account being imported', () => {
+        const plain = { ...card, label: 'My credit card' };
+        const [p] = planCardRouting(['bkcf'], [checking, plain], 'chk');
+        expect(p).toMatchObject({ action: 'use', accountId: 'c1' });
+    });
+
+    it('proposes a card account when none exists', () => {
+        const [p] = planCardRouting(['042061'], [checking], 'chk');
+        expect(p.action).toBe('create');
+        expect(p.proposal).toMatchObject({ type: 'card', linkedAccountId: 'chk' });
+    });
+
+    it('refuses rather than guessing between two linked cards', () => {
+        const c2 = { id: 'c2', type: 'card', label: 'Second card', linkedAccountId: 'chk' };
+        const [p] = planCardRouting(['bkcf'], [checking, { ...card, label: 'First card' }, c2], 'chk');
+        expect(p.action).toBe('ambiguous');
+        expect(p.candidates).toHaveLength(2);
+    });
+
+    it('ignores an archived card', () => {
+        const [p] = planCardRouting(['042061'], [checking, { ...card, archived: true }], 'chk');
+        expect(p.action).toBe('create');
     });
 });

@@ -97,9 +97,16 @@ Rules:
 - Decide "role" from STRUCTURE, not wording. A line printed under a card or detail
   heading is "detail". So is a dated line with no running balance while the movements
   around it each have one.
-- Sign "detail" rows like everything else: a card PURCHASE is money leaving, so it is
-  NEGATIVE, even where the card section prints it without a minus because the whole
-  section is understood to be charges.
+- Sign "detail" rows from the CARDHOLDER's point of view, not from the way the section
+  prints them:
+  - a card PURCHASE is money leaving, so NEGATIVE — even where the section prints it
+    without a minus because the whole section is understood to be charges;
+  - a PAYMENT to the card, a refund or a reversal is money coming back, so POSITIVE —
+    even where the section prints it with a minus, which many statements do because a
+    minus there means "reduces what you owe".
+  A card section often states its own convention in a footnote such as "(-) significa
+  pagamentos". Read that as a statement about the printing, and still output the
+  cardholder sign. Getting this backwards makes a repayment look like a purchase.
 - "group" applies to "detail" rows only, and is null everywhere else. Use whatever
   identifies the section the line was printed under — the card number, the last four
   digits, or the card name as printed. Every line under the same heading MUST get the

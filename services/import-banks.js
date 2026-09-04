@@ -925,3 +925,50 @@ export function markCardSettlements(statementRows = [], detailRows = [], options
 
     return { rows, linked };
 }
+
+/**
+ * Decide which account a card section's rows belong to.
+ *
+ * A single statement PDF describes two accounts: the current account and the
+ * card. Importing both into the account the user picked is what forces the
+ * spending and its repayment into one ledger, where they double-count unless
+ * something marks the repayment. Routing the card section to its own linked
+ * account removes that class of error instead of correcting it afterwards.
+ *
+ * Inference, not a question. The card is identified in the section heading, and
+ * asking on every import defeats the point — the value is that this decision
+ * stops being the user's to make. An existing linked card account is reused; a
+ * missing one is proposed, never silently assumed.
+ *
+ * Ambiguity is refused rather than guessed: with two card accounts linked to the
+ * same current account and nothing distinguishing them, routing to the wrong one
+ * puts real spending on the wrong card.
+ */
+export function planCardRouting(groups = [], accounts = [], importAccountId = null) {
+    const cards = accounts.filter(a => a.type === 'card' && !a.archived);
+    const linked = cards.filter(a => a.linkedAccountId === importAccountId);
+    const norm = v => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    return groups.map(group => {
+        const key = norm(group);
+        // A card number in the heading is the strongest signal: match it against
+        // any card account whose label carries the same digits.
+        const digits = String(group ?? '').replace(/\D/g, '');
+        const byNumber = digits.length >= 4
+            ? cards.filter(a => String(a.label ?? '').replace(/\D/g, '').includes(digits.slice(-4)))
+            : [];
+        if (byNumber.length === 1) return { group, action: 'use', accountId: byNumber[0].id };
+        if (byNumber.length > 1) return { group, action: 'ambiguous', candidates: byNumber.map(a => a.id) };
+
+        const byLabel = cards.filter(a => norm(a.label).includes(key) && key.length >= 3);
+        if (byLabel.length === 1) return { group, action: 'use', accountId: byLabel[0].id };
+
+        if (linked.length === 1) return { group, action: 'use', accountId: linked[0].id };
+        if (linked.length > 1) return { group, action: 'ambiguous', candidates: linked.map(a => a.id) };
+
+        return {
+            group, action: 'create',
+            proposal: { type: 'card', label: `Card ${group}`.slice(0, 60), linkedAccountId: importAccountId }
+        };
+    });
+}
