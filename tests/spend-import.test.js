@@ -880,3 +880,14 @@ describe('expandCardDetail', () => {
         expect(r.expanded).toHaveLength(1);
     });
 });
+
+// enriched_from is an existing column, so this survives the round trip to the
+// database while expandedFrom (which has no column) does not.
+it('marks an expanded row as card-derived in a persisted field', () => {
+    const settlement = { accountId: 'a1', date: '2026-03-20', description: 'Cartoes bkcf',
+                         rawDescription: 'Cartoes bkcf', amount: -150.00, balance: 100 };
+    const p = [{ accountId: 'a1', date: '2026-03-05', description: 'GALP', amount: -150.00,
+                 detailGroup: 'bkcf', balance: null }];
+    const row = expandCardDetail([settlement], p).rows[0];
+    expect(row.enrichedFrom).toBe('card');
+});

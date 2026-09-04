@@ -849,6 +849,10 @@ export function expandCardDetail(statementRows = [], detailRows = [], options = 
             // as detail by anything downstream.
             sourceRole: 'statement',
             expandedFrom: settlement.rawDescription || settlement.description,
+            // Persisted, unlike expandedFrom: `enriched_from` is an existing
+            // column, so the ledger keeps the fact that this row came out of a
+            // card section without needing a migration for it.
+            enrichedFrom: options.label || 'card',
             // Not on the running chain: the settlement was. Leaving a balance
             // here would put a number into the continuity check that the
             // document never printed against this row.
