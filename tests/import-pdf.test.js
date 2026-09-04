@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     groupIntoLines, findCandidateLines, proposeLinePattern, detectStatementYear,
-    parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
+    parseWithLineProfile, buildPdfDraft, LINE_PATTERNS, checkBalanceChain
 } from '../services/import-pdf.js';
 
 // pdf.js item shape: { str, transform: [a,b,c,d,x,y] }
@@ -187,5 +187,62 @@ describe('buildPdfDraft', () => {
     it('reports failure rather than a bad guess on an unreadable document', () => {
         expect(buildPdfDraft([{ text: 'scanned image, no text', xs: [], y: 0 }]))
             .toMatchObject({ ok: false, matched: 0 });
+    });
+});
+
+// ── checkBalanceChain — coverage accounting ──────────────────────────────────
+//
+// The chain verifies that balance[n] - balance[n-1] === amount[n]. Its value
+// is the pairs/checked/coverage output, which drives verifyRows and the
+// import review decision. "Nothing checked" must never render as "valid".
+describe('checkBalanceChain — coverage accounting', () => {
+    const row = (amount, balance) => ({ amount, balance });
+
+    it('returns zero coverage for an empty or single-row statement', () => {
+        expect(checkBalanceChain([])).toMatchObject({
+            pairs: 0, checked: 0, coverage: 0, valid: false, ratio: null
+        });
+        expect(checkBalanceChain([row(-10, 990)])).toMatchObject({
+            pairs: 0, checked: 0, coverage: 0, valid: false, ratio: null
+        });
+    });
+
+    it('returns full coverage and valid=true when every pair reconciles', () => {
+        const rows = [row(-10, 990), row(-20, 970)];
+        expect(checkBalanceChain(rows)).toMatchObject({
+            pairs: 1, checked: 1, coverage: 1, valid: true
+        });
+    });
+
+    it('returns zero checked — not "valid" — when all balances are null', () => {
+        // The regression: verifyRows used to treat "nothing checked" as a pass.
+        // A statement where the model omitted all balances must not be imported
+        // as verified.
+        const nullRows = [row(-10, null), row(-20, null), row(100, null)];
+        const r = checkBalanceChain(nullRows);
+        expect(r.checked).toBe(0);
+        expect(r.coverage).toBe(0);
+        expect(r.valid).toBe(false);
+    });
+
+    it('reports fractional coverage when some balances are null', () => {
+        // Two good pairs, one skipped because a balance is null.
+        const rows = [row(-10, 990), row(-20, 970), row(null, null), row(100, 1070)];
+        const r = checkBalanceChain(rows);
+        expect(r.pairs).toBe(3);
+        expect(r.checked).toBeGreaterThan(0);
+        expect(r.checked).toBeLessThan(r.pairs);
+        expect(r.coverage).toBeGreaterThan(0);
+        expect(r.coverage).toBeLessThan(1);
+    });
+
+    it('sets valid=false and records the break when a pair fails', () => {
+        const rows = [row(-10, 990), row(999, 970)];   // 999 should be -20
+        const r = checkBalanceChain(rows);
+        expect(r.valid).toBe(false);
+        expect(r.checked).toBe(1);
+        expect(r.breaks).toBeGreaterThanOrEqual(1);
+        expect(r.coverage).toBe(1);                    // checked/pairs, not breaks/pairs
+        expect(r.ratio).toBe(0);                       // all checked pairs failed
     });
 });
