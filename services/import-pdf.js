@@ -110,6 +110,49 @@ export function findCandidateLines(lines = []) {
 }
 
 /**
+ * Lines that look like a section heading, so the structure of the document
+ * survives the filter that keeps only transaction rows.
+ *
+ * This matters more than it sounds. Extraction is asked to tell an account
+ * movement from a card purchase by WHERE the row is printed — under a card
+ * heading, or not. Keeping only dated rows deleted every heading before the
+ * model saw one, so the card section arrived as a run of anonymous dated rows
+ * indistinguishable from account movements. The classification could not
+ * succeed, because the evidence it needed had already been thrown away.
+ *
+ * Deliberately language-neutral: no bank names and no Portuguese keywords. A
+ * heading is recognised by shape — predominantly upper case, no money on the
+ * line, and transaction rows following it — so "DETALHE DAS COMPRAS", "CARD
+ * TRANSACTIONS" and "MOVIMIENTOS DE TARJETA" all qualify without a word list to
+ * maintain per bank.
+ */
+export function findSectionHeadings(lines = [], options = {}) {
+    const lookahead = options.lookahead ?? 15;
+    const lead = new RegExp(`^${D_SLASH}\\b`);
+    const money = /\d[\d.,]*,\d{2}|\d[\d,]*\.\d{2}/;
+
+    const isCandidate = i => lines[i] && lead.test(lines[i].text);
+
+    return lines.filter((l, i) => {
+        const text = (l.text || '').trim();
+        if (!text || text.length > 100) return false;
+        if (lead.test(text)) return false;          // a dated row, not a heading
+        if (money.test(text)) return false;         // carries a figure: a total or a row
+
+        const letters = text.replace(/[^A-Za-zÀ-ÿ]/g, '');
+        if (letters.length < 3) return false;
+        const upper = letters.replace(/[^A-ZÀ-Þ]/g, '').length;
+        if (upper / letters.length < 0.6) return false;
+
+        // A heading introduces something. Without this, page furniture printed
+        // in caps ("PAG. 2 DE 6") would be kept on every page.
+        for (let j = i + 1; j <= i + lookahead && j < lines.length; j++)
+            if (isCandidate(j)) return true;
+        return false;
+    });
+}
+
+/**
  * Does a pattern's own output reconcile against the statement's running balance?
  *
  * This is the difference between a pattern that fits and a pattern that is

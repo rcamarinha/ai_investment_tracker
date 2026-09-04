@@ -474,6 +474,10 @@ function showReport() {
             was actually bought instead of one lump settlement. The total is unchanged. ` : ''}
             ${r.detail.enriched ? `${r.detail.enriched} improved the description of the payment
             ${r.detail.enriched === 1 ? 'it belongs' : 'they belong'} to. ` : ''}
+            ${r.detail.promoted ? `<strong>${r.detail.promoted}</strong> card purchase${r.detail.promoted === 1 ? '' : 's'}
+            belong to a card period that this statement does not settle — on a credit card the payment shown
+            covers the previous month. They were imported as spending and flagged, because they are the money.
+            Mark the card settlement row as a <em>transfer</em> so the same spending is not counted twice. ` : ''}
             ${r.detail.unmatched ? `<strong>${r.detail.unmatched}</strong> could not be tied to a payment, so
             ${r.detail.unmatched === 1 ? 'its detail was' : 'their detail was'} not recorded — the spending is still
             counted in the payment total, but not itemised.` : ''}</p>` : ''}

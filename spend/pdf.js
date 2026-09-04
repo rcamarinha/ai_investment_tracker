@@ -20,7 +20,7 @@
 
 import state from './state.js?v=3.44.0';
 import { escapeHTML } from './utils.js?v=3.44.0';
-import { groupIntoLines, findCandidateLines, detectStatementYear, checkBalanceChain }
+import { groupIntoLines, findCandidateLines, findSectionHeadings, detectStatementYear, checkBalanceChain }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
 import { mergeDetailSource, expandCardDetail } from '../services/import-banks.js';
@@ -65,10 +65,17 @@ export async function extractPdfLines(file) {
  */
 export function prefilterLines(lines = []) {
     const candidates = new Set(findCandidateLines(lines).map(l => l.text));
+    // Section headings are kept alongside the rows, IN DOCUMENT ORDER, because
+    // the model is asked to classify a row by the section it sits under. Filter
+    // them out and a card purchase is just another dated line — the evidence
+    // needed to tell it from an account movement is gone before extraction runs.
+    const headings = new Set(findSectionHeadings(lines).map(l => l.text));
     // Header context: the first lines of the document usually carry the
     // statement period, which is how a row printed as "31/07" gets its year.
     const header = lines.slice(0, 12).map(l => l.text);
-    const body = lines.filter(l => candidates.has(l.text)).map(l => l.text);
+    const body = lines
+        .filter(l => candidates.has(l.text) || headings.has(l.text))
+        .map(l => l.text);
     return { header, body, year: detectStatementYear(lines) };
 }
 
@@ -276,7 +283,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     const statementRows = verified.filter(r => r.sourceRole !== 'detail');
 
     let rows = statementRows;
-    let itemised = 0, enrichedCount = 0, unmatchedDetail = 0;
+    let itemised = 0, enrichedCount = 0, unmatchedDetail = 0, promoted = 0;
     if (detailRows.length) {
         // Preferred outcome: prove the purchases account for the settlement and
         // put them in the ledger in its place, so a card bill reads as what was
@@ -285,16 +292,32 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
         rows = exp.rows;
         itemised = exp.expanded.reduce((n, g) => n + g.count, 0);
 
-        // Anything that could not be proven keeps its lump row. Fall back to the
-        // older enrichment there so at least the wording improves — better than
-        // discarding the only description of what the money bought.
+        // A group that reconciles against nothing in this document is usually not
+        // an itemisation at all: on a revolving credit card the statement lists
+        // THIS period's purchases while the payment on it settles the PREVIOUS
+        // period's balance. Measured on a real Bankinter statement: 27 purchases
+        // totalling 2.729,44 against a payment of 717,61. The two are different
+        // money, so no proof will ever be found and none should be.
+        //
+        // Those purchases are the spending. Dropping them loses the entire card
+        // month — the exact thing the user opened this app to see — so they are
+        // imported as movements and flagged, rather than discarded silently.
+        //
+        // Flagged because one judgement remains that the app must not make on
+        // someone's behalf: the card settlement in the account section is now
+        // debt repayment, not spending, and counting both would count the same
+        // money twice across consecutive statements.
         const stuck = new Set(exp.unexpanded.map(u => u.group));
         const leftover = detailRows.filter(d => stuck.has(d.detailGroup ?? '__ungrouped__'));
         if (leftover.length) {
-            const merge = mergeDetailSource(rows, leftover, { label: 'card', accountId });
-            rows = merge.merged;
-            enrichedCount = merge.enriched.length + merge.aggregated.length;
-            unmatchedDetail = merge.pending.length;
+            rows = [...rows, ...leftover.map(d => ({
+                ...d,
+                sourceRole: 'statement',
+                enrichedFrom: 'card',
+                needsReview: true,
+                note: 'Card purchase. Its settlement is a separate row — mark that settlement as a transfer so this month is not counted twice.'
+            }))];
+            promoted = leftover.length;
         }
     }
 
@@ -302,7 +325,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
         rows, errors, parsed: rows.length, skipped: errors.length,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year,
-        detail: { total: detailRows.length, itemised, enriched: enrichedCount, unmatched: unmatchedDetail }
+        detail: { total: detailRows.length, itemised, promoted, enriched: enrichedCount, unmatched: unmatchedDetail }
     };
 }
 
