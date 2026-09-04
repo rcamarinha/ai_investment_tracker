@@ -972,3 +972,65 @@ export function planCardRouting(groups = [], accounts = [], importAccountId = nu
         };
     });
 }
+
+/**
+ * Describe what an imported statement turned out to contain, in the terms the
+ * user can actually confirm.
+ *
+ * Deliberately built from OUTCOMES, not from parsing internals: which sections
+ * were found, how many rows each produced, and where that money went. A user
+ * knows whether a section is their card statement. They cannot know whether a
+ * line pattern matched or a balance chain reconciled, and asking them is how a
+ * confirmation step turns into a review of work they have no basis to judge.
+ */
+export function summarizeSections(rows = [], headings = [], options = {}) {
+    const accounts = options.accounts || [];
+    const label = id => accounts.find(a => a.id === id)?.label || 'this account';
+
+    const sections = [];
+    const statementRows = rows.filter(r => r.sourceRole !== 'detail' && !r.detailGroup);
+    if (statementRows.length) {
+        const withBalance = statementRows.filter(r => r.balance !== null && r.balance !== undefined).length;
+        sections.push({
+            kind: 'account',
+            heading: headings.find(h => !/cart|card/i.test(h)) || 'Account movements',
+            rows: statementRows.length,
+            verifiable: withBalance > 1,
+            destination: label(options.importAccountId)
+        });
+    }
+
+    const byCard = new Map();
+    for (const r of rows) {
+        if (!r.detailGroup) continue;
+        if (!byCard.has(r.detailGroup)) byCard.set(r.detailGroup, []);
+        byCard.get(r.detailGroup).push(r);
+    }
+    for (const [group, list] of byCard) {
+        const plan = (options.cardPlan || []).find(p => p.group === group);
+        sections.push({
+            kind: 'card',
+            group,
+            heading: headings.find(h => h.includes(String(group))) || `Card ${group}`,
+            rows: list.length,
+            verifiable: false,
+            destination: plan?.action === 'use' ? label(plan.accountId)
+                       : plan?.action === 'create' ? `a new card account (${plan.proposal.label})`
+                       : `${label(options.importAccountId)} — flagged, card unclear`
+        });
+    }
+    return sections;
+}
+
+/**
+ * The fingerprint a statement's layout is recognised by on later imports.
+ *
+ * Built from the heading TEXT, never from line or page numbers — the CSV
+ * profile already had to learn this: a bank inserting one marketing line shifts
+ * every index and silently misaligns everything downstream. A bank that
+ * redesigns its statement produces a different signature, fails to match, and
+ * is re-confirmed rather than replayed against a layout it no longer has.
+ */
+export function sectionSignature(headings = []) {
+    return headerSignature([...headings].sort());
+}

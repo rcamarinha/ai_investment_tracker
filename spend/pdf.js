@@ -69,14 +69,15 @@ export function prefilterLines(lines = []) {
     // the model is asked to classify a row by the section it sits under. Filter
     // them out and a card purchase is just another dated line — the evidence
     // needed to tell it from an account movement is gone before extraction runs.
-    const headings = new Set(findSectionHeadings(lines).map(l => l.text));
+    const headingList = findSectionHeadings(lines).map(l => l.text);
+    const headings = new Set(headingList);
     // Header context: the first lines of the document usually carry the
     // statement period, which is how a row printed as "31/07" gets its year.
     const header = lines.slice(0, 12).map(l => l.text);
     const body = lines
         .filter(l => candidates.has(l.text) || headings.has(l.text))
         .map(l => l.text);
-    return { header, body, year: detectStatementYear(lines) };
+    return { header, body, headings: headingList, year: detectStatementYear(lines) };
 }
 
 export function chunkLines(bodyLines = [], maxChars = CHUNK_CHARS) {
@@ -229,7 +230,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
         return { rows: [], errors: [{ reason: 'No text found — this looks like a scanned image rather than a text PDF.' }], parsed: 0, skipped: 1, format: 'pdf' };
     }
 
-    const { header, body, year } = prefilterLines(lines);
+    const { header, body, headings, year } = prefilterLines(lines);
     if (!body.length) {
         return { rows: [], errors: [{ reason: 'No dated transaction lines found in this document.' }], parsed: 0, skipped: 1, format: 'pdf' };
     }
@@ -333,7 +334,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     return {
         rows, errors, parsed: rows.length, skipped: errors.length,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
-        chain, flagged, statementYear: year,
+        chain, flagged, statementYear: year, headings,
         detail: { total: detailRows.length, itemised, promoted, settlementsLinked,
                   enriched: enrichedCount, unmatched: unmatchedDetail }
     };

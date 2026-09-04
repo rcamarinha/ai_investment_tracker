@@ -23,7 +23,7 @@ import { renderAll } from './ledger.js?v=3.44.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
-    planCardRouting, DATE_FORMATS
+    planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
 import { importPdfStatement } from './pdf.js?v=3.44.0';
@@ -469,7 +469,19 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         chunks: parsed.chunks || 0,
         chunksFailed: parsed.chunksFailed || 0,
         detail: parsed.detail || null,
-        cardPlan
+        cardPlan,
+        // What this document turned out to contain, and whether we have seen a
+        // statement shaped like it before. A layout the user has already
+        // confirmed imports without asking again; anything else is shown.
+        sections: parsed.headings
+            ? summarizeSections(ruled.rows, parsed.headings, {
+                accounts: state.accounts, importAccountId: accountId, cardPlan })
+            : [],
+        sectionSig: parsed.headings ? sectionSignature(parsed.headings) : null,
+        knownLayout: parsed.headings
+            ? state.profiles.some(p => p.formatKind === 'pdf'
+                && p.signature === sectionSignature(parsed.headings))
+            : false
     };
     showReport();
 }
@@ -550,6 +562,20 @@ function showReport() {
             <div class="merge-preview">${r.errors.slice(0, 12).map(e => `${e.line !== undefined ? `line ${e.line}: ` : ''}${escapeHTML(e.reason)}`).join('<br>')}</div></details>` : ''}
         ${sample ? `<table class="tx-table" style="margin-top:12px"><tbody>${sample}</tbody></table>
             ${r.fresh.length > 6 ? `<p class="form-helper">…and ${r.fresh.length - 6} more.</p>` : ''}` : ''}
+        ${r.sections && r.sections.length ? `
+            <div class="import-sections" style="margin-top:12px">
+                <p class="form-helper">${r.knownLayout
+                    ? 'This matches a statement layout you have confirmed before, so nothing needed asking.'
+                    : '<strong>First statement from this bank.</strong> Nothing has been assumed — this is what was found:'}</p>
+                <ul style="margin:6px 0 0 18px">
+                    ${r.sections.map(sec => `<li class="form-helper">
+                        <strong>${escapeHTML(sec.heading.slice(0, 60))}</strong> — ${sec.rows}
+                        row${sec.rows === 1 ? '' : 's'}, into ${escapeHTML(sec.destination)}${
+                        sec.verifiable ? ', checked against the running balance' : ''}</li>`).join('')}
+                </ul>
+                ${!r.knownLayout ? `<button class="btn btn-sm btn-ghost-spend" style="margin-top:8px"
+                    data-act="confirm-layout">Looks right — remember this layout</button>` : ''}
+            </div>` : ''}
         <p class="form-helper" style="margin-top:10px">Nothing is saved until you press the button.</p>
         <div class="action-buttons-row" style="margin-top:8px">
             <button class="btn btn-sm btn-primary-spend" data-act="commit-import"
@@ -564,6 +590,35 @@ export function cancelImport() {
     state.importResult = null;
     state.importText = null;
     status('<p class="form-helper">Import cancelled — nothing was saved.</p>');
+}
+
+/**
+ * Remember this bank's layout, so the next statement shaped like it imports
+ * without asking again.
+ *
+ * Keyed on the heading signature rather than on the account, because it is the
+ * DOCUMENT that is being recognised. A bank that redesigns its statement
+ * produces a different signature, misses, and is shown again — which is the
+ * point: a stale layout replayed silently is how a card section would start
+ * being read as account movements without anyone noticing.
+ */
+export async function confirmLayout() {
+    const r = state.importResult;
+    if (!r?.sectionSig) return;
+    try {
+        await saveProfile({
+            accountId: state.importAccountId,
+            label: r.sections.map(s => s.heading).join(' | ').slice(0, 80),
+            formatKind: 'pdf',
+            signature: r.sectionSig,
+            sectionMap: { sections: r.sections }
+        });
+        r.knownLayout = true;
+        showToast('Layout remembered — the next statement like this will not ask.');
+        showReport();
+    } catch (err) {
+        showToast('Could not remember the layout: ' + err.message, 'error');
+    }
 }
 
 export async function commitImport() {
