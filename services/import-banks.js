@@ -766,3 +766,107 @@ export function ruleFromCorrection(transaction, category) {
 }
 
 export const __testing = { normalizeDescription, normalizeForMatching, findSubset, FIELD_ALIASES, scoreAlias };
+
+/**
+ * Replace a lump card settlement with the purchases that make it up.
+ *
+ * A statement's card section itemises a payment that is already on the
+ * statement: "PAG.CTA.CARTAO -555,49" plus the purchases inside it. Keeping the
+ * lump row is arithmetically correct but tells the user nothing — one large
+ * opaque row is exactly what "see where my money goes" is supposed to answer.
+ *
+ * So where the itemisation can be PROVEN to account for the settlement, the
+ * settlement is dropped and its purchases take its place. The proof is the same
+ * kind used for balance continuity: sum(detail) === settlement is a property of
+ * the document, not of our parsing, so it either holds or the swap is refused.
+ * Totals are identical either way — that is what makes this safe rather than a
+ * reinterpretation of the user's money.
+ *
+ * Refusal is deliberate in two cases, because a wrong swap is worse than a lump
+ * row: nothing matches the total (the settlement may fall in another statement
+ * period), or more than one row does, where picking either would be a guess.
+ *
+ * Detail rows are grouped by `detailGroup` so a statement carrying two cards
+ * reconciles each against its own settlement instead of summing them together.
+ *
+ * Run this AFTER balance verification. The settlement is what the running
+ * balance actually moved by; once it is replaced the chain no longer describes
+ * the rows, so verifying afterwards would report breaks that are not errors.
+ */
+export function expandCardDetail(statementRows = [], detailRows = [], options = {}) {
+    const tolerance = options.tolerance ?? 0.011;
+    const windowDays = options.windowDays ?? 45;
+
+    if (!detailRows.length) {
+        return { rows: [...statementRows], expanded: [], unexpanded: [], groups: 0 };
+    }
+
+    const groups = new Map();
+    for (const d of detailRows) {
+        const key = d.detailGroup ?? '__ungrouped__';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(d);
+    }
+
+    const replaced = new Set();
+    const expanded = [], unexpanded = [];
+    const inserts = new Map();   // index of the settlement -> rows that replace it
+
+    const epochDay = v => Math.floor(Date.parse(`${String(v).slice(0, 10)}T00:00:00Z`) / 86400000);
+
+    for (const [key, members] of groups) {
+        // Signed, so a refund inside the card period reduces the total exactly
+        // as the bank computed it.
+        const total = Math.round(members.reduce((sum, d) => sum + Number(d.amount || 0), 0) * 100) / 100;
+        const days = members.map(m => epochDay(m.date)).filter(Number.isFinite);
+        const near = days.length ? Math.max(...days) : null;
+
+        const candidates = [];
+        for (let i = 0; i < statementRows.length; i++) {
+            if (replaced.has(i)) continue;
+            const s = statementRows[i];
+            if (Math.abs(Number(s.amount) - total) > tolerance) continue;
+            if (near !== null) {
+                const gap = epochDay(s.date) - near;
+                if (Number.isFinite(gap) && Math.abs(gap) > windowDays) continue;
+            }
+            candidates.push(i);
+        }
+
+        if (candidates.length !== 1) {
+            unexpanded.push({ group: key, count: members.length, total,
+                reason: candidates.length === 0 ? 'no settlement row matches this total'
+                                                : `${candidates.length} settlement rows match this total` });
+            continue;
+        }
+
+        const idx = candidates[0];
+        const settlement = statementRows[idx];
+        replaced.add(idx);
+        inserts.set(idx, members.map(m => ({
+            ...m,
+            // They are ledger movements now, so they must not keep being treated
+            // as detail by anything downstream.
+            sourceRole: 'statement',
+            expandedFrom: settlement.rawDescription || settlement.description,
+            // Persisted, unlike expandedFrom: `enriched_from` is an existing
+            // column, so the ledger keeps the fact that this row came out of a
+            // card section without needing a migration for it.
+            enrichedFrom: options.label || 'card',
+            // Not on the running chain: the settlement was. Leaving a balance
+            // here would put a number into the continuity check that the
+            // document never printed against this row.
+            balance: null
+        })));
+        expanded.push({ group: key, count: members.length, total,
+                        settlement: settlement.rawDescription || settlement.description });
+    }
+
+    const rows = [];
+    for (let i = 0; i < statementRows.length; i++) {
+        if (inserts.has(i)) rows.push(...inserts.get(i));
+        else if (!replaced.has(i)) rows.push(statementRows[i]);
+    }
+
+    return { rows, expanded, unexpanded, groups: groups.size };
+}

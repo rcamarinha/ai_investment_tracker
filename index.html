@@ -7,8 +7,8 @@
     <link rel="icon" href="favicon.png" type="image/png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.43.1"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.43.1">
+    <script src="lib/supabase.js?v=3.44.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.44.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -24,7 +24,7 @@
 
         <!-- ── Hub Header ──────────────────────────────────────────────── -->
         <div class="header">
-            <div class="header-eyebrow" data-i18n="hub.eyebrow">Investment Hub · v3.43.1</div>
+            <div class="header-eyebrow" data-i18n="hub.eyebrow">Investment Hub · v3.44.0</div>
             <h1>
                 <span data-i18n="nav.hub">A language for <em>wealth</em></span>
             </h1>
@@ -148,7 +148,7 @@
 
     <script type="module">
         import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
-        installErrorReporting({ page: 'hub', version: '3.43.1' });
+        installErrorReporting({ page: 'hub', version: '3.44.0' });
         import { renderNavbar, updateNavbarAuth } from './services/navbar.js';
         // src/hub.js is PURE and dependency-free (no imports at all), so this
         // does not drag in the service graph that CLAUDE.md warns about — it is

@@ -7,9 +7,9 @@
     <link rel="icon" href="favicon.png" type="image/png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.43.1"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.43.1">
-    <link rel="stylesheet" href="css/spend.css?v=3.43.1">
+    <script src="lib/supabase.js?v=3.44.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.44.0">
+    <link rel="stylesheet" href="css/spend.css?v=3.44.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -28,7 +28,7 @@
             <div class="header-eyebrow spend-eyebrow">Cash Flow · Categories · Scenarios</div>
             <h1>
                 <span data-i18n="spend.title">Spend</span>
-                <span class="header-version">v3.43.1</span>
+                <span class="header-version">v3.44.0</span>
             </h1>
             <p data-i18n="spend.subtitle">Where the money goes — and what changes if you change it</p>
         </div>
@@ -266,25 +266,25 @@
     <!-- ═══ Module Init ═══════════════════════════════════════════════════ -->
     <script type="module">
         import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
-        installErrorReporting({ page: 'spend', version: '3.43.1' });
-        import { renderNavbar } from './services/navbar.js?v=3.43.1';
-        import state from './spend/state.js?v=3.43.1';
+        installErrorReporting({ page: 'spend', version: '3.44.0' });
+        import { renderNavbar } from './services/navbar.js?v=3.44.0';
+        import state from './spend/state.js?v=3.44.0';
         import {
             initSupabase, handleLogin, handleSignup, handleLogout, handleGoogleLogin,
             handleForgotPassword, handlePasswordReset, cancelPasswordRecovery,
             ensureDefaultCategories
-        } from './spend/storage.js?v=3.43.1';
+        } from './spend/storage.js?v=3.44.0';
         import {
             renderAll, setGrain, stepPeriod, setCompareMode, toggleOneOffs, selectCategory,
             setTxSearch, setTxFilter, setPage, editTx, saveTxEdit, removeTx,
             showQuickAdd, submitQuickAdd, findTransfers, bindDelegation,
             showCategoryDialog, submitCategory, removeCategory
-        } from './spend/ledger.js?v=3.43.1';
+        } from './spend/ledger.js?v=3.44.0';
         import { categoriseAll, acceptSuggestion, rejectSuggestion, acceptAllConfident }
-            from './spend/categorize.js?v=3.43.1';
-        import { showAccountDialog, onAccountTypeChange, submitAccount, removeAccount } from './spend/accounts.js?v=3.43.1';
-        import { renderImportSection, handleFile, confirmMapping, commitImport, cancelImport } from './spend/importer.js?v=3.43.1';
-        import { closeModal, closeActiveModal, showToast } from './spend/utils.js?v=3.43.1';
+            from './spend/categorize.js?v=3.44.0';
+        import { showAccountDialog, onAccountTypeChange, submitAccount, removeAccount } from './spend/accounts.js?v=3.44.0';
+        import { renderImportSection, handleFile, confirmMapping, commitImport, cancelImport } from './spend/importer.js?v=3.44.0';
+        import { closeModal, closeActiveModal, showToast } from './spend/utils.js?v=3.44.0';
 
         // ── Expose to onclick handlers ─────────────────────────────────────
         // Prefixed to avoid colliding with the stock/wine globals a shared

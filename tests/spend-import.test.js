@@ -4,7 +4,7 @@ import {
     locateHeaderBySignature,
     parseStyledNumber, detectDecimalStyle, detectDateFormat, parseDateWithFormat,
     spendFingerprint, buildExistingFingerprints, dedupeSpendRows,
-    mergeDetailSource, applyRules, ruleFromCorrection, DATE_FORMATS
+    mergeDetailSource, expandCardDetail, applyRules, ruleFromCorrection, DATE_FORMATS
 } from '../services/import-banks.js';
 
 // ── fixtures: shaped like the real thing, preamble rows and all ─────────────
@@ -781,4 +781,113 @@ describe('rules learned from a correction actually match', () => {
         const rule = ruleFromCorrection({ description: 'SOLINCA HEALTH CLUB' }, 'Health');
         expect(applyRules([{ description: 'SOLINCA 4471 HEALTH F CLUB PORTO', amount: -28 }], [rule]).matched).toBe(1);
     });
+});
+
+// A realistic card bill is one payment plus N purchases. Pass 1 needs an exact
+// 1:1 amount match and pass 2 only searches combinations of up to three, so
+// anything busier than a three-purchase month attaches to nothing. Recording
+// that here so the limit is a known property rather than a surprise.
+describe('card bill enrichment limits', () => {
+    const bill = purchases => {
+        const total = +purchases.reduce((a, b) => a + b, 0).toFixed(2);
+        const statement = [{ accountId: 'a1', date: '2026-07-06', description: 'PAG.CTA.CARTAO',
+                             amount: -total, balance: 1088.51 }];
+        const detail = purchases.map((p, i) => ({ accountId: 'a1', date: '2026-07-05',
+                             description: `MERCHANT ${i + 1}`, amount: -p, balance: null }));
+        return mergeDetailSource(statement, detail, { label: 'card', accountId: 'a1' });
+    };
+
+    it('ties a three-purchase bill to its payment', () => {
+        const r = bill([150.00, 200.49, 205.00]);
+        expect(r.aggregated).toHaveLength(1);
+        expect(r.pending).toHaveLength(0);
+    });
+
+    it('leaves a busier bill entirely unmatched', () => {
+        const r = bill([150, 60.20, 45.10, 88.00, 32.19, 75.00, 40.00, 65.00]);
+        expect(r.aggregated).toHaveLength(0);
+        expect(r.pending).toHaveLength(8);
+    });
+});
+
+// The card bill from the real statement: one settlement, several purchases that
+// account for it. Expansion swaps the lump row for the purchases, so the ledger
+// says WHAT was bought while the month's total is unchanged.
+describe('expandCardDetail', () => {
+    const settlement = { accountId: 'a1', date: '2026-03-20', description: 'Cartoes bkcf - deb. mensal-cob',
+                         rawDescription: 'Cartoes bkcf - deb. mensal-cob', amount: -725.02, balance: 1088.51 };
+    const other = { accountId: 'a1', date: '2026-03-26', description: 'Trf a credito sepa+',
+                    amount: 690.00, balance: 1778.51 };
+    const purchases = [
+        { accountId: 'a1', date: '2026-03-05', description: 'REVOLUTION SPORT', amount: -150.00, detailGroup: 'bkcf', balance: null },
+        { accountId: 'a1', date: '2026-03-11', description: 'CONTINENTE',       amount: -425.02, detailGroup: 'bkcf', balance: null },
+        { accountId: 'a1', date: '2026-03-14', description: 'GALP',             amount: -150.00, detailGroup: 'bkcf', balance: null }
+    ];
+
+    it('replaces the settlement with its purchases', () => {
+        const r = expandCardDetail([other, settlement], purchases);
+        expect(r.expanded).toHaveLength(1);
+        const descs = r.rows.map(x => x.description);
+        expect(descs).toContain('REVOLUTION SPORT');
+        expect(descs).not.toContain('Cartoes bkcf - deb. mensal-cob');
+    });
+
+    it('leaves the month total unchanged', () => {
+        const before = [other, settlement].reduce((s, x) => s + x.amount, 0);
+        const after = expandCardDetail([other, settlement], purchases).rows.reduce((s, x) => s + x.amount, 0);
+        expect(Math.abs(after - before)).toBeLessThan(0.011);
+    });
+
+    it('records where an expanded row came from, and drops its balance', () => {
+        const row = expandCardDetail([other, settlement], purchases).rows.find(x => x.description === 'GALP');
+        expect(row.expandedFrom).toBe('Cartoes bkcf - deb. mensal-cob');
+        expect(row.sourceRole).toBe('statement');
+        expect(row.balance).toBeNull();
+    });
+
+    it('refuses when the purchases do not account for the settlement', () => {
+        const short = purchases.slice(0, 2);            // 575.02, not 725.02
+        const r = expandCardDetail([other, settlement], short);
+        expect(r.expanded).toHaveLength(0);
+        expect(r.unexpanded[0].reason).toMatch(/no settlement row matches/);
+        expect(r.rows.map(x => x.description)).toContain('Cartoes bkcf - deb. mensal-cob');
+    });
+
+    it('refuses rather than guessing when two rows match the same total', () => {
+        const twin = { ...settlement, date: '2026-03-21', description: 'Cartoes outro - deb. mensal' };
+        const r = expandCardDetail([settlement, twin], purchases);
+        expect(r.expanded).toHaveLength(0);
+        expect(r.unexpanded[0].reason).toMatch(/2 settlement rows match/);
+    });
+
+    it('reconciles two cards against their own settlements', () => {
+        const s2 = { accountId: 'a1', date: '2026-03-22', description: 'Cartao B', rawDescription: 'Cartao B',
+                     amount: -60.00, balance: 900 };
+        const b = [{ accountId: 'a1', date: '2026-03-09', description: 'FNAC', amount: -60.00, detailGroup: 'B', balance: null }];
+        const r = expandCardDetail([settlement, s2], [...purchases, ...b]);
+        expect(r.expanded).toHaveLength(2);
+        expect(r.rows.map(x => x.description)).toEqual(
+            expect.arrayContaining(['REVOLUTION SPORT', 'CONTINENTE', 'GALP', 'FNAC']));
+    });
+
+    it('handles a refund inside the card period', () => {
+        const withRefund = [
+            { accountId: 'a1', date: '2026-03-05', description: 'ZARA',   amount: -200.00, detailGroup: 'bkcf', balance: null },
+            { accountId: 'a1', date: '2026-03-07', description: 'ZARA REEMBOLSO', amount: 50.00, detailGroup: 'bkcf', balance: null }
+        ];
+        const s = { ...settlement, amount: -150.00 };
+        const r = expandCardDetail([s], withRefund);
+        expect(r.expanded).toHaveLength(1);
+    });
+});
+
+// enriched_from is an existing column, so this survives the round trip to the
+// database while expandedFrom (which has no column) does not.
+it('marks an expanded row as card-derived in a persisted field', () => {
+    const settlement = { accountId: 'a1', date: '2026-03-20', description: 'Cartoes bkcf',
+                         rawDescription: 'Cartoes bkcf', amount: -150.00, balance: 100 };
+    const p = [{ accountId: 'a1', date: '2026-03-05', description: 'GALP', amount: -150.00,
+                 detailGroup: 'bkcf', balance: null }];
+    const row = expandCardDetail([settlement], p).rows[0];
+    expect(row.enrichedFrom).toBe('card');
 });

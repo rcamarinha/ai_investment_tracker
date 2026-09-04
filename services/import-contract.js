@@ -77,6 +77,15 @@ export function normalizeRow(input = {}, defaults = {}) {
         source: src.source ?? null,
         sourceRole: src.sourceRole === 'detail' ? 'detail' : 'statement',
         enrichedFrom: src.enrichedFrom ?? null,
+        // Which card or sub-section a detail line was printed under. Without it
+        // there is no way to tell WHICH settlement a purchase belongs to when a
+        // statement carries more than one card, and summing them together would
+        // reconcile against the wrong row.
+        detailGroup: src.detailGroup ?? null,
+        // Set when this row replaced a lump settlement it was itemising. Carries
+        // the settlement's description so the ledger can still say where the row
+        // came from once the lump row is gone.
+        expandedFrom: src.expandedFrom ?? null,
 
         // Optional transport only: the statement's running balance, carried so
         // balance-continuity verification can check the parse. Not part of the
