@@ -435,6 +435,30 @@ describe('baselineMonthly', () => {
         expect(baselineMonthly([tx('2026-03-05', -10)], { today: '2026-03-06' }))
             .toMatchObject({ months: 0, monthlyNet: 0, savingsRate: null });
     });
+
+    it('excludes savings-category outflows from monthlySpend but keeps them in byCategory', () => {
+        // baselineMonthly → rollupByPeriod → summarize: the savingsCategories
+        // option must travel all the way through, otherwise a trust-fund
+        // contribution silently inflates monthlySpend and the scenario baseline
+        // is wrong before a single lever is applied.
+        const withSavings = [
+            tx('2026-01-05', 3000, { category: 'Salary' }),
+            tx('2026-01-10', -1000, { category: 'Housing' }),
+            tx('2026-01-15', -500,  { category: 'Trust' }),
+            tx('2026-02-05', 3000, { category: 'Salary' }),
+            tx('2026-02-10', -1000, { category: 'Housing' }),
+            tx('2026-02-15', -500,  { category: 'Trust' }),
+        ];
+        const b = baselineMonthly(withSavings, {
+            today: '2026-03-01',
+            incomeCategories: ['Salary'],
+            savingsCategories: ['Trust']
+        });
+        expect(b.monthlySpend).toBe(1000);     // Housing only, not Trust
+        expect(b.monthlyNet).toBe(2000);       // income minus consumption
+        expect(b.byCategory.Trust).toBe(500);  // visible in breakdown for levers
+        expect(b.savingsRate).toBeCloseTo(2000 / 3000, 4);
+    });
 });
 
 describe('projectScenario', () => {
@@ -534,6 +558,23 @@ describe('projectScenario', () => {
         const snapshot = JSON.stringify(history);
         projectScenario(history, { levers: [{ type: 'category_delta', category: 'Dining', mode: 'percent', value: -50 }] }, opts);
         expect(JSON.stringify(history)).toBe(snapshot);
+    });
+
+    it('uses the correct baseline when savings categories are present', () => {
+        // The baseline is built by baselineMonthly, which passes options all the
+        // way through to summarize. A savings category must not inflate
+        // monthlySpend in the baseline — it appears in byCategory for lever
+        // purposes, but the run-rate the scenario starts from must be right.
+        const withSavings = ['2026-01', '2026-02', '2026-03'].flatMap(p => [
+            tx(`${p}-05`, 3000, { category: 'Salary' }),
+            tx(`${p}-10`, -1000, { category: 'Dining' }),
+            tx(`${p}-15`, -500,  { category: 'Trust' }),
+        ]);
+        const savingsOpts = { today: '2026-04-01', incomeCategories: ['Salary'], savingsCategories: ['Trust'] };
+        const r = projectScenario(withSavings, { levers: [] }, savingsOpts);
+        // Baseline spending is consumption only (Dining), NOT including Trust
+        expect(r.baseline.monthlySpend).toBe(1000);
+        expect(r.baseline.monthlyNet).toBe(2000);
     });
 });
 
