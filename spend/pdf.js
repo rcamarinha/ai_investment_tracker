@@ -18,12 +18,12 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.43.1';
-import { escapeHTML } from './utils.js?v=3.43.1';
+import state from './state.js?v=3.44.0';
+import { escapeHTML } from './utils.js?v=3.44.0';
 import { groupIntoLines, findCandidateLines, detectStatementYear, checkBalanceChain }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
-import { mergeDetailSource } from '../services/import-banks.js';
+import { mergeDetailSource, expandCardDetail } from '../services/import-banks.js';
 
 /** Characters per request. The server rejects above 15K. */
 const CHUNK_CHARS = 12000;
@@ -275,19 +275,34 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     const detailRows = verified.filter(r => r.sourceRole === 'detail');
     const statementRows = verified.filter(r => r.sourceRole !== 'detail');
 
-    let rows = statementRows, enrichedCount = 0, unmatchedDetail = detailRows.length;
+    let rows = statementRows;
+    let itemised = 0, enrichedCount = 0, unmatchedDetail = 0;
     if (detailRows.length) {
-        const merge = mergeDetailSource(statementRows, detailRows, { label: 'card', accountId });
-        rows = merge.merged;
-        enrichedCount = merge.enriched.length + merge.aggregated.length;
-        unmatchedDetail = merge.pending.length;
+        // Preferred outcome: prove the purchases account for the settlement and
+        // put them in the ledger in its place, so a card bill reads as what was
+        // bought rather than as one opaque payment.
+        const exp = expandCardDetail(statementRows, detailRows);
+        rows = exp.rows;
+        itemised = exp.expanded.reduce((n, g) => n + g.count, 0);
+
+        // Anything that could not be proven keeps its lump row. Fall back to the
+        // older enrichment there so at least the wording improves — better than
+        // discarding the only description of what the money bought.
+        const stuck = new Set(exp.unexpanded.map(u => u.group));
+        const leftover = detailRows.filter(d => stuck.has(d.detailGroup ?? '__ungrouped__'));
+        if (leftover.length) {
+            const merge = mergeDetailSource(rows, leftover, { label: 'card', accountId });
+            rows = merge.merged;
+            enrichedCount = merge.enriched.length + merge.aggregated.length;
+            unmatchedDetail = merge.pending.length;
+        }
     }
 
     return {
         rows, errors, parsed: rows.length, skipped: errors.length,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year,
-        detail: { total: detailRows.length, enriched: enrichedCount, unmatched: unmatchedDetail }
+        detail: { total: detailRows.length, itemised, enriched: enrichedCount, unmatched: unmatchedDetail }
     };
 }
 

@@ -81,7 +81,7 @@ function buildPrompt(statementText: string, hint?: string): string {
 
 Rules:
 - Output ONLY a JSON array. No markdown, no commentary, no preamble.
-- Each element: {"date":"YYYY-MM-DD","description":"<what it was>","amount":<signed number>,"currency":"<ISO code>","balance":<running balance or null>,"role":"statement"|"detail"}
+- Each element: {"date":"YYYY-MM-DD","description":"<what it was>","amount":<signed number>,"currency":"<ISO code>","balance":<running balance or null>,"role":"statement"|"detail","group":"<card or section id, detail rows only>"}
 - "amount" is SIGNED: negative when money left the account, positive when it arrived. Never output the absolute value.
 - "balance" is the running balance printed on that row, if the statement shows one. Use null when it does not. Do NOT invent it, and never put the balance in "amount".
 - Amounts may use European formatting (1.234,56). Convert to a plain number: 1234.56.
@@ -100,6 +100,12 @@ Rules:
 - Sign "detail" rows like everything else: a card PURCHASE is money leaving, so it is
   NEGATIVE, even where the card section prints it without a minus because the whole
   section is understood to be charges.
+- "group" applies to "detail" rows only, and is null everywhere else. Use whatever
+  identifies the section the line was printed under — the card number, the last four
+  digits, or the card name as printed. Every line under the same heading MUST get the
+  same "group" string, because those lines are summed and reconciled against the
+  settlement row they itemise. A statement can carry two cards; mixing their lines
+  together would reconcile against the wrong payment.
 - Extract every section, but label it. Do not drop the detail lines and do not promote
   them to movements.
 - IGNORE: opening/closing balance summaries, subtotals, interest-rate tables, legal or marketing text, page headers and footers, and anything that is not a single dated movement.

@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.44.0
+- **A card bill now reads as what was bought.** Where a statement itemises its credit-card settlement, the purchases replace the lump payment in the ledger instead of being discarded — so a month shows "Continente 425,02" and "Galp 150,00" rather than one opaque "Cartoes bkcf - deb. mensal-cob 725,02". The swap only happens when the purchases can be proven to account for the settlement to the cent; the month's total is identical either way, which is what makes it a presentation change rather than a reinterpretation of your money.
+- **It refuses rather than guesses.** If nothing matches the total (the settlement may fall in the next statement period) or if two rows match it, the lump row stays and the reason is reported. Each card is reconciled against its own settlement, so a statement carrying two cards cannot cross-match.
+- **Expansion runs after balance verification, never before.** The running balance moved by the settlement, so checking the chain against the expanded rows would report breaks that are not errors.
+
 ### v3.43.1
 - **Card sections are read as itemisation, not as movements.** A purchase listed under a credit-card section is detail of the card payment already on the statement, so ingesting it added the same money twice — and because those sections print charges without a minus, the duplicate landed as *income*. One line therefore overstated income and understated spend at the same time. Detail lines are still read, because they say what a lump "PAG.CTA.CARTAO" was actually spent on, but they improve the description of the movement they belong to instead of becoming one.
 - **The balance guardrail stopped skipping the rows that needed it most.** Rows with no running balance were passed over silently, and "nothing was checkable" counted as a pass. Detail rows have no balance by nature, so interleaving them also broke the check for the ordinary rows *around* them — a few card lines could leave most of a statement unverified while the import reported that all checks reconciled. Imports now report how many of the possible checks actually ran.
