@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { prefilterLines, chunkLines, normalizeAiRows, verifyRows } from '../spend/pdf.js';
+import { expandCardDetail } from '../services/import-banks.js';
 
 const L = (text, i = 0) => ({ text, y: 700 - i * 12, xs: [60] });
 
@@ -174,5 +175,56 @@ describe('card-detail rows', () => {
         const { rows } = normalizeAiRows(bad, { accountId: 'a1' });
         const { flagged } = verifyRows(rows);
         expect(flagged).toBe(1);
+    });
+});
+
+// A revolving credit card lists this period's purchases while the payment on
+// the same statement settles the previous period. Measured on a real statement:
+// 27 purchases totalling 2.729,44 against a payment of 717,61. No proof exists,
+// so the purchases must still reach the ledger rather than being discarded.
+describe('card period that the statement does not settle', () => {
+    it('imports the purchases rather than dropping them', () => {
+        const raw = [
+            { date: '2026-08-20', description: 'CARTOES BKCF - DEB. MENSAL', amount: -717.61, balance: 1000 },
+            { date: '2026-08-01', description: 'DECATHLON GAIA',  amount: -172.60, balance: null, role: 'detail', group: 'c1' },
+            { date: '2026-08-13', description: 'ZOOMARINE',       amount: -162.50, balance: null, role: 'detail', group: 'c1' }
+        ];
+        const { rows } = normalizeAiRows(raw.map(r => ({ ...r, detailGroup: r.group })), { accountId: 'a1' });
+        const { rows: verified } = verifyRows(rows);
+        const detail = verified.filter(r => r.sourceRole === 'detail');
+        const statement = verified.filter(r => r.sourceRole !== 'detail');
+        const exp = expandCardDetail(statement, detail);
+        expect(exp.expanded).toHaveLength(0);          // 335.10 never equals 717.61
+        expect(exp.unexpanded[0].count).toBe(2);       // and the rows are accounted for, not lost
+    });
+});
+
+// The heading is the evidence the model classifies on. Filtering it out while
+// keeping the rows under it made the card section indistinguishable from
+// account movements — the classification could not succeed because what it
+// needed had already been thrown away.
+describe('section headings survive the prefilter', () => {
+    const L = (text, i) => ({ text, y: 700 - i * 12, xs: [60] });
+    const doc = [
+        'Bankinter, S.A.', 'Periodo: de 2025/08/01 a 2025/08/31',
+        'Data Descritivo Movimento Saldo',
+        '04/08 TRF SEPA 100,00 18.063,52',
+        'DETALHE DAS COMPRAS CARTAO N. ******042061****',
+        '04/08 01/08 DECATHLON GAIA 172,60',
+        '15/08 13/08 DECATHLON PORTIMAO 309,90',
+        'Conforme condicoes definidas em Precario'
+    ].map(L);
+
+    it('keeps a card heading, in order, above its rows', () => {
+        const { body } = prefilterLines(doc);
+        const h = body.findIndex(t => t.includes('DETALHE DAS COMPRAS'));
+        const r = body.findIndex(t => t.includes('DECATHLON GAIA'));
+        expect(h).toBeGreaterThanOrEqual(0);
+        expect(h).toBeLessThan(r);
+    });
+
+    it('does not keep page furniture printed in caps', () => {
+        const { body } = prefilterLines([...doc, L('PAG. 2 DE 6', 20)]);
+        expect(body.some(t => t.includes('PAG. 2 DE 6'))).toBe(false);
     });
 });

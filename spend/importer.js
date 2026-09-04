@@ -17,13 +17,13 @@
 import state from './state.js?v=3.44.0';
 import { escapeHTML, fmtMoney, fmtDate, showToast, openModal, closeModal } from './utils.js?v=3.44.0';
 import {
-    saveTransactions, saveProfile, savePendingDetails, clearPendingDetails, requireAuth
+    saveTransactions, saveProfile, savePendingDetails, clearPendingDetails, saveAccount, requireAuth
 } from './storage.js?v=3.44.0';
 import { renderAll } from './ledger.js?v=3.44.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
-    DATE_FORMATS
+    planCardRouting, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
 import { importPdfStatement } from './pdf.js?v=3.44.0';
@@ -402,12 +402,58 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
 
     const ruled = applyRules(rows, state.rules);
 
-    const existing = buildExistingFingerprints(
-        state.transactions.filter(t => t.accountId === (isDetail ? (account?.linkedAccountId || accountId) : accountId))
-    );
+    // A card section describes the CARD, not the account the statement was
+    // imported into. Routing is decided here, before dedupe, and not later at
+    // commit time: dedupe is per account, so checking a card purchase against
+    // the current account's history would match nothing and re-add every
+    // purchase on every import.
+    const cardGroups = [...new Set(
+        ruled.rows.filter(r => r.enrichedFrom === 'card' && r.detailGroup).map(r => r.detailGroup)
+    )];
+    const cardPlan = cardGroups.length ? planCardRouting(cardGroups, state.accounts, accountId) : [];
+    const planByGroup = new Map(cardPlan.map(p => [p.group, p]));
+    for (const row of ruled.rows) {
+        const p = row.detailGroup ? planByGroup.get(row.detailGroup) : null;
+        if (!p) continue;
+        if (p.action === 'use') row.accountId = p.accountId;
+        else if (p.action === 'create') row.pendingAccountGroup = p.group;
+        else {
+            // Two cards and nothing to tell them apart. Putting the spending on
+            // the wrong card is worse than leaving it here and saying so.
+            row.needsReview = true;
+            row.note = 'More than one card could be the owner of this purchase — check which account it belongs to.';
+        }
+    }
+
+    const fpCache = new Map();
+    const fingerprintsFor = id => {
+        if (!fpCache.has(id)) fpCache.set(id, buildExistingFingerprints(
+            state.transactions.filter(t => t.accountId === id)));
+        return fpCache.get(id);
+    };
+    const dedupePerAccount = list => {
+        const byDestination = new Map();
+        for (const r of list) {
+            const key = r.pendingAccountGroup ? `new:${r.pendingAccountGroup}` : r.accountId;
+            if (!byDestination.has(key)) byDestination.set(key, []);
+            byDestination.get(key).push(r);
+        }
+        const fresh = [], duplicates = [];
+        for (const [key, rowsFor] of byDestination) {
+            // An account that does not exist yet has no history to check against.
+            const existing = String(key).startsWith('new:')
+                ? buildExistingFingerprints([])
+                : fingerprintsFor(key);
+            const res = dedupeSpendRows(rowsFor, existing);
+            fresh.push(...res.fresh);
+            duplicates.push(...res.duplicates);
+        }
+        return { fresh, duplicates };
+    };
+
     const { fresh, duplicates } = isDetail
         ? { fresh: rows, duplicates: [] }          // enrichment updates rows in place
-        : dedupeSpendRows(ruled.rows, existing);
+        : dedupePerAccount(ruled.rows);
 
     state.importResult = {
         profile, isDetail, format: parsed.format || 'csv',
@@ -422,7 +468,8 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         provider: parsed.provider || null,
         chunks: parsed.chunks || 0,
         chunksFailed: parsed.chunksFailed || 0,
-        detail: parsed.detail || null
+        detail: parsed.detail || null,
+        cardPlan
     };
     showReport();
 }
@@ -474,6 +521,20 @@ function showReport() {
             was actually bought instead of one lump settlement. The total is unchanged. ` : ''}
             ${r.detail.enriched ? `${r.detail.enriched} improved the description of the payment
             ${r.detail.enriched === 1 ? 'it belongs' : 'they belong'} to. ` : ''}
+            ${r.detail.promoted ? `<strong>${r.detail.promoted}</strong> card purchase${r.detail.promoted === 1 ? '' : 's'}
+            belong to a card period that this statement does not settle — on a credit card the payment shown
+            covers the previous month. They were imported as spending and flagged, because they are the money.
+            ${r.detail.settlementsLinked
+                ? `The card repayment on this statement was marked as a <em>transfer</em> automatically, so the same
+                   spending is not counted twice.`
+                : `Check whether a card repayment on this statement should be marked as a <em>transfer</em> — otherwise
+                   the same spending is counted twice.`} ` : ''}
+            ${(r.cardPlan || []).some(p => p.action === 'create')
+                ? `A card account will be created for them, linked to this one, so the purchases and the repayment
+                   stay separate. ` : ''}
+            ${(r.cardPlan || []).some(p => p.action === 'ambiguous')
+                ? `More than one card could own them, so they stay on this account and are flagged rather than
+                   filed against the wrong card. ` : ''}
             ${r.detail.unmatched ? `<strong>${r.detail.unmatched}</strong> could not be tied to a payment, so
             ${r.detail.unmatched === 1 ? 'its detail was' : 'their detail was'} not recorded — the spending is still
             counted in the payment total, but not itemised.` : ''}</p>` : ''}
@@ -512,6 +573,24 @@ export async function commitImport() {
     if (btnRow) btnRow.innerHTML = '<span class="form-helper">Saving…</span>';
 
     try {
+        // Card accounts are created here, not while analysing: until the user
+        // commits the import, nothing about their setup should change.
+        const toCreate = (r.cardPlan || []).filter(p => p.action === 'create');
+        for (const plan of toCreate) {
+            const made = await saveAccount(plan.proposal);
+            if (!made?.id) continue;
+            for (const row of r.fresh)
+                if (row.pendingAccountGroup === plan.group) {
+                    row.accountId = made.id;
+                    delete row.pendingAccountGroup;
+                }
+        }
+        // A row whose card account could not be created must not fall back to
+        // the current account, where its spending would collide with the
+        // repayment. Better to stop than to file it somewhere wrong.
+        const stranded = r.fresh.filter(row => row.pendingAccountGroup);
+        if (stranded.length) throw new Error(`${stranded.length} card row(s) had no account to go to.`);
+
         if (r.fresh.length) await saveTransactions(r.fresh);
         if (r.pending.length) await savePendingDetails(r.pending);
         // Anything that finally found its bank line is no longer pending.
