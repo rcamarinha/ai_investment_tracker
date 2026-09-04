@@ -23,7 +23,7 @@ import { escapeHTML } from './utils.js?v=3.44.0';
 import { groupIntoLines, findCandidateLines, findSectionHeadings, detectStatementYear, checkBalanceChain }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
-import { mergeDetailSource, expandCardDetail } from '../services/import-banks.js';
+import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../services/import-banks.js';
 
 /** Characters per request. The server rejects above 15K. */
 const CHUNK_CHARS = 12000;
@@ -283,7 +283,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     const statementRows = verified.filter(r => r.sourceRole !== 'detail');
 
     let rows = statementRows;
-    let itemised = 0, enrichedCount = 0, unmatchedDetail = 0, promoted = 0;
+    let itemised = 0, enrichedCount = 0, unmatchedDetail = 0, promoted = 0, settlementsLinked = 0;
     if (detailRows.length) {
         // Preferred outcome: prove the purchases account for the settlement and
         // put them in the ledger in its place, so a card bill reads as what was
@@ -317,7 +317,16 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
                 needsReview: true,
                 note: 'Card purchase. Its settlement is a separate row — mark that settlement as a transfer so this month is not counted twice.'
             }))];
-            promoted = leftover.length;
+            promoted = leftover.filter(d => Number(d.amount) < 0).length;
+
+            // The purchases are now spending, so the account row that repays the
+            // card is repayment, not consumption. Both legs are in this document,
+            // so the link is proven by amount and date rather than guessed from
+            // wording — and marking it is not optional: leaving it as spending
+            // overstates every month by the settlement, invisibly.
+            const marked = markCardSettlements(rows, leftover);
+            rows = marked.rows;
+            settlementsLinked = marked.linked.length;
         }
     }
 
@@ -325,7 +334,8 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
         rows, errors, parsed: rows.length, skipped: errors.length,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year,
-        detail: { total: detailRows.length, itemised, promoted, enriched: enrichedCount, unmatched: unmatchedDetail }
+        detail: { total: detailRows.length, itemised, promoted, settlementsLinked,
+                  enriched: enrichedCount, unmatched: unmatchedDetail }
     };
 }
 

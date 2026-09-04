@@ -870,3 +870,58 @@ export function expandCardDetail(statementRows = [], detailRows = [], options = 
 
     return { rows, expanded, unexpanded, groups: groups.size };
 }
+
+/**
+ * Mark the account row that settles a card, once that card's purchases are in
+ * the ledger.
+ *
+ * Both legs are printed in the same document. The card section lists its own
+ * payments ("PAGAMENTOS EFETUADOS NO PERÍODO"), and the account section carries
+ * the matching debit. So the settlement can be identified by the document
+ * agreeing with itself — same amount, opposite sign, same few days — rather than
+ * by guessing from wording like "CARTOES" that differs per bank and language.
+ *
+ * It has to be marked, because once the purchases are counted as spending the
+ * settlement is repayment of debt, not consumption. Counting both overstates
+ * spending by the settlement every month, and the error is invisible: each row
+ * looks entirely reasonable on its own.
+ *
+ * A payment inside the card section is a POSITIVE amount — it reduces what is
+ * owed — while the account-side debit is negative. That is the pairing.
+ */
+export function markCardSettlements(statementRows = [], detailRows = [], options = {}) {
+    const tolerance = options.tolerance ?? 0.011;
+    const windowDays = options.windowDays ?? 5;
+    const payments = detailRows.filter(d => Number(d.amount) > 0);
+    if (!payments.length) return { rows: [...statementRows], linked: [] };
+
+    const epochDay = v => Math.floor(Date.parse(`${String(v).slice(0, 10)}T00:00:00Z`) / 86400000);
+    const rows = statementRows.map(r => ({ ...r }));
+    const claimed = new Set();
+    const linked = [];
+
+    for (const pay of payments) {
+        let best = -1, bestGap = Infinity;
+        for (let i = 0; i < rows.length; i++) {
+            if (claimed.has(i)) continue;
+            const r = rows[i];
+            // Already settled by the user or a previous import: leave it alone.
+            if (r.category === 'transfer') continue;
+            if (Math.abs(Number(r.amount) + Number(pay.amount)) > tolerance) continue;
+            const gap = Math.abs(epochDay(r.date) - epochDay(pay.date));
+            if (!Number.isFinite(gap) || gap > windowDays) continue;
+            if (gap < bestGap) { bestGap = gap; best = i; }
+        }
+        if (best === -1) continue;
+        claimed.add(best);
+        rows[best] = {
+            ...rows[best],
+            category: 'transfer',
+            categorySource: 'auto',
+            note: 'Repayment of the card whose purchases this statement itemises — counted as a transfer so the same spending is not counted twice.'
+        };
+        linked.push({ index: best, amount: rows[best].amount });
+    }
+
+    return { rows, linked };
+}

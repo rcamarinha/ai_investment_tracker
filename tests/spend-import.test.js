@@ -4,7 +4,7 @@ import {
     locateHeaderBySignature,
     parseStyledNumber, detectDecimalStyle, detectDateFormat, parseDateWithFormat,
     spendFingerprint, buildExistingFingerprints, dedupeSpendRows,
-    mergeDetailSource, expandCardDetail, applyRules, ruleFromCorrection, DATE_FORMATS
+    mergeDetailSource, expandCardDetail, markCardSettlements, applyRules, ruleFromCorrection, DATE_FORMATS
 } from '../services/import-banks.js';
 
 // ── fixtures: shaped like the real thing, preamble rows and all ─────────────
@@ -890,4 +890,47 @@ it('marks an expanded row as card-derived in a persisted field', () => {
                  detailGroup: 'bkcf', balance: null }];
     const row = expandCardDetail([settlement], p).rows[0];
     expect(row.enrichedFrom).toBe('card');
+});
+
+// Once a card's purchases are counted as spending, the account row that repays
+// the card is repayment, not consumption. Both legs are printed in the same
+// document, so the link is proven rather than guessed from wording.
+describe('markCardSettlements', () => {
+    const statement = [
+        { accountId: 'a1', date: '2025-08-20', description: 'CARTOES BKCF - DEB. MENSAL', amount: -717.61 },
+        { accountId: 'a1', date: '2025-08-04', description: 'TRF SEPA', amount: -100.00 }
+    ];
+    // In the card section a payment REDUCES what is owed, so it is positive.
+    const detail = [
+        { accountId: 'a1', date: '2025-08-20', description: 'PAGAMENTO', amount: 717.61 },
+        { accountId: 'a1', date: '2025-08-01', description: 'DECATHLON GAIA', amount: -172.60 }
+    ];
+
+    it('marks the matching account row as a transfer', () => {
+        const r = markCardSettlements(statement, detail);
+        expect(r.linked).toHaveLength(1);
+        expect(r.rows[0].category).toBe('transfer');
+        expect(r.rows[1].category).toBeUndefined();
+    });
+
+    it('leaves everything alone when the card section shows no payment', () => {
+        const r = markCardSettlements(statement, detail.filter(d => d.amount < 0));
+        expect(r.linked).toHaveLength(0);
+        expect(r.rows[0].category).toBeUndefined();
+    });
+
+    it('does not match an amount that is merely similar', () => {
+        const r = markCardSettlements(statement, [{ ...detail[0], amount: 717.00 }]);
+        expect(r.linked).toHaveLength(0);
+    });
+
+    it('does not match a payment from a different period', () => {
+        const r = markCardSettlements(statement, [{ ...detail[0], date: '2025-07-20' }]);
+        expect(r.linked).toHaveLength(0);
+    });
+
+    it('leaves a row the user already called a transfer', () => {
+        const already = [{ ...statement[0], category: 'transfer' }];
+        expect(markCardSettlements(already, detail).linked).toHaveLength(0);
+    });
 });
