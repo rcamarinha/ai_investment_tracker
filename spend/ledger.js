@@ -823,7 +823,12 @@ export function editTx(id) {
     const opts = ['<option value="">Uncategorised</option>',
         ...state.categories.map(c =>
             `<option value="${escapeHTML(c.name)}" ${t.category === c.name ? 'selected' : ''}>${escapeHTML(`${c.icon || ''} ${c.name}`.trim())}</option>`),
-        `<option value="transfer" ${t.category === 'transfer' ? 'selected' : ''}>↔ Transfer between my accounts</option>`
+        `<option value="transfer" ${t.category === 'transfer' ? 'selected' : ''}>↔ Transfer between my accounts</option>`,
+        // The moment someone discovers they need a category is the moment they
+        // are trying to file something into one. Requiring them to leave, find
+        // the Categories section and come back is why a shipped feature can
+        // still read as missing.
+        '<option value="__new__">＋ New category…</option>'
     ].join('');
 
     el('txEditBody').innerHTML = `
@@ -836,6 +841,16 @@ export function editTx(id) {
         <div class="form-group">
             <label class="form-label">Category</label>
             <select class="form-select" id="txEditCat">${opts}</select>
+            <div id="txEditNewCat" hidden style="margin-top:8px">
+                <input class="form-input" id="txEditNewCatName" maxlength="40"
+                       placeholder="e.g. Kids — extracurricular">
+                <select class="form-select" id="txEditNewCatKind" style="margin-top:6px">
+                    <option value="spend">Spending — money consumed</option>
+                    <option value="savings">Saved or invested — leaves the account but isn't spent</option>
+                    <option value="income">Income — money coming in</option>
+                </select>
+                <span class="form-helper">Created when you save, and filed under it straight away.</span>
+            </div>
             <span class="form-helper">Correcting this also teaches a rule, so the same merchant files itself next time.</span>
         </div>
         <div class="form-group">
@@ -847,6 +862,15 @@ export function editTx(id) {
             <label class="form-label">Date</label>
             <input class="form-input" id="txEditDate" type="date" value="${escapeHTML(String(t.date).slice(0, 10))}">
         </div>`;
+    // Bound here rather than through an onchange attribute: an attribute is
+    // HTML-decoded before its contents are compiled as JavaScript, so it is the
+    // one place escaping does not protect a value.
+    const picker = el('txEditCat');
+    const newBlock = el('txEditNewCat');
+    picker.addEventListener('change', () => {
+        newBlock.hidden = picker.value !== '__new__';
+        if (!newBlock.hidden) el('txEditNewCatName').focus();
+    });
     openModal('txEditDialog');
 }
 
@@ -855,7 +879,26 @@ export async function saveTxEdit() {
     const t = state.transactions.find(x => x.id === id);
     if (!t) return;
 
-    const category = el('txEditCat').value || null;
+    let category = el('txEditCat').value || null;
+    if (category === '__new__') {
+        const name = el('txEditNewCatName').value.trim();
+        if (!name) { showToast('Give the new category a name.', 'warning'); return; }
+        const kind = el('txEditNewCatKind').value;
+        try {
+            // saveCategory owns the rules — reserved names, duplicates — so the
+            // inline path gets the same validation as the Categories section
+            // rather than a second, weaker copy of it.
+            const made = await saveCategory({
+                name,
+                isIncome: kind === 'income',
+                countsAsSavings: kind === 'savings'
+            });
+            category = made.name;
+        } catch (err) {
+            showToast('Could not create the category: ' + err.message, 'error');
+            return;
+        }
+    }
     const patch = {
         description: el('txEditDesc').value.trim() || t.description,
         category,
