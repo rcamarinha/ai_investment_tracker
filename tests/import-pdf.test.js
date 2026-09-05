@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-    groupIntoLines, findCandidateLines, proposeLinePattern, detectStatementYear,
-    parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
+    groupIntoLines, findCandidateLines, findSectionHeadings, checkBalanceChain,
+    proposeLinePattern, detectStatementYear, parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
 } from '../services/import-pdf.js';
 
 // pdf.js item shape: { str, transform: [a,b,c,d,x,y] }
@@ -187,5 +187,122 @@ describe('buildPdfDraft', () => {
     it('reports failure rather than a bad guess on an unreadable document', () => {
         expect(buildPdfDraft([{ text: 'scanned image, no text', xs: [], y: 0 }]))
             .toMatchObject({ ok: false, matched: 0 });
+    });
+});
+
+// pdf.js line shape: { text, y, xs }
+const ln = text => ({ text, y: 0, xs: [0] });
+// A dated row — the kind a heading must be followed by.
+const datedRow = ln('26/01 Compra GALP 26/01 -50,00 900,00');
+
+describe('findSectionHeadings', () => {
+    it('returns nothing for an empty document', () => {
+        expect(findSectionHeadings([])).toHaveLength(0);
+    });
+
+    it('keeps a predominantly uppercase heading that precedes a dated row', () => {
+        const lines = [ln('DETALHE DAS COMPRAS'), datedRow];
+        const found = findSectionHeadings(lines);
+        expect(found).toHaveLength(1);
+        expect(found[0].text).toBe('DETALHE DAS COMPRAS');
+    });
+
+    it('rejects a line that starts with a date', () => {
+        // Dated rows are candidate lines, never headings.
+        expect(findSectionHeadings([datedRow, datedRow])).toHaveLength(0);
+    });
+
+    it('rejects a line that carries a money figure', () => {
+        // Totals like "TOTAL DÉBITOS 1.234,56" are not section headings.
+        const lines = [ln('TOTAL DÉBITOS 1.234,56'), datedRow];
+        expect(findSectionHeadings(lines)).toHaveLength(0);
+    });
+
+    it('rejects a line with fewer than 60% uppercase letters', () => {
+        // Predominantly lowercase text is body copy, not a heading.
+        const lines = [ln('Detalhe das compras'), datedRow];
+        expect(findSectionHeadings(lines)).toHaveLength(0);
+    });
+
+    it('rejects a line with fewer than 3 letters', () => {
+        const lines = [ln('OK'), datedRow];
+        expect(findSectionHeadings(lines)).toHaveLength(0);
+    });
+
+    it('rejects page furniture not followed by any dated row within lookahead', () => {
+        // "PAG 2 DE 6" is uppercase but introduces nothing — it is printed on
+        // every page of every bank statement and must not pollute the heading list.
+        const lines = [ln('PAG 2 DE 6'), ln('OUTRO TEXTO'), ln('mais texto')];
+        expect(findSectionHeadings(lines)).toHaveLength(0);
+    });
+
+    it('rejects a line longer than 100 characters', () => {
+        const lines = [ln('A'.repeat(101)), datedRow];
+        expect(findSectionHeadings(lines)).toHaveLength(0);
+    });
+
+    it('respects a custom lookahead', () => {
+        // A heading 5 lines before the first dated row: found with lookahead=10,
+        // missed with lookahead=3.
+        const lines = [
+            ln('DETALHE DAS COMPRAS'),
+            ln('Linha dois'), ln('Linha tres'), ln('Linha quatro'), ln('Linha cinco'),
+            datedRow
+        ];
+        expect(findSectionHeadings(lines, { lookahead: 10 })).toHaveLength(1);
+        expect(findSectionHeadings(lines, { lookahead: 3 })).toHaveLength(0);
+    });
+
+    it('returns multiple headings when a statement has several sections', () => {
+        const lines = [ln('MOVIMENTOS À ORDEM'), datedRow, ln('DETALHE DAS COMPRAS'), datedRow];
+        expect(findSectionHeadings(lines)).toHaveLength(2);
+    });
+});
+
+describe('checkBalanceChain', () => {
+    const row = (amount, balance) => ({ amount, balance });
+
+    it('reports zero pairs and zero coverage for an empty list', () => {
+        const r = checkBalanceChain([]);
+        expect(r).toMatchObject({ pairs: 0, checked: 0, coverage: 0, valid: false, ratio: null });
+    });
+
+    it('reports zero pairs for a single row', () => {
+        const r = checkBalanceChain([row(-11, 7685.81)]);
+        expect(r).toMatchObject({ pairs: 0, checked: 0, coverage: 0, valid: false });
+    });
+
+    it('verifies a two-row chain that balances', () => {
+        // 95 - 100 = -5 === b.amount ✓
+        const r = checkBalanceChain([row(-11, 100), row(-5, 95)]);
+        expect(r).toMatchObject({ pairs: 1, checked: 1, coverage: 1, valid: true, breaks: 0, ratio: 1 });
+    });
+
+    it('reports all-null balances as unverified (not valid)', () => {
+        // The regression this guards: "checked === 0 && breaks === 0" looked
+        // like a pass before `valid` was changed to require checked > 0.
+        const r = checkBalanceChain([row(-11, null), row(-5, null), row(-3, null)]);
+        expect(r.checked).toBe(0);
+        expect(r.pairs).toBe(2);
+        expect(r.coverage).toBe(0);
+        expect(r.valid).toBe(false);
+    });
+
+    it('computes partial coverage when some balances are null', () => {
+        // 3 rows → 2 pairs. First pair: a.balance is null → skipped.
+        // Second pair: 97 - 100 = -3 === b.amount ✓
+        const r = checkBalanceChain([row(-10, null), row(-5, 100), row(-3, 97)]);
+        expect(r.pairs).toBe(2);
+        expect(r.checked).toBe(1);
+        expect(r.coverage).toBeCloseTo(0.5);
+        expect(r.valid).toBe(true);
+    });
+
+    it('detects a balance break and marks the chain invalid', () => {
+        // 85 - 100 = -15 ≠ -5 → break
+        const r = checkBalanceChain([row(-11, 100), row(-5, 85)]);
+        expect(r.breaks).toBe(1);
+        expect(r.valid).toBe(false);
+        expect(r.ratio).toBe(0);
     });
 });

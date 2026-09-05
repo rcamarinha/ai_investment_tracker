@@ -79,6 +79,21 @@ describe('normalizeRow', () => {
     it('falls back to a placeholder description rather than an empty string', () => {
         expect(normalizeRow({ ...good, description: '   ' }).description).toBe('(no description)');
     });
+
+    it('defaults detailGroup and expandedFrom to null', () => {
+        const r = normalizeRow(good);
+        expect(r.detailGroup).toBeNull();
+        expect(r.expandedFrom).toBeNull();
+    });
+
+    it('passes through detailGroup and expandedFrom when supplied', () => {
+        // These are set by the card-expansion path to track which settlement a
+        // purchase came from. Losing them on normalisation would drop the
+        // information needed to match a row back to its original card section.
+        const r = normalizeRow({ ...good, detailGroup: 'bkcf', expandedFrom: 'Cartoes bkcf deb' });
+        expect(r.detailGroup).toBe('bkcf');
+        expect(r.expandedFrom).toBe('Cartoes bkcf deb');
+    });
 });
 
 describe('validateRow', () => {

@@ -970,4 +970,22 @@ describe('planCardRouting', () => {
         const [p] = planCardRouting(['042061'], [checking, { ...card, archived: true }], 'chk');
         expect(p.action).toBe('create');
     });
+
+    it('reports ambiguous when two cards both match the heading digits', () => {
+        // Two cards with '2061' in their labels: the right one cannot be
+        // inferred, so routing refuses rather than guessing.
+        const c2 = { id: 'c2', type: 'card', label: 'Bankinter Gold ...2061', linkedAccountId: null };
+        const [p] = planCardRouting(['042061'], [checking, card, c2], 'chk');
+        expect(p.action).toBe('ambiguous');
+        expect(p.candidates).toHaveLength(2);
+    });
+
+    it('matches a card by its normalized label when no digit match exists', () => {
+        // Group name 'bkcf' normalizes to 'bkcf'. 'BKCF Platinum' normalizes
+        // to 'bkcfplatinum', which contains 'bkcf' (length 4 >= 3). Only one
+        // card matches the label, so it is used without ambiguity.
+        const byLabel = { id: 'lc', type: 'card', label: 'BKCF Platinum', linkedAccountId: null };
+        const [p] = planCardRouting(['bkcf'], [checking, byLabel], 'chk');
+        expect(p).toMatchObject({ action: 'use', accountId: 'lc' });
+    });
 });
