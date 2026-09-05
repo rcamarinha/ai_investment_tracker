@@ -198,7 +198,7 @@ const txFromRow = r => ({
     fxRates: r.fx_rates || null,
     category: r.category,
     categorySource: r.category_source,
-    categoryConfidence: r.category_confidence === null ? null : Number(r.category_confidence),
+    categoryConfidence: r.category_confidence == null ? null : Number(r.category_confidence),
     enrichedFrom: r.enriched_from,
     transferPairId: r.transfer_pair_id,
     recurringId: r.recurring_id,
@@ -266,12 +266,12 @@ export async function loadFromDatabase() {
                 // Bounded: the dashboard never looks further back than the trend
                 // chart, and an unbounded select on a multi-year ledger is the
                 // one query here that could get genuinely slow.
-                // Explicit columns, not `*`: created_at is never mapped, and
-                // fx_rates / category_confidence / recurring_id / note are
-                // mapped but read by no UI or maths path — together roughly a
-                // quarter of the payload. (saveTransactions writes a full row,
-                // but is only ever called with freshly parsed or quick-add
-                // rows, never with rows loaded from here, so nothing is nulled.)
+                // Explicit columns (not `*`): created_at is never mapped.
+                // All other columns MUST be loaded — findTransfers() and the
+                // categorise/wallet-merge paths read rows from state.transactions
+                // and write them back through saveTransactions → txToRow, which
+                // serialises every column. Any column missing here becomes
+                // null/NaN in memory and is permanently destroyed on write-back.
                 //
                 // LIMIT is one more than we keep: if the extra row comes back,
                 // the history was truncated, and the oldest rows are exactly
@@ -279,7 +279,8 @@ export async function loadFromDatabase() {
                 // starts here" would be a confident lie.
                 sb.from('spend_transactions')
                     .select('id,account_id,date,description,raw_description,merchant,amount,currency,' +
-                            'category,category_source,enriched_from,transfer_pair_id,source,fingerprint,needs_review')
+                            'fx_rates,category,category_source,category_confidence,' +
+                            'enriched_from,transfer_pair_id,recurring_id,source,fingerprint,note,needs_review')
                     .eq('user_id', uid)
                     .order('date', { ascending: false }).limit(TX_LIMIT + 1),
                 sb.from('spend_categories').select('*').eq('user_id', uid).order('sort_order'),
