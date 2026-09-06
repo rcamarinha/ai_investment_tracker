@@ -189,7 +189,9 @@ describe('card period that the statement does not settle', () => {
             { date: '2026-08-01', description: 'DECATHLON GAIA',  amount: -172.60, balance: null, role: 'detail', group: 'c1' },
             { date: '2026-08-13', description: 'ZOOMARINE',       amount: -162.50, balance: null, role: 'detail', group: 'c1' }
         ];
-        const { rows } = normalizeAiRows(raw.map(r => ({ ...r, detailGroup: r.group })), { accountId: 'a1' });
+        // normalizeAiRows now propagates `group` → `detailGroup` automatically;
+        // the manual patch that was here previously was working around that bug.
+        const { rows } = normalizeAiRows(raw, { accountId: 'a1' });
         const { rows: verified } = verifyRows(rows);
         const detail = verified.filter(r => r.sourceRole === 'detail');
         const statement = verified.filter(r => r.sourceRole !== 'detail');

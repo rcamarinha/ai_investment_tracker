@@ -174,7 +174,12 @@ export function normalizeAiRows(rawRows = [], { accountId, currency = 'EUR', sou
             // The model's structural call, not a guess from the wording. A card
             // purchase listed under the card section is 'detail': its money is
             // already in the statement row that pays the card.
-            sourceRole: raw?.role === 'detail' ? 'detail' : 'statement'
+            sourceRole: raw?.role === 'detail' ? 'detail' : 'statement',
+            // The extraction service returns `group` for detail rows so a
+            // two-card statement can reconcile each card's purchases against
+            // its own settlement. Without this, expandCardDetail lumps all
+            // detail rows into one bucket and neither card reconciles.
+            detailGroup: raw?.group ?? null
         });
         const { ok, errors } = validateRow(candidate);
         if (ok) rows.push(candidate);
