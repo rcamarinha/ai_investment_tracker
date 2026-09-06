@@ -947,6 +947,7 @@ export function markCardSettlements(statementRows = [], detailRows = [], options
 export function planCardRouting(groups = [], accounts = [], importAccountId = null) {
     const cards = accounts.filter(a => a.type === 'card' && !a.archived);
     const linked = cards.filter(a => a.linkedAccountId === importAccountId);
+    const importAccount = accounts.find(a => a.id === importAccountId);
     const norm = v => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
     return groups.map(group => {
@@ -968,7 +969,11 @@ export function planCardRouting(groups = [], accounts = [], importAccountId = nu
 
         return {
             group, action: 'create',
-            proposal: { type: 'card', label: `Card ${group}`.slice(0, 60), linkedAccountId: importAccountId }
+            proposal: {
+                type: 'card', label: `Card ${group}`.slice(0, 60),
+                linkedAccountId: importAccountId,
+                bankName: importAccount?.bankName || 'Unknown'
+            }
         };
     });
 }

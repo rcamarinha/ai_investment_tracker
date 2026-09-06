@@ -939,7 +939,7 @@ describe('markCardSettlements', () => {
 // linked account is what stops the spending and its repayment landing in the
 // same ledger, where they double-count.
 describe('planCardRouting', () => {
-    const checking = { id: 'chk', type: 'checking', label: 'Bankinter à ordem' };
+    const checking = { id: 'chk', type: 'checking', label: 'Bankinter à ordem', bankName: 'Bankinter' };
     const card     = { id: 'c1',  type: 'card', label: 'Bankinter Classic ...2061', linkedAccountId: 'chk' };
 
     it('matches a card by the digits printed in the heading', () => {
@@ -956,7 +956,7 @@ describe('planCardRouting', () => {
     it('proposes a card account when none exists', () => {
         const [p] = planCardRouting(['042061'], [checking], 'chk');
         expect(p.action).toBe('create');
-        expect(p.proposal).toMatchObject({ type: 'card', linkedAccountId: 'chk' });
+        expect(p.proposal).toMatchObject({ type: 'card', linkedAccountId: 'chk', bankName: 'Bankinter' });
     });
 
     it('refuses rather than guessing between two linked cards', () => {
