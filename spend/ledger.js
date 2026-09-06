@@ -893,6 +893,10 @@ export async function saveTxEdit() {
                 isIncome: kind === 'income',
                 countsAsSavings: kind === 'savings'
             });
+            if (!made) {
+                showToast('Please log in to create a category.', 'warning');
+                return;
+            }
             category = made.name;
         } catch (err) {
             showToast('Could not create the category: ' + err.message, 'error');
