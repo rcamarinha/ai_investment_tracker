@@ -135,6 +135,46 @@ describe('verifyRows — the safety net for model output', () => {
         expect(verifyRows([]).flagged).toBe(0);
         expect(verifyRows([chainOk[0]]).flagged).toBe(0);
     });
+
+    it('chain.pairs and chain.coverage are 0 for a single-row statement', () => {
+        const r = verifyRows([chainOk[0]]);
+        expect(r.chain.pairs).toBe(0);
+        expect(r.chain.coverage).toBe(0);
+    });
+
+    it('chain.coverage is 1 when the full statement balances', () => {
+        // Every adjacent pair was tested and none broke — coverage proves
+        // "fully vouched", not just "nothing was wrong with what we could check".
+        const r = verifyRows(chainOk);
+        expect(r.chain.pairs).toBe(chainOk.length - 1);
+        expect(r.chain.coverage).toBe(1);
+    });
+
+    it('chain.coverage is 0 when all balances are null — not "verified"', () => {
+        // This is the regression guard. Before the fix, checked===0 was treated
+        // as a pass and the import reported everything as reconciled even though
+        // no arithmetic was ever checked.
+        const noBalance = chainOk.map(({ balance, ...rest }) => ({ ...rest, balance: null }));
+        const r = verifyRows(noBalance);
+        expect(r.chain.pairs).toBe(chainOk.length - 1);
+        expect(r.chain.coverage).toBe(0);
+        expect(r.chain.valid).toBe(false);
+    });
+
+    it('chain.pairs counts only statement rows, not interleaved detail rows', () => {
+        // Detail rows have no running balance. Before the fix they broke
+        // adjacency for the statement rows either side — a few card lines could
+        // disable verification for most of the document while it still reported
+        // chain.valid=true. Now detail rows are stripped first so pairs is the
+        // number of adjacent STATEMENT pairs the document can be checked against.
+        const detail = { date: '2026-01-02', description: 'card purchase', amount: -5,
+                         currency: 'EUR', balance: null, sourceRole: 'detail' };
+        const mixed = [chainOk[0], detail, chainOk[1], chainOk[2]];
+        const r = verifyRows(mixed);
+        expect(r.chain.pairs).toBe(chainOk.length - 1);   // 2, not 3
+        expect(r.chain.coverage).toBe(1);
+        expect(r.chain.valid).toBe(true);
+    });
 });
 
 // ── card-detail sections ────────────────────────────────────────────────────

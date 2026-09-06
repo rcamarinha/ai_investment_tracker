@@ -910,6 +910,7 @@ describe('markCardSettlements', () => {
         const r = markCardSettlements(statement, detail);
         expect(r.linked).toHaveLength(1);
         expect(r.rows[0].category).toBe('transfer');
+        expect(r.rows[0].categorySource).toBe('auto');
         expect(r.rows[1].category).toBeUndefined();
     });
 
