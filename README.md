@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.44.4
+- **Fixed: a debit written with a trailing minus was recorded as income.** `100,00-` is how German, Austrian and Swiss exports mark money going out; it parsed as `+100`. The PDF path had the same bug by a different route — it stripped parentheses before deciding the sign, so `(100,00)` was also positive. Both parsers are now one parser, which is why the bug existed twice: there were two places to find it in.
+- **Amounts written those ways are no longer dropped.** The PDF line patterns required an amount to end in a digit, so `100,00-` and `(100,00)` matched nothing and the row was discarded — a partial import that reports itself as complete, which is the most dangerous shape this feature has.
+- **A wrapped description can no longer open a phantom card section.** A continuation line like `LISBOA PT VISA 1234` passed every test for a section heading. Injected as one it would route the following account movements to a card account. Headings must now start at the left margin, where a wrapped description never does.
+
 ### v3.44.3
 - **A remembered statement layout can now be forgotten.** Confirming one was a single tap with no way back, and a confirmed layout is replayed silently on every later statement matching it — so a wrong confirmation did not spoil one import, it spoiled every future import from that bank until somebody noticed. The import screen now lists what it remembers and lets any of it go; the next statement then asks again.
 - **Fixed: a statement spanning a year boundary dated part of itself wrongly.** The period detector matched both ends of a printed range and returned only the last, so a period running 15/12 to 15/01 was described as "in 2026" and a row printed 31/12 became 31/12/2026 — a future date, in the wrong month. Nothing downstream could catch it: the balance chain reconciles either way, because only the dates were wrong.

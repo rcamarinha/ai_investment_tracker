@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { prefilterLines, chunkLines, normalizeAiRows, verifyRows } from '../spend/pdf.js';
 import { expandCardDetail } from '../services/import-banks.js';
-import { detectStatementPeriod } from '../services/import-pdf.js';
+import { detectStatementPeriod, findSectionHeadings } from '../services/import-pdf.js';
+import { parseStyledNumber } from '../services/import-banks.js';
 
 const L = (text, i = 0) => ({ text, y: 700 - i * 12, xs: [60] });
 
@@ -290,5 +291,43 @@ describe('statement period across a year boundary', () => {
 
     it('returns null when the document says nothing about dates', () => {
         expect(detectStatementPeriod([L('Thank you for banking', 0)])).toBeNull();
+    });
+});
+
+// Verified against the running code, not inferred: parseStyledNumber('100,00-')
+// returned +100, so a debit was recorded as income. Trailing minus is the
+// standard debit marker in German, Austrian and Swiss exports, and the error
+// flatters the user's spending, which is the direction nobody questions.
+describe('the three ways a statement writes a negative', () => {
+    it('reads a trailing minus as negative', () => {
+        expect(parseStyledNumber('100,00-', 'eu')).toBe(-100);
+        expect(parseStyledNumber('1,234.56-', 'us')).toBe(-1234.56);
+    });
+    it('reads parentheses as negative', () => {
+        expect(parseStyledNumber('(100,00)', 'eu')).toBe(-100);
+    });
+    it('leaves a leading minus and a plain number alone', () => {
+        expect(parseStyledNumber('-100,00', 'eu')).toBe(-100);
+        expect(parseStyledNumber('100,00', 'eu')).toBe(100);
+        expect(parseStyledNumber('100,00+', 'eu')).toBe(100);
+    });
+});
+
+// A wrapped description satisfies every shape test for a heading. Injected as
+// one it opens a phantom card section mid-statement, and the rows after it get
+// routed to a card account — a false heading moves real money.
+describe('headings versus wrapped descriptions', () => {
+    const L = (text, i, x) => ({ text, y: 700 - i * 12, xs: [x] });
+    it('does not treat an indented continuation as a heading', () => {
+        const doc = [L('04/08 COMPRA SUPERMERCADO 45,00', 0, 60),
+                     L('LISBOA PT VISA 1234', 1, 140),
+                     L('05/08 FARMACIA 20,00', 2, 60)];
+        expect(findSectionHeadings(doc)).toHaveLength(0);
+    });
+    it('still finds a real heading at the left margin', () => {
+        const doc = [L('04/08 COMPRA 45,00', 0, 60),
+                     L('DETALHE DAS COMPRAS CARTAO N. 042061', 1, 60),
+                     L('05/08 FARMACIA 20,00', 2, 60)];
+        expect(findSectionHeadings(doc).map(l => l.text)).toEqual(['DETALHE DAS COMPRAS CARTAO N. 042061']);
     });
 });

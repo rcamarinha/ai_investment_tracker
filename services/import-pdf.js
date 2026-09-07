@@ -21,6 +21,7 @@
  */
 
 import { normalizeRow, validateRow } from './import-contract.js';
+import { parseStyledNumber } from './import-banks.js';
 
 // ── layout reconstruction ───────────────────────────────────────────────────
 
@@ -74,7 +75,12 @@ export function groupIntoLines(items = [], options = {}) {
 
 // ── candidate line patterns ─────────────────────────────────────────────────
 
-const NUM = String.raw`-?[\d.,]+\d`;
+// Accepts the three ways a statement writes a negative: a leading minus, a
+// TRAILING minus (standard in DE/AT/CH exports) and parentheses. Requiring the
+// token to end in a digit meant "100,00-" and "(100,00)" matched no pattern at
+// all, and the row was discarded rather than misread — which is worse, because
+// a partial import that reports itself as complete looks like a correct one.
+const NUM = String.raw`\(?[-+]?[\d.,]+\d[-+]?\)?`;
 const D_SLASH = String.raw`\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?`;
 
 /**
@@ -175,6 +181,18 @@ export function findSectionHeadings(lines = [], options = {}) {
         if (letters.length < 3) return false;
         const upper = letters.replace(/[^A-ZÀ-Þ]/g, '').length;
         if (upper / letters.length < 0.6) return false;
+
+        // A heading starts at the left margin. A wrapped description continues in
+        // the description column, indented — and "LISBOA PT VISA 1234" otherwise
+        // satisfies every test above. Injected as a heading it would open a
+        // phantom card section mid-statement, and the rows after it would be
+        // routed to a card account. Structure decides roles here, so a false
+        // heading moves real money to the wrong place.
+        const margins = lines.filter((_, k) => isCandidate(k)).map(c => c.xs?.[0]).filter(Number.isFinite);
+        if (margins.length && Number.isFinite(l.xs?.[0])) {
+            const leftMost = Math.min(...margins);
+            if (l.xs[0] > leftMost + 12) return false;
+        }
 
         // A heading introduces something. Without this, page furniture printed
         // in caps ("PAG. 2 DE 6") would be kept on every page.
@@ -310,16 +328,13 @@ export function detectStatementYear(lines = []) {
 
 // ── parsing ─────────────────────────────────────────────────────────────────
 
+// Delegates to the CSV path's parser rather than keeping a second one. The two
+// had drifted: this copy stripped parentheses before deciding the sign, so
+// "(100,00)" parsed as +100 and a debit was recorded as income — the same class
+// of bug the shared parser had for a trailing minus, discovered separately in
+// each place because there were two places to discover it in.
 function parseNum(raw, decimalStyle) {
-    if (raw === null || raw === undefined) return NaN;
-    let s = String(raw).trim().replace(/[^\d.,\-]/g, '');
-    if (!s) return NaN;
-    const neg = s.startsWith('-');
-    s = s.replace(/-/g, '');
-    if (decimalStyle === 'us') s = s.replace(/,/g, '');
-    else s = s.replace(/\./g, '').replace(',', '.');
-    const n = parseFloat(s);
-    return Number.isNaN(n) ? NaN : (neg ? -n : n);
+    return parseStyledNumber(raw, decimalStyle);
 }
 
 function toISO(raw, dateFormat, fallbackYear) {

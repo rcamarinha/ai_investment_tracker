@@ -18,8 +18,8 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.44.3';
-import { escapeHTML } from './utils.js?v=3.44.3';
+import state from './state.js?v=3.44.4';
+import { escapeHTML } from './utils.js?v=3.44.4';
 import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';

@@ -204,7 +204,11 @@ export function parseStyledNumber(raw, decimalStyle = 'eu') {
     s = s.replace(/[^0-9.,()\-+]/g, '');
     s = s.replace(/^\((.+)\)$/, '-$1');
     if (!s || s === '-' || s === '+') return NaN;
-    const neg = s.startsWith('-');
+    // A TRAILING minus is how German, Austrian and Swiss exports mark a debit,
+    // and it survived the strip above only to fail startsWith('-') and then be
+    // deleted — so "100,00-" parsed as +100 and a debit was recorded as income.
+    // Silent, and in the direction that flatters the user's spending.
+    const neg = /^-|-$/.test(s);
     s = s.replace(/[+\-]/g, '');
     if (decimalStyle === 'us') s = s.replace(/,/g, '');
     else s = s.replace(/\./g, '').replace(',', '.');
