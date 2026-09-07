@@ -261,8 +261,27 @@ Deno.serve(async (req) => {
       text = await callClaude(prompt);
     } catch (claudeErr) {
       console.error("[extract-statement] claude failed:", claudeErr);
-      // Generic to the caller; details stay in the logs.
-      return jsonResponse({ error: "Extraction service is unavailable right now." }, 502, corsHeaders);
+      // Enough to act on, without leaking anything. "Unavailable right now"
+      // sent the user away to wait for a recovery that was never coming when
+      // the real cause was a missing secret or an exhausted quota — the two
+      // most likely reasons BOTH providers fail at once, since a genuine
+      // simultaneous outage of two vendors is rare.
+      //
+      // Provider names and HTTP status only: no keys, no prompt, no statement
+      // text. A status distinguishes 401 (not configured) from 429 (out of
+      // quota) from 5xx (genuinely their end).
+      const summarise = (e: unknown) => {
+        const m = String((e as Error)?.message ?? e);
+        const status = m.match(/\b(4\d{2}|5\d{2})\b/)?.[1];
+        if (/secret not set|not configured/i.test(m)) return "not configured";
+        if (/abort|timeout/i.test(m)) return "timed out";
+        return status ? `HTTP ${status}` : "failed";
+      };
+      return jsonResponse({
+        error: `Both extraction providers failed — Gemini: ${summarise(geminiErr)}; ` +
+               `Claude: ${summarise(claudeErr)}. A 401 or "not configured" means the server ` +
+               `is missing that provider\u2019s key; a 429 means its quota is used up.`,
+      }, 502, corsHeaders);
     }
   }
 
