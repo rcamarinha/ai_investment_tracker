@@ -924,7 +924,11 @@ export function markCardSettlements(statementRows = [], detailRows = [], options
             categorySource: 'rule',
             note: 'Repayment of the card whose purchases this statement itemises — counted as a transfer so the same spending is not counted twice.'
         };
-        linked.push({ index: best, amount: rows[best].amount });
+        // The payment object itself, so the caller can mark the OTHER leg. A
+        // transfer has two sides and marking only one leaves the other looking
+        // like income — which is exactly what a card repayment landing in the
+        // card's ledger looks like: a large positive amount with no category.
+        linked.push({ index: best, amount: rows[best].amount, payment: pay });
     }
 
     return { rows, linked };
