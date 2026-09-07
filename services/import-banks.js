@@ -917,7 +917,11 @@ export function markCardSettlements(statementRows = [], detailRows = [], options
         rows[best] = {
             ...rows[best],
             category: 'transfer',
-            categorySource: 'auto',
+            // 'rule', not 'auto': the column is constrained to rule/ai/manual,
+            // and this IS a deterministic rule derived from the document — the
+            // two legs matching on amount, sign and date — rather than a model's
+            // opinion or the user's.
+            categorySource: 'rule',
             note: 'Repayment of the card whose purchases this statement itemises — counted as a transfer so the same spending is not counted twice.'
         };
         linked.push({ index: best, amount: rows[best].amount });
