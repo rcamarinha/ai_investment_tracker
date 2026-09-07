@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.44.1';
-import { escapeHTML, fmtMoney, fmtDate, showToast, openModal, closeModal } from './utils.js?v=3.44.1';
+import state from './state.js?v=3.45.0';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.45.0';
 import {
-    saveTransactions, saveProfile, savePendingDetails, clearPendingDetails, saveAccount, requireAuth
-} from './storage.js?v=3.44.1';
-import { renderAll } from './ledger.js?v=3.44.1';
+    saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
+} from './storage.js?v=3.45.0';
+import { renderAll } from './ledger.js?v=3.45.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.44.1';
+import { importPdfStatement } from './pdf.js?v=3.45.0';
 import { reportHandled } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
@@ -73,7 +73,75 @@ export function renderImportSection() {
                 CSV and TSV work too: ${known ? `${known} format${known === 1 ? '' : 's'} already learned, and those import without asking anything.` : 'the first file from a bank asks you to confirm its columns once, then never again.'}
             </span>
         </div>
+        ${state.lastImport ? `
+        <div class="review-banner" style="margin-top:12px"><span>↩</span><span>
+            Last import added ${state.lastImport.rows} transaction${state.lastImport.rows === 1 ? '' : 's'}.
+            <button class="btn btn-sm btn-ghost-spend" style="margin-left:6px;padding:1px 8px"
+                    data-act="undo-import">Undo it</button>
+        </span></div>` : ''}
+        ${state.profiles.length ? `
+        <div class="form-group" style="margin-top:14px">
+            <label class="form-label">Layouts I remember</label>
+            <ul style="margin:4px 0 0 18px">
+                ${state.profiles.map(p => `<li class="form-helper">
+                    ${escapeHTML((p.label || 'Unnamed layout').slice(0, 54))}
+                    <span style="opacity:.7">· ${escapeHTML((p.formatKind || 'csv').toUpperCase())}</span>
+                    <button class="btn btn-sm btn-ghost-spend" style="margin-left:6px;padding:1px 8px"
+                            data-act="forget-layout" data-id="${escapeHTML(p.id)}">Forget</button>
+                </li>`).join('')}
+            </ul>
+            <span class="form-helper">A remembered layout is replayed silently on every statement that matches it,
+            so if one was confirmed by mistake, forget it here and the next import will ask again.</span>
+        </div>` : ''}
         <div id="importStatus"></div>`;
+}
+
+/**
+ * Forget a layout, after saying what that costs.
+ *
+ * Confirming is one tap, so un-confirming should be too — but it is not
+ * symmetrical in effect: forgetting means the next statement from that bank
+ * asks again, which is the recoverable direction. Confirming wrongly is the
+ * direction with no way back, which is why this exists.
+ */
+/**
+ * Take back the last import.
+ *
+ * Deliberately scoped to the most recent one rather than offering a history:
+ * the moment someone needs this is the moment they have just watched an import
+ * land wrong, and a list of past imports to choose from is a decision they do
+ * not want to be making then.
+ */
+export async function undoLastImport() {
+    const last = state.lastImport;
+    if (!last?.id) { showToast('Nothing to undo.', 'warning'); return; }
+    if (!await showConfirm(
+        `Remove the ${last.rows} transaction${last.rows === 1 ? '' : 's'} added by the last import? Anything you have edited since will go too.`,
+        { danger: true, confirmLabel: 'Undo import' })) return;
+    try {
+        const gone = await undoImport(last.id);
+        state.lastImport = null;
+        showToast(`${gone} transaction${gone === 1 ? '' : 's'} removed.`);
+        renderAll();
+        renderImportSection();
+    } catch (err) {
+        showToast('Could not undo: ' + err.message, 'error');
+    }
+}
+
+export async function forgetLayout(id) {
+    const profile = state.profiles.find(p => p.id === id);
+    if (!profile) return;
+    if (!await showConfirm(
+        `Forget "${(profile.label || 'this layout').slice(0, 60)}"? The next statement shaped like it will ask again instead of importing silently.`,
+        { confirmLabel: 'Forget it' })) return;
+    try {
+        await deleteProfile(id);
+        showToast('Forgotten.');
+        renderImportSection();
+    } catch (err) {
+        showToast('Could not forget it: ' + err.message, 'error');
+    }
 }
 
 function status(html) {
@@ -129,6 +197,10 @@ async function runPdfImport(file) {
     try {
         const result = await importPdfStatement(file, {
             accountId,
+            // The account's own currency, so a GBP or USD statement stops
+            // importing as euros. Nothing downstream could catch that: currency
+            // is not part of the balance arithmetic the chain verifies.
+            accountCurrency: state.accounts.find(a => a.id === accountId)?.currency || null,
             hint: profile?.pdfHint || null,
             onProgress: (done, total) => status(
                 `<p class="form-helper">Reading ${escapeHTML(file.name)} — ${done} of ${total} section${total === 1 ? '' : 's'}…</p>`)
@@ -468,6 +540,7 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         provider: parsed.provider || null,
         chunks: parsed.chunks || 0,
         chunksFailed: parsed.chunksFailed || 0,
+        broadened: !!parsed.broadened,
         detail: parsed.detail || null,
         cardPlan,
         // What this document turned out to contain, and whether we have seen a
@@ -511,7 +584,9 @@ function showReport() {
                 : `${r.flagged} row${r.flagged === 1 ? '' : 's'} flagged — the amount doesn't match the statement's running balance`)
             : 'this statement prints no running balance, so the amounts could not be cross-checked';
         formatNote = `<p class="form-helper" style="margin-bottom:10px">
-            Read from PDF${r.provider ? ` by ${escapeHTML(r.provider)}` : ''} — ${escapeHTML(verdict)}.</p>`;
+            Read from PDF${r.provider ? ` by ${escapeHTML(r.provider)}` : ''} — ${escapeHTML(verdict)}.
+            ${r.broadened ? `This bank does not start its rows with a date, so a wider net was used —
+            worth a look over the rows below before adding them.` : ''}</p>`;
     } else if (r.format && r.format !== 'csv') {
         formatNote = `<p class="form-helper" style="margin-bottom:10px">Read as <strong>${escapeHTML(r.format.toUpperCase())}</strong> — a standard bank format, so nothing needed configuring.</p>`;
     }
@@ -550,6 +625,10 @@ function showReport() {
             ${r.detail.unmatched ? `<strong>${r.detail.unmatched}</strong> could not be tied to a payment, so
             ${r.detail.unmatched === 1 ? 'its detail was' : 'their detail was'} not recorded — the spending is still
             counted in the payment total, but not itemised.` : ''}</p>` : ''}
+        ${r.format === 'pdf' && r.chain && !r.chain.pairs ? `<div class="review-banner"><span>⚠</span><span>
+            Nothing in this document could be cross-checked. It prints no running balance, so the usual test —
+            that each amount matches the balance either side of it — has nothing to work with. The rows may be
+            perfectly correct; they are simply unverified, so they are worth reading before you add them.</span></div>` : ''}
         ${r.flagged ? `<div class="review-banner"><span>⚠</span><span>
             ${r.flagged} row${r.flagged === 1 ? '' : 's'} did not reconcile with the statement's running balance and
             ${r.flagged === 1 ? 'is' : 'are'} marked for review.</span></div>` : ''}
@@ -646,7 +725,16 @@ export async function commitImport() {
         const stranded = r.fresh.filter(row => row.pendingAccountGroup);
         if (stranded.length) throw new Error(`${stranded.length} card row(s) had no account to go to.`);
 
+        // One id across everything this commit writes, so it can be taken back
+        // as a unit. Generated here rather than when the file was read: an
+        // import that is never committed should leave no trace at all.
+        const importId = crypto.randomUUID();
+        for (const row of r.fresh) row.importId = importId;
+
         if (r.fresh.length) await saveTransactions(r.fresh);
+        state.lastImport = r.fresh.length
+            ? { id: importId, rows: r.fresh.length, at: Date.now() }
+            : state.lastImport;
         if (r.pending.length) await savePendingDetails(r.pending);
         // Anything that finally found its bank line is no longer pending.
         //

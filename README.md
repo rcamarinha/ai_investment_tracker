@@ -307,6 +307,25 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.45.0
+- **Currency comes from the account, and goes through the app's own currency layer.** Three places in the statement path hardcoded EUR, so a GBP or USD statement imported as euros silently — and the balance check cannot notice, because currency is not part of the arithmetic it verifies. Spend now uses `money-core`, the same module the portfolio uses, which also means `GBp` (pence) is no longer folded into `GBP` and read as a hundred times too much. A currency the source states but we cannot recognise is rejected rather than quietly replaced.
+- **A statement printed newest-first now imports.** The balance chain only ever tested the ascending form, so a descending document failed every pair: refused outright on the deterministic path, and flagged almost row-by-row on the AI path. Both directions are scored and the rows are turned round — not re-sorted by date, because document order is the only within-day ordering a statement gives you.
+- **An import can be undone.** Rows are tagged with the import that created them and the last one can be taken back in a single action. Every other guardrail here assumes a mistake can eventually be corrected; until now correcting one meant deleting rows one at a time.
+- **A statement with no running balance says so plainly.** It imported with zero rows flagged, which reads as verified when nothing had been checked at all.
+
+### v3.44.4
+- **Fixed: a debit written with a trailing minus was recorded as income.** `100,00-` is how German, Austrian and Swiss exports mark money going out; it parsed as `+100`. The PDF path had the same bug by a different route — it stripped parentheses before deciding the sign, so `(100,00)` was also positive. Both parsers are now one parser, which is why the bug existed twice: there were two places to find it in.
+- **Amounts written those ways are no longer dropped.** The PDF line patterns required an amount to end in a digit, so `100,00-` and `(100,00)` matched nothing and the row was discarded — a partial import that reports itself as complete, which is the most dangerous shape this feature has.
+- **A wrapped description can no longer open a phantom card section.** A continuation line like `LISBOA PT VISA 1234` passed every test for a section heading. Injected as one it would route the following account movements to a card account. Headings must now start at the left margin, where a wrapped description never does.
+
+### v3.44.3
+- **A remembered statement layout can now be forgotten.** Confirming one was a single tap with no way back, and a confirmed layout is replayed silently on every later statement matching it — so a wrong confirmation did not spoil one import, it spoiled every future import from that bank until somebody noticed. The import screen now lists what it remembers and lets any of it go; the next statement then asks again.
+- **Fixed: a statement spanning a year boundary dated part of itself wrongly.** The period detector matched both ends of a printed range and returned only the last, so a period running 15/12 to 15/01 was described as "in 2026" and a row printed 31/12 became 31/12/2026 — a future date, in the wrong month. Nothing downstream could catch it: the balance chain reconciles either way, because only the dates were wrong.
+
+### v3.44.2
+- **A statement from an unrecognised bank no longer fails before the extractor sees it.** Whether a PDF was even offered to the AI was decided by a pattern requiring `dd/mm` at the start of every row, so any bank using ISO dates, month names, or a layout with the date mid-row was refused with "no dated transaction lines" — the extractor exists for exactly those layouts, and our own pattern was preventing it from looking. ISO and month-name dates are recognised, and when no row starts with a date the net widens to anything carrying both a date and an amount. The report says when that happened.
+- The refusal that remains is a real one — nothing in the document carries both a date and an amount — and now says what that usually means: a scan rather than a text PDF, or a summary page rather than the movements.
+
 ### v3.44.1
 - **Fixed: imports failed to save with a check-constraint error.** The card-repayment rule stamped `categorySource: 'auto'`, but that column allows only `rule`, `ai` or `manual`. Everything up to the final write succeeded, so the import parsed, verified and displayed as ready before dying on save. It is recorded as `rule`, which is what it is — a deterministic match on amount, sign and date, not a model's guess. A test now reads the CHECK constraints out of the migrations and fails if the code can emit a value the database would reject.
 

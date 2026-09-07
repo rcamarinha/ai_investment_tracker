@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { prefilterLines, chunkLines, normalizeAiRows, verifyRows } from '../spend/pdf.js';
 import { expandCardDetail } from '../services/import-banks.js';
+import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain } from '../services/import-pdf.js';
+import { parseStyledNumber } from '../services/import-banks.js';
 
 const L = (text, i = 0) => ({ text, y: 700 - i * 12, xs: [60] });
 
@@ -226,5 +228,138 @@ describe('section headings survive the prefilter', () => {
     it('does not keep page furniture printed in caps', () => {
         const { body } = prefilterLines([...doc, L('PAG. 2 DE 6', 20)]);
         expect(body.some(t => t.includes('PAG. 2 DE 6'))).toBe(false);
+    });
+});
+
+// The strict gate decided whether the AI extractor was allowed to look at a
+// document at all, so any bank not printing dd/mm at the start of every row
+// failed outright with "No dated transaction lines found" — the exact opposite
+// of what a bank-agnostic importer is for.
+describe('documents whose rows do not start with dd/mm', () => {
+    const L = (text, i) => ({ text, y: 700 - i * 12, xs: [60] });
+
+    it('accepts ISO dates', () => {
+        const { body } = prefilterLines([
+            L('Statement 2025', 0), L('2025-08-04 TRF SEPA 100,00 18.063,52', 1)
+        ]);
+        expect(body.some(t => t.includes('TRF SEPA'))).toBe(true);
+    });
+
+    it('accepts a month name', () => {
+        const { body } = prefilterLines([
+            L('Statement', 0), L('04 Ago 2025 DECATHLON GAIA 172,60', 1)
+        ]);
+        expect(body.some(t => t.includes('DECATHLON'))).toBe(true);
+    });
+
+    it('widens to rows whose date is not first', () => {
+        const { body, broadened } = prefilterLines([
+            L('Movimentos', 0),
+            L('DECATHLON GAIA 04/08/2025 172,60', 1),
+            L('CONTINENTE 05/08/2025 42,10', 2)
+        ]);
+        expect(broadened).toBe(true);
+        expect(body.filter(t => /DECATHLON|CONTINENTE/.test(t))).toHaveLength(2);
+    });
+
+    it('still refuses a document with no dates and no amounts', () => {
+        const { body } = prefilterLines([L('Terms and conditions apply', 0), L('Thank you for banking', 1)]);
+        expect(body).toHaveLength(0);
+    });
+});
+
+// One statement a year spans a year boundary. A single detected year stamps
+// December with January's year — wrong month, sometimes a future date — and the
+// balance chain still reconciles, because the amounts were never wrong.
+describe('statement period across a year boundary', () => {
+    const L = (text, i) => ({ text, y: 700 - i * 12, xs: [60] });
+    const doc = [
+        L('Periodo: de 2025/12/15 a 2026/01/15', 0),
+        L('31/12 COMPRA SUPERMERCADO 45,00 1.000,00', 1),
+        L('02/01 COMPRA FARMACIA 20,00 980,00', 2)
+    ];
+
+    it('reports both ends of the period, not one year', () => {
+        const p = detectStatementPeriod(doc);
+        expect(p).toMatchObject({ start: '2025-12-15', end: '2026-01-15', startYear: 2025, endYear: 2026 });
+    });
+
+    it('still works when only one year is printed', () => {
+        const single = [L('Periodo: de 2025/08/01 a 2025/08/31', 0), L('04/08 TRF 10,00 90,00', 1)];
+        expect(detectStatementPeriod(single)).toMatchObject({ startYear: 2025, endYear: 2025 });
+    });
+
+    it('returns null when the document says nothing about dates', () => {
+        expect(detectStatementPeriod([L('Thank you for banking', 0)])).toBeNull();
+    });
+});
+
+// Verified against the running code, not inferred: parseStyledNumber('100,00-')
+// returned +100, so a debit was recorded as income. Trailing minus is the
+// standard debit marker in German, Austrian and Swiss exports, and the error
+// flatters the user's spending, which is the direction nobody questions.
+describe('the three ways a statement writes a negative', () => {
+    it('reads a trailing minus as negative', () => {
+        expect(parseStyledNumber('100,00-', 'eu')).toBe(-100);
+        expect(parseStyledNumber('1,234.56-', 'us')).toBe(-1234.56);
+    });
+    it('reads parentheses as negative', () => {
+        expect(parseStyledNumber('(100,00)', 'eu')).toBe(-100);
+    });
+    it('leaves a leading minus and a plain number alone', () => {
+        expect(parseStyledNumber('-100,00', 'eu')).toBe(-100);
+        expect(parseStyledNumber('100,00', 'eu')).toBe(100);
+        expect(parseStyledNumber('100,00+', 'eu')).toBe(100);
+    });
+});
+
+// A wrapped description satisfies every shape test for a heading. Injected as
+// one it opens a phantom card section mid-statement, and the rows after it get
+// routed to a card account — a false heading moves real money.
+describe('headings versus wrapped descriptions', () => {
+    const L = (text, i, x) => ({ text, y: 700 - i * 12, xs: [x] });
+    it('does not treat an indented continuation as a heading', () => {
+        const doc = [L('04/08 COMPRA SUPERMERCADO 45,00', 0, 60),
+                     L('LISBOA PT VISA 1234', 1, 140),
+                     L('05/08 FARMACIA 20,00', 2, 60)];
+        expect(findSectionHeadings(doc)).toHaveLength(0);
+    });
+    it('still finds a real heading at the left margin', () => {
+        const doc = [L('04/08 COMPRA 45,00', 0, 60),
+                     L('DETALHE DAS COMPRAS CARTAO N. 042061', 1, 60),
+                     L('05/08 FARMACIA 20,00', 2, 60)];
+        expect(findSectionHeadings(doc).map(l => l.text)).toEqual(['DETALHE DAS COMPRAS CARTAO N. 042061']);
+    });
+});
+
+// A statement printed newest-first fails every pair of the ascending chain, so
+// the deterministic path refused the document and the AI path flagged nearly
+// every row. Neither is a parsing error — the rows are simply the other way up.
+describe('statements printed newest-first', () => {
+    const desc = [
+        { date: '2026-01-03', description: 'C', amount: -30, balance: 870 },
+        { date: '2026-01-02', description: 'B', amount: -50, balance: 900 },
+        { date: '2026-01-01', description: 'A', amount: -50, balance: 950 }
+    ];
+    const asc = [...desc].reverse();
+
+    it('recognises descending order', () => {
+        expect(scoreChainDirection(desc).direction).toBe('desc');
+    });
+
+    it('recognises ascending order', () => {
+        expect(scoreChainDirection(asc).direction).toBe('asc');
+    });
+
+    it('reconciles once the rows are turned round', () => {
+        const turned = [...desc].reverse();
+        const chain = checkBalanceChain(turned);
+        expect(chain.valid).toBe(true);
+        expect(chain.checked).toBe(2);
+    });
+
+    it('says nothing when no row carries a balance', () => {
+        const none = desc.map(r => ({ ...r, balance: null }));
+        expect(scoreChainDirection(none)).toMatchObject({ direction: 'unknown', pairs: 0 });
     });
 });

@@ -18,9 +18,9 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.44.1';
-import { escapeHTML } from './utils.js?v=3.44.1';
-import { groupIntoLines, findCandidateLines, findSectionHeadings, detectStatementYear, checkBalanceChain }
+import state from './state.js?v=3.45.0';
+import { escapeHTML } from './utils.js?v=3.45.0';
+import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
 import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../services/import-banks.js';
@@ -64,7 +64,18 @@ export async function extractPdfLines(file) {
  * text most likely to be mistaken for a transaction.
  */
 export function prefilterLines(lines = []) {
-    const candidates = new Set(findCandidateLines(lines).map(l => l.text));
+    // A row that does not START with a date is still a row. When the strict pass
+    // finds nothing, widen to anything carrying both a date and an amount rather
+    // than refusing the document — the extractor exists precisely for layouts
+    // that were never anticipated, and gating it behind our own pattern means it
+    // never sees them.
+    let found = findCandidateLines(lines);
+    let broadened = false;
+    if (!found.length) {
+        found = findLooseCandidates(lines);
+        broadened = found.length > 0;
+    }
+    const candidates = new Set(found.map(l => l.text));
     // Section headings are kept alongside the rows, IN DOCUMENT ORDER, because
     // the model is asked to classify a row by the section it sits under. Filter
     // them out and a card purchase is just another dated line — the evidence
@@ -77,7 +88,8 @@ export function prefilterLines(lines = []) {
     const body = lines
         .filter(l => candidates.has(l.text) || headings.has(l.text))
         .map(l => l.text);
-    return { header, body, headings: headingList, year: detectStatementYear(lines) };
+    return { header, body, headings: headingList, broadened,
+             year: detectStatementYear(lines), period: detectStatementPeriod(lines) };
 }
 
 export function chunkLines(bodyLines = [], maxChars = CHUNK_CHARS) {
@@ -161,7 +173,7 @@ async function callExtractor(statementText, hint) {
 // ── model output → verified rows ────────────────────────────────────────────
 
 /** Coerce whatever the model returned through the same gate as every adapter. */
-export function normalizeAiRows(rawRows = [], { accountId, currency = 'EUR', source = 'pdf' } = {}) {
+export function normalizeAiRows(rawRows = [], { accountId, currency = null, source = 'pdf' } = {}) {
     const rows = [], rejected = [];
     for (const raw of rawRows) {
         const candidate = normalizeRow({
@@ -169,14 +181,17 @@ export function normalizeAiRows(rawRows = [], { accountId, currency = 'EUR', sou
             date: typeof raw?.date === 'string' ? raw.date : null,
             description: raw?.description,
             amount: raw?.amount,
-            currency: raw?.currency || currency,
+            // Only what the document actually said. An absent currency is left
+            // absent so the contract can fall back to the ACCOUNT's, which is a
+            // far better guess than EUR and is recorded as a guess either way.
+            currency: raw?.currency || undefined,
             balance: raw?.balance ?? null,
             source,
             // The model's structural call, not a guess from the wording. A card
             // purchase listed under the card section is 'detail': its money is
             // already in the statement row that pays the card.
             sourceRole: raw?.role === 'detail' ? 'detail' : 'statement'
-        });
+        }, { currency });
         const { ok, errors } = validateRow(candidate);
         if (ok) rows.push(candidate);
         else rejected.push({ reason: errors.join('; '), raw });
@@ -224,19 +239,29 @@ export function verifyRows(rows = []) {
  * `onProgress(done, total)` reports chunk progress; a long export is several
  * requests and silence for 30 seconds reads as a hang.
  */
-export async function importPdfStatement(file, { accountId, hint, onProgress } = {}) {
+export async function importPdfStatement(file, { accountId, accountCurrency, hint, onProgress } = {}) {
     const { lines, pageCount } = await extractPdfLines(file);
     if (!lines.length) {
         return { rows: [], errors: [{ reason: 'No text found — this looks like a scanned image rather than a text PDF.' }], parsed: 0, skipped: 1, format: 'pdf' };
     }
 
-    const { header, body, headings, year } = prefilterLines(lines);
+    const { header, body, headings, broadened, year, period } = prefilterLines(lines);
     if (!body.length) {
-        return { rows: [], errors: [{ reason: 'No dated transaction lines found in this document.' }], parsed: 0, skipped: 1, format: 'pdf' };
+        return {
+            rows: [],
+            errors: [{ reason: 'Nothing in this document looks like a transaction: no line carries both a date and an amount. If it is a statement, it may be a scan of one, or a summary page rather than the movements.' }],
+            parsed: 0, skipped: 1, format: 'pdf'
+        };
     }
 
     const chunks = chunkLines(body);
-    const contextHint = [hint, year ? `The statement period is in ${year}.` : null,
+    // The PERIOD, not a year. A statement running 15/12 to 15/01 spans two, and
+    // telling the model a single year makes it stamp December with January's.
+    const periodHint = period && period.start && period.startYear !== period.endYear
+        ? `The statement period runs from ${period.start} to ${period.end}. It spans two calendar years: a row printed as day/month takes whichever year places it inside that period, so December belongs to ${period.startYear} and January to ${period.endYear}.`
+        : period && period.start ? `The statement period runs from ${period.start} to ${period.end}.`
+        : year ? `The statement period is in ${year}.` : null;
+    const contextHint = [hint, periodHint,
         `Document header:\n${header.join('\n')}`].filter(Boolean).join('\n');
 
     const collected = [], errors = [];
@@ -262,12 +287,24 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     }
     onProgress?.(chunks.length, chunks.length);
 
-    const { rows: normalized, rejected } = normalizeAiRows(collected, { accountId, source: file.name || 'pdf' });
+    const { rows: normalized, rejected } = normalizeAiRows(collected,
+        { accountId, currency: accountCurrency || null, source: file.name || 'pdf' });
     for (const r of rejected) errors.push({ reason: r.reason });
 
-    // Chronological, so the balance chain is checked in the order the statement
-    // printed it rather than the order the model happened to emit.
-    normalized.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    // Document order is the only intra-day ordering that exists — there is no
+    // sequence number to fall back on — so it is preserved rather than
+    // re-derived. Sorting by date alone looks harmless and is not: a stable sort
+    // leaves a newest-first statement's within-day rows reversed, which breaks
+    // every pair the chain checks and flags most of the document.
+    //
+    // A statement printed newest-first is simply turned round. Only when neither
+    // direction reconciles does the date sort come back, as a last resort for
+    // rows the model may have emitted out of order.
+    const order = scoreChainDirection(normalized);
+    if (order.direction === 'desc') normalized.reverse();
+    else if (order.direction === 'unknown' && order.pairs > 0) {
+        normalized.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    }
     const { rows: verified, chain, flagged } = verifyRows(normalized);
 
     // Detail lines never enter the ledger as movements. The card bill is already
@@ -339,7 +376,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     return {
         rows, errors, parsed: rows.length, skipped: errors.length,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
-        chain, flagged, statementYear: year, headings,
+        chain, flagged, statementYear: year, headings, broadened, rowOrder: order.direction,
         detail: { total: detailRows.length, itemised, promoted, settlementsLinked,
                   enriched: enrichedCount, unmatched: unmatchedDetail }
     };

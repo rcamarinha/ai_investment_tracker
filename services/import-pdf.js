@@ -21,6 +21,7 @@
  */
 
 import { normalizeRow, validateRow } from './import-contract.js';
+import { parseStyledNumber } from './import-banks.js';
 
 // ── layout reconstruction ───────────────────────────────────────────────────
 
@@ -74,7 +75,12 @@ export function groupIntoLines(items = [], options = {}) {
 
 // ── candidate line patterns ─────────────────────────────────────────────────
 
-const NUM = String.raw`-?[\d.,]+\d`;
+// Accepts the three ways a statement writes a negative: a leading minus, a
+// TRAILING minus (standard in DE/AT/CH exports) and parentheses. Requiring the
+// token to end in a digit meant "100,00-" and "(100,00)" matched no pattern at
+// all, and the row was discarded rather than misread — which is worse, because
+// a partial import that reports itself as complete looks like a correct one.
+const NUM = String.raw`\(?[-+]?[\d.,]+\d[-+]?\)?`;
 const D_SLASH = String.raw`\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?`;
 
 /**
@@ -104,9 +110,41 @@ export const LINE_PATTERNS = [
 ];
 
 /** Lines that begin with something date-shaped — candidate transaction rows. */
+// Day-first numeric is the common case in PT/EU statements, but it is not the
+// only way a bank prints a date, and this gate decides whether a document is
+// even offered to the extractor. Kept deliberately broad: a false positive costs
+// one extra line in a prompt, while a false negative used to fail the whole
+// import with "no dated transaction lines".
+const D_ISO  = String.raw`\d{4}[/.-]\d{1,2}[/.-]\d{1,2}`;
+const D_NAME = String.raw`\d{1,2}[\s.-]+[A-Za-zÀ-ÿ]{3,9}\.?[\s.-]+\d{2,4}`;
+const D_ANY  = `(?:${D_ISO}|${D_NAME}|${D_SLASH})`;
+
 export function findCandidateLines(lines = []) {
-    const lead = new RegExp(`^${D_SLASH}\\b`);
+    const lead = new RegExp(`^\\s*${D_ANY}\\b`);
     return lines.filter(l => lead.test(l.text));
+}
+
+/**
+ * Everything that could plausibly be a movement, for a document whose rows do
+ * not begin with a date.
+ *
+ * Some banks print the date in the middle of the row, or lead with a value date
+ * column, or use a layout nobody has seen. Those documents used to be refused
+ * outright — the deterministic date gate decided whether the AI extractor was
+ * allowed to look, which inverts the point of having it.
+ *
+ * Wider net, same guardrail: whatever comes back is still checked against the
+ * statement's running balance, so a looser filter cannot make a wrong import
+ * look right.
+ */
+export function findLooseCandidates(lines = []) {
+    const anywhere = new RegExp(D_ANY);
+    const money = /\d[\d.,]*[.,]\d{2}\b/;
+    return lines.filter(l => {
+        const t = l.text || '';
+        if (t.length > 200) return false;
+        return anywhere.test(t) && money.test(t);
+    });
 }
 
 /**
@@ -143,6 +181,18 @@ export function findSectionHeadings(lines = [], options = {}) {
         if (letters.length < 3) return false;
         const upper = letters.replace(/[^A-ZÀ-Þ]/g, '').length;
         if (upper / letters.length < 0.6) return false;
+
+        // A heading starts at the left margin. A wrapped description continues in
+        // the description column, indented — and "LISBOA PT VISA 1234" otherwise
+        // satisfies every test above. Injected as a heading it would open a
+        // phantom card section mid-statement, and the rows after it would be
+        // routed to a card account. Structure decides roles here, so a false
+        // heading moves real money to the wrong place.
+        const margins = lines.filter((_, k) => isCandidate(k)).map(c => c.xs?.[0]).filter(Number.isFinite);
+        if (margins.length && Number.isFinite(l.xs?.[0])) {
+            const leftMost = Math.min(...margins);
+            if (l.xs[0] > leftMost + 12) return false;
+        }
 
         // A heading introduces something. Without this, page furniture printed
         // in caps ("PAG. 2 DE 6") would be kept on every page.
@@ -236,6 +286,32 @@ export function proposeLinePattern(lines = [], options = {}) {
  * current year silently files January statements into the wrong one every
  * January, so the year is taken from the document or the rows are refused.
  */
+/**
+ * The period a statement covers, both ends of it.
+ *
+ * A single year is not enough and quietly corrupts one statement a year: a
+ * period running 15/12 to 15/01 spans two, so a row printed "31/12" belongs to
+ * the earlier year and "02/01" to the later one. Stamping both with one year
+ * puts December's spending in the wrong month — and sometimes in the future —
+ * while the balance chain still reconciles perfectly, because the amounts were
+ * never wrong. Nothing downstream can catch it.
+ */
+export function detectStatementPeriod(lines = []) {
+    const text = lines.map(l => l.text).join('\n');
+    const full = text.match(
+        /(?:per[ií]odo|period)[^\n]*?(\d{4})[/-](\d{1,2})[/-](\d{1,2})[^\n]*?\ba\b[^\n]*?(\d{4})[/-](\d{1,2})[/-](\d{1,2})/i);
+    if (full) {
+        const pad = v => String(v).padStart(2, '0');
+        return {
+            start: `${full[1]}-${pad(full[2])}-${pad(full[3])}`,
+            end:   `${full[4]}-${pad(full[5])}-${pad(full[6])}`,
+            startYear: Number(full[1]), endYear: Number(full[4])
+        };
+    }
+    const y = detectStatementYear(lines);
+    return y ? { start: null, end: null, startYear: y, endYear: y } : null;
+}
+
 export function detectStatementYear(lines = []) {
     const text = lines.map(l => l.text).join('\n');
     const ranges = [
@@ -252,16 +328,13 @@ export function detectStatementYear(lines = []) {
 
 // ── parsing ─────────────────────────────────────────────────────────────────
 
+// Delegates to the CSV path's parser rather than keeping a second one. The two
+// had drifted: this copy stripped parentheses before deciding the sign, so
+// "(100,00)" parsed as +100 and a debit was recorded as income — the same class
+// of bug the shared parser had for a trailing minus, discovered separately in
+// each place because there were two places to discover it in.
 function parseNum(raw, decimalStyle) {
-    if (raw === null || raw === undefined) return NaN;
-    let s = String(raw).trim().replace(/[^\d.,\-]/g, '');
-    if (!s) return NaN;
-    const neg = s.startsWith('-');
-    s = s.replace(/-/g, '');
-    if (decimalStyle === 'us') s = s.replace(/,/g, '');
-    else s = s.replace(/\./g, '').replace(',', '.');
-    const n = parseFloat(s);
-    return Number.isNaN(n) ? NaN : (neg ? -n : n);
+    return parseStyledNumber(raw, decimalStyle);
 }
 
 function toISO(raw, dateFormat, fallbackYear) {
@@ -318,7 +391,8 @@ export function parseWithLineProfile(lines = [], profile = {}, options = {}) {
             date,
             description: (g.description || '').trim(),
             amount,
-            currency: profile.currency || 'EUR',
+            // Absent, not EUR: the contract falls back to the account's currency.
+            currency: profile.currency || undefined,
             balance: g.balance !== undefined ? parseNum(g.balance, decimalStyle) : null,
             source: options.source || 'pdf',
             sourceRole: profile.sourceRole || 'statement'
@@ -358,4 +432,30 @@ export function buildPdfDraft(lines = []) {
         dateFormat: 'dd-mm-yyyy',
         formatKind: 'pdf'
     };
+}
+
+/**
+ * Which way round a statement's rows run.
+ *
+ * The balance chain only ever tested `balance[n] - balance[n-1] === amount[n]`,
+ * which is the ascending form. In a document printed newest-first every pair
+ * fails, so a perfectly parseable statement is either refused outright by the
+ * deterministic path or imported with almost every row flagged — the guardrail
+ * crying wolf across a whole class of banks.
+ *
+ * Scoring both forms costs one extra pass and answers it from the document
+ * rather than from a guess about the bank.
+ */
+export function scoreChainDirection(rows = [], tolerance = 0.011) {
+    let asc = 0, desc = 0, pairs = 0;
+    for (let i = 1; i < rows.length; i++) {
+        const a = rows[i - 1], b = rows[i];
+        if (a.balance === null || a.balance === undefined) continue;
+        if (b.balance === null || b.balance === undefined) continue;
+        pairs++;
+        if (Math.abs((b.balance - a.balance) - Number(b.amount)) <= tolerance) asc++;
+        if (Math.abs((a.balance - b.balance) - Number(a.amount)) <= tolerance) desc++;
+    }
+    const direction = pairs === 0 ? 'unknown' : desc > asc ? 'desc' : asc > 0 ? 'asc' : 'unknown';
+    return { direction, asc, desc, pairs };
 }

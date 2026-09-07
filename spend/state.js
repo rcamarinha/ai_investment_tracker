@@ -6,6 +6,12 @@
  */
 
 const state = {
+    // The most recent committed import, so it can be taken back as a unit.
+    // Session-only: undoing is for the mistake you have just watched happen,
+    // and a persisted history would be a list of decisions nobody wants to make
+    // later.
+    lastImport: null,
+
     // ── data ────────────────────────────────────────────────────────────────
     accounts: [],           // spend_accounts rows (camelCase)
     transactions: [],       // spend_transactions rows, newest first
