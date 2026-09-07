@@ -307,6 +307,12 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.45.0
+- **Currency comes from the account, and goes through the app's own currency layer.** Three places in the statement path hardcoded EUR, so a GBP or USD statement imported as euros silently — and the balance check cannot notice, because currency is not part of the arithmetic it verifies. Spend now uses `money-core`, the same module the portfolio uses, which also means `GBp` (pence) is no longer folded into `GBP` and read as a hundred times too much. A currency the source states but we cannot recognise is rejected rather than quietly replaced.
+- **A statement printed newest-first now imports.** The balance chain only ever tested the ascending form, so a descending document failed every pair: refused outright on the deterministic path, and flagged almost row-by-row on the AI path. Both directions are scored and the rows are turned round — not re-sorted by date, because document order is the only within-day ordering a statement gives you.
+- **An import can be undone.** Rows are tagged with the import that created them and the last one can be taken back in a single action. Every other guardrail here assumes a mistake can eventually be corrected; until now correcting one meant deleting rows one at a time.
+- **A statement with no running balance says so plainly.** It imported with zero rows flagged, which reads as verified when nothing had been checked at all.
+
 ### v3.44.4
 - **Fixed: a debit written with a trailing minus was recorded as income.** `100,00-` is how German, Austrian and Swiss exports mark money going out; it parsed as `+100`. The PDF path had the same bug by a different route — it stripped parentheses before deciding the sign, so `(100,00)` was also positive. Both parsers are now one parser, which is why the bug existed twice: there were two places to find it in.
 - **Amounts written those ways are no longer dropped.** The PDF line patterns required an amount to end in a digit, so `100,00-` and `(100,00)` matched nothing and the row was discarded — a partial import that reports itself as complete, which is the most dangerous shape this feature has.

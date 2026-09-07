@@ -1,3 +1,4 @@
+import { normalizeCurrencyCode } from './money-core.js';
 /**
  * import-contract.js — the single row shape every ingestion source must produce.
  *
@@ -46,7 +47,24 @@ export function normalizeRow(input = {}, defaults = {}) {
     const rawAmount = Number(src.amount);
     const description = String(src.description ?? '').trim();
     const rawDescription = String(src.rawDescription ?? description).trim();
-    const currency = String(src.currency ?? 'EUR').trim().toUpperCase();
+    // Through the app's shared currency layer, not a local toUpperCase(): that
+    // folds "GBp" (pence) into "GBP" (pounds) and is wrong by a factor of a
+    // hundred. money-core already owns minor units for the portfolio side, and
+    // a statement is not a different kind of money.
+    //
+    // The fallback is the ACCOUNT's currency, not a hardcoded EUR. A GBP or USD
+    // statement used to import as euros silently, and the balance chain cannot
+    // notice: currency is not part of the arithmetic it checks.
+    // An explicitly supplied currency is never "corrected" into a valid one: if
+    // the source said something we cannot recognise, that is a fact about the
+    // import worth failing on, not a gap to fill. Only an ABSENT currency falls
+    // back — first to the account's, then to EUR.
+    const currency = src.currency
+        ? (normalizeCurrencyCode(src.currency)?.iso ?? String(src.currency).trim().toUpperCase())
+        : (normalizeCurrencyCode(defaults.currency)?.iso ?? 'EUR');
+    // Where it came from, so a later, better-sourced observation can correct it
+    // and a guess can be told from a fact.
+    const currencySource = src.currency ? 'row' : defaults.currency ? 'account' : 'assumed';
 
     return {
         // identity / placement
@@ -62,6 +80,7 @@ export function normalizeRow(input = {}, defaults = {}) {
         merchant: src.merchant ?? null,
         amount: Number.isFinite(rawAmount) ? round2(rawAmount) : null,
         currency,
+        currencySource,
 
         // classification — filled downstream, never by the adapter
         category: src.category ?? null,

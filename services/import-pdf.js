@@ -391,7 +391,8 @@ export function parseWithLineProfile(lines = [], profile = {}, options = {}) {
             date,
             description: (g.description || '').trim(),
             amount,
-            currency: profile.currency || 'EUR',
+            // Absent, not EUR: the contract falls back to the account's currency.
+            currency: profile.currency || undefined,
             balance: g.balance !== undefined ? parseNum(g.balance, decimalStyle) : null,
             source: options.source || 'pdf',
             sourceRole: profile.sourceRole || 'statement'
@@ -431,4 +432,30 @@ export function buildPdfDraft(lines = []) {
         dateFormat: 'dd-mm-yyyy',
         formatKind: 'pdf'
     };
+}
+
+/**
+ * Which way round a statement's rows run.
+ *
+ * The balance chain only ever tested `balance[n] - balance[n-1] === amount[n]`,
+ * which is the ascending form. In a document printed newest-first every pair
+ * fails, so a perfectly parseable statement is either refused outright by the
+ * deterministic path or imported with almost every row flagged — the guardrail
+ * crying wolf across a whole class of banks.
+ *
+ * Scoring both forms costs one extra pass and answers it from the document
+ * rather than from a guess about the bank.
+ */
+export function scoreChainDirection(rows = [], tolerance = 0.011) {
+    let asc = 0, desc = 0, pairs = 0;
+    for (let i = 1; i < rows.length; i++) {
+        const a = rows[i - 1], b = rows[i];
+        if (a.balance === null || a.balance === undefined) continue;
+        if (b.balance === null || b.balance === undefined) continue;
+        pairs++;
+        if (Math.abs((b.balance - a.balance) - Number(b.amount)) <= tolerance) asc++;
+        if (Math.abs((a.balance - b.balance) - Number(a.amount)) <= tolerance) desc++;
+    }
+    const direction = pairs === 0 ? 'unknown' : desc > asc ? 'desc' : asc > 0 ? 'asc' : 'unknown';
+    return { direction, asc, desc, pairs };
 }

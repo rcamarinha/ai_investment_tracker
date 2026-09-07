@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { prefilterLines, chunkLines, normalizeAiRows, verifyRows } from '../spend/pdf.js';
 import { expandCardDetail } from '../services/import-banks.js';
-import { detectStatementPeriod, findSectionHeadings } from '../services/import-pdf.js';
+import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain } from '../services/import-pdf.js';
 import { parseStyledNumber } from '../services/import-banks.js';
 
 const L = (text, i = 0) => ({ text, y: 700 - i * 12, xs: [60] });
@@ -329,5 +329,37 @@ describe('headings versus wrapped descriptions', () => {
                      L('DETALHE DAS COMPRAS CARTAO N. 042061', 1, 60),
                      L('05/08 FARMACIA 20,00', 2, 60)];
         expect(findSectionHeadings(doc).map(l => l.text)).toEqual(['DETALHE DAS COMPRAS CARTAO N. 042061']);
+    });
+});
+
+// A statement printed newest-first fails every pair of the ascending chain, so
+// the deterministic path refused the document and the AI path flagged nearly
+// every row. Neither is a parsing error — the rows are simply the other way up.
+describe('statements printed newest-first', () => {
+    const desc = [
+        { date: '2026-01-03', description: 'C', amount: -30, balance: 870 },
+        { date: '2026-01-02', description: 'B', amount: -50, balance: 900 },
+        { date: '2026-01-01', description: 'A', amount: -50, balance: 950 }
+    ];
+    const asc = [...desc].reverse();
+
+    it('recognises descending order', () => {
+        expect(scoreChainDirection(desc).direction).toBe('desc');
+    });
+
+    it('recognises ascending order', () => {
+        expect(scoreChainDirection(asc).direction).toBe('asc');
+    });
+
+    it('reconciles once the rows are turned round', () => {
+        const turned = [...desc].reverse();
+        const chain = checkBalanceChain(turned);
+        expect(chain.valid).toBe(true);
+        expect(chain.checked).toBe(2);
+    });
+
+    it('says nothing when no row carries a balance', () => {
+        const none = desc.map(r => ({ ...r, balance: null }));
+        expect(scoreChainDirection(none)).toMatchObject({ direction: 'unknown', pairs: 0 });
     });
 });

@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.44.4';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.44.4';
+import state from './state.js?v=3.45.0';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.45.0';
 import {
-    saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, requireAuth
-} from './storage.js?v=3.44.4';
-import { renderAll } from './ledger.js?v=3.44.4';
+    saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
+} from './storage.js?v=3.45.0';
+import { renderAll } from './ledger.js?v=3.45.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.44.4';
+import { importPdfStatement } from './pdf.js?v=3.45.0';
 import { reportHandled } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
@@ -73,6 +73,12 @@ export function renderImportSection() {
                 CSV and TSV work too: ${known ? `${known} format${known === 1 ? '' : 's'} already learned, and those import without asking anything.` : 'the first file from a bank asks you to confirm its columns once, then never again.'}
             </span>
         </div>
+        ${state.lastImport ? `
+        <div class="review-banner" style="margin-top:12px"><span>↩</span><span>
+            Last import added ${state.lastImport.rows} transaction${state.lastImport.rows === 1 ? '' : 's'}.
+            <button class="btn btn-sm btn-ghost-spend" style="margin-left:6px;padding:1px 8px"
+                    data-act="undo-import">Undo it</button>
+        </span></div>` : ''}
         ${state.profiles.length ? `
         <div class="form-group" style="margin-top:14px">
             <label class="form-label">Layouts I remember</label>
@@ -98,6 +104,31 @@ export function renderImportSection() {
  * asks again, which is the recoverable direction. Confirming wrongly is the
  * direction with no way back, which is why this exists.
  */
+/**
+ * Take back the last import.
+ *
+ * Deliberately scoped to the most recent one rather than offering a history:
+ * the moment someone needs this is the moment they have just watched an import
+ * land wrong, and a list of past imports to choose from is a decision they do
+ * not want to be making then.
+ */
+export async function undoLastImport() {
+    const last = state.lastImport;
+    if (!last?.id) { showToast('Nothing to undo.', 'warning'); return; }
+    if (!await showConfirm(
+        `Remove the ${last.rows} transaction${last.rows === 1 ? '' : 's'} added by the last import? Anything you have edited since will go too.`,
+        { danger: true, confirmLabel: 'Undo import' })) return;
+    try {
+        const gone = await undoImport(last.id);
+        state.lastImport = null;
+        showToast(`${gone} transaction${gone === 1 ? '' : 's'} removed.`);
+        renderAll();
+        renderImportSection();
+    } catch (err) {
+        showToast('Could not undo: ' + err.message, 'error');
+    }
+}
+
 export async function forgetLayout(id) {
     const profile = state.profiles.find(p => p.id === id);
     if (!profile) return;
@@ -166,6 +197,10 @@ async function runPdfImport(file) {
     try {
         const result = await importPdfStatement(file, {
             accountId,
+            // The account's own currency, so a GBP or USD statement stops
+            // importing as euros. Nothing downstream could catch that: currency
+            // is not part of the balance arithmetic the chain verifies.
+            accountCurrency: state.accounts.find(a => a.id === accountId)?.currency || null,
             hint: profile?.pdfHint || null,
             onProgress: (done, total) => status(
                 `<p class="form-helper">Reading ${escapeHTML(file.name)} — ${done} of ${total} section${total === 1 ? '' : 's'}…</p>`)
@@ -590,6 +625,10 @@ function showReport() {
             ${r.detail.unmatched ? `<strong>${r.detail.unmatched}</strong> could not be tied to a payment, so
             ${r.detail.unmatched === 1 ? 'its detail was' : 'their detail was'} not recorded — the spending is still
             counted in the payment total, but not itemised.` : ''}</p>` : ''}
+        ${r.format === 'pdf' && r.chain && !r.chain.pairs ? `<div class="review-banner"><span>⚠</span><span>
+            Nothing in this document could be cross-checked. It prints no running balance, so the usual test —
+            that each amount matches the balance either side of it — has nothing to work with. The rows may be
+            perfectly correct; they are simply unverified, so they are worth reading before you add them.</span></div>` : ''}
         ${r.flagged ? `<div class="review-banner"><span>⚠</span><span>
             ${r.flagged} row${r.flagged === 1 ? '' : 's'} did not reconcile with the statement's running balance and
             ${r.flagged === 1 ? 'is' : 'are'} marked for review.</span></div>` : ''}
@@ -686,7 +725,16 @@ export async function commitImport() {
         const stranded = r.fresh.filter(row => row.pendingAccountGroup);
         if (stranded.length) throw new Error(`${stranded.length} card row(s) had no account to go to.`);
 
+        // One id across everything this commit writes, so it can be taken back
+        // as a unit. Generated here rather than when the file was read: an
+        // import that is never committed should leave no trace at all.
+        const importId = crypto.randomUUID();
+        for (const row of r.fresh) row.importId = importId;
+
         if (r.fresh.length) await saveTransactions(r.fresh);
+        state.lastImport = r.fresh.length
+            ? { id: importId, rows: r.fresh.length, at: Date.now() }
+            : state.lastImport;
         if (r.pending.length) await savePendingDetails(r.pending);
         // Anything that finally found its bank line is no longer pending.
         //

@@ -7,8 +7,8 @@
  * matching wine/storage.js.
  */
 
-import state from './state.js?v=3.44.4';
-import { showToast } from './utils.js?v=3.44.4';
+import state from './state.js?v=3.45.0';
+import { showToast } from './utils.js?v=3.45.0';
 
 // ── Supabase init ───────────────────────────────────────────────────────────
 
@@ -205,7 +205,8 @@ const txFromRow = r => ({
     source: r.source,
     fingerprint: r.fingerprint,
     note: r.note,
-    needsReview: !!r.needs_review
+    needsReview: !!r.needs_review,
+    importId: r.import_id || null
 });
 
 const txToRow = (t, userId) => ({
@@ -228,7 +229,8 @@ const txToRow = (t, userId) => ({
     source: t.source || 'manual',
     fingerprint: t.fingerprint,
     note: t.note || null,
-    needs_review: !!t.needsReview
+    needs_review: !!t.needsReview,
+    import_id: t.importId || null
 });
 
 const accountFromRow = r => ({
@@ -279,7 +281,7 @@ export async function loadFromDatabase() {
                 // starts here" would be a confident lie.
                 sb.from('spend_transactions')
                     .select('id,account_id,date,description,raw_description,merchant,amount,currency,' +
-                            'category,category_source,enriched_from,transfer_pair_id,source,fingerprint,needs_review')
+                            'category,category_source,enriched_from,transfer_pair_id,source,fingerprint,needs_review,import_id')
                     .eq('user_id', uid)
                     .order('date', { ascending: false }).limit(TX_LIMIT + 1),
                 sb.from('spend_categories').select('*').eq('user_id', uid).order('sort_order'),
@@ -459,6 +461,26 @@ export async function deleteAccount(id) {
  * not spoil a single import, it spoils every future import from that bank until
  * somebody notices. A one-tap decision with no way back is not a safe default.
  */
+/**
+ * Undo one import, as a unit.
+ *
+ * Every other guardrail here assumes a mistake can eventually be corrected.
+ * Until rows carried the import that made them, correcting one meant deleting
+ * four hundred rows by hand — which is not a correction, it is a reason to give
+ * up and keep the wrong data.
+ */
+export async function undoImport(importId) {
+    if (!requireAuth('undo an import') || !importId) return 0;
+    const { data, error } = await state.supabaseClient
+        .from('spend_transactions').delete()
+        .eq('import_id', importId).eq('user_id', state.currentUser.id)
+        .select('id');
+    if (error) throw error;
+    const gone = new Set((data || []).map(r => r.id));
+    state.transactions = state.transactions.filter(t => !gone.has(t.id));
+    return gone.size;
+}
+
 export async function deleteProfile(id) {
     if (!requireAuth('forget a layout')) return false;
     const { error } = await state.supabaseClient
