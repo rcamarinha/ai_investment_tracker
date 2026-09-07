@@ -1010,3 +1010,24 @@ describe('summarizeSections / sectionSignature', () => {
         expect(sectionSignature(changed)).not.toBe(sectionSignature(headings));
     });
 });
+
+// A transfer has two legs. Marking only the account-side debit left the
+// card-side credit uncategorised, where a large unexplained positive amount
+// reads as income — the real symptom was "CARTOES BKCF ... 1676,96" suggested
+// as Other income.
+describe('markCardSettlements — both legs', () => {
+    const statement = [{ accountId: 'a1', date: '2026-05-20', description: 'CARTOES BKCF - DEB. MENSAL', amount: -1676.96 }];
+    const payment   = { accountId: 'a1', date: '2026-05-20', description: 'PAGAMENTO', amount: 1676.96 };
+    const refund    = { accountId: 'a1', date: '2026-05-11', description: 'ZARA REEMBOLSO', amount: 50.00 };
+
+    it('hands back the payment that was paired, so the other leg can be marked', () => {
+        const r = markCardSettlements(statement, [payment, refund]);
+        expect(r.linked).toHaveLength(1);
+        expect(r.linked[0].payment).toBe(payment);
+    });
+
+    it('does not pair a refund, which is negative spending and not a transfer', () => {
+        const r = markCardSettlements(statement, [refund]);
+        expect(r.linked).toHaveLength(0);
+    });
+});

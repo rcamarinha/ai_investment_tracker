@@ -311,23 +311,28 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
         const stuck = new Set(exp.unexpanded.map(u => u.group));
         const leftover = detailRows.filter(d => stuck.has(d.detailGroup ?? '__ungrouped__'));
         if (leftover.length) {
-            rows = [...rows, ...leftover.map(d => ({
-                ...d,
-                sourceRole: 'statement',
-                enrichedFrom: 'card',
-                needsReview: true,
-                note: 'Card purchase. Its settlement is a separate row — mark that settlement as a transfer so this month is not counted twice.'
-            }))];
-            promoted = leftover.filter(d => Number(d.amount) < 0).length;
-
-            // The purchases are now spending, so the account row that repays the
-            // card is repayment, not consumption. Both legs are in this document,
-            // so the link is proven by amount and date rather than guessed from
-            // wording — and marking it is not optional: leaving it as spending
-            // overstates every month by the settlement, invisibly.
+            // Runs BEFORE the card rows join the ledger, so it searches only the
+            // account's own rows for the debit that repays the card.
             const marked = markCardSettlements(rows, leftover);
             rows = marked.rows;
             settlementsLinked = marked.linked.length;
+            const paired = new Set(marked.linked.map(l => l.payment));
+
+            rows = [...rows, ...leftover.map(d => paired.has(d)
+                // The other half of a transfer already proven against the account
+                // debit. Left uncategorised it reads as a large unexplained
+                // credit, and a model will call it income.
+                ? { ...d, sourceRole: 'statement', enrichedFrom: 'card',
+                    category: 'transfer', categorySource: 'rule',
+                    note: 'Repayment of this card from the linked account.' }
+                // A refund inside the card period is also positive but is NOT a
+                // transfer, so nothing is assumed from the sign alone — only a
+                // payment matched against the account debit is marked.
+                : { ...d, sourceRole: 'statement', enrichedFrom: 'card',
+                    needsReview: true,
+                    note: 'Card purchase. Its settlement is a separate row — mark that settlement as a transfer so this month is not counted twice.' }
+            )];
+            promoted = leftover.filter(d => Number(d.amount) < 0).length;
         }
     }
 
