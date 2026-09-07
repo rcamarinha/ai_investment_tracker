@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.44.1
+- **Fixed: imports failed to save with a check-constraint error.** The card-repayment rule stamped `categorySource: 'auto'`, but that column allows only `rule`, `ai` or `manual`. Everything up to the final write succeeded, so the import parsed, verified and displayed as ready before dying on save. It is recorded as `rule`, which is what it is — a deterministic match on amount, sign and date, not a model's guess. A test now reads the CHECK constraints out of the migrations and fails if the code can emit a value the database would reject.
+
 ### v3.44.0
 - **A first statement from a new bank says what it found, and assumes nothing.** The import report lists the sections detected — how many rows each produced and which account they went to — and one tap remembers that layout. The next statement shaped like it imports without asking. What it asks about is deliberately structure ("this is my card section"), never extraction ("does row 14 reconcile"): the second is the app's job and the user has no basis to answer it.
 - **A remembered layout is recognised by its heading text, not by position.** A bank inserting one line shifts every index, so matching on line or page numbers would silently misread a redesigned statement. A layout that no longer matches is shown again rather than replayed.
