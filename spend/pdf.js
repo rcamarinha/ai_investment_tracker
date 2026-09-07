@@ -20,7 +20,7 @@
 
 import state from './state.js?v=3.44.2';
 import { escapeHTML } from './utils.js?v=3.44.2';
-import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, checkBalanceChain }
+import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
 import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../services/import-banks.js';
@@ -88,7 +88,8 @@ export function prefilterLines(lines = []) {
     const body = lines
         .filter(l => candidates.has(l.text) || headings.has(l.text))
         .map(l => l.text);
-    return { header, body, headings: headingList, broadened, year: detectStatementYear(lines) };
+    return { header, body, headings: headingList, broadened,
+             year: detectStatementYear(lines), period: detectStatementPeriod(lines) };
 }
 
 export function chunkLines(bodyLines = [], maxChars = CHUNK_CHARS) {
@@ -241,7 +242,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
         return { rows: [], errors: [{ reason: 'No text found — this looks like a scanned image rather than a text PDF.' }], parsed: 0, skipped: 1, format: 'pdf' };
     }
 
-    const { header, body, headings, broadened, year } = prefilterLines(lines);
+    const { header, body, headings, broadened, year, period } = prefilterLines(lines);
     if (!body.length) {
         return {
             rows: [],
@@ -251,7 +252,13 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     }
 
     const chunks = chunkLines(body);
-    const contextHint = [hint, year ? `The statement period is in ${year}.` : null,
+    // The PERIOD, not a year. A statement running 15/12 to 15/01 spans two, and
+    // telling the model a single year makes it stamp December with January's.
+    const periodHint = period && period.start && period.startYear !== period.endYear
+        ? `The statement period runs from ${period.start} to ${period.end}. It spans two calendar years: a row printed as day/month takes whichever year places it inside that period, so December belongs to ${period.startYear} and January to ${period.endYear}.`
+        : period && period.start ? `The statement period runs from ${period.start} to ${period.end}.`
+        : year ? `The statement period is in ${year}.` : null;
+    const contextHint = [hint, periodHint,
         `Document header:\n${header.join('\n')}`].filter(Boolean).join('\n');
 
     const collected = [], errors = [];

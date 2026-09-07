@@ -268,6 +268,32 @@ export function proposeLinePattern(lines = [], options = {}) {
  * current year silently files January statements into the wrong one every
  * January, so the year is taken from the document or the rows are refused.
  */
+/**
+ * The period a statement covers, both ends of it.
+ *
+ * A single year is not enough and quietly corrupts one statement a year: a
+ * period running 15/12 to 15/01 spans two, so a row printed "31/12" belongs to
+ * the earlier year and "02/01" to the later one. Stamping both with one year
+ * puts December's spending in the wrong month — and sometimes in the future —
+ * while the balance chain still reconciles perfectly, because the amounts were
+ * never wrong. Nothing downstream can catch it.
+ */
+export function detectStatementPeriod(lines = []) {
+    const text = lines.map(l => l.text).join('\n');
+    const full = text.match(
+        /(?:per[ií]odo|period)[^\n]*?(\d{4})[/-](\d{1,2})[/-](\d{1,2})[^\n]*?\ba\b[^\n]*?(\d{4})[/-](\d{1,2})[/-](\d{1,2})/i);
+    if (full) {
+        const pad = v => String(v).padStart(2, '0');
+        return {
+            start: `${full[1]}-${pad(full[2])}-${pad(full[3])}`,
+            end:   `${full[4]}-${pad(full[5])}-${pad(full[6])}`,
+            startYear: Number(full[1]), endYear: Number(full[4])
+        };
+    }
+    const y = detectStatementYear(lines);
+    return y ? { start: null, end: null, startYear: y, endYear: y } : null;
+}
+
 export function detectStatementYear(lines = []) {
     const text = lines.map(l => l.text).join('\n');
     const ranges = [

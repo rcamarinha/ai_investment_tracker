@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { prefilterLines, chunkLines, normalizeAiRows, verifyRows } from '../spend/pdf.js';
 import { expandCardDetail } from '../services/import-banks.js';
+import { detectStatementPeriod } from '../services/import-pdf.js';
 
 const L = (text, i = 0) => ({ text, y: 700 - i * 12, xs: [60] });
 
@@ -263,5 +264,31 @@ describe('documents whose rows do not start with dd/mm', () => {
     it('still refuses a document with no dates and no amounts', () => {
         const { body } = prefilterLines([L('Terms and conditions apply', 0), L('Thank you for banking', 1)]);
         expect(body).toHaveLength(0);
+    });
+});
+
+// One statement a year spans a year boundary. A single detected year stamps
+// December with January's year — wrong month, sometimes a future date — and the
+// balance chain still reconciles, because the amounts were never wrong.
+describe('statement period across a year boundary', () => {
+    const L = (text, i) => ({ text, y: 700 - i * 12, xs: [60] });
+    const doc = [
+        L('Periodo: de 2025/12/15 a 2026/01/15', 0),
+        L('31/12 COMPRA SUPERMERCADO 45,00 1.000,00', 1),
+        L('02/01 COMPRA FARMACIA 20,00 980,00', 2)
+    ];
+
+    it('reports both ends of the period, not one year', () => {
+        const p = detectStatementPeriod(doc);
+        expect(p).toMatchObject({ start: '2025-12-15', end: '2026-01-15', startYear: 2025, endYear: 2026 });
+    });
+
+    it('still works when only one year is printed', () => {
+        const single = [L('Periodo: de 2025/08/01 a 2025/08/31', 0), L('04/08 TRF 10,00 90,00', 1)];
+        expect(detectStatementPeriod(single)).toMatchObject({ startYear: 2025, endYear: 2025 });
+    });
+
+    it('returns null when the document says nothing about dates', () => {
+        expect(detectStatementPeriod([L('Thank you for banking', 0)])).toBeNull();
     });
 });
