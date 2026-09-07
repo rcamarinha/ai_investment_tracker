@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.44.2
+- **A statement from an unrecognised bank no longer fails before the extractor sees it.** Whether a PDF was even offered to the AI was decided by a pattern requiring `dd/mm` at the start of every row, so any bank using ISO dates, month names, or a layout with the date mid-row was refused with "no dated transaction lines" — the extractor exists for exactly those layouts, and our own pattern was preventing it from looking. ISO and month-name dates are recognised, and when no row starts with a date the net widens to anything carrying both a date and an amount. The report says when that happened.
+- The refusal that remains is a real one — nothing in the document carries both a date and an amount — and now says what that usually means: a scan rather than a text PDF, or a summary page rather than the movements.
+
 ### v3.44.1
 - **Fixed: imports failed to save with a check-constraint error.** The card-repayment rule stamped `categorySource: 'auto'`, but that column allows only `rule`, `ai` or `manual`. Everything up to the final write succeeded, so the import parsed, verified and displayed as ready before dying on save. It is recorded as `rule`, which is what it is — a deterministic match on amount, sign and date, not a model's guess. A test now reads the CHECK constraints out of the migrations and fails if the code can emit a value the database would reject.
 

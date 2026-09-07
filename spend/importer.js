@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.44.1';
-import { escapeHTML, fmtMoney, fmtDate, showToast, openModal, closeModal } from './utils.js?v=3.44.1';
+import state from './state.js?v=3.44.2';
+import { escapeHTML, fmtMoney, fmtDate, showToast, openModal, closeModal } from './utils.js?v=3.44.2';
 import {
     saveTransactions, saveProfile, savePendingDetails, clearPendingDetails, saveAccount, requireAuth
-} from './storage.js?v=3.44.1';
-import { renderAll } from './ledger.js?v=3.44.1';
+} from './storage.js?v=3.44.2';
+import { renderAll } from './ledger.js?v=3.44.2';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.44.1';
+import { importPdfStatement } from './pdf.js?v=3.44.2';
 import { reportHandled } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
@@ -468,6 +468,7 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         provider: parsed.provider || null,
         chunks: parsed.chunks || 0,
         chunksFailed: parsed.chunksFailed || 0,
+        broadened: !!parsed.broadened,
         detail: parsed.detail || null,
         cardPlan,
         // What this document turned out to contain, and whether we have seen a
@@ -511,7 +512,9 @@ function showReport() {
                 : `${r.flagged} row${r.flagged === 1 ? '' : 's'} flagged — the amount doesn't match the statement's running balance`)
             : 'this statement prints no running balance, so the amounts could not be cross-checked';
         formatNote = `<p class="form-helper" style="margin-bottom:10px">
-            Read from PDF${r.provider ? ` by ${escapeHTML(r.provider)}` : ''} — ${escapeHTML(verdict)}.</p>`;
+            Read from PDF${r.provider ? ` by ${escapeHTML(r.provider)}` : ''} — ${escapeHTML(verdict)}.
+            ${r.broadened ? `This bank does not start its rows with a date, so a wider net was used —
+            worth a look over the rows below before adding them.` : ''}</p>`;
     } else if (r.format && r.format !== 'csv') {
         formatNote = `<p class="form-helper" style="margin-bottom:10px">Read as <strong>${escapeHTML(r.format.toUpperCase())}</strong> — a standard bank format, so nothing needed configuring.</p>`;
     }

@@ -228,3 +228,40 @@ describe('section headings survive the prefilter', () => {
         expect(body.some(t => t.includes('PAG. 2 DE 6'))).toBe(false);
     });
 });
+
+// The strict gate decided whether the AI extractor was allowed to look at a
+// document at all, so any bank not printing dd/mm at the start of every row
+// failed outright with "No dated transaction lines found" — the exact opposite
+// of what a bank-agnostic importer is for.
+describe('documents whose rows do not start with dd/mm', () => {
+    const L = (text, i) => ({ text, y: 700 - i * 12, xs: [60] });
+
+    it('accepts ISO dates', () => {
+        const { body } = prefilterLines([
+            L('Statement 2025', 0), L('2025-08-04 TRF SEPA 100,00 18.063,52', 1)
+        ]);
+        expect(body.some(t => t.includes('TRF SEPA'))).toBe(true);
+    });
+
+    it('accepts a month name', () => {
+        const { body } = prefilterLines([
+            L('Statement', 0), L('04 Ago 2025 DECATHLON GAIA 172,60', 1)
+        ]);
+        expect(body.some(t => t.includes('DECATHLON'))).toBe(true);
+    });
+
+    it('widens to rows whose date is not first', () => {
+        const { body, broadened } = prefilterLines([
+            L('Movimentos', 0),
+            L('DECATHLON GAIA 04/08/2025 172,60', 1),
+            L('CONTINENTE 05/08/2025 42,10', 2)
+        ]);
+        expect(broadened).toBe(true);
+        expect(body.filter(t => /DECATHLON|CONTINENTE/.test(t))).toHaveLength(2);
+    });
+
+    it('still refuses a document with no dates and no amounts', () => {
+        const { body } = prefilterLines([L('Terms and conditions apply', 0), L('Thank you for banking', 1)]);
+        expect(body).toHaveLength(0);
+    });
+});

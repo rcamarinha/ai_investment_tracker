@@ -18,9 +18,9 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.44.1';
-import { escapeHTML } from './utils.js?v=3.44.1';
-import { groupIntoLines, findCandidateLines, findSectionHeadings, detectStatementYear, checkBalanceChain }
+import state from './state.js?v=3.44.2';
+import { escapeHTML } from './utils.js?v=3.44.2';
+import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, checkBalanceChain }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
 import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../services/import-banks.js';
@@ -64,7 +64,18 @@ export async function extractPdfLines(file) {
  * text most likely to be mistaken for a transaction.
  */
 export function prefilterLines(lines = []) {
-    const candidates = new Set(findCandidateLines(lines).map(l => l.text));
+    // A row that does not START with a date is still a row. When the strict pass
+    // finds nothing, widen to anything carrying both a date and an amount rather
+    // than refusing the document — the extractor exists precisely for layouts
+    // that were never anticipated, and gating it behind our own pattern means it
+    // never sees them.
+    let found = findCandidateLines(lines);
+    let broadened = false;
+    if (!found.length) {
+        found = findLooseCandidates(lines);
+        broadened = found.length > 0;
+    }
+    const candidates = new Set(found.map(l => l.text));
     // Section headings are kept alongside the rows, IN DOCUMENT ORDER, because
     // the model is asked to classify a row by the section it sits under. Filter
     // them out and a card purchase is just another dated line — the evidence
@@ -77,7 +88,7 @@ export function prefilterLines(lines = []) {
     const body = lines
         .filter(l => candidates.has(l.text) || headings.has(l.text))
         .map(l => l.text);
-    return { header, body, headings: headingList, year: detectStatementYear(lines) };
+    return { header, body, headings: headingList, broadened, year: detectStatementYear(lines) };
 }
 
 export function chunkLines(bodyLines = [], maxChars = CHUNK_CHARS) {
@@ -230,9 +241,13 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
         return { rows: [], errors: [{ reason: 'No text found — this looks like a scanned image rather than a text PDF.' }], parsed: 0, skipped: 1, format: 'pdf' };
     }
 
-    const { header, body, headings, year } = prefilterLines(lines);
+    const { header, body, headings, broadened, year } = prefilterLines(lines);
     if (!body.length) {
-        return { rows: [], errors: [{ reason: 'No dated transaction lines found in this document.' }], parsed: 0, skipped: 1, format: 'pdf' };
+        return {
+            rows: [],
+            errors: [{ reason: 'Nothing in this document looks like a transaction: no line carries both a date and an amount. If it is a statement, it may be a scan of one, or a summary page rather than the movements.' }],
+            parsed: 0, skipped: 1, format: 'pdf'
+        };
     }
 
     const chunks = chunkLines(body);
@@ -339,7 +354,7 @@ export async function importPdfStatement(file, { accountId, hint, onProgress } =
     return {
         rows, errors, parsed: rows.length, skipped: errors.length,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
-        chain, flagged, statementYear: year, headings,
+        chain, flagged, statementYear: year, headings, broadened,
         detail: { total: detailRows.length, itemised, promoted, settlementsLinked,
                   enriched: enrichedCount, unmatched: unmatchedDetail }
     };

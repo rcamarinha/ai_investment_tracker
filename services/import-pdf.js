@@ -104,9 +104,41 @@ export const LINE_PATTERNS = [
 ];
 
 /** Lines that begin with something date-shaped — candidate transaction rows. */
+// Day-first numeric is the common case in PT/EU statements, but it is not the
+// only way a bank prints a date, and this gate decides whether a document is
+// even offered to the extractor. Kept deliberately broad: a false positive costs
+// one extra line in a prompt, while a false negative used to fail the whole
+// import with "no dated transaction lines".
+const D_ISO  = String.raw`\d{4}[/.-]\d{1,2}[/.-]\d{1,2}`;
+const D_NAME = String.raw`\d{1,2}[\s.-]+[A-Za-zÀ-ÿ]{3,9}\.?[\s.-]+\d{2,4}`;
+const D_ANY  = `(?:${D_ISO}|${D_NAME}|${D_SLASH})`;
+
 export function findCandidateLines(lines = []) {
-    const lead = new RegExp(`^${D_SLASH}\\b`);
+    const lead = new RegExp(`^\\s*${D_ANY}\\b`);
     return lines.filter(l => lead.test(l.text));
+}
+
+/**
+ * Everything that could plausibly be a movement, for a document whose rows do
+ * not begin with a date.
+ *
+ * Some banks print the date in the middle of the row, or lead with a value date
+ * column, or use a layout nobody has seen. Those documents used to be refused
+ * outright — the deterministic date gate decided whether the AI extractor was
+ * allowed to look, which inverts the point of having it.
+ *
+ * Wider net, same guardrail: whatever comes back is still checked against the
+ * statement's running balance, so a looser filter cannot make a wrong import
+ * look right.
+ */
+export function findLooseCandidates(lines = []) {
+    const anywhere = new RegExp(D_ANY);
+    const money = /\d[\d.,]*[.,]\d{2}\b/;
+    return lines.filter(l => {
+        const t = l.text || '';
+        if (t.length > 200) return false;
+        return anywhere.test(t) && money.test(t);
+    });
 }
 
 /**
