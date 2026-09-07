@@ -7,8 +7,8 @@
  * matching wine/storage.js.
  */
 
-import state from './state.js?v=3.44.2';
-import { showToast } from './utils.js?v=3.44.2';
+import state from './state.js?v=3.44.3';
+import { showToast } from './utils.js?v=3.44.3';
 
 // ── Supabase init ───────────────────────────────────────────────────────────
 
@@ -448,6 +448,25 @@ export async function deleteAccount(id) {
     state.accounts = state.accounts.filter(a => a.id !== id);
     // The FK cascades in the DB; mirror it in memory so the UI agrees.
     state.transactions = state.transactions.filter(t => t.accountId !== id);
+}
+
+/**
+ * Forget a learned layout.
+ *
+ * The counterpart that confirmLayout shipped without, and the asymmetry matters
+ * more than it looks: a confirmed layout is replayed silently on every later
+ * statement that matches its signature. Confirming a wrong one therefore does
+ * not spoil a single import, it spoils every future import from that bank until
+ * somebody notices. A one-tap decision with no way back is not a safe default.
+ */
+export async function deleteProfile(id) {
+    if (!requireAuth('forget a layout')) return false;
+    const { error } = await state.supabaseClient
+        .from('spend_bank_profiles').delete()
+        .eq('id', id).eq('user_id', state.currentUser.id);
+    if (error) throw error;
+    state.profiles = state.profiles.filter(p => p.id !== id);
+    return true;
 }
 
 export async function saveProfile(profile) {

@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.44.2';
-import { escapeHTML, fmtMoney, fmtDate, showToast, openModal, closeModal } from './utils.js?v=3.44.2';
+import state from './state.js?v=3.44.3';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.44.3';
 import {
-    saveTransactions, saveProfile, savePendingDetails, clearPendingDetails, saveAccount, requireAuth
-} from './storage.js?v=3.44.2';
-import { renderAll } from './ledger.js?v=3.44.2';
+    saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, requireAuth
+} from './storage.js?v=3.44.3';
+import { renderAll } from './ledger.js?v=3.44.3';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.44.2';
+import { importPdfStatement } from './pdf.js?v=3.44.3';
 import { reportHandled } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
@@ -73,7 +73,44 @@ export function renderImportSection() {
                 CSV and TSV work too: ${known ? `${known} format${known === 1 ? '' : 's'} already learned, and those import without asking anything.` : 'the first file from a bank asks you to confirm its columns once, then never again.'}
             </span>
         </div>
+        ${state.profiles.length ? `
+        <div class="form-group" style="margin-top:14px">
+            <label class="form-label">Layouts I remember</label>
+            <ul style="margin:4px 0 0 18px">
+                ${state.profiles.map(p => `<li class="form-helper">
+                    ${escapeHTML((p.label || 'Unnamed layout').slice(0, 54))}
+                    <span style="opacity:.7">· ${escapeHTML((p.formatKind || 'csv').toUpperCase())}</span>
+                    <button class="btn btn-sm btn-ghost-spend" style="margin-left:6px;padding:1px 8px"
+                            data-act="forget-layout" data-id="${escapeHTML(p.id)}">Forget</button>
+                </li>`).join('')}
+            </ul>
+            <span class="form-helper">A remembered layout is replayed silently on every statement that matches it,
+            so if one was confirmed by mistake, forget it here and the next import will ask again.</span>
+        </div>` : ''}
         <div id="importStatus"></div>`;
+}
+
+/**
+ * Forget a layout, after saying what that costs.
+ *
+ * Confirming is one tap, so un-confirming should be too — but it is not
+ * symmetrical in effect: forgetting means the next statement from that bank
+ * asks again, which is the recoverable direction. Confirming wrongly is the
+ * direction with no way back, which is why this exists.
+ */
+export async function forgetLayout(id) {
+    const profile = state.profiles.find(p => p.id === id);
+    if (!profile) return;
+    if (!await showConfirm(
+        `Forget "${(profile.label || 'this layout').slice(0, 60)}"? The next statement shaped like it will ask again instead of importing silently.`,
+        { confirmLabel: 'Forget it' })) return;
+    try {
+        await deleteProfile(id);
+        showToast('Forgotten.');
+        renderImportSection();
+    } catch (err) {
+        showToast('Could not forget it: ' + err.message, 'error');
+    }
 }
 
 function status(html) {

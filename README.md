@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.44.3
+- **A remembered statement layout can now be forgotten.** Confirming one was a single tap with no way back, and a confirmed layout is replayed silently on every later statement matching it — so a wrong confirmation did not spoil one import, it spoiled every future import from that bank until somebody noticed. The import screen now lists what it remembers and lets any of it go; the next statement then asks again.
+- **Fixed: a statement spanning a year boundary dated part of itself wrongly.** The period detector matched both ends of a printed range and returned only the last, so a period running 15/12 to 15/01 was described as "in 2026" and a row printed 31/12 became 31/12/2026 — a future date, in the wrong month. Nothing downstream could catch it: the balance chain reconciles either way, because only the dates were wrong.
+
 ### v3.44.2
 - **A statement from an unrecognised bank no longer fails before the extractor sees it.** Whether a PDF was even offered to the AI was decided by a pattern requiring `dd/mm` at the start of every row, so any bank using ISO dates, month names, or a layout with the date mid-row was refused with "no dated transaction lines" — the extractor exists for exactly those layouts, and our own pattern was preventing it from looking. ISO and month-name dates are recognised, and when no row starts with a date the net widens to anything carrying both a date and an amount. The report says when that happened.
 - The refusal that remains is a real one — nothing in the document carries both a date and an amount — and now says what that usually means: a scan rather than a text PDF, or a summary page rather than the movements.
