@@ -4,7 +4,8 @@ import {
     locateHeaderBySignature,
     parseStyledNumber, detectDecimalStyle, detectDateFormat, parseDateWithFormat,
     spendFingerprint, buildExistingFingerprints, dedupeSpendRows,
-    mergeDetailSource, expandCardDetail, markCardSettlements, planCardRouting, applyRules, ruleFromCorrection, DATE_FORMATS
+    mergeDetailSource, expandCardDetail, markCardSettlements, planCardRouting,
+    summarizeSections, sectionSignature, applyRules, ruleFromCorrection, DATE_FORMATS
 } from '../services/import-banks.js';
 
 // ── fixtures: shaped like the real thing, preamble rows and all ─────────────
@@ -969,5 +970,43 @@ describe('planCardRouting', () => {
     it('ignores an archived card', () => {
         const [p] = planCardRouting(['042061'], [checking, { ...card, archived: true }], 'chk');
         expect(p.action).toBe('create');
+    });
+});
+
+describe('summarizeSections / sectionSignature', () => {
+    const accounts = [{ id: 'chk', label: 'Bankinter à ordem' }, { id: 'c1', label: 'Card ...2061' }];
+    const headings = ['EXTRACTO DE MOVIMENTOS', 'DETALHE DAS COMPRAS CARTAO N. 042061'];
+    const rows = [
+        { description: 'TRF SEPA', amount: -100, balance: 18063.52, sourceRole: 'statement' },
+        { description: 'PAG CTA',  amount: -717.61, balance: 17345.91, sourceRole: 'statement' },
+        { description: 'DECATHLON', amount: -172.60, balance: null, detailGroup: '042061' },
+        { description: 'ZOOMARINE', amount: -162.50, balance: null, detailGroup: '042061' }
+    ];
+
+    it('describes each section by outcome, not by parsing detail', () => {
+        const s = summarizeSections(rows, headings, {
+            accounts, importAccountId: 'chk',
+            cardPlan: [{ group: '042061', action: 'use', accountId: 'c1' }]
+        });
+        expect(s).toHaveLength(2);
+        expect(s[0]).toMatchObject({ kind: 'account', rows: 2, verifiable: true, destination: 'Bankinter à ordem' });
+        expect(s[1]).toMatchObject({ kind: 'card', rows: 2, verifiable: false, destination: 'Card ...2061' });
+    });
+
+    it('says when a card account will be created', () => {
+        const s = summarizeSections(rows, headings, {
+            accounts, importAccountId: 'chk',
+            cardPlan: [{ group: '042061', action: 'create', proposal: { label: 'Card 042061' } }]
+        });
+        expect(s[1].destination).toMatch(/new card account/);
+    });
+
+    it('gives the same signature whatever order the headings arrive in', () => {
+        expect(sectionSignature(headings)).toBe(sectionSignature([...headings].reverse()));
+    });
+
+    it('gives a different signature when the bank changes a heading', () => {
+        const changed = ['EXTRACTO DE MOVIMENTOS', 'DETALHE DE COMPRAS COM CARTAO'];
+        expect(sectionSignature(changed)).not.toBe(sectionSignature(headings));
     });
 });

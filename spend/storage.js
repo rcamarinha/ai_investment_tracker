@@ -242,7 +242,7 @@ const profileFromRow = r => ({
     formatKind: r.format_kind, signature: r.signature, columnMap: r.column_map || {},
     dateFormat: r.date_format, decimalStyle: r.decimal_style, invertSign: !!r.invert_sign,
     skipRows: r.skip_rows || 0, balanceCol: r.balance_col, valueDateCol: r.value_date_col,
-    pdfHint: r.pdf_hint, confirmedAt: r.confirmed_at
+    pdfHint: r.pdf_hint, sectionMap: r.section_map || {}, confirmedAt: r.confirmed_at
 });
 
 const ruleFromRow = r => ({
@@ -468,6 +468,7 @@ export async function saveProfile(profile) {
         balance_col: profile.balanceCol || null,
         value_date_col: profile.valueDateCol || null,
         pdf_hint: profile.pdfHint || null,
+        section_map: profile.sectionMap || {},
         confirmed_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
     };

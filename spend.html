@@ -283,7 +283,7 @@
         import { categoriseAll, acceptSuggestion, rejectSuggestion, acceptAllConfident }
             from './spend/categorize.js?v=3.44.0';
         import { showAccountDialog, onAccountTypeChange, submitAccount, removeAccount } from './spend/accounts.js?v=3.44.0';
-        import { renderImportSection, handleFile, confirmMapping, commitImport, cancelImport } from './spend/importer.js?v=3.44.0';
+        import { renderImportSection, handleFile, confirmMapping, commitImport, cancelImport, confirmLayout } from './spend/importer.js?v=3.44.0';
         import { closeModal, closeActiveModal, showToast } from './spend/utils.js?v=3.44.0';
 
         // ── Expose to onclick handlers ─────────────────────────────────────
@@ -351,6 +351,7 @@
         window.spendHandleFile    = handleFile;
         window.spendConfirmMapping = confirmMapping;
         window.spendCommitImport  = commitImport;
+        window.spendConfirmLayout = confirmLayout;
         window.spendCancelImport  = cancelImport;
         window.spendShowImport    = () => {
             document.getElementById('importSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });

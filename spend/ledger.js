@@ -764,6 +764,7 @@ export function bindDelegation(root = document) {
             case 'reject-suggestion':  window.spendRejectSuggestion?.(d.id); break;
             case 'accept-confident':   window.spendAcceptConfident?.(); break;
             case 'commit-import': window.spendCommitImport?.(); break;
+            case 'confirm-layout': window.spendConfirmLayout?.(); break;
             case 'cancel-import': window.spendCancelImport?.(); break;
             default: break;
         }
