@@ -363,3 +363,29 @@ describe('statements printed newest-first', () => {
         expect(scoreChainDirection(none)).toMatchObject({ direction: 'unknown', pairs: 0 });
     });
 });
+
+// Chunking by characters bounds the PROMPT but not the ANSWER. A statement of
+// many short rows — a real CGD export puts 101 rows in 5.8k characters — was
+// sent as one request asking for 101 JSON objects back, and it is the response
+// that exhausts the token budget and the request timeout.
+describe('chunking bounds the response, not just the prompt', () => {
+    const rows = n => Array.from({ length: n }, (_, i) => `- - 2026-07-01 MERCHANT ${i} -42,69 4.673,69`);
+
+    it('splits a statement with many short rows', () => {
+        expect(chunkLines(rows(101)).length).toBeGreaterThan(1);
+    });
+
+    it('leaves a small statement as one request', () => {
+        expect(chunkLines(rows(49))).toHaveLength(1);
+    });
+
+    it('still splits on length when rows are long', () => {
+        const long = Array.from({ length: 20 }, () => 'X'.repeat(1000));
+        expect(chunkLines(long).length).toBeGreaterThan(1);
+    });
+
+    it('never emits an empty chunk', () => {
+        for (const n of [1, 60, 61, 120, 121])
+            expect(chunkLines(rows(n)).every(c => c.trim().length > 0)).toBe(true);
+    });
+});

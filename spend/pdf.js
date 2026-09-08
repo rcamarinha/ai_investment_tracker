@@ -27,6 +27,8 @@ import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../ser
 
 /** Characters per request. The server rejects above 15K. */
 const CHUNK_CHARS = 12000;
+// One line in is roughly one row out, so this bounds the response.
+const CHUNK_LINES = 60;
 /** Under the 60s edge-function ceiling, so a stall surfaces as a real error. */
 const REQUEST_TIMEOUT_MS = 55000;
 
@@ -92,12 +94,21 @@ export function prefilterLines(lines = []) {
              year: detectStatementYear(lines), period: detectStatementPeriod(lines) };
 }
 
-export function chunkLines(bodyLines = [], maxChars = CHUNK_CHARS) {
+export function chunkLines(bodyLines = [], maxChars = CHUNK_CHARS, maxLines = CHUNK_LINES) {
     const chunks = [];
-    let current = '';
+    let current = '', count = 0;
     for (const line of bodyLines) {
-        if (current && current.length + line.length + 1 > maxChars) { chunks.push(current); current = ''; }
+        // Two bounds, because they limit different things. Characters cap the
+        // PROMPT; lines cap the ANSWER. A statement of many short rows makes a
+        // small prompt and a large response — 101 rows fitting in 5.8k
+        // characters still asks for 101 JSON objects back — and it is the
+        // response that exhausts the token budget and the request timeout.
+        // Bounding only the input left the expensive side unbounded.
+        const tooLong = current && current.length + line.length + 1 > maxChars;
+        const tooMany = count >= maxLines;
+        if (tooLong || tooMany) { chunks.push(current); current = ''; count = 0; }
         current += (current ? '\n' : '') + line;
+        count++;
     }
     if (current.trim()) chunks.push(current);
     return chunks;
@@ -382,4 +393,4 @@ export async function importPdfStatement(file, { accountId, accountCurrency, hin
     };
 }
 
-export const __testing = { CHUNK_CHARS };
+export const __testing = { CHUNK_CHARS, CHUNK_LINES };

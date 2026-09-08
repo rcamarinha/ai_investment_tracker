@@ -145,7 +145,7 @@ async function callGemini(prompt: string): Promise<string> {
         thinkingConfig: { thinkingBudget: 0 },
       },
     }),
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(45000),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
@@ -177,7 +177,7 @@ async function callClaude(prompt: string): Promise<string> {
       temperature: 0,
       messages: [{ role: "user", content: prompt }],
     }),
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(45000),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
