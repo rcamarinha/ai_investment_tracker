@@ -14,20 +14,20 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.47.0';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.47.0';
+import state from './state.js?v=3.48.0';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.48.0';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.47.0';
-import { renderAll } from './ledger.js?v=3.47.0';
+} from './storage.js?v=3.48.0';
+import { renderAll } from './ledger.js?v=3.48.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.47.0';
-import { reportHandled } from '../services/telemetry.js';
+import { importPdfStatement } from './pdf.js?v=3.48.0';
+import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
 
@@ -541,6 +541,7 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         chunks: parsed.chunks || 0,
         chunksFailed: parsed.chunksFailed || 0,
         broadened: !!parsed.broadened,
+        rowOrder: parsed.rowOrder || null,
         skipped: parsed.skipped || 0,
         total: parsed.total || null,
         detail: parsed.detail || null,
@@ -763,6 +764,33 @@ export async function commitImport() {
             .map(p => p.fingerprint)
             .filter(fp => fp && !stillPending.has(fp));
         if (attached.length) await clearPendingDetails(attached);
+
+        // What this import actually did, recorded whether or not it went well.
+        // The defects worth catching here do not throw: rows that reconcile
+        // individually but should never have been imported, a section quietly
+        // missed, a statement nothing could verify. Those show up as a verdict,
+        // not an exception, so the verdict is what gets written down.
+        reportDiagnostic('spend-import', {
+            format: r.format,
+            provider: r.provider || null,
+            parsed: r.fresh.length,
+            duplicates: r.duplicates.length,
+            skipped: r.skipped || 0,
+            flagged: r.flagged || 0,
+            broadened: !!r.broadened,
+            rowOrder: r.rowOrder || null,
+            chainChecked: r.chain?.checked ?? null,
+            chainPairs: r.chain?.pairs ?? null,
+            chainValid: r.chain?.valid ?? null,
+            totalOk: r.total?.checked ? !!r.total.ok : null,
+            totalReason: r.total?.ok === false ? (r.total.reason || 'unreconciled') : null,
+            detailTotal: r.detail?.total ?? 0,
+            detailItemised: r.detail?.itemised ?? 0,
+            detailPromoted: r.detail?.promoted ?? 0,
+            settlementsLinked: r.detail?.settlementsLinked ?? 0,
+            cardAccountsCreated: toCreate.length,
+            signature: r.sectionSig || null
+        });
 
         const n = r.isDetail ? r.enriched.length : r.fresh.length;
         showToast(`${n} transaction${n === 1 ? '' : 's'} ${r.isDetail ? 'improved' : 'added'}.`);

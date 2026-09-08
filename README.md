@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.48.0
+- **Imports now record how they went, not only when they broke.** Error reporting only ever sees exceptions, and every import defect found so far was a silent wrong result — a mortgage section filed as income, a card bill counted twice, a debit read as a credit. None of them threw, so none would ever have appeared in an error log. Each import now writes a diagnostic: whether the statement's own balances accounted for the rows taken from it, how much of the document could be verified, how many lines were read and deliberately left out, what the card handling did.
+- **Counts and verdicts only.** Diagnostics go through the same allow-list as error reports, which names permitted keys one at a time — a description, a merchant or an amount cannot leave through a key that does not exist. `signature` identifies a statement *layout*, never a bank or an account holder.
+- `supabase/maintenance/import-diagnostics.sql` prints the last fifty imports in a readable form, for pasting into a bug report.
+
 ### v3.47.0
 - **An import is now checked as a whole, not only row by row.** The per-row test proves each amount against the balance printed beside it, and cannot prove the *set* of rows is right — a row carrying no balance is not in that test at all, which is how a mortgage section's capital and interest lines were imported as income while every per-row check passed. The statement's own opening and closing balance must now account for everything taken from it: a row that should not be there breaks the total by exactly its own amount, and a missing row breaks it by exactly the amount that is missing.
 - **The two balances are found structurally, with no keyword.** Looking for "saldo" or "balance" would be another per-language list to maintain and would fail on the first bank that words it differently. Every figure printed outside the movement rows is a candidate, and the pair that makes the document add up is the answer — finding it *is* the proof, because a coincidence would have to reproduce the exact total of the rows extracted. Verified against two real statements from different banks: both reconcile, and the mortgage bug fails as it should.

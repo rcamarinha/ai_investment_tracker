@@ -14,7 +14,20 @@
 const MAX_REPORTS_PER_LOAD = 10;   // a render loop must not become a write loop
 const MAX_MESSAGE = 500;
 const MAX_STACK = 2000;
-const ALLOWED_CONTEXT_KEYS = ['action', 'format', 'chunks', 'chunksFailed', 'rows', 'status', 'provider'];
+// Scalars only, named one by one. This is the boundary that keeps bank data in
+// the browser: a description or an amount cannot leave through a key that does
+// not exist here, however it was passed in.
+const ALLOWED_CONTEXT_KEYS = [
+    'action', 'format', 'chunks', 'chunksFailed', 'rows', 'status', 'provider',
+    // How an import went. Counts and verdicts — never a description, a merchant
+    // or an amount. `signature` is the hash of a statement's headings, which
+    // identifies a LAYOUT without naming the bank or the account holder.
+    'parsed', 'skipped', 'flagged', 'duplicates', 'broadened', 'rowOrder',
+    'chainChecked', 'chainPairs', 'chainValid',
+    'totalOk', 'totalReason',
+    'detailTotal', 'detailItemised', 'detailPromoted', 'settlementsLinked',
+    'cardAccountsCreated', 'signature'
+];
 
 let installed = false;
 let reporting = false;            // re-entrancy guard: the reporter must never report itself
@@ -118,6 +131,23 @@ export function installErrorReporting({ page, version, client, onNotice } = {}) 
 /** Report a caught error explicitly, from a catch block that already handled it. */
 export function reportHandled(err, context) {
     send(baseRow('handled', err?.message || String(err), { stack: err?.stack, context }));
+}
+
+/**
+ * Record how an operation went when nothing went wrong.
+ *
+ * Every import defect found so far has been a silent wrong result rather than an
+ * exception, so an error log could never have surfaced one. A diagnostic carries
+ * the verdicts the import already computes — did the statement's own balances
+ * account for the rows, how much of it was verifiable, how many lines were read
+ * and deliberately left out — so a pattern is visible without someone first
+ * noticing a wrong number.
+ *
+ * Goes through the same allow-list as everything else: counts and verdicts
+ * leave, bank data does not.
+ */
+export function reportDiagnostic(event, context) {
+    send(baseRow('diagnostic', String(event || 'event'), { context }));
 }
 
 /** Let a page attach the client once auth has initialised. */
