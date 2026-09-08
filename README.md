@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.49.0
+- **One standard for failure handling across the app, with the parts that are invariants enforced by a test.** A failure the user must know about gets a notice and a report; one they need not know about is still reported; `console.error` is never the handler and `alert()` is not one either. Separately, an operation whose correctness cannot be checked as it runs records how it went, because every import bug found here was a silent wrong result that threw nothing.
+- **The check that matters most: context keys must exist.** Unknown keys are dropped silently, so a diagnostic written with `rowsParsed` instead of `parsed` sends, looks healthy, and carries nothing — a blind spot inside the mechanism built to remove blind spots. The test reads the permitted list out of the telemetry module rather than restating it.
+- **Broker trade imports now record how they went**, like statement imports. A split read as a sale or an ISIN resolved to the wrong ticker leaves a plausible ledger and a wrong cost basis, and raises nothing.
+
 ### v3.48.0
 - **Imports now record how they went, not only when they broke.** Error reporting only ever sees exceptions, and every import defect found so far was a silent wrong result — a mortgage section filed as income, a card bill counted twice, a debit read as a credit. None of them threw, so none would ever have appeared in an error log. Each import now writes a diagnostic: whether the statement's own balances accounted for the rows taken from it, how much of the document could be verified, how many lines were read and deliberately left out, what the card handling did.
 - **Counts and verdicts only.** Diagnostics go through the same allow-list as error reports, which names permitted keys one at a time — a description, a merchant or an amount cannot leave through a key that does not exist. `signature` identifies a statement *layout*, never a bank or an account holder.

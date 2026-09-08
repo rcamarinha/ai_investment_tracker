@@ -20,7 +20,7 @@
 import { getLang, setLang, t, applyTranslations } from '../data/i18n.js';
 
 // Bumped by scripts/bump-version.js along with every other version string.
-const APP_VERSION = '3.48.0';
+const APP_VERSION = '3.49.0';
 
 // ── Google SVG icon (shared) ──────────────────────────────────────────────────
 
