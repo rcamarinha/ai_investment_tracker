@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-    groupIntoLines, findCandidateLines, proposeLinePattern, detectStatementYear,
-    parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
+    groupIntoLines, findCandidateLines, findLooseCandidates, proposeLinePattern,
+    detectStatementYear, parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
 } from '../services/import-pdf.js';
 
 // pdf.js item shape: { str, transform: [a,b,c,d,x,y] }
@@ -108,6 +108,18 @@ describe('candidate detection and pattern proposal', () => {
         const junk = ['no dates here', 'nor here'].map(text => ({ text, xs: [0], y: 0 }));
         expect(proposeLinePattern(junk)).toMatchObject({ patternId: null, matched: 0 });
     });
+
+    it('accepts a row that leads with an ISO date', () => {
+        // D_ANY was extended to cover ISO dates; before the fix only dd/mm was recognised
+        // and any bank using ISO dates produced zero candidates, silently blocking import.
+        const iso = [{ text: '2025-08-04 TRF SEPA 100,00 18.063,52', y: 0, xs: [65] }];
+        expect(findCandidateLines(iso)).toHaveLength(1);
+    });
+
+    it('accepts a row that leads with a month-name date', () => {
+        const named = [{ text: '04 Ago 2025 DECATHLON GAIA 172,60', y: 0, xs: [65] }];
+        expect(findCandidateLines(named)).toHaveLength(1);
+    });
 });
 
 describe('detectStatementYear', () => {
@@ -187,5 +199,59 @@ describe('buildPdfDraft', () => {
     it('reports failure rather than a bad guess on an unreadable document', () => {
         expect(buildPdfDraft([{ text: 'scanned image, no text', xs: [], y: 0 }]))
             .toMatchObject({ ok: false, matched: 0 });
+    });
+});
+
+// ── findLooseCandidates ───────────────────────────────────────────────────────
+//
+// findLooseCandidates was added to stop a strict date-at-start gate from
+// refusing entire documents. A bank whose rows print the date mid-row, or use
+// ISO or named-month dates, used to get "No dated transaction lines found" and
+// was silently passed over without ever reaching the AI extractor.
+//
+// The function is the last gate before the AI tier and controls what the model
+// is allowed to read, so an overly strict implementation is high-blast-radius:
+// it prevents the import entirely rather than producing a wrong result that
+// shows up in review.
+describe('findLooseCandidates', () => {
+    const L = text => ({ text, y: 0, xs: [0] });
+
+    it('returns an empty array for empty input', () => {
+        expect(findLooseCandidates([])).toEqual([]);
+    });
+
+    it('includes a row with an ISO date and a money figure', () => {
+        const lines = [L('2025-08-04 TRF SEPA 100,00 18.063,52')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('includes a row with a month-name date and a money figure', () => {
+        const lines = [L('04 Ago 2025 DECATHLON GAIA 172,60')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('includes a row where the date is not the first token', () => {
+        const lines = [L('DECATHLON GAIA 04/08/2025 172,60')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('includes the standard dd/mm row as always', () => {
+        const lines = [L('26/01 Compra GALP -50,00 900,00')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('excludes a row that has a date but no money figure', () => {
+        const lines = [L('2025-08-04 Just a description with no amount')];
+        expect(findLooseCandidates(lines)).toHaveLength(0);
+    });
+
+    it('excludes a row that has a money figure but no date', () => {
+        const lines = [L('COMPRA SUPERMERCADO 172,60')];
+        expect(findLooseCandidates(lines)).toHaveLength(0);
+    });
+
+    it('excludes a row longer than 200 characters even with a date and money', () => {
+        const long = '2025-08-04 ' + 'A'.repeat(191) + ' 100,00';
+        expect(findLooseCandidates([L(long)])).toHaveLength(0);
     });
 });
