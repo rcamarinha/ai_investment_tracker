@@ -18,9 +18,9 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.46.0';
-import { escapeHTML } from './utils.js?v=3.46.0';
-import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection }
+import state from './state.js?v=3.47.0';
+import { escapeHTML } from './utils.js?v=3.47.0';
+import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection, reconcileStatementTotal }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
 import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../services/import-banks.js';
@@ -396,8 +396,18 @@ export async function importPdfStatement(file, { accountId, accountCurrency, hin
         }
     }
 
+    // The whole-statement check, run on what will actually be written to THIS
+    // account. Card rows are excluded: they belong to the card's ledger, so
+    // counting them here would break a total that is correct.
+    //
+    // This is the check the per-row chain cannot make. A row carrying no balance
+    // is not in the chain at all, so a section that should never have been
+    // imported passes every per-row test and still shows up in the money.
+    const total = reconcileStatementTotal(
+        rows.filter(r => r.enrichedFrom !== 'card'), lines);
+
     return {
-        rows, errors, parsed: rows.length, skipped: errors.length,
+        rows, errors, parsed: rows.length, skipped: errors.length, total,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year, headings, broadened, rowOrder: order.direction,
         skipped: skipped.length,

@@ -459,3 +459,68 @@ export function scoreChainDirection(rows = [], tolerance = 0.011) {
     const direction = pairs === 0 ? 'unknown' : desc > asc ? 'desc' : asc > 0 ? 'asc' : 'unknown';
     return { direction, asc, desc, pairs };
 }
+
+/**
+ * Check the rows we kept against the statement's own opening and closing
+ * balance.
+ *
+ * The per-row chain proves each amount agrees with the balance either side of
+ * it. It cannot prove the SET of rows is right, because a row carrying no
+ * balance is not in the chain at all — which is exactly how a mortgage
+ * section's capital and interest lines were imported as income while every
+ * balance check passed. This is the whole-statement form: opening plus
+ * everything we kept must equal closing, and a row that should not be there
+ * breaks it by precisely its own amount.
+ *
+ * The two balances are found STRUCTURALLY, not by keyword. Searching for
+ * "saldo"/"balance"/"solde" would be another per-language list to maintain and
+ * would fail on the first bank that words it differently. Instead every figure
+ * printed outside the movement rows is a candidate, and the pair that satisfies
+ * `opening + sum === closing` is the answer: finding it IS the proof, because a
+ * coincidence would have to reproduce the exact total of the rows we extracted.
+ *
+ * Ambiguity is reported rather than resolved. If several pairs satisfy it, the
+ * document has not told us anything we can rely on.
+ */
+export function reconcileStatementTotal(rows = [], lines = [], options = {}) {
+    const tolerance = options.tolerance ?? 0.011;
+    const decimalStyle = options.decimalStyle || 'eu';
+
+    const movements = rows.filter(r => r.sourceRole !== 'detail');
+    if (!movements.length) return { checked: false, reason: 'no movements' };
+    const sum = Math.round(movements.reduce((t, r) => t + (Number(r.amount) || 0), 0) * 100) / 100;
+
+    // Figures printed outside the movement rows: headers, summaries, footers.
+    const rowText = new Set(movements.map(r => r.rawDescription || r.description));
+    const lead = new RegExp(`^\\s*${D_ANY}\\b`);
+    const candidates = new Set();
+    for (const l of lines) {
+        const text = l.text || l;
+        if (typeof text !== 'string') continue;
+        if (lead.test(text)) continue;                    // a movement row
+        if ([...rowText].some(d => d && text.includes(d))) continue;
+        for (const tok of text.match(/\(?[-+]?[\d.,]+\d[-+]?\)?/g) || []) {
+            const n = parseStyledNumber(tok, decimalStyle);
+            // A balance is a money figure. Page numbers and years are not.
+            if (Number.isFinite(n) && Math.abs(n) >= 1 && /[.,]\d{2}\b/.test(tok)) candidates.add(n);
+        }
+    }
+
+    const pairs = [];
+    for (const opening of candidates) {
+        for (const closing of candidates) {
+            if (opening === closing) continue;
+            if (Math.abs(opening + sum - closing) <= tolerance) pairs.push({ opening, closing });
+        }
+    }
+
+    if (!pairs.length) {
+        return { checked: true, ok: false, sum, candidates: candidates.size,
+                 reason: 'no opening and closing balance in this document add up to the movements taken from it' };
+    }
+    if (pairs.length > 1) {
+        return { checked: true, ok: false, sum, ambiguous: pairs.length,
+                 reason: 'more than one pair of printed balances fits, so the total proves nothing' };
+    }
+    return { checked: true, ok: true, sum, ...pairs[0] };
+}

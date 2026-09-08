@@ -5,15 +5,15 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.46.0';
+import state from './state.js?v=3.47.0';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour
-} from './utils.js?v=3.46.0';
+} from './utils.js?v=3.47.0';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule,
     incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
-} from './storage.js?v=3.46.0';
+} from './storage.js?v=3.47.0';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario

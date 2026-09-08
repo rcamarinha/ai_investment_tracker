@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.47.0
+- **An import is now checked as a whole, not only row by row.** The per-row test proves each amount against the balance printed beside it, and cannot prove the *set* of rows is right — a row carrying no balance is not in that test at all, which is how a mortgage section's capital and interest lines were imported as income while every per-row check passed. The statement's own opening and closing balance must now account for everything taken from it: a row that should not be there breaks the total by exactly its own amount, and a missing row breaks it by exactly the amount that is missing.
+- **The two balances are found structurally, with no keyword.** Looking for "saldo" or "balance" would be another per-language list to maintain and would fail on the first bank that words it differently. Every figure printed outside the movement rows is a candidate, and the pair that makes the document add up is the answer — finding it *is* the proof, because a coincidence would have to reproduce the exact total of the rows extracted. Verified against two real statements from different banks: both reconcile, and the mortgage bug fails as it should.
+
 ### v3.46.0
 - **A statement covering several products no longer files the other products as spending.** A CGD "extrato global" carries the current account, a card and a mortgage. The mortgage section prints the instalment's capital/interest split — 1.003,16 + 688,89, which is the 1.692,05 already debited from the account — and those two lines were imported as separate income. Rows under a product section are now understood to be an itemisation or a balance, never a movement of their own.
 - **A row the statement never dated is never imported.** Loan breakdown lines are printed without a date because they share the instalment's, and the model was filling one in. A movement whose date had to be guessed is not a movement that was observed; the import says how many such lines it read and left out.
