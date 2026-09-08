@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.45.1
+- **Extraction requests are bounded by rows, not just by characters.** A statement of many short movements makes a small prompt and a very large answer — a real CGD export puts 101 rows into 5,845 characters — and it is the answer that exhausts the model's output budget and the request timeout. Chunks are now capped by line count too, and the provider timeouts raised from 25s to 45s.
+- **A failed extraction says which provider failed and why.** "Unavailable right now" is returned only when both providers fail, which is almost never a passing outage — it is usually a missing key or an exhausted quota, neither of which resolves by waiting. The response now names each provider and its failure class, using status codes alone.
+
 ### v3.45.0
 - **Currency comes from the account, and goes through the app's own currency layer.** Three places in the statement path hardcoded EUR, so a GBP or USD statement imported as euros silently — and the balance check cannot notice, because currency is not part of the arithmetic it verifies. Spend now uses `money-core`, the same module the portfolio uses, which also means `GBp` (pence) is no longer folded into `GBP` and read as a hundred times too much. A currency the source states but we cannot recognise is rejected rather than quietly replaced.
 - **A statement printed newest-first now imports.** The balance chain only ever tested the ascending form, so a descending document failed every pair: refused outright on the deterministic path, and flagged almost row-by-row on the AI path. Both directions are scored and the rows are turned round — not re-sorted by date, because document order is the only within-day ordering a statement gives you.
