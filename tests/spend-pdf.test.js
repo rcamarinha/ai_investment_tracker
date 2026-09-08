@@ -389,3 +389,39 @@ describe('chunking bounds the response, not just the prompt', () => {
             expect(chunkLines(rows(n)).every(c => c.trim().length > 0)).toBe(true);
     });
 });
+
+// A "global" statement covers more than the current account. A CGD one carries a
+// mortgage section whose lines itemise the instalment already on the account:
+//   Saldo devedor Inicial  533.336,72
+//   76 COBRANCA DE CAPITAL   1.003,16
+//   76 COBRANCA DE JUROS       688,89   → 1.692,05, the instalment already listed
+// They are printed with no date and no balance, so importing them meant the model
+// inventing a date, and their unsigned amounts landed as income.
+describe('product sections in a global statement', () => {
+    const raw = [
+        { date: '2026-07-31', description: 'COBRANCA PRESTACAO', amount: -1692.05, balance: 4583.77, role: 'statement' },
+        { date: null, description: 'COBRANCA DE CAPITAL', amount: 1003.16, balance: null, role: 'detail', group: 'mortgage' },
+        { date: null, description: 'COBRANCA DE JUROS',   amount: 688.89,  balance: null, role: 'detail', group: 'mortgage' },
+        { date: null, description: 'Saldo devedor final', amount: 532333.56, balance: null, role: 'skip' }
+    ];
+
+    it('imports the instalment and nothing else', () => {
+        const { rows } = normalizeAiRows(raw, { accountId: 'a1', currency: 'EUR' });
+        expect(rows.map(r => r.description)).toEqual(['COBRANCA PRESTACAO']);
+    });
+
+    it('accounts for what it left out rather than dropping it quietly', () => {
+        const { skipped } = normalizeAiRows(raw, { accountId: 'a1', currency: 'EUR' });
+        expect(skipped).toHaveLength(3);
+    });
+
+    it('never imports a row the document did not date', () => {
+        const undated = [{ description: 'COBRANCA DE CAPITAL', amount: 1003.16, role: 'statement' }];
+        expect(normalizeAiRows(undated, { accountId: 'a1' }).rows).toHaveLength(0);
+    });
+
+    it('still imports an ordinary dated movement', () => {
+        const ok = [{ date: '2026-07-30', description: 'EDP', amount: -268.03, balance: 6761.12 }];
+        expect(normalizeAiRows(ok, { accountId: 'a1' }).rows).toHaveLength(1);
+    });
+});

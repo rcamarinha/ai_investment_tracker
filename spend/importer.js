@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.45.2';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.45.2';
+import state from './state.js?v=3.46.0';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.46.0';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.45.2';
-import { renderAll } from './ledger.js?v=3.45.2';
+} from './storage.js?v=3.46.0';
+import { renderAll } from './ledger.js?v=3.46.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.45.2';
+import { importPdfStatement } from './pdf.js?v=3.46.0';
 import { reportHandled } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
@@ -541,6 +541,7 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         chunks: parsed.chunks || 0,
         chunksFailed: parsed.chunksFailed || 0,
         broadened: !!parsed.broadened,
+        skipped: parsed.skipped || 0,
         detail: parsed.detail || null,
         cardPlan,
         // What this document turned out to contain, and whether we have seen a
@@ -625,6 +626,10 @@ function showReport() {
             ${r.detail.unmatched ? `<strong>${r.detail.unmatched}</strong> could not be tied to a payment, so
             ${r.detail.unmatched === 1 ? 'its detail was' : 'their detail was'} not recorded — the spending is still
             counted in the payment total, but not itemised.` : ''}</p>` : ''}
+        ${r.skipped ? `<p class="form-helper">
+            ${r.skipped} line${r.skipped === 1 ? '' : 's'} were read but not imported: balances, amounts
+            outstanding, and the capital/interest breakdown of a loan instalment. They are positions or
+            itemisations of a movement already listed, so counting them would count the same money twice.</p>` : ''}
         ${r.format === 'pdf' && r.chain && !r.chain.pairs ? `<div class="review-banner"><span>⚠</span><span>
             Nothing in this document could be cross-checked. It prints no running balance, so the usual test —
             that each amount matches the balance either side of it — has nothing to work with. The rows may be

@@ -307,6 +307,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.46.0
+- **A statement covering several products no longer files the other products as spending.** A CGD "extrato global" carries the current account, a card and a mortgage. The mortgage section prints the instalment's capital/interest split — 1.003,16 + 688,89, which is the 1.692,05 already debited from the account — and those two lines were imported as separate income. Rows under a product section are now understood to be an itemisation or a balance, never a movement of their own.
+- **A row the statement never dated is never imported.** Loan breakdown lines are printed without a date because they share the instalment's, and the model was filling one in. A movement whose date had to be guessed is not a movement that was observed; the import says how many such lines it read and left out.
+
 ### v3.45.2
 - **Fixed: filing a category by hand looked like it had not saved.** The ledger draws the category badge, the confidence and the accept/reject buttons from the pending-suggestion queue rather than from the row, and editing a transaction never removed its entry from that queue — so the model's guess kept being drawn on top of the category just saved. The write had always worked; only the display was stale, which is worse than a visible failure because the natural response is to save it again.
 

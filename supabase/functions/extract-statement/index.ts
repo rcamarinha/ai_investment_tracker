@@ -81,22 +81,36 @@ function buildPrompt(statementText: string, hint?: string): string {
 
 Rules:
 - Output ONLY a JSON array. No markdown, no commentary, no preamble.
-- Each element: {"date":"YYYY-MM-DD","description":"<what it was>","amount":<signed number>,"currency":"<ISO code>","balance":<running balance or null>,"role":"statement"|"detail","group":"<card or section id, detail rows only>"}
+- Each element: {"date":"YYYY-MM-DD","description":"<what it was>","amount":<signed number>,"currency":"<ISO code>","balance":<running balance or null>,"role":"statement"|"detail"|"skip","group":"<section id, detail rows only>"}
 - "amount" is SIGNED: negative when money left the account, positive when it arrived. Never output the absolute value.
 - "balance" is the running balance printed on that row, if the statement shows one. Use null when it does not. Do NOT invent it, and never put the balance in "amount".
 - Amounts may use European formatting (1.234,56). Convert to a plain number: 1234.56.
 - Some statements print only day and month. Use the statement period or header to resolve the year. If the year genuinely cannot be determined, omit that row rather than guessing.
+- A statement may cover SEVERAL PRODUCTS, not just the current account: a card, a
+  mortgage or other loan, a savings account. Only the current account's movements
+  are cash leaving or arriving. Everything printed under another product is either
+  an itemisation of a movement already listed, or a balance — never a movement of
+  its own.
 - "role" says what the line IS. This matters more than any other field:
   - "statement" = a movement that changed the ACCOUNT balance. This is the default.
   - "detail"    = a line that ITEMISES another movement instead of being one itself:
-                  individual purchases listed under a credit-card section, MB WAY or
-                  wallet breakdowns, instalment schedules. The account did not move
-                  separately for these. Their total IS one of the "statement" rows
-                  (typically the card payment), so counting them as movements would
-                  count the same money twice.
-- Decide "role" from STRUCTURE, not wording. A line printed under a card or detail
-  heading is "detail". So is a dated line with no running balance while the movements
-  around it each have one.
+                  individual purchases under a credit-card section, MB WAY or wallet
+                  breakdowns, and the capital/interest split of a loan instalment.
+                  The account did not move separately for these. Their total IS one
+                  of the "statement" rows, so counting them as movements would count
+                  the same money twice.
+  - "skip"      = not a movement at all: an opening or closing balance, an amount
+                  outstanding ("saldo devedor", "amount owed"), a credit limit, a
+                  product summary, a subtotal, an interest rate, a contracted amount.
+                  These are positions, not money moving.
+- Decide "role" from STRUCTURE, not wording. A line printed under a card, loan or
+  other product heading is "detail" or "skip", never "statement". So is a dated line
+  with no running balance while the movements around it each have one.
+- A row the statement printed with NO DATE is never "statement". Loan instalment
+  breakdowns are printed without one because they share the date of the instalment
+  already listed on the account. Do not invent a date for such a row: give it
+  "detail" (if it itemises something) or "skip" (if it is a balance), and leave
+  "date" null. A movement you had to guess a date for is not a movement you observed.
 - Sign "detail" rows from the CARDHOLDER's point of view, not from the way the section
   prints them:
   - a card PURCHASE is money leaving, so NEGATIVE — even where the section prints it

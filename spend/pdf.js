@@ -18,8 +18,8 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.45.2';
-import { escapeHTML } from './utils.js?v=3.45.2';
+import state from './state.js?v=3.46.0';
+import { escapeHTML } from './utils.js?v=3.46.0';
 import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
@@ -185,8 +185,20 @@ async function callExtractor(statementText, hint) {
 
 /** Coerce whatever the model returned through the same gate as every adapter. */
 export function normalizeAiRows(rawRows = [], { accountId, currency = null, source = 'pdf' } = {}) {
-    const rows = [], rejected = [];
+    const rows = [], rejected = [], skipped = [];
     for (const raw of rawRows) {
+        // Positions, not movements: an amount owed, a credit limit, a closing
+        // balance. A global statement covers a mortgage and a card as well as
+        // the account, and those sections are mostly this.
+        if (raw?.role === 'skip') { skipped.push(raw); continue; }
+
+        // A row the document never dated cannot be placed in time, and a date we
+        // supplied is a date nobody observed. The loan instalment breakdown in a
+        // CGD statement is printed without one — it shares the date of the
+        // instalment already on the account — and inventing one put those lines
+        // in the ledger as income on a day they did not happen.
+        if (!raw?.date) { skipped.push({ ...raw, reason: 'no date printed' }); continue; }
+
         const candidate = normalizeRow({
             accountId,
             date: typeof raw?.date === 'string' ? raw.date : null,
@@ -207,7 +219,7 @@ export function normalizeAiRows(rawRows = [], { accountId, currency = null, sour
         if (ok) rows.push(candidate);
         else rejected.push({ reason: errors.join('; '), raw });
     }
-    return { rows, rejected };
+    return { rows, rejected, skipped };
 }
 
 /**
@@ -298,7 +310,7 @@ export async function importPdfStatement(file, { accountId, accountCurrency, hin
     }
     onProgress?.(chunks.length, chunks.length);
 
-    const { rows: normalized, rejected } = normalizeAiRows(collected,
+    const { rows: normalized, rejected, skipped } = normalizeAiRows(collected,
         { accountId, currency: accountCurrency || null, source: file.name || 'pdf' });
     for (const r of rejected) errors.push({ reason: r.reason });
 
@@ -388,6 +400,7 @@ export async function importPdfStatement(file, { accountId, accountCurrency, hin
         rows, errors, parsed: rows.length, skipped: errors.length,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year, headings, broadened, rowOrder: order.direction,
+        skipped: skipped.length,
         detail: { total: detailRows.length, itemised, promoted, settlementsLinked,
                   enriched: enrichedCount, unmatched: unmatchedDetail }
     };
