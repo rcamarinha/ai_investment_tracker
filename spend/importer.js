@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.45.0';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.45.0';
+import state from './state.js?v=3.45.1';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.45.1';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.45.0';
-import { renderAll } from './ledger.js?v=3.45.0';
+} from './storage.js?v=3.45.1';
+import { renderAll } from './ledger.js?v=3.45.1';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.45.0';
+import { importPdfStatement } from './pdf.js?v=3.45.1';
 import { reportHandled } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
