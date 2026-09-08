@@ -7,8 +7,8 @@
  * matching wine/storage.js.
  */
 
-import state from './state.js?v=3.48.0';
-import { showToast } from './utils.js?v=3.48.0';
+import state from './state.js?v=3.49.0';
+import { showToast } from './utils.js?v=3.49.0';
 
 // ── Supabase init ───────────────────────────────────────────────────────────
 

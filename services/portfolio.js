@@ -16,6 +16,7 @@ import { parseBrokerExport, normalizeTrades,
          buildExistingFingerprints, dedupeTrades,
          computePositionsFromLedger,
          collectUnresolved, applyUnresolvedDecisions } from './import-brokers.js';
+import { reportDiagnostic } from './telemetry.js';
 
 // ── Auth Guard ──────────────────────────────────────────────────────────────
 
@@ -2311,6 +2312,19 @@ export async function importTrades() {
         await saveTransactionsToDB();
         saveTransactionsToStorage();
         await savePortfolioDB();
+
+        // Same reasoning as the statement importer: a broker export can be
+        // wrong without throwing. A split read as a sale, an ISIN resolved to
+        // the wrong ticker, a dividend deduped away — each leaves a plausible
+        // ledger and a wrong cost basis, and nothing raises. Record how it went
+        // so the pattern is visible before someone notices a wrong number.
+        reportDiagnostic('trade-import', {
+            format: 'broker',
+            parsed: fresh.length,
+            duplicates: duplicates.length,
+            flagged: state.ledgerNeedsReview ? 1 : 0
+        });
+
         closeImportDialog();
         renderPortfolio();
 
