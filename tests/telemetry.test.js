@@ -57,3 +57,30 @@ describe('context is allow-listed, not free-form', () => {
         expect(pickContext('nope')).toEqual({});
     });
 });
+
+// A diagnostic records how an operation went when nothing threw. Every import
+// defect found so far was a silent wrong result, so an error log could not have
+// surfaced one — but it must not become a way for bank data to leave either.
+describe('reportDiagnostic', () => {
+    it('allows the import verdicts through', () => {
+        const ctx = __testing.pickContext({
+            totalOk: false, totalReason: 'no opening and closing balance add up',
+            chainChecked: 12, chainPairs: 80, parsed: 81, skipped: 3,
+            detailPromoted: 27, settlementsLinked: 1, rowOrder: 'desc', signature: 'sig_abc123'
+        });
+        expect(ctx).toMatchObject({ totalOk: false, chainChecked: 12, parsed: 81, rowOrder: 'desc' });
+    });
+
+    it('still refuses anything that is not on the list', () => {
+        const ctx = __testing.pickContext({
+            description: 'CONTIN BOM DIA PORTO', merchant: 'CONTINENTE',
+            amount: -197.85, balance: 4526.42, iban: 'PT50 0269 0301', accountLabel: 'Bankinter',
+            parsed: 10
+        });
+        expect(ctx).toEqual({ parsed: 10 });
+    });
+
+    it('refuses an object even under an allowed key', () => {
+        expect(__testing.pickContext({ parsed: { rows: [1, 2, 3] } })).toEqual({});
+    });
+});

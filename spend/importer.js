@@ -14,20 +14,20 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.45.1';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.45.1';
+import state from './state.js?v=3.48.0';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.48.0';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.45.1';
-import { renderAll } from './ledger.js?v=3.45.1';
+} from './storage.js?v=3.48.0';
+import { renderAll } from './ledger.js?v=3.48.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.45.1';
-import { reportHandled } from '../services/telemetry.js';
+import { importPdfStatement } from './pdf.js?v=3.48.0';
+import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
 
@@ -541,6 +541,9 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         chunks: parsed.chunks || 0,
         chunksFailed: parsed.chunksFailed || 0,
         broadened: !!parsed.broadened,
+        rowOrder: parsed.rowOrder || null,
+        skipped: parsed.skipped || 0,
+        total: parsed.total || null,
         detail: parsed.detail || null,
         cardPlan,
         // What this document turned out to contain, and whether we have seen a
@@ -625,6 +628,18 @@ function showReport() {
             ${r.detail.unmatched ? `<strong>${r.detail.unmatched}</strong> could not be tied to a payment, so
             ${r.detail.unmatched === 1 ? 'its detail was' : 'their detail was'} not recorded — the spending is still
             counted in the payment total, but not itemised.` : ''}</p>` : ''}
+        ${r.skipped ? `<p class="form-helper">
+            ${r.skipped} line${r.skipped === 1 ? '' : 's'} were read but not imported: balances, amounts
+            outstanding, and the capital/interest breakdown of a loan instalment. They are positions or
+            itemisations of a movement already listed, so counting them would count the same money twice.</p>` : ''}
+        ${r.total && r.total.checked && r.total.ok ? `<p class="form-helper">
+            The statement's own opening and closing balance
+            (${escapeHTML(fmtMoney(r.total.opening))} → ${escapeHTML(fmtMoney(r.total.closing))})
+            account for every row taken from it, exactly. Nothing is missing and nothing extra was added.</p>` : ''}
+        ${r.total && r.total.checked && !r.total.ok ? `<div class="review-banner"><span>⚠</span><span>
+            These rows do not add up to the change in the statement's own balance
+            ${escapeHTML(r.total.reason || '')}. Either a movement is missing, or something was imported that
+            is not a movement of this account — a loan or card section, say. Worth checking before adding.</span></div>` : ''}
         ${r.format === 'pdf' && r.chain && !r.chain.pairs ? `<div class="review-banner"><span>⚠</span><span>
             Nothing in this document could be cross-checked. It prints no running balance, so the usual test —
             that each amount matches the balance either side of it — has nothing to work with. The rows may be
@@ -749,6 +764,33 @@ export async function commitImport() {
             .map(p => p.fingerprint)
             .filter(fp => fp && !stillPending.has(fp));
         if (attached.length) await clearPendingDetails(attached);
+
+        // What this import actually did, recorded whether or not it went well.
+        // The defects worth catching here do not throw: rows that reconcile
+        // individually but should never have been imported, a section quietly
+        // missed, a statement nothing could verify. Those show up as a verdict,
+        // not an exception, so the verdict is what gets written down.
+        reportDiagnostic('spend-import', {
+            format: r.format,
+            provider: r.provider || null,
+            parsed: r.fresh.length,
+            duplicates: r.duplicates.length,
+            skipped: r.skipped || 0,
+            flagged: r.flagged || 0,
+            broadened: !!r.broadened,
+            rowOrder: r.rowOrder || null,
+            chainChecked: r.chain?.checked ?? null,
+            chainPairs: r.chain?.pairs ?? null,
+            chainValid: r.chain?.valid ?? null,
+            totalOk: r.total?.checked ? !!r.total.ok : null,
+            totalReason: r.total?.ok === false ? (r.total.reason || 'unreconciled') : null,
+            detailTotal: r.detail?.total ?? 0,
+            detailItemised: r.detail?.itemised ?? 0,
+            detailPromoted: r.detail?.promoted ?? 0,
+            settlementsLinked: r.detail?.settlementsLinked ?? 0,
+            cardAccountsCreated: toCreate.length,
+            signature: r.sectionSig || null
+        });
 
         const n = r.isDetail ? r.enriched.length : r.fresh.length;
         showToast(`${n} transaction${n === 1 ? '' : 's'} ${r.isDetail ? 'improved' : 'added'}.`);

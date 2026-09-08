@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { prefilterLines, chunkLines, normalizeAiRows, verifyRows } from '../spend/pdf.js';
 import { expandCardDetail } from '../services/import-banks.js';
-import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain } from '../services/import-pdf.js';
+import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain, reconcileStatementTotal } from '../services/import-pdf.js';
 import { parseStyledNumber } from '../services/import-banks.js';
 
 const L = (text, i = 0) => ({ text, y: 700 - i * 12, xs: [60] });
@@ -387,5 +387,87 @@ describe('chunking bounds the response, not just the prompt', () => {
     it('never emits an empty chunk', () => {
         for (const n of [1, 60, 61, 120, 121])
             expect(chunkLines(rows(n)).every(c => c.trim().length > 0)).toBe(true);
+    });
+});
+
+// A "global" statement covers more than the current account. A CGD one carries a
+// mortgage section whose lines itemise the instalment already on the account:
+//   Saldo devedor Inicial  533.336,72
+//   76 COBRANCA DE CAPITAL   1.003,16
+//   76 COBRANCA DE JUROS       688,89   → 1.692,05, the instalment already listed
+// They are printed with no date and no balance, so importing them meant the model
+// inventing a date, and their unsigned amounts landed as income.
+describe('product sections in a global statement', () => {
+    const raw = [
+        { date: '2026-07-31', description: 'COBRANCA PRESTACAO', amount: -1692.05, balance: 4583.77, role: 'statement' },
+        { date: null, description: 'COBRANCA DE CAPITAL', amount: 1003.16, balance: null, role: 'detail', group: 'mortgage' },
+        { date: null, description: 'COBRANCA DE JUROS',   amount: 688.89,  balance: null, role: 'detail', group: 'mortgage' },
+        { date: null, description: 'Saldo devedor final', amount: 532333.56, balance: null, role: 'skip' }
+    ];
+
+    it('imports the instalment and nothing else', () => {
+        const { rows } = normalizeAiRows(raw, { accountId: 'a1', currency: 'EUR' });
+        expect(rows.map(r => r.description)).toEqual(['COBRANCA PRESTACAO']);
+    });
+
+    it('accounts for what it left out rather than dropping it quietly', () => {
+        const { skipped } = normalizeAiRows(raw, { accountId: 'a1', currency: 'EUR' });
+        expect(skipped).toHaveLength(3);
+    });
+
+    it('never imports a row the document did not date', () => {
+        const undated = [{ description: 'COBRANCA DE CAPITAL', amount: 1003.16, role: 'statement' }];
+        expect(normalizeAiRows(undated, { accountId: 'a1' }).rows).toHaveLength(0);
+    });
+
+    it('still imports an ordinary dated movement', () => {
+        const ok = [{ date: '2026-07-30', description: 'EDP', amount: -268.03, balance: 6761.12 }];
+        expect(normalizeAiRows(ok, { accountId: 'a1' }).rows).toHaveLength(1);
+    });
+});
+
+// The per-row chain proves each amount against the balance beside it. It cannot
+// prove the SET of rows is right, because a row with no balance is not in the
+// chain at all — which is how a mortgage section's capital and interest lines
+// were imported as income with every per-row check passing. This is the check
+// that would have caught it, and it finds the two balances structurally rather
+// than by looking for the word "saldo".
+describe('reconcileStatementTotal', () => {
+    const L = t => ({ text: t });
+    const doc = [
+        L('Extrato Periodo 2026-07-01 a 2026-07-31'),
+        L('Saldo anterior 1.000,00'),
+        L('- - 2026-07-02 COMPRA A -100,00 900,00'),
+        L('- - 2026-07-03 COMPRA B -50,00 850,00'),
+        L('Saldo contabilistico 850,00')
+    ];
+    const rows = [
+        { date: '2026-07-02', description: 'COMPRA A', rawDescription: 'COMPRA A', amount: -100, balance: 900 },
+        { date: '2026-07-03', description: 'COMPRA B', rawDescription: 'COMPRA B', amount: -50, balance: 850 }
+    ];
+
+    it('finds the opening and closing balance with no keyword', () => {
+        expect(reconcileStatementTotal(rows, doc)).toMatchObject({ ok: true, opening: 1000, closing: 850 });
+    });
+
+    it('fails when a row that is not a movement of this account is included', () => {
+        const withLoan = [...rows,
+            { date: '2026-07-31', description: 'COBRANCA DE CAPITAL', amount: 1003.16, balance: null }];
+        expect(reconcileStatementTotal(withLoan, doc).ok).toBe(false);
+    });
+
+    it('fails when a movement is missing', () => {
+        expect(reconcileStatementTotal(rows.slice(0, 1), doc).ok).toBe(false);
+    });
+
+    it('says so when the document prints no usable pair', () => {
+        const bare = [L('Extrato'), L('- - 2026-07-02 COMPRA A -100,00 900,00')];
+        expect(reconcileStatementTotal(rows, bare)).toMatchObject({ checked: true, ok: false });
+    });
+
+    it('ignores detail rows, which belong to another ledger', () => {
+        const withCard = [...rows,
+            { date: '2026-07-04', description: 'SHOP', amount: -25, balance: null, sourceRole: 'detail' }];
+        expect(reconcileStatementTotal(withCard, doc).ok).toBe(true);
     });
 });
