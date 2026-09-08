@@ -5,15 +5,15 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.45.1';
+import state from './state.js?v=3.45.2';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour
-} from './utils.js?v=3.45.1';
+} from './utils.js?v=3.45.2';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule,
     incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
-} from './storage.js?v=3.45.1';
+} from './storage.js?v=3.45.2';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario
@@ -914,6 +914,16 @@ export async function saveTxEdit() {
     try {
         await updateTransaction(id, patch);
 
+        // Filing a row by hand settles it, so its pending suggestion has to go.
+        // The ledger renders the badge, the confidence and the accept/reject
+        // buttons from the review queue, not from the row — so leaving the entry
+        // there kept drawing the model's guess on top of the category just
+        // saved. It looked exactly like the save had failed, which is worse than
+        // failing: the next thing anyone does is save it again.
+        if (state.reviewQueue?.length) {
+            state.reviewQueue = state.reviewQueue.filter(r => r.id !== id);
+        }
+
         // A correction is only worth making once. Persist it as a rule so the
         // same merchant categorises itself on the next import.
         if (category && category !== 'transfer' && category !== t.category) {
@@ -937,6 +947,9 @@ export async function removeTx() {
     if (!await showConfirm('Delete this transaction? It will come back on the next import unless the statement changed.', { danger: true, confirmLabel: 'Delete' })) return;
     try {
         await deleteTransaction(id);
+        if (state.reviewQueue?.length) {
+            state.reviewQueue = state.reviewQueue.filter(r => r.id !== id);
+        }
         closeModal('txEditDialog');
         showToast('Deleted.');
         renderAll();

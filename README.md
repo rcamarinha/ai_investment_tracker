@@ -307,6 +307,9 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.45.2
+- **Fixed: filing a category by hand looked like it had not saved.** The ledger draws the category badge, the confidence and the accept/reject buttons from the pending-suggestion queue rather than from the row, and editing a transaction never removed its entry from that queue — so the model's guess kept being drawn on top of the category just saved. The write had always worked; only the display was stale, which is worse than a visible failure because the natural response is to save it again.
+
 ### v3.45.1
 - **Extraction requests are bounded by rows, not just by characters.** A statement of many short movements makes a small prompt and a very large answer — a real CGD export puts 101 rows into 5,845 characters — and it is the answer that exhausts the model's output budget and the request timeout. Chunks are now capped by line count too, and the provider timeouts raised from 25s to 45s.
 - **A failed extraction says which provider failed and why.** "Unavailable right now" is returned only when both providers fail, which is almost never a passing outage — it is usually a missing key or an exhausted quota, neither of which resolves by waiting. The response now names each provider and its failure class, using status codes alone.
