@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state from './state.js?v=3.49.2';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.49.2';
+import state, { clearViewFilters } from './state.js?v=3.49.3';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.49.3';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.49.2';
-import { renderAll } from './ledger.js?v=3.49.2';
+} from './storage.js?v=3.49.3';
+import { renderAll } from './ledger.js?v=3.49.3';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.49.2';
+import { importPdfStatement } from './pdf.js?v=3.49.3';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
@@ -809,6 +809,11 @@ export async function commitImport() {
         showToast(`${n} transaction${n === 1 ? '' : 's'} ${r.isDetail ? 'improved' : 'added'}.`);
         state.importResult = null;
         state.importText = null;
+        // Show what was just imported. A filter left over from before — the type
+        // filter on `review`, an account, a chosen month — survives the import
+        // and can hide every new row, so a successful import reads as one that
+        // did nothing.
+        clearViewFilters(state);
         renderAll();
         renderImportSection();
     } catch (err) {

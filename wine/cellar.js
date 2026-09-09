@@ -3,14 +3,14 @@
  */
 
 import { t } from '../data/i18n.js';
-import state from './state.js?v=3.49.2';
+import state from './state.js?v=3.49.3';
 import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
          deleteSnapshotFromDB, clearSnapshotsFromDB,
-         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js?v=3.49.2';
-import { renderAllocationCharts } from './ui.js?v=3.49.2';
-import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.49.2';
+         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js?v=3.49.3';
+import { renderAllocationCharts } from './ui.js?v=3.49.3';
+import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.49.3';
 import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
-import { callWineAI } from './api.js?v=3.49.2';
+import { callWineAI } from './api.js?v=3.49.3';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
