@@ -470,4 +470,25 @@ describe('reconcileStatementTotal', () => {
             { date: '2026-07-04', description: 'SHOP', amount: -25, balance: null, sourceRole: 'detail' }];
         expect(reconcileStatementTotal(withCard, doc).ok).toBe(true);
     });
+
+    it('reports ambiguity rather than guessing when multiple balance pairs fit', () => {
+        // rows sum to -150. Both (1000 → 850) and (2000 → 1850) satisfy
+        // opening + sum = closing, so the document has told us nothing we can
+        // rely on. Picking one arbitrarily would silently accept a wrong result.
+        const ambiguousDoc = [
+            L('Extrato Periodo 2026-07-01 a 2026-07-31'),
+            L('Saldo anterior 1.000,00'),
+            L('Saldo alternativo 2.000,00'),
+            L('- - 2026-07-02 COMPRA A -100,00 900,00'),
+            L('- - 2026-07-03 COMPRA B -50,00 850,00'),
+            L('Saldo contabilistico 850,00'),
+            L('Saldo alternativo final 1.850,00')
+        ];
+        const result = reconcileStatementTotal(rows, ambiguousDoc);
+        expect(result).toMatchObject({ checked: true, ok: false, ambiguous: 2 });
+    });
+
+    it('returns checked: false when there are no movements', () => {
+        expect(reconcileStatementTotal([], doc)).toMatchObject({ checked: false });
+    });
 });
