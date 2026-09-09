@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { prefilterLines, chunkLines, normalizeAiRows, verifyRows } from '../spend/pdf.js';
-import { expandCardDetail } from '../services/import-banks.js';
+import { expandCardDetail, sectionSignature } from '../services/import-banks.js';
 import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain, reconcileStatementTotal } from '../services/import-pdf.js';
 import { parseStyledNumber } from '../services/import-banks.js';
 
@@ -469,5 +469,37 @@ describe('reconcileStatementTotal', () => {
         const withCard = [...rows,
             { date: '2026-07-04', description: 'SHOP', amount: -25, balance: null, sourceRole: 'detail' }];
         expect(reconcileStatementTotal(withCard, doc).ok).toBe(true);
+    });
+});
+
+// A count of what was left out asks to be trusted. The lines themselves let the
+// user check — which matters most precisely because leaving something out might
+// have been the wrong call.
+describe('what was not imported is shown, not just counted', () => {
+    const raw = [
+        { date: '2026-07-31', description: 'COBRANCA PRESTACAO', amount: -1692.05, balance: 4583.77 },
+        { date: null, description: 'COBRANCA DE CAPITAL', amount: 1003.16, role: 'detail', group: 'm' },
+        { date: null, description: 'Saldo devedor final', amount: 532333.56, role: 'skip' }
+    ];
+
+    it('names each line it left out and why', () => {
+        const { skipped } = normalizeAiRows(raw, { accountId: 'a1', currency: 'EUR' });
+        expect(skipped).toHaveLength(2);
+        expect(skipped.map(s => s.description)).toEqual(['COBRANCA DE CAPITAL', 'Saldo devedor final']);
+        expect(skipped[0].reason).toMatch(/no date/i);
+        expect(skipped[1].reason).toMatch(/not a movement/i);
+    });
+});
+
+// An empty heading list produced headerSignature's own unchanged seed — a
+// well-formed id that EVERY headingless document shares. Confirmed as a layout,
+// one bank's section roles would be replayed onto another bank's statement.
+describe('a document with no headings has no layout id', () => {
+    it('returns null rather than a shared signature', () => {
+        expect(sectionSignature([])).toBeNull();
+    });
+
+    it('still distinguishes documents that do have headings', () => {
+        expect(sectionSignature(['A'])).not.toBe(sectionSignature(['B']));
     });
 });

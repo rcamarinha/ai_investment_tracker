@@ -18,8 +18,8 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.49.0';
-import { escapeHTML } from './utils.js?v=3.49.0';
+import state from './state.js?v=3.49.1';
+import { escapeHTML } from './utils.js?v=3.49.1';
 import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection, reconcileStatementTotal }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
@@ -190,14 +190,20 @@ export function normalizeAiRows(rawRows = [], { accountId, currency = null, sour
         // Positions, not movements: an amount owed, a credit limit, a closing
         // balance. A global statement covers a mortgage and a card as well as
         // the account, and those sections are mostly this.
-        if (raw?.role === 'skip') { skipped.push(raw); continue; }
+        if (raw?.role === 'skip') {
+            skipped.push({ ...raw, reason: 'not a movement — a balance, a limit or a summary' });
+            continue;
+        }
 
         // A row the document never dated cannot be placed in time, and a date we
         // supplied is a date nobody observed. The loan instalment breakdown in a
         // CGD statement is printed without one — it shares the date of the
         // instalment already on the account — and inventing one put those lines
         // in the ledger as income on a day they did not happen.
-        if (!raw?.date) { skipped.push({ ...raw, reason: 'no date printed' }); continue; }
+        if (!raw?.date) {
+            skipped.push({ ...raw, reason: 'the statement printed no date for this line, so it cannot be placed in time' });
+            continue;
+        }
 
         const candidate = normalizeRow({
             accountId,
@@ -411,6 +417,14 @@ export async function importPdfStatement(file, { accountId, accountCurrency, hin
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year, headings, broadened, rowOrder: order.direction,
         skipped: skipped.length,
+        // Not just how many. A count says "trust me"; the lines themselves let
+        // the user check, and the whole point of leaving something out is that
+        // it might have been the wrong call.
+        skippedRows: skipped.slice(0, 12).map(r => ({
+            description: String(r?.description ?? '(no description)').slice(0, 60),
+            amount: Number.isFinite(Number(r?.amount)) ? Number(r.amount) : null,
+            reason: r?.reason || 'not a movement of this account'
+        })),
         detail: { total: detailRows.length, itemised, promoted, settlementsLinked,
                   enriched: enrichedCount, unmatched: unmatchedDetail }
     };

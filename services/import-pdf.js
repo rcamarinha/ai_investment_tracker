@@ -166,16 +166,29 @@ export function findLooseCandidates(lines = []) {
  */
 export function findSectionHeadings(lines = [], options = {}) {
     const lookahead = options.lookahead ?? 15;
-    const lead = new RegExp(`^${D_SLASH}\\b`);
     const money = /\d[\d.,]*,\d{2}|\d[\d,]*\.\d{2}/;
 
-    const isCandidate = i => lines[i] && lead.test(lines[i].text);
+    // The same notion of "a transaction row" the prefilter uses, INCLUDING its
+    // widened fallback. Testing only for a row that starts with a date meant a
+    // bank whose rows begin with something else — CGD prints "- - 2026-07-30
+    // DESCRIPTION" — had no recognisable rows here, so no heading could ever be
+    // "followed by transactions" and the document reported zero sections. The
+    // headings were on the page; the test for them could not fire.
+    const strict = new Set(findCandidateLines(lines).map(l => l.text));
+    const rowSet = strict.size ? strict : new Set(findLooseCandidates(lines).map(l => l.text));
+    const isCandidate = i => lines[i] && rowSet.has(lines[i].text);
+    const isRowText = t => rowSet.has(t);
 
     return lines.filter((l, i) => {
         const text = (l.text || '').trim();
         if (!text || text.length > 100) return false;
-        if (lead.test(text)) return false;          // a dated row, not a heading
+        if (isRowText(text)) return false;          // a transaction row, not a heading
         if (money.test(text)) return false;         // carries a figure: a total or a row
+        // An account number, IBAN, NIB or direct-debit authorisation reference.
+        // These sit at the left margin, carry no money and are printed in caps,
+        // so they pass every other test — and a false heading is not harmless:
+        // headings decide which account a section's rows are routed to.
+        if (/\d{8,}/.test(text.replace(/\s/g, ''))) return false;
 
         const letters = text.replace(/[^A-Za-zÀ-ÿ]/g, '');
         if (letters.length < 3) return false;

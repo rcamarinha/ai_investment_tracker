@@ -1044,5 +1044,11 @@ export function summarizeSections(rows = [], headings = [], options = {}) {
  * is re-confirmed rather than replayed against a layout it no longer has.
  */
 export function sectionSignature(headings = []) {
+    // No headings means no recognisable layout, and must not produce an id.
+    // headerSignature([]) returns its own unchanged seed — a perfectly
+    // well-formed signature that EVERY headingless document shares. Stored as a
+    // layout, one bank's confirmation would then match another bank's statement
+    // and replay its section roles onto it.
+    if (!headings.length) return null;
     return headerSignature([...headings].sort());
 }
