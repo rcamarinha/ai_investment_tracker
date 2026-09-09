@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    groupIntoLines, findCandidateLines, proposeLinePattern, detectStatementYear,
+    groupIntoLines, findCandidateLines, findLooseCandidates, proposeLinePattern, detectStatementYear,
     parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
 } from '../services/import-pdf.js';
 
@@ -187,5 +187,79 @@ describe('buildPdfDraft', () => {
     it('reports failure rather than a bad guess on an unreadable document', () => {
         expect(buildPdfDraft([{ text: 'scanned image, no text', xs: [], y: 0 }]))
             .toMatchObject({ ok: false, matched: 0 });
+    });
+});
+
+// The shared parseStyledNumber now handles trailing-minus and parentheses.
+// parseWithLineProfile delegates to it via parseNum. A regression here would
+// silently file every debit as income — the sign is wrong in the direction
+// nobody questions, and the balance chain still reconciles perfectly.
+describe('parseWithLineProfile — trailing-minus and parentheses formats', () => {
+    const profile = { patternId: 'date desc valuedate amount balance', decimalStyle: 'eu', statementYear: 2026 };
+
+    it('reads a trailing-minus debit as negative', () => {
+        const rows = [
+            'Período de 2026/01/01 a 2026/01/31',
+            '26/01 Compra ana aeroportos 26/01 11,00- 7.685,81',
+            '26/01 Trf a credito 26/01 690,00 8.375,81',
+            'Saldo em 2026/01/31 8.375,81'
+        ].map((text, i) => ({ text, y: 700 - i * 12, xs: [65] }));
+        const r = parseWithLineProfile(rows, profile);
+        expect(r.rows[0].amount).toBe(-11);
+        expect(r.rows[1].amount).toBe(690);
+    });
+
+    it('reads amounts in parentheses as negative', () => {
+        const rows = [
+            'Período de 2026/01/01 a 2026/01/31',
+            '26/01 Compra ana aeroportos 26/01 (11,00) 7.685,81',
+            'Saldo em 2026/01/31 7.685,81'
+        ].map((text, i) => ({ text, y: 700 - i * 12, xs: [65] }));
+        const r = parseWithLineProfile(rows, profile);
+        expect(r.rows[0].amount).toBe(-11);
+    });
+});
+
+// findLooseCandidates widens the date gate for banks that do not lead with
+// dd/mm. Without it these documents were refused outright — the strict gate
+// decided whether the AI extractor was even allowed to see them, which inverts
+// the reason the extractor exists.
+describe('findLooseCandidates', () => {
+    const L = text => ({ text, y: 0, xs: [60] });
+
+    it('returns empty for empty input', () => {
+        expect(findLooseCandidates([])).toEqual([]);
+    });
+
+    it('includes a line with an ISO date and a money figure', () => {
+        expect(findLooseCandidates([L('2025-08-04 TRF SEPA 100,00 1.800,00')])).toHaveLength(1);
+    });
+
+    it('includes a line with a month-name date and money', () => {
+        expect(findLooseCandidates([L('04 Ago 2025 DECATHLON GAIA 172,60')])).toHaveLength(1);
+    });
+
+    it('includes a line whose date is not the first token', () => {
+        expect(findLooseCandidates([L('DECATHLON GAIA 04/08/2025 172,60')])).toHaveLength(1);
+    });
+
+    it('includes a standard dd/mm leading line', () => {
+        expect(findLooseCandidates([L('04/08 COMPRA 45,00')])).toHaveLength(1);
+    });
+
+    it('excludes a line with a date but no money figure', () => {
+        expect(findLooseCandidates([L('2025-08-04 TRF SEPA')])).toHaveLength(0);
+    });
+
+    it('excludes a line with money but no date', () => {
+        // '250,00' has no date-shaped token (no separator between two small digit
+        // groups), unlike '1.234,56' where '1.23' can look like a dd.mm date.
+        expect(findLooseCandidates([L('SALDO TOTAL 250,00')])).toHaveLength(0);
+    });
+
+    it('excludes lines longer than 200 characters even when they match', () => {
+        const long = L('2025-08-04 ' + 'X'.repeat(200) + ' 100,00');
+        expect(long.text.length).toBeGreaterThan(200);
+        expect(findLooseCandidates([long])).toHaveLength(0);
     });
 });
