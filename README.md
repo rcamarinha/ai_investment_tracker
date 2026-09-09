@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.49.1
+- **The import now shows which lines it left out, and why.** It reported a count, which asks to be taken on trust — and the whole point of leaving something out is that it might have been the wrong call. Each line is listed with its amount and the reason.
+- **Fixed: a bank whose rows do not start with a date had no sections at all.** Heading detection tested for a following row using the strict "starts with a date" rule rather than the widened one the importer actually uses, so on a statement that needed widening no heading could ever qualify. The headings were on the page; the test for them could not fire.
+- **Fixed: a document with no headings produced a layout id shared by every other such document** — the hashing seed, unchanged. Confirmed as a layout, one bank's section roles would have been replayed onto another bank's statement. There is now no id at all. Account numbers, IBANs and direct-debit references are also no longer mistaken for headings.
+
 ### v3.49.0
 - **One standard for failure handling across the app, with the parts that are invariants enforced by a test.** A failure the user must know about gets a notice and a report; one they need not know about is still reported; `console.error` is never the handler and `alert()` is not one either. Separately, an operation whose correctness cannot be checked as it runs records how it went, because every import bug found here was a silent wrong result that threw nothing.
 - **The check that matters most: context keys must exist.** Unknown keys are dropped silently, so a diagnostic written with `rowsParsed` instead of `parsed` sends, looks healthy, and carries nothing — a blind spot inside the mechanism built to remove blind spots. The test reads the permitted list out of the telemetry module rather than restating it.
