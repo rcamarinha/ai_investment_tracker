@@ -64,3 +64,26 @@ const state = {
 };
 
 export default state;
+
+/**
+ * Clear everything that narrows the ledger view.
+ *
+ * Called after an import, because the one thing a user must see afterwards is
+ * what they just imported. Filters survive an import, and several of them hide
+ * new rows completely: leaving the type filter on `review` to deal with an
+ * unconfirmed transaction hides every clean row the import just added, so a
+ * successful import of eighty movements shows nothing at all. The account
+ * filter and an explicitly chosen period do the same.
+ *
+ * Not a render concern — the filters are state, and resetting them where the
+ * data changes keeps the rule in one place instead of in each view.
+ */
+export function clearViewFilters(target = state) {
+    target.period = null;            // re-derived to the newest period holding data
+    target.selectedCategory = null;
+    target.accountFilter = null;
+    target.txSearch = '';
+    target.txTypeFilter = 'all';
+    target.txPage = 0;
+    return target;
+}

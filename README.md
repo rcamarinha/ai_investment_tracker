@@ -307,6 +307,13 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.49.3
+- **Fixed: a successful import could show nothing at all.** Ledger filters survived the import, and several of them hide exactly the rows it added — leaving the type filter on *needs review* to deal with one unconfirmed transaction hid every clean row of the next import. Eighty movements would arrive, reconcile, and be invisible. An account filter or a month chosen by hand did the same. An import now clears what would hide it, because the one thing you must see afterwards is what you just imported.
+
+### v3.49.2
+- **Fixed: the category icon field mangled most emoji.** It carried `maxlength="4"`, which counts UTF-16 code units — and an emoji is rarely one. A gym emoji is six units, so it was cut in half, leaving a dangling joiner that renders as a broken glyph. The field looked like it was refusing emoji when it was quietly truncating them. Length is now measured in what a person would call a character.
+- **And there is a picker.** Twenty common category icons, one click each; typing any other emoji still works.
+
 ### v3.49.1
 - **The import now shows which lines it left out, and why.** It reported a count, which asks to be taken on trust — and the whole point of leaving something out is that it might have been the wrong call. Each line is listed with its amount and the reason.
 - **Fixed: a bank whose rows do not start with a date had no sections at all.** Heading detection tested for a following row using the strict "starts with a date" rule rather than the widened one the importer actually uses, so on a statement that needed widening no heading could ever qualify. The headings were on the page; the test for them could not fire.

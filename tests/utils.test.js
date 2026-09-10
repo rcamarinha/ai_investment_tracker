@@ -1,3 +1,4 @@
+import { firstGraphemes } from '../spend/utils.js';
 import { describe, it, expect } from 'vitest';
 import { formatCurrency, formatPercent, escapeHTML } from '../src/portfolio.js';
 
@@ -102,4 +103,30 @@ describe('escapeHTML', () => {
     expect(escapeHTML(123)).toBe('123');
     expect(escapeHTML(null)).toBe('null');
   });
+});
+
+// maxlength and slice both count UTF-16 code units, and an emoji is rarely one:
+// a gym emoji is six. maxlength="4" on the category icon field cut it in half
+// and left a dangling joiner, which renders as a broken glyph — the field
+// looked like it was refusing emoji when it was silently truncating them.
+describe('firstGraphemes', () => {
+    it('keeps a joined emoji whole', () => {
+        expect(firstGraphemes('🏋️‍♂️', 2)).toBe('🏋️‍♂️');
+        expect(firstGraphemes('👨‍👩‍👧', 2)).toBe('👨‍👩‍👧');
+    });
+
+    it('never returns half a sequence, whatever the limit', () => {
+        expect(firstGraphemes('🏋️‍♂️', 1)).toBe('🏋️‍♂️');
+    });
+
+    it('counts what a person would call a character', () => {
+        expect(firstGraphemes('🎓🏋️‍♂️⚽', 2)).toBe('🎓🏋️‍♂️');
+        expect(firstGraphemes('abc', 2)).toBe('ab');
+    });
+
+    it('handles nothing gracefully', () => {
+        expect(firstGraphemes('')).toBe('');
+        expect(firstGraphemes(null)).toBe('');
+        expect(firstGraphemes('  ')).toBe('');
+    });
 });

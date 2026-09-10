@@ -1,3 +1,4 @@
+import { clearViewFilters } from '../spend/state.js';
 import { describe, it, expect } from 'vitest';
 import {
     sniffCsv, autoMapColumns, headerSignature, buildProfileDraft, parseWithProfile,
@@ -1029,5 +1030,29 @@ describe('markCardSettlements — both legs', () => {
     it('does not pair a refund, which is negative spending and not a transfer', () => {
         const r = markCardSettlements(statement, [refund]);
         expect(r.linked).toHaveLength(0);
+    });
+});
+
+// Filters survive an import, and several of them hide the rows it just added.
+// Leaving the type filter on 'review' to deal with one unconfirmed transaction
+// hid every clean row of the next import, so importing eighty movements showed
+// nothing at all — a successful import that reads as a failed one.
+describe('an import shows what it imported', () => {
+    it('clears every filter that could hide the new rows', () => {
+        const view = {
+            period: '2026-07', selectedCategory: 'Groceries', accountFilter: 'a1',
+            txSearch: 'edp', txTypeFilter: 'review', txPage: 3
+        };
+        clearViewFilters(view);
+        expect(view).toEqual({
+            period: null, selectedCategory: null, accountFilter: null,
+            txSearch: '', txTypeFilter: 'all', txPage: 0
+        });
+    });
+
+    it('returns the period to null so it re-derives to where the data is', () => {
+        // Not set to "today": a statement imported on the 1st of a month is all
+        // last month's, and pinning today would hide it just as effectively.
+        expect(clearViewFilters({ period: '2020-01' }).period).toBeNull();
     });
 });

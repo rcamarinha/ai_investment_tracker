@@ -173,3 +173,27 @@ export function accountColour(accountId, index = 0) {
     for (let i = 0; i < accountId.length; i++) h = (h * 31 + accountId.charCodeAt(i)) >>> 0;
     return ACCOUNT_COLOURS[(h + index) % ACCOUNT_COLOURS.length];
 }
+
+/**
+ * The first `max` user-perceived characters of a string.
+ *
+ * Not `slice`, and not `maxlength`. Both count UTF-16 code units, and an emoji
+ * is rarely one: 🎓 is two, 🏋️ is three, 🏋️‍♂️ is six. `maxlength="4"` on the
+ * category icon field therefore cut a gym emoji in half and left a dangling
+ * joiner, which the browser renders as the broken glyph the user sees — the
+ * input looked like it was refusing emoji when it was quietly truncating them.
+ *
+ * Intl.Segmenter groups by grapheme cluster, which is what "one character"
+ * means to a person. The fallback splits by code point: still wrong for joined
+ * sequences, but it keeps surrogate pairs intact, so the worst case is a plain
+ * emoji rather than a mangled one.
+ */
+export function firstGraphemes(value, max = 2) {
+    const text = String(value ?? '').trim();
+    if (!text) return '';
+    if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+        const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+        return [...seg.segment(text)].slice(0, max).map(s => s.segment).join('');
+    }
+    return [...text].slice(0, max).join('');
+}

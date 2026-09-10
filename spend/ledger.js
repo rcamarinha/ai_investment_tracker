@@ -5,15 +5,15 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.49.1';
+import state from './state.js?v=3.49.3';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
-    deltaClass, showToast, showConfirm, openModal, closeModal, accountColour
-} from './utils.js?v=3.49.1';
+    deltaClass, showToast, showConfirm, openModal, closeModal, accountColour, firstGraphemes
+} from './utils.js?v=3.49.3';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule,
     incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
-} from './storage.js?v=3.49.1';
+} from './storage.js?v=3.49.3';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario
@@ -450,7 +450,13 @@ export function showCategoryDialog(id = null) {
         </div>
         <div class="form-group">
             <label class="form-label" for="catIcon">Icon <span style="color:var(--text-secondary)">(optional)</span></label>
-            <input class="form-input" id="catIcon" maxlength="4" placeholder="🎓" value="${escapeHTML(c?.icon || '')}">
+            <input class="form-input" id="catIcon" placeholder="🎓" value="${escapeHTML(c?.icon || '')}">
+            <div id="catIconChoices" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+                ${['🏋️','⚽','🎓','🏠','🍽️','🛒','🚗','⛽','✈️','💊','🐶','🎁','💡','📱','👶','💇','🎬','☕','🍷','🧾']
+                    .map(e => `<button type="button" class="btn btn-sm btn-ghost-spend cat-icon-pick"
+                                style="padding:2px 7px;font-size:1.05rem" data-icon="${escapeHTML(e)}">${e}</button>`).join('')}
+            </div>
+            <span class="form-helper">Pick one, or type any emoji.</span>
         </div>
         <div class="form-group">
             <label class="form-label" for="catKind">What kind of money is this?</label>
@@ -475,6 +481,16 @@ export function showCategoryDialog(id = null) {
                 <button class="btn btn-sm btn-danger" style="margin-top:10px" data-act="delete-category">Delete category</button>
                 <span class="form-helper">Moving them to another category is also how you merge two categories.</span>
             </div>` : ''}`;
+    const choices = el('catIconChoices');
+    if (choices) {
+        // Bound here rather than through an onclick attribute: an attribute is
+        // HTML-decoded before its contents are compiled as JavaScript, which is
+        // the one position escapeHTML does not protect.
+        choices.addEventListener('click', ev => {
+            const btn = ev.target.closest('.cat-icon-pick');
+            if (btn) el('catIcon').value = btn.dataset.icon;
+        });
+    }
     openModal('categoryDialog');
 }
 
@@ -483,7 +499,10 @@ export async function submitCategory() {
     const category = {
         ...(state.editingCategoryId ? { id: state.editingCategoryId } : {}),
         name: el('catName').value.trim(),
-        icon: el('catIcon').value.trim() || null,
+        // Trimmed by grapheme, never by maxlength or slice: an emoji is rarely
+        // one UTF-16 unit, and cutting one in half leaves a dangling joiner that
+        // renders as a broken glyph.
+        icon: firstGraphemes(el('catIcon').value, 2) || null,
         isIncome: kind === 'income',
         countsAsSavings: kind === 'savings'
     };
