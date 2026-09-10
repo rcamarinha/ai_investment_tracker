@@ -2,57 +2,62 @@
 
 ## Project Overview
 
-A **modular browser-based portfolio management application** that allows users to import investment portfolios, fetch live market prices via a 3-tier API fallback strategy, track performance over time, and generate AI-powered insights via the Claude API.
+A **browser-based suite for one household's money**, in four tools sharing one auth, one design
+system and one hub: **Stock Portfolio** (import, live prices via a 3-tier API fallback, XIRR, AI
+analysis), **Wine Cellar** (inventory and AI valuation), **Spend** (bank-statement import,
+categorisation, savings rate) and **Bank Holdings** (bonds and funds no market API can price).
 
-**No backend, no build system, no framework.** Vanilla HTML + CSS + JavaScript using ES modules. Requires an HTTP server (not `file://`) — use `python -m http.server 8000` or deploy to GitHub Pages.
+Read the **Common Pitfalls** at the end before changing ingestion, money handling or failure
+reporting. Most entries there were written after a bug reached real data, and they say what the
+code cannot: why the obvious approach was tried and abandoned.
+
+**No backend, no build system, no framework.** Vanilla HTML + CSS + JavaScript using ES modules. Requires an HTTP server (not `file://`) — `python -m http.server 8000` locally; Vercel in production.
 
 ## Architecture
 
 ```
 ai_investment_tracker/
-├── index.html                  # Hub: cross-asset net worth dashboard + auth (~310 lines)
-├── css/
-│   └── styles.css              # All styles + button style guide (~480 lines)
-├── data/
-│   ├── sectors.js              # SECTOR_MAPPING + getSector() helpers
-│   └── perspectives.js         # INVESTMENT_PERSPECTIVES (6 philosophies + prompts)
-├── services/
-│   ├── state.js                # Shared application state object
-│   ├── utils.js                # formatCurrency, formatPercent, escapeHTML, detectExchange
-│   ├── pricing.js              # 3-tier price fetching (Finnhub → FMP → Alpha Vantage)
-│   ├── storage.js              # Supabase DB, localStorage, Claude cloud storage
-│   ├── auth.js                 # Supabase authentication (login, signup, logout)
-│   ├── portfolio.js            # Render, import, snapshots, history
-│   ├── import-brokers.js       # Pure broker-export parsers (DeGiro/Revolut CSV) + dedupe + ledger rebuild
-│   ├── analysis.js             # AI analysis & trade ideas via Claude API
-│   └── ui.js                   # Allocation charts, perspective tabs, dialogs
-├── src/
-│   ├── portfolio.js            # Pure functions for testing (kept in sync with services)
-│   ├── hub.js                  # Pure hub dashboard helpers (hubFmt, computeStockValue, etc.)
-│   └── wine.js                 # Pure wine functions for testing
-├── tests/                      # Vitest test suite
-├── vercel.json                 # Vercel deployment: security headers, cache rules
+├── index.html                  # Hub: cross-asset net worth dashboard + auth
+├── portfolio.html              # Stock portfolio
+├── wine.html                   # Wine cellar
+├── spend.html                  # Spending and bank statements
+├── holdings.html               # Bank-held bonds and funds
+├── css/styles.css              # All styles + button style guide
+├── lib/                        # Vendored: CSP is script-src 'self', nothing loads from a CDN
+│   ├── supabase.js
+│   └── pdf.min.mjs, pdf.worker.min.mjs
+├── data/                       # Pure data, no imports
+│   ├── sectors.js              # SECTOR_MAPPING + getSector()
+│   ├── perspectives.js         # INVESTMENT_PERSPECTIVES
+│   ├── i18n.js                 # Translations
+│   └── category-icons.js       # Searchable spend-category icons (EN + PT keywords)
+├── services/                   # Shared logic. NEVER imported with ?v= (see Pitfalls)
+│   ├── state.js, utils.js, ui.js, navbar.js, auth.js, storage.js
+│   ├── pricing.js, pricing-core.js, portfolio.js, analysis.js
+│   ├── money-core.js           # Currency: ISO codes, minor units (GBp != GBP), conversion
+│   ├── returns-core.js         # XIRR, cash flows, yearly income
+│   ├── telemetry.js            # Error + diagnostic reporting, allow-listed context
+│   ├── spend-core.js           # Savings rate, period rollups, YoY, recurring, projection
+│   ├── holdings-core.js        # Bank-holding valuation and freshness
+│   ├── categorize-core.js      # Precedent from the ledger, AI batching, result guards
+│   ├── import-contract.js      # The one row shape every ingestion source must emit
+│   ├── import-banks.js         # CSV/TSV profiles, dedupe, rules, card routing, expansion
+│   ├── import-standards.js     # OFX/QFX (both SGML and XML dialects)
+│   ├── import-pdf.js           # Line reconstruction, balance chain, whole-statement total
+│   └── import-brokers.js       # Broker exports -> trade ledger (pure; no src/ mirror)
+├── src/                        # Pure mirrors for testing: hub.js, portfolio.js, wine.js, wine-ai-utils.js
+├── wine/                       # state, storage, cellar, valuation, label, analysis, api, ui, utils
+├── spend/                      # state, storage, ledger, importer, pdf, categorize, accounts, utils
+├── holdings/                   # state, storage, ui, utils
+├── tests/                      # Vitest
 ├── supabase/
-│   ├── migrations/             # SQL migrations (e.g. restrict wines UPDATE)
-│   └── functions/
-│       ├── analyze-portfolio/
-│       │   └── index.ts        # Edge function for stock portfolio analysis
-│       ├── extract-trades/
-│       │   └── index.ts        # Edge function: extract trades from unstructured statement text (Revolut PDF / BancoBest)
-│       ├── resolve-tickers/
-│       │   └── index.ts        # Edge function: Gemini(+Google Search)→Claude(+web_search) fallback that finds a priceable ticker (and last-resort grounded price) for symbols all price APIs reject; validated client-side
-│       ├── extract-statement/
-│       │   └── index.ts        # Edge function: bank-statement lines → ledger rows. Gemini 2.5 Flash
-│       │                       # (GEMINI_WINE, shared with wine) primary, Claude Haiku fallback —
-│       │                       # extraction is not reasoning, so the cheap models are correct here.
-│       │                       # Client sends layout-reconstructed LINES, not a flat text dump, and
-│       │                       # re-checks every returned row against the statement's running balance.
-│       ├── quote-proxy/
-│       │   └── index.ts        # Edge function: server-side Yahoo chart quotes (keyless; broad EU coverage incl. Xetra/LSE/Euronext, returns currency) — Tier 4 of fetchStockPrice for EU-listed UCITS ETFs etc. that free API tiers can't quote (Yahoo is CORS-blocked from the browser, hence the proxy)
-│       └── wine-ai/
-│           └── index.ts        # Edge function for wine AI (label, valuation, analysis)
-├── supabase_schema.sql         # Database schema (positions, snapshots, assets, transactions, etc.)
-├── vitest.config.js
+│   ├── migrations/             # Hand-run SQL (see Pitfalls: run by the user, not by a deploy)
+│   ├── maintenance/            # Operational scripts — NEVER run as a migration
+│   └── functions/              # Edge functions (analyze-portfolio, extract-trades, extract-statement,
+│                               #   resolve-tickers, quote-proxy, wine-ai, categorize-transactions)
+├── vercel.json                 # Headers and cache rules: services/data/src revalidate,
+│                               #   wine/spend/holdings/css/lib are immutable and versioned by ?v=
+└── package.json, vitest.config.js
 └── package.json
 ```
 
@@ -71,6 +76,11 @@ index.html (init)
   ├── services/analysis.js       (← state, utils, perspectives)
   └── services/ui.js             (← state, utils, sectors, perspectives, portfolio, storage, auth)
 ```
+
+The graph above covers the **portfolio page only**. `wine/`, `spend/` and `holdings/` are
+self-contained modules with their own `state.js` and `storage.js`; they import from `services/`
+only for genuinely shared logic (`money-core`, `telemetry`, the `import-*` family, `navbar`) and
+never from each other.
 
 Note: Several services have circular imports (e.g., pricing ↔ portfolio, storage ↔ portfolio). This works with ES modules because functions are called at runtime, not at module evaluation time.
 
@@ -279,7 +289,12 @@ python -m http.server 8000
 # Then open http://localhost:8000
 ```
 
-Or deploy via **Vercel** (`vercel.json` configured) or **GitHub Pages** (CNAME configured).
+Production is **Vercel** at cacoventures.com — verified from the response headers, not assumed.
+`vercel.json` carries the security headers and the cache rules, and those rules are load-bearing:
+`services/`, `data/` and `src/` revalidate on every request, while `css/`, `lib/`, `wine/`, `spend/`
+and `holdings/` are served `immutable` and busted by `?v=`. A change to an immutable directory that
+does not come with a version bump cannot reach a browser. The `CNAME` file is a leftover from
+GitHub Pages; nothing deploys from there and there is no workflow.
 
 ### Making Changes
 
@@ -295,7 +310,17 @@ Each concern lives in its own file:
 npx vitest run
 ```
 
-Test files in `tests/` import from `src/portfolio.js` (pure function mirror).
+Tests import the **pure** module directly wherever one exists — `services/*-core.js`,
+`import-banks.js`, `import-pdf.js`, `import-contract.js`, `import-brokers.js`, `money-core.js`,
+`telemetry.js` — because those have no DOM or network dependencies and therefore need no mirror.
+The `src/` mirrors exist only for logic that still lives inside a DOM-coupled service
+(`src/portfolio.js`, `src/hub.js`, `src/wine.js`). Do not add a mirror for a module that is
+already pure: two copies is how the same sign bug came to exist twice.
+
+Two tests enforce rules rather than behaviour, and both read their authority out of the
+source rather than restating it:
+- `tests/db-constraints.test.js` — no code path may emit a value a CHECK constraint would reject
+- `tests/failure-handling.test.js` — the failure-handling standard (see Pitfalls)
 
 ### Debugging
 
@@ -303,7 +328,7 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 
 ## Common Pitfalls
 
-- **ES modules require HTTP** — `file://` won't work; use a local server or GitHub Pages
+- **ES modules require HTTP** — `file://` won't work; use a local server
 - **Circular imports** — Services cross-reference each other; this works because functions are called at runtime, not at module load time
 - **`window.*` globals** — onclick handlers require functions on `window`; these are set in the init block of `index.html`
 - **API keys are never committed** — They live only in the user's browser localStorage

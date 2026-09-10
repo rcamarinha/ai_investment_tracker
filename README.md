@@ -1,6 +1,6 @@
 # Investment Hub
 
-A modular browser-based investment tracking suite — **Stock Portfolio** and **Wine Cellar** — with AI-powered analysis via the Claude API and optional cloud sync via Supabase.
+A browser-based suite for one household's money, in four tools sharing one login and one hub — **Stock Portfolio**, **Wine Cellar**, **Spend** and **Bank Holdings** — with AI analysis via the Claude API and cloud sync via Supabase.
 
 ---
 
@@ -8,10 +8,12 @@ A modular browser-based investment tracking suite — **Stock Portfolio** and **
 
 The hub page shows a **cross-asset net worth summary** when logged in:
 
-- **Total Portfolio Wealth** — combined stock cost basis + wine cellar estimated value in EUR
+- **Total Portfolio Wealth** — stocks, wine and bank-held bonds and funds, in EUR. Stocks are the market value the portfolio page computed with per-trade FX, never a sum of `shares × price` (that would add pounds to euros). A `*` marks a total that is missing something it could not value.
 - **Per-asset-class values** — Stocks (cost basis) and Wine Cellar (AI-estimated × qty) shown separately on each hub card
 - **Wine gain/loss delta** — estimated value vs. purchase price across all holdings; shows valuation age (e.g. "valued 14d ago") when no purchase price is recorded
-- **Stock delta label** — "cost basis" indicator (live prices not fetched on the hub page)
+- **Stock delta label** — when the snapshot was taken, and how many holdings it excludes
+- **Spend card** — this month's spending and savings rate, transfers excluded
+- **Bank Holdings card** — bonds and funds no market API can price, with the age of each valuation shown rather than hidden
 - Values load automatically after login via two parallel Supabase queries; revert to `— —` on logout
 - Not logged in: hub cards show `— —` placeholders — no value-prop landing, login is in the navbar
 
@@ -52,6 +54,19 @@ The hub page shows a **cross-asset net worth summary** when logged in:
 
 ---
 
+### 💶 Spend (`spend.html`)
+
+- **Bank statements in, without per-bank code** — OFX/QFX needs no setup at all, CSV/TSV asks once about its columns and then never again, and PDF goes to a cheap extraction service. A bank nobody has seen imports without a code change
+- **Nothing extracted is trusted** — every row is checked against the statement's running balance, and the statement's own opening and closing balance must account for every row taken from it. A row that should not be there breaks that total by exactly its own amount
+- **A statement can describe several products** — a current account, a card and a mortgage in one PDF. Card purchases route to their own linked account and the repayment is recorded as a transfer, so the same money is never counted twice
+- **Categories that learn** — a merchant you have filed before is filed the same way again, without asking a model. Add your own categories, and mark one as *saved or invested* so a pension or a child's trust fund stops counting as spending
+- **Where the money goes** — period rollups, year-on-year comparison, recurring-charge detection, savings rate
+
+### 🏦 Bank Holdings (`holdings.html`)
+
+- **Bonds and funds held at retail banks**, which no market API can price
+- **Honest valuation** — the age of a valuation is shown, not hidden, and a stale one is excluded from totals rather than quietly counted
+
 ## Getting Started
 
 ### 1. Start a local server
@@ -63,7 +78,8 @@ python -m http.server 8000
 # Then open http://localhost:8000
 ```
 
-Or deploy to GitHub Pages / any static host.
+Production is Vercel (`vercel.json` holds the security headers and cache rules). Any static host
+works, but the cache rules are not cosmetic — see the Pitfalls in CLAUDE.md before changing them.
 
 ### 2. API keys
 
@@ -86,7 +102,7 @@ The wine tracker needs **only** the Anthropic API key. Gemini is called server-s
 
 Enter keys via the **🔑 API Keys** button in each tracker.
 
-### 3. Cloud Sync (optional — both trackers)
+### 3. Cloud Sync (optional — the whole suite)
 
 1. Create a free [Supabase](https://supabase.com/) project
 2. Run `supabase_schema.sql` in the SQL Editor (stock tracker tables)
@@ -100,71 +116,23 @@ Both trackers share the same Supabase project and user account.
 
 ## Architecture
 
-```
-ai_investment_tracker/
-│
-├── index.html              # Hub: cross-asset net worth dashboard + auth; links to both trackers
-├── portfolio.html          # Stock Portfolio Tracker
-├── wine.html               # Wine Cellar Tracker
-│
-├── css/
-│   ├── styles.css          # Design tokens (:root), shared dark-theme styles, button guide
-│   └── wine.css            # Wine-specific styles (maps --wine* tokens)
-│
-├── data/
-│   ├── sectors.js          # Sector mapping + getSector() helpers
-│   └── perspectives.js     # 6 investment perspectives with AI prompts
-│
-├── services/               # Stock tracker modules
-│   ├── state.js
-│   ├── utils.js
-│   ├── pricing.js
-│   ├── storage.js
-│   ├── auth.js
-│   ├── portfolio.js
-│   ├── import-brokers.js   # Pure DeGiro/Revolut CSV parsers + ledger helpers
-│   ├── analysis.js
-│   └── ui.js
-│
-├── wine/                   # Wine tracker modules
-│   ├── state.js            # Shared wine state
-│   ├── api.js              # Edge function client (routes label/valuation/analysis calls)
-│   ├── label.js            # Camera capture + Gemini/Claude Vision label recognition
-│   ├── storage.js          # Supabase auth + CRUD (self-contained)
-│   ├── cellar.js           # Rendering, add/edit/delete, snapshots, history
-│   ├── valuation.js        # Per-bottle AI market value estimation (Gemini → Claude)
-│   ├── analysis.js         # AI cellar analysis (drink windows, recommendations)
-│   ├── ui.js               # Allocation charts, API key dialog
-│   └── utils.js            # escapeHTML, showToast, showConfirm helpers
-│
-├── src/
-│   ├── portfolio.js        # Pure functions mirror of services/portfolio.js (for tests)
-│   └── wine.js             # Pure functions mirror of wine/ modules (for tests)
-│
-├── tests/                  # Vitest test suite (266 tests across 9 files) + UX test suite
-│   ├── ux-scenarios.html   # Interactive UX test suite (8 scenarios, runs on GitHub Pages)
-│   ├── wine.test.js        # Wine: totals, gains, grouping, validation, scan parsing
-│   ├── calculations.test.js
-│   ├── allocation.test.js
-│   ├── import-parsing.test.js
-│   ├── position-management.test.js
-│   ├── price-fetching.test.js
-│   ├── snapshots.test.js
-│   ├── ticker-resolution.test.js
-│   └── utils.test.js
-│
-├── supabase/
-│   └── functions/
-│       ├── analyze-portfolio/
-│       │   └── index.ts    # Edge function for server-side stock analysis
-│       └── extract-trades/
-│           └── index.ts    # Edge function: AI trade extraction from unstructured text
-│
-├── supabase_schema.sql     # Stock tracker DB schema
-├── wine_schema.sql         # Wine cellar DB schema
-├── vitest.config.js
-└── package.json
-```
+Vanilla HTML, CSS and ES modules. **No build step and no framework**, so what is in the
+repository is what runs in the browser. Requires an HTTP server — ES modules do not load over
+`file://`.
+
+- `services/` — shared logic: state, storage, auth, pricing, currency, telemetry, and the
+  `import-*` family that turns any bank or broker export into one row shape
+- `data/` — pure data with no imports: sectors, perspectives, translations, category icons
+- `wine/`, `spend/`, `holdings/` — self-contained page modules, each with its own state and
+  storage, importing from `services/` only for genuinely shared logic
+- `src/` — pure mirrors of logic still trapped inside DOM-coupled services, so it can be tested
+- `supabase/` — hand-run migrations, edge functions, and operational scripts that must never run
+  as migrations
+
+**The full file map lives in [CLAUDE.md](CLAUDE.md)**, alongside the Common Pitfalls — a list of
+the mistakes that reached real data, and why the obvious fix for each one was wrong. Read that
+before changing ingestion, money handling or failure reporting. It is deliberately the only copy:
+a second tree here would drift from it within a month.
 
 ---
 
@@ -299,7 +267,7 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 - A modern web browser (Chrome, Firefox, Safari, Edge)
 - Python 3 or any static file server for local development
-- **Anthropic API key** — required for all AI features in both trackers
+- **Anthropic API key** — required for the AI features across the suite
 - **Finnhub / FMP / Alpha Vantage** — at least one key for live stock prices
 - **Supabase project** — optional, for cloud sync across devices
 
