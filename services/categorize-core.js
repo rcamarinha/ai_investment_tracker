@@ -141,3 +141,80 @@ export function summarizeRun({ ruleMatched = 0, applied = 0, review = 0, unanswe
 }
 
 export const __testing = { median, DEFAULT_CONFIDENCE, LARGE_MULTIPLE, DEFAULT_BATCH };
+
+/**
+ * What the user has already decided for this merchant.
+ *
+ * The ledger is the record of every decision made, and it was not being read.
+ * Learning depended entirely on a separate rules table, which is written only
+ * when someone corrects a category one row at a time — so "accept all
+ * confident" taught nothing, clearing rules threw the history away, and a
+ * merchant filed as Dining twenty times still came back suggested as Leisure.
+ *
+ * Precedent is stronger evidence than a model's guess: the model is inferring
+ * from a merchant name, the user is remembering where they actually were. So
+ * this runs BEFORE the AI is asked, and a row with precedent is never sent.
+ *
+ * Matching is on the same leading tokens a rule uses, so "COMPRA OPORTO CRICKET
+ * CLUB 0003791851" and "COMPRA OPORTO CRICKET" are one merchant. A tie between
+ * two categories yields nothing rather than a coin flip.
+ */
+export function findPrecedent(tx, history = [], options = {}) {
+    const minShared = options.minShared ?? 2;
+    const mine = merchantTokens(tx);
+    if (mine.size < minShared) return null;
+
+    const tally = new Map();
+    for (const past of history) {
+        if (!past?.category || past.category === 'transfer') continue;
+        if (past.id && tx.id && past.id === tx.id) continue;
+        const theirs = merchantTokens(past);
+        let shared = 0;
+        for (const t of mine) if (theirs.has(t)) shared++;
+        if (shared < minShared) continue;
+        tally.set(past.category, (tally.get(past.category) || 0) + 1);
+    }
+    if (!tally.size) return null;
+
+    const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+    // Two categories used equally often is not a precedent, it is a question.
+    if (ranked.length > 1 && ranked[1][1] === ranked[0][1]) return null;
+    return { category: ranked[0][0], count: ranked[0][1] };
+}
+
+/**
+ * The significant words of a description, as a set.
+ *
+ * A set rather than the first three in order, because a bank writes the same
+ * merchant several ways — "COMPRA OPORTO CRICKET", "OPORTO CRICKET CLUB",
+ * "OPORTO CRICKET CLUB 0003791851". Keyed on leading tokens those are three
+ * merchants; by overlap they are one. Requiring TWO shared words keeps a common
+ * prefix like "compra" or "pagamento" from making everything match everything.
+ */
+export function merchantTokens(tx) {
+    const source = tx?.merchant || tx?.rawDescription || tx?.description || '';
+    return new Set(String(source)
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9 ]+/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 2 && !/^\d+$/.test(w)));
+}
+
+/**
+ * Settle everything the ledger can already answer, and return only the rest.
+ *
+ * Splitting this out keeps the expensive step honest: whatever comes back in
+ * `remaining` is genuinely new, so the count of rows sent to a model is also a
+ * measure of how much the app has learned.
+ */
+export function applyPrecedents(transactions = [], history = [], options = {}) {
+    const settled = [], remaining = [];
+    for (const tx of transactions) {
+        if (tx.category) { remaining.push(tx); continue; }
+        const hit = findPrecedent(tx, history, options);
+        if (hit) settled.push({ ...tx, category: hit.category, categorySource: 'rule', precedentCount: hit.count });
+        else remaining.push(tx);
+    }
+    return { settled, remaining };
+}

@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.51.0
+- **Categorisation now learns from the ledger, which is where the learning already was.** A merchant filed as Dining across past imports still came back suggested as Leisure, because learning ran entirely off a separate rules table — written only when someone corrects a row one at a time. Every past decision sitting in the ledger was ignored. The categoriser now reads it first: a merchant you have filed before is filed the same way again, without asking a model at all.
+- **The same merchant written three ways is one merchant.** Banks print "COMPRA OPORTO CRICKET", "OPORTO CRICKET CLUB" and "OPORTO CRICKET CLUB 0003791851" for one place. Matching is on shared significant words, needing two, so a common prefix like *compra* or *pagamento* cannot make everything match everything. Where you have filed a merchant both ways, nothing is assumed — that is a question, not a precedent.
+- **"Accept all confident" now teaches.** It explicitly suppressed learning, so the more suggestions you accepted, the less the app knew — the exact opposite of what accepting them means.
+
 ### v3.50.0
 - **The category icon is now searched, not typed.** Typing "do" for *dog* saved the literal text "do" as the icon — the field looked like a search box and behaved like a text field. Typing is now only ever a query: it filters a grid of 68 icons, and clicking one is the only thing that stores a value, so there is no path from raw text into the data at all.
 - **Search works in Portuguese as well as English** — `cão`, `poupança`, `ginásio`, `farmácia` — because "cão finds nothing while dog works" is the same dead end as having no search.

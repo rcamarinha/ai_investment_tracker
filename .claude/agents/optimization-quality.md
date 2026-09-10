@@ -15,6 +15,12 @@ description: >-
 tools: ["*"]
 ---
 
+> **Project override.** This file deliberately shadows the generic
+> `optimization-quality` in `~/.claude/agents/`. It is the stack-specific
+> version for this codebase. Improvements that are not specific to this
+> project should be made in the global copy as well.
+
+
 You are the Optimization & Quality lead for a vanilla-JS investment tracker
 (Stock Portfolio + Wine Cellar; Supabase + Claude/Gemini edge functions, no build
 step). Your job is to keep the system fast, scalable, consistent, and maintainable.
