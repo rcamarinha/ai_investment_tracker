@@ -13,11 +13,12 @@
  * Nothing here files a category the user cannot see and undo.
  */
 
-import state from './state.js?v=3.51.0';
-import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.51.0';
-import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.51.0';
+import state from './state.js?v=3.51.1';
+import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.51.1';
+import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.51.1';
 import { applyRules, ruleFromCorrection } from '../services/import-banks.js';
-import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun, applyPrecedents }
+import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun, applyPrecedents,
+    needingCategorisation, mergeReviewQueue }
     from '../services/categorize-core.js';
 import { reportHandled } from '../services/telemetry.js';
 
@@ -92,13 +93,24 @@ export async function categoriseAll({ onProgress } = {}) {
     const { settled, remaining } = applyPrecedents(ruled.rows, state.transactions);
 
     // 3. structure
-    const { toSend, skipped } = partitionForAi(remaining, { incomeCategories: incomeCategoryNames() });
+    const { toSend: candidates, skipped } = partitionForAi(remaining, { incomeCategories: incomeCategoryNames() });
+
+    // A row already carrying an unanswered suggestion has been asked about
+    // once. Sending it again pays for the same answer twice and replaces a
+    // suggestion the user has not looked at yet.
+    const toSend = needingCategorisation(candidates, state.reviewQueue);
+
+    // Every row this run has actually filed. Their suggestions, if any, are
+    // now answered and must leave the queue.
+    const decided = new Set([...settled.map(r => r.id),
+        ...ruled.rows.filter(r => r.categorySource === 'rule').map(r => r.id)]);
 
     if (settled.length) await persist(settled);
 
     if (!toSend.length) {
         const summary = summarizeRun({ ruleMatched: ruleMatched + settled.length, skipped });
         if (ruleMatched) await persist(ruled.rows.filter(r => r.categorySource === 'rule'));
+        state.reviewQueue = mergeReviewQueue(state.reviewQueue, [], decided);
         return { ...summary, applied: [], review: [] };
     }
 
@@ -132,7 +144,10 @@ export async function categoriseAll({ onProgress } = {}) {
     const toPersist = [...ruled.rows.filter(r => r.categorySource === 'rule'), ...allApplied];
     if (toPersist.length) await persist(toPersist);
 
-    state.reviewQueue = allReview;
+    // Merged, not assigned: suggestions from an earlier run in this session are
+    // still unanswered questions, and the queue is the only place they exist.
+    state.reviewQueue = mergeReviewQueue(state.reviewQueue, allReview,
+        new Set([...decided, ...allApplied.map(r => r.id)]));
 
     return {
         ...summarizeRun({ ruleMatched, applied: allApplied.length, review: allReview.length,

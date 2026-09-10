@@ -140,6 +140,41 @@ export function summarizeRun({ ruleMatched = 0, applied = 0, review = 0, unanswe
     };
 }
 
+/**
+ * Rows still waiting for a decision: no category, and no suggestion pending.
+ *
+ * A suggestion is not a category — the row stays uncategorised until a human
+ * confirms it — so "uncategorised" alone cannot decide either whether there is
+ * work left to offer or what to send the model. Both callers ask this instead:
+ * the banner, so importing on top of an unanswered queue still offers to
+ * categorise; the run itself, so a row already suggested is not paid for twice.
+ */
+export function needingCategorisation(transactions = [], reviewQueue = []) {
+    const suggested = new Set((reviewQueue || []).map(r => r?.id).filter(Boolean));
+    return (transactions || []).filter(t => !t.category && !suggested.has(t.id));
+}
+
+/**
+ * Fold a run's suggestions into the ones still waiting.
+ *
+ * Assigning the queue outright threw away every suggestion the user had not
+ * answered yet, which is exactly what a second run in the same session does —
+ * import a statement, categorise it, and the first batch's unanswered
+ * suggestions vanish without ever being shown as dismissed. `settled` drops
+ * rows that now hold a real category, because a suggestion for a decided row
+ * is noise the user would have to reject one by one.
+ */
+export function mergeReviewQueue(previous = [], next = [], settled = []) {
+    const done = settled instanceof Set ? settled : new Set(settled || []);
+    const byId = new Map();
+    // `next` is applied second so a fresh answer replaces a stale one.
+    for (const row of [...(previous || []), ...(next || [])]) {
+        if (!row?.id || done.has(row.id)) continue;
+        byId.set(row.id, row);
+    }
+    return [...byId.values()];
+}
+
 export const __testing = { median, DEFAULT_CONFIDENCE, LARGE_MULTIPLE, DEFAULT_BATCH };
 
 /**

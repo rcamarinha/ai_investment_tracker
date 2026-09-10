@@ -5,20 +5,21 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.51.0';
+import state from './state.js?v=3.51.1';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour, firstGraphemes
-} from './utils.js?v=3.51.0';
+} from './utils.js?v=3.51.1';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule,
     incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
-} from './storage.js?v=3.51.0';
+} from './storage.js?v=3.51.1';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario
 } from '../services/spend-core.js';
 import { spendFingerprint, ruleFromCorrection } from '../services/import-banks.js';
+import { needingCategorisation } from '../services/categorize-core.js';
 import { searchIcons } from '../data/category-icons.js';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -600,6 +601,13 @@ function renderReviewBanner() {
         if (!t.category && t.amount < 0) uncategorised++;
         if (t.needsReview) flagged++;
     }
+    // Spending nobody has filed AND nothing has offered a category for. The
+    // Categorise button used to be hidden whenever any suggestion was waiting,
+    // which meant importing a second statement on top of an unanswered queue
+    // left no way to categorise it — the queue lives only in the page, so a
+    // manual reload was the only thing that brought the button back.
+    const awaiting = needingCategorisation(state.transactions, state.reviewQueue)
+        .filter(t => t.amount < 0).length;
     const pending = state.pendingDetails.length;
 
     const bits = [];
@@ -616,8 +624,8 @@ function renderReviewBanner() {
     host.innerHTML = `
         ${bits.length ? `<div class="review-banner"><span>⚠</span><span>${escapeHTML(bits.join(' · '))}</span>
              <button class="btn btn-sm btn-ghost-spend" style="margin-left:auto" data-act="filter" data-filter="review">Show</button></div>` : ''}
-        ${uncategorised && !suggestions ? `<div class="review-banner"><span>◎</span><span>
-             ${uncategorised} transaction${uncategorised === 1 ? '' : 's'} without a category — the breakdown below can't show where the money went until they're filed.</span>
+        ${awaiting ? `<div class="review-banner"><span>◎</span><span>
+             ${awaiting} transaction${awaiting === 1 ? '' : 's'} without a category — the breakdown below can't show where the money went until they're filed.</span>
              <button class="btn btn-sm btn-primary-spend" style="margin-left:auto" data-act="categorise">Categorise</button></div>` : ''}
         ${suggestions ? `<div class="review-banner"><span>◎</span><span>
              ${suggestions} suggestion${suggestions === 1 ? '' : 's'} waiting for your confirmation.</span>
