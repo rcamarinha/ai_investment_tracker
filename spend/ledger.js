@@ -5,20 +5,21 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.49.3';
+import state from './state.js?v=3.50.0';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour, firstGraphemes
-} from './utils.js?v=3.49.3';
+} from './utils.js?v=3.50.0';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule,
     incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
-} from './storage.js?v=3.49.3';
+} from './storage.js?v=3.50.0';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario
 } from '../services/spend-core.js';
 import { spendFingerprint, ruleFromCorrection } from '../services/import-banks.js';
+import { searchIcons } from '../data/category-icons.js';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -450,13 +451,12 @@ export function showCategoryDialog(id = null) {
         </div>
         <div class="form-group">
             <label class="form-label" for="catIcon">Icon <span style="color:var(--text-secondary)">(optional)</span></label>
-            <input class="form-input" id="catIcon" placeholder="🎓" value="${escapeHTML(c?.icon || '')}">
-            <div id="catIconChoices" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
-                ${['🏋️','⚽','🎓','🏠','🍽️','🛒','🚗','⛽','✈️','💊','🐶','🎁','💡','📱','👶','💇','🎬','☕','🍷','🧾']
-                    .map(e => `<button type="button" class="btn btn-sm btn-ghost-spend cat-icon-pick"
-                                style="padding:2px 7px;font-size:1.05rem" data-icon="${escapeHTML(e)}">${e}</button>`).join('')}
-            </div>
-            <span class="form-helper">Pick one, or type any emoji.</span>
+            <input class="form-input" id="catIconSearch" placeholder="Search: dog, car, food, gym…"
+                   autocomplete="off">
+            <div id="catIconGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:8px"></div>
+            <div id="catIconEmpty" class="form-helper" hidden></div>
+            <input type="hidden" id="catIcon" value="${escapeHTML(c?.icon || '')}">
+            <span class="form-helper">Type to search, then click one. Optional — a category works fine without.</span>
         </div>
         <div class="form-group">
             <label class="form-label" for="catKind">What kind of money is this?</label>
@@ -481,16 +481,39 @@ export function showCategoryDialog(id = null) {
                 <button class="btn btn-sm btn-danger" style="margin-top:10px" data-act="delete-category">Delete category</button>
                 <span class="form-helper">Moving them to another category is also how you merge two categories.</span>
             </div>` : ''}`;
-    const choices = el('catIconChoices');
-    if (choices) {
-        // Bound here rather than through an onclick attribute: an attribute is
-        // HTML-decoded before its contents are compiled as JavaScript, which is
-        // the one position escapeHTML does not protect.
-        choices.addEventListener('click', ev => {
-            const btn = ev.target.closest('.cat-icon-pick');
-            if (btn) el('catIcon').value = btn.dataset.icon;
-        });
-    }
+    // What someone types here is a QUERY, never the value. Typing "do" meaning
+    // "find dog" and having "do" saved as the icon is what went wrong before:
+    // the field looked like a search box and behaved like a text field. Only a
+    // click commits an icon, so there is no path from raw text to stored data.
+    const grid = el('catIconGrid');
+    const empty = el('catIconEmpty');
+    const hidden = el('catIcon');
+
+    const paintGrid = query => {
+        const matches = searchIcons(query);
+        empty.hidden = matches.length > 0;
+        if (!matches.length) {
+            empty.textContent = `Nothing matches "${query}". Try a broader word — "food", "car", "home".`;
+        }
+        grid.innerHTML = matches.map(e => `
+            <button type="button" class="cat-icon-pick" data-icon="${escapeHTML(e.icon)}"
+                    title="${escapeHTML(e.keywords.slice(0, 3).join(', '))}"
+                    style="font-size:1.5rem;line-height:1;padding:8px 0;border-radius:8px;cursor:pointer;
+                           background:${e.icon === hidden.value ? 'var(--spend-glow)' : 'transparent'};
+                           border:1px solid ${e.icon === hidden.value ? 'var(--spend)' : 'var(--spend-line)'}">
+                ${e.icon}</button>`).join('');
+    };
+    paintGrid('');
+
+    el('catIconSearch').addEventListener('input', ev => paintGrid(ev.target.value));
+    grid.addEventListener('click', ev => {
+        const btn = ev.target.closest('.cat-icon-pick');
+        if (!btn) return;
+        // Clicking the chosen one again clears it — the only way to say "none".
+        hidden.value = hidden.value === btn.dataset.icon ? '' : btn.dataset.icon;
+        paintGrid(el('catIconSearch').value);
+    });
+
     openModal('categoryDialog');
 }
 
