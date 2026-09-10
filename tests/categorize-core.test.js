@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun }
+import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun,
+    findPrecedent, applyPrecedents }
     from '../services/categorize-core.js';
 
 const tx = (id, amount, extra = {}) => ({
@@ -171,5 +172,60 @@ describe('sign versus category kind', () => {
         const res = applyAiResults(txs, [{ id: '1', category: 'Groceries', confidence: 0.95 }],
             { validCategories: ['Groceries'], incomeCategories: income });
         expect(res.applied).toHaveLength(1);
+    });
+});
+
+// The ledger is the record of every decision the user has made, and it was not
+// being read. Learning ran entirely off the rules table, which is written only
+// when someone corrects a row one at a time — so "accept all confident" taught
+// nothing, and a merchant filed as Dining twenty times still came back
+// suggested as Leisure.
+describe('learning from what the user already decided', () => {
+    const history = [
+        { id: '1', description: 'COMPRA OPORTO CRICKET CLUB 0003791851', category: 'Dining' },
+        { id: '2', description: 'OPORTO CRICKET CLUB', category: 'Dining' },
+        { id: '3', description: 'CONTINENTE BOM DIA PORTO', category: 'Groceries' },
+        { id: '4', description: 'COMPRA GALP ENERGIA', category: 'Fuel' }
+    ];
+
+    it('recognises the same merchant written differently', () => {
+        // The reported case: three spellings of one club across two imports.
+        expect(findPrecedent({ id: 'x', description: 'COMPRA OPORTO CRICKET' }, history))
+            .toMatchObject({ category: 'Dining', count: 2 });
+        expect(findPrecedent({ id: 'x', description: 'OPORTO CRICKET' }, history))
+            .toMatchObject({ category: 'Dining' });
+    });
+
+    it('does not match on a shared prefix alone', () => {
+        // "COMPRA" is on half the statement; one shared word is not a merchant.
+        expect(findPrecedent({ id: 'x', description: 'COMPRA NOVO SITIO' }, history)).toBeNull();
+    });
+
+    it('refuses when the user has filed the merchant both ways', () => {
+        const split = [
+            { id: '1', description: 'OPORTO CRICKET CLUB', category: 'Dining' },
+            { id: '2', description: 'OPORTO CRICKET CLUB', category: 'Leisure' }
+        ];
+        expect(findPrecedent({ id: 'x', description: 'OPORTO CRICKET' }, split)).toBeNull();
+    });
+
+    it('never learns from a transfer', () => {
+        const transfers = [{ id: '1', description: 'CARTOES BKCF DEB MENSAL', category: 'transfer' }];
+        expect(findPrecedent({ id: 'x', description: 'CARTOES BKCF DEB' }, transfers)).toBeNull();
+    });
+
+    it('settles what it can and passes the rest on', () => {
+        const { settled, remaining } = applyPrecedents(
+            [{ id: 'a', description: 'COMPRA OPORTO CRICKET' }, { id: 'b', description: 'NEW SHOP LDA' }], history);
+        expect(settled).toHaveLength(1);
+        expect(settled[0]).toMatchObject({ category: 'Dining', categorySource: 'rule' });
+        expect(remaining.map(r => r.id)).toEqual(['b']);
+    });
+
+    it('leaves an already-categorised row alone', () => {
+        const { settled, remaining } = applyPrecedents(
+            [{ id: 'a', description: 'COMPRA OPORTO CRICKET', category: 'Leisure' }], history);
+        expect(settled).toHaveLength(0);
+        expect(remaining[0].category).toBe('Leisure');
     });
 });

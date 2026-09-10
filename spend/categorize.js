@@ -13,11 +13,11 @@
  * Nothing here files a category the user cannot see and undo.
  */
 
-import state from './state.js?v=3.50.0';
-import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.50.0';
-import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.50.0';
+import state from './state.js?v=3.51.0';
+import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.51.0';
+import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.51.0';
 import { applyRules, ruleFromCorrection } from '../services/import-banks.js';
-import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun }
+import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun, applyPrecedents }
     from '../services/categorize-core.js';
 import { reportHandled } from '../services/telemetry.js';
 
@@ -81,11 +81,23 @@ export async function categoriseAll({ onProgress } = {}) {
     const ruled = applyRules(state.transactions, state.rules);
     const ruleMatched = ruled.matched;
 
-    // 2. structure
-    const { toSend, skipped } = partitionForAi(ruled.rows, { incomeCategories: incomeCategoryNames() });
+    // 2. precedent — what this user has already decided for the same merchant.
+    //
+    // The ledger is the record of every decision made, and it was not being
+    // read. Learning ran entirely off the rules table, which is written only
+    // when someone corrects a row one at a time, so a merchant filed as Dining
+    // twenty times still came back suggested as Leisure. Precedent also beats a
+    // model's guess on its merits: the model infers from a merchant name, the
+    // user remembers where they actually were.
+    const { settled, remaining } = applyPrecedents(ruled.rows, state.transactions);
+
+    // 3. structure
+    const { toSend, skipped } = partitionForAi(remaining, { incomeCategories: incomeCategoryNames() });
+
+    if (settled.length) await persist(settled);
 
     if (!toSend.length) {
-        const summary = summarizeRun({ ruleMatched, skipped });
+        const summary = summarizeRun({ ruleMatched: ruleMatched + settled.length, skipped });
         if (ruleMatched) await persist(ruled.rows.filter(r => r.categorySource === 'rule'));
         return { ...summary, applied: [], review: [] };
     }
@@ -166,7 +178,10 @@ export function rejectSuggestion(id) {
 /** Accept every suggestion at or above the threshold in one go. */
 export async function acceptAllConfident(threshold = 0.8) {
     const confident = (state.reviewQueue || []).filter(r => Number(r.confidence) >= threshold);
-    for (const row of confident) await acceptSuggestion(row.id, { teachRule: false });
+    // Teaches, unlike before. Accepting in bulk is the fast path, so suppressing
+    // learning here meant the more suggestions someone accepted, the less the
+    // app knew — the exact opposite of what accepting them says.
+    for (const row of confident) await acceptSuggestion(row.id);
     return confident.length;
 }
 
