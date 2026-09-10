@@ -307,6 +307,11 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.50.0
+- **The category icon is now searched, not typed.** Typing "do" for *dog* saved the literal text "do" as the icon — the field looked like a search box and behaved like a text field. Typing is now only ever a query: it filters a grid of 68 icons, and clicking one is the only thing that stores a value, so there is no path from raw text into the data at all.
+- **Search works in Portuguese as well as English** — `cão`, `poupança`, `ginásio`, `farmácia` — because "cão finds nothing while dog works" is the same dead end as having no search.
+- **Curated, not exhaustive.** Sixty-eight icons covering what a household actually spends on, maintained in one readable file. A full emoji picker would need a vendored library and would make the search worse, not better: more noise to page past before reaching the dog.
+
 ### v3.49.3
 - **Fixed: a successful import could show nothing at all.** Ledger filters survived the import, and several of them hide exactly the rows it added — leaving the type filter on *needs review* to deal with one unconfirmed transaction hid every clean row of the next import. Eighty movements would arrive, reconcile, and be invisible. An account filter or a month chosen by hand did the same. An import now clears what would hide it, because the one thing you must see afterwards is what you just imported.
 

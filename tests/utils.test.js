@@ -1,3 +1,4 @@
+import { searchIcons } from '../data/category-icons.js';
 import { firstGraphemes } from '../spend/utils.js';
 import { describe, it, expect } from 'vitest';
 import { formatCurrency, formatPercent, escapeHTML } from '../src/portfolio.js';
@@ -128,5 +129,40 @@ describe('firstGraphemes', () => {
         expect(firstGraphemes('')).toBe('');
         expect(firstGraphemes(null)).toBe('');
         expect(firstGraphemes('  ')).toBe('');
+    });
+});
+
+// The icon field looked like a search box and behaved like a text field: typing
+// "do" meaning "find dog" saved the literal string "do" as the category's icon.
+// Searching is now the only thing typing does, and a click is the only thing
+// that commits a value.
+describe('searchIcons', () => {
+    it('finds by the start of a word, before it is finished', () => {
+        expect(searchIcons('do').map(e => e.icon)).toContain('🐶');
+        expect(searchIcons('dog').map(e => e.icon)).toContain('🐶');
+    });
+
+    it('searches Portuguese as well as English', () => {
+        expect(searchIcons('cão').map(e => e.icon)).toContain('🐶');
+        expect(searchIcons('poupanca').map(e => e.icon)).toContain('💰');
+        expect(searchIcons('ginasio').map(e => e.icon)).toContain('🏋️');
+    });
+
+    it('shows everything before anything is typed, so it browses as well as searches', () => {
+        expect(searchIcons('').length).toBeGreaterThan(40);
+        expect(searchIcons('   ').length).toBe(searchIcons('').length);
+    });
+
+    it('returns nothing rather than something irrelevant', () => {
+        expect(searchIcons('zzzznope')).toEqual([]);
+    });
+
+    it('treats a pasted emoji as itself, not as a query', () => {
+        expect(searchIcons('🐶').map(e => e.icon)).toEqual(['🐶']);
+    });
+
+    it('covers the categories a household actually spends on', () => {
+        for (const q of ['food', 'car', 'home', 'health', 'kids', 'travel', 'pets', 'salary', 'tax', 'insurance'])
+            expect(searchIcons(q).length, `nothing for "${q}"`).toBeGreaterThan(0);
     });
 });
