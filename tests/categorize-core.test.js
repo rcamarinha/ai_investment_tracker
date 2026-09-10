@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun,
-    findPrecedent, applyPrecedents }
+    findPrecedent, applyPrecedents, needingCategorisation, mergeReviewQueue }
     from '../services/categorize-core.js';
 
 const tx = (id, amount, extra = {}) => ({
@@ -227,5 +227,52 @@ describe('learning from what the user already decided', () => {
             [{ id: 'a', description: 'COMPRA OPORTO CRICKET', category: 'Leisure' }], history);
         expect(settled).toHaveLength(0);
         expect(remaining[0].category).toBe('Leisure');
+    });
+});
+
+describe('needingCategorisation — what is still an open question', () => {
+    it('counts an uncategorised row with no suggestion waiting', () => {
+        const rows = [tx('1', -10), tx('2', -20, { category: 'Dining' }), tx('3', -30)];
+        expect(needingCategorisation(rows, []).map(t => t.id)).toEqual(['1', '3']);
+    });
+
+    it('excludes a row that already has a suggestion pending', () => {
+        // Paying the model twice for the same row, and overwriting an answer
+        // the user has not looked at, are the same mistake.
+        const rows = [tx('1', -10), tx('3', -30)];
+        expect(needingCategorisation(rows, [{ id: '1', suggestedCategory: 'Dining' }])
+            .map(t => t.id)).toEqual(['3']);
+    });
+
+    it('still finds work when every suggestion belongs to older rows', () => {
+        // The import case: a queue left unanswered from an earlier run must not
+        // make freshly imported rows look settled.
+        const imported = [tx('9', -12), tx('10', -8)];
+        const queue = [{ id: '1', suggestedCategory: 'Dining' }];
+        expect(needingCategorisation(imported, queue)).toHaveLength(2);
+    });
+});
+
+describe('mergeReviewQueue — a run must not discard unanswered questions', () => {
+    it('keeps suggestions the user has not answered yet', () => {
+        const merged = mergeReviewQueue(
+            [{ id: '1', suggestedCategory: 'Dining' }],
+            [{ id: '2', suggestedCategory: 'Travel' }]);
+        expect(merged.map(r => r.id)).toEqual(['1', '2']);
+    });
+
+    it('lets a fresh answer replace a stale one for the same row', () => {
+        const merged = mergeReviewQueue(
+            [{ id: '1', suggestedCategory: 'Dining' }],
+            [{ id: '1', suggestedCategory: 'Groceries' }]);
+        expect(merged).toHaveLength(1);
+        expect(merged[0].suggestedCategory).toBe('Groceries');
+    });
+
+    it('drops a suggestion for a row that has since been filed', () => {
+        const merged = mergeReviewQueue(
+            [{ id: '1', suggestedCategory: 'Dining' }, { id: '2', suggestedCategory: 'Travel' }],
+            [], ['1']);
+        expect(merged.map(r => r.id)).toEqual(['2']);
     });
 });

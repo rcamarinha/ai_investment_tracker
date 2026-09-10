@@ -275,6 +275,10 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 
 ## Changelog
 
+### v3.51.1
+- **Fixed: importing a statement could leave no way to categorise it.** The Categorise button was hidden whenever any suggestion was still waiting for confirmation, and the suggestion queue lives only in the open page. So after categorising one statement and leaving a suggestion unanswered, the next import offered nothing — reloading the page was the only thing that brought the button back. The button now counts only spending that has neither a category nor a suggestion, so a new import always has somewhere to start, and a queue of unanswered suggestions still shows separately.
+- **A categorisation run no longer throws away unanswered suggestions.** The queue was replaced wholesale by each run, so categorising a second statement silently discarded the first one's pending questions. Runs now merge, and a row already carrying a suggestion is not sent to the model a second time.
+
 ### v3.51.0
 - **Categorisation now learns from the ledger, which is where the learning already was.** A merchant filed as Dining across past imports still came back suggested as Leisure, because learning ran entirely off a separate rules table — written only when someone corrects a row one at a time. Every past decision sitting in the ledger was ignored. The categoriser now reads it first: a merchant you have filed before is filed the same way again, without asking a model at all.
 - **The same merchant written three ways is one merchant.** Banks print "COMPRA OPORTO CRICKET", "OPORTO CRICKET CLUB" and "OPORTO CRICKET CLUB 0003791851" for one place. Matching is on shared significant words, needing two, so a common prefix like *compra* or *pagamento* cannot make everything match everything. Where you have filed a merchant both ways, nothing is assumed — that is a question, not a precedent.
