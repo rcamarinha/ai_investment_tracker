@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun,
-    findPrecedent, applyPrecedents, needingCategorisation, mergeReviewQueue }
+    findPrecedent, applyPrecedents, needingCategorisation, mergeReviewQueue, merchantTokens }
     from '../services/categorize-core.js';
 
 const tx = (id, amount, extra = {}) => ({
@@ -274,5 +274,62 @@ describe('mergeReviewQueue — a run must not discard unanswered questions', () 
             [{ id: '1', suggestedCategory: 'Dining' }, { id: '2', suggestedCategory: 'Travel' }],
             [], ['1']);
         expect(merged.map(r => r.id)).toEqual(['2']);
+    });
+});
+
+// merchantTokens is the matching primitive for the entire precedent system.
+// Getting the filter wrong here makes the precedent matcher either too broad
+// (matching unrelated rows on a shared prefix like "compra") or too narrow
+// (stripping real merchant words because of diacritics or punctuation).
+describe('merchantTokens — significant words of a merchant description', () => {
+    it('returns the meaningful words in lowercase', () => {
+        const tokens = merchantTokens({ description: 'OPORTO CRICKET CLUB' });
+        expect([...tokens].sort()).toEqual(['club', 'cricket', 'oporto']);
+    });
+
+    it('strips diacritics so accented and plain spellings match', () => {
+        // "CAFÉ DA PRAÇA" → "cafe praca"; "da" (2 chars) is excluded
+        const tokens = merchantTokens({ description: 'CAFÉ DA PRAÇA' });
+        expect([...tokens]).toContain('cafe');
+        expect([...tokens]).toContain('praca');
+        expect([...tokens]).not.toContain('da');
+    });
+
+    it('excludes tokens of two characters or fewer', () => {
+        // "SL", "de", "EU" are filler words a bank appends, not merchant names.
+        const tokens = merchantTokens({ description: 'SL DE EU SUPERMERCADO' });
+        expect([...tokens]).toEqual(['supermercado']);
+    });
+
+    it('excludes all-numeric tokens', () => {
+        // Account numbers and terminal IDs appear in descriptions; they are noise,
+        // not merchant identifiers.
+        const tokens = merchantTokens({ description: 'COMPRA 0033791851 SHOP' });
+        expect([...tokens]).not.toContain('0033791851');
+        expect([...tokens]).toContain('compra');
+        expect([...tokens]).toContain('shop');
+    });
+
+    it('uses merchant field ahead of rawDescription and description', () => {
+        const tokens = merchantTokens({ merchant: 'GALP ENERGIA', rawDescription: 'COMPRA GALP POSTO', description: 'IGNORE ME' });
+        expect([...tokens].sort()).toEqual(['energia', 'galp']);
+    });
+
+    it('falls through to description when merchant and rawDescription are absent', () => {
+        const tokens = merchantTokens({ description: 'CONTINENTE BOM DIA' });
+        expect([...tokens]).toContain('continente');
+    });
+
+    it('returns an empty set for a null or missing tx', () => {
+        expect(merchantTokens(null).size).toBe(0);
+        expect(merchantTokens({}).size).toBe(0);
+        expect(merchantTokens({ description: '' }).size).toBe(0);
+    });
+
+    it('returns empty when every token is too short or numeric', () => {
+        // A description of only bank codes — no usable merchant signal at all.
+        // findPrecedent short-circuits on mine.size < 2, so this never matches.
+        const tokens = merchantTokens({ description: 'SL 00 EU' });
+        expect(tokens.size).toBe(0);
     });
 });
