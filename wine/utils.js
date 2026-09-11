@@ -77,6 +77,35 @@ export function escapeHTML(str) {
  * @param {'success'|'error'|'warning'|'info'} type
  * @param {number} duration - ms before auto-dismiss
  */
+/**
+ * Bind one delegated click/keyboard listener to a container re-rendered by
+ * innerHTML. Idempotent, so it is safe to call on every render.
+ *
+ * Interpolating a value into an `onclick=""` attribute is not made safe by
+ * escaping: the parser HTML-decodes the attribute before its contents compile
+ * as JavaScript. `data-` attributes are only ever read back as strings.
+ */
+export function bindActions(root, handlers) {
+    if (!root || root.dataset.actionsBound === '1') return;
+    root.dataset.actionsBound = '1';
+
+    const run = (ev) => {
+        const el = ev.target.closest('[data-act]');
+        if (!el || !root.contains(el)) return;
+        const fn = handlers[el.dataset.act];
+        if (typeof fn !== 'function') return;
+        ev.preventDefault();
+        fn(el.dataset, el);
+    };
+
+    root.addEventListener('click', run);
+    root.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        if (!ev.target.closest('[data-act]')) return;
+        run(ev);
+    });
+}
+
 export function showToast(message, type = 'success', duration = 4000) {
     let container = document.getElementById('toastContainer');
     if (!container) {

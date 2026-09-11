@@ -7,8 +7,8 @@
     <link rel="icon" href="favicon.png" type="image/png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.51.1"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.51.1">
+    <script src="lib/supabase.js?v=3.52.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.52.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -25,7 +25,7 @@
             <div class="header-eyebrow">Equities · ETFs · Crypto</div>
             <h1>
                 <span data-i18n="portfolio.title">Portfolio</span>
-                <span class="header-version">v3.51.1</span>
+                <span class="header-version">v3.52.0</span>
             </h1>
             <p data-i18n="portfolio.subtitle">Live prices · AI analysis · 6 investment perspectives</p>
         </div>
@@ -422,7 +422,7 @@
     -->
     <script type="module">
         import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
-        installErrorReporting({ page: 'portfolio', version: '3.51.1' });
+        installErrorReporting({ page: 'portfolio', version: '3.52.0' });
         // ── Import all modules ──────────────────────────────────────────────
         import { renderNavbar } from './services/navbar.js';
         import state from './services/state.js';
@@ -509,8 +509,33 @@
         // once Supabase initialises and auth state is known)
         renderNavbar({ supabaseConfigured: !!(localStorage.getItem('supabaseUrl') && localStorage.getItem('supabaseAnonKey')) });
 
+        // Is SOMEONE signed in on this browser? Supabase keeps its session
+        // under an `sb-<ref>-auth-token` key, so its presence is a synchronous
+        // proxy for "a session exists" — which is all we need here.
+        //
+        // Why this gate: the cached history and ledger below were read and
+        // rendered before any auth check ran. A clean logout clears both, but a
+        // session that ends WITHOUT a SIGNED_OUT event (browser closed mid
+        // session, storage cleared server-side, a refresh that fails) left the
+        // previous user's snapshots and per-symbol ledger on screen for whoever
+        // opened the page next. With other people signing up, that is somebody
+        // else's money on a stranger's screen.
+        //
+        // The caches are not deleted — they are a cache of data that lives in
+        // Supabase, and logout already clears them. They are simply not shown
+        // to someone who is not signed in.
+        const hasStoredSession = (() => {
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.startsWith('sb-') && k.endsWith('-auth-token')) return true;
+                }
+            } catch (err) { /* storage blocked → treat as signed out */ }
+            return false;
+        })();
+
         // Load portfolio history from localStorage
-        const storedHistory = localStorage.getItem('portfolioHistory');
+        const storedHistory = hasStoredSession ? localStorage.getItem('portfolioHistory') : null;
         if (storedHistory) {
             try {
                 state.portfolioHistory = JSON.parse(storedHistory);
@@ -575,8 +600,8 @@
 
         console.log('✓ API keys ready');
 
-        // Load transactions from localStorage
-        loadTransactionsFromStorage();
+        // Load transactions from localStorage — same gate as the history above.
+        if (hasStoredSession) loadTransactionsFromStorage();
 
         // Load base currency preference
         const storedBaseCurrency = localStorage.getItem('baseCurrency');

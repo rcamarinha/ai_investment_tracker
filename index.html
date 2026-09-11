@@ -7,8 +7,8 @@
     <link rel="icon" href="favicon.png" type="image/png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="lib/supabase.js?v=3.51.1"></script>
-    <link rel="stylesheet" href="css/styles.css?v=3.51.1">
+    <script src="lib/supabase.js?v=3.52.0"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.52.0">
 
     <!-- Vercel Analytics (Web Analytics) -->
     <script defer src="/_vercel/insights/script.js"></script>
@@ -24,7 +24,7 @@
 
         <!-- ── Hub Header ──────────────────────────────────────────────── -->
         <div class="header">
-            <div class="header-eyebrow" data-i18n="hub.eyebrow">Investment Hub · v3.51.1</div>
+            <div class="header-eyebrow" data-i18n="hub.eyebrow">Investment Hub · v3.52.0</div>
             <h1>
                 <span data-i18n="nav.hub">A language for <em>wealth</em></span>
             </h1>
@@ -40,8 +40,11 @@
                 <div class="hub-year-delta" id="hubYearDelta" style="display:none">↑ loading…</div>
             </div>
 
-            <!-- ── Sparkline Chart ─────────────────────────────────────── -->
-            <div class="hub-chart" style="height: 80px;">
+            <!-- ── Sparkline ───────────────────────────────────────────────
+                 Empty and hidden until real snapshots exist. This used to be a
+                 hardcoded rising path with fixed month labels, drawn the same
+                 for an account created a minute ago. -->
+            <div class="hub-chart" id="hubChart" style="height: 80px; display: none;">
                 <svg viewBox="0 0 680 80" preserveAspectRatio="none" style="height:80px">
                     <defs>
                         <linearGradient id="gHub" x1="0" y1="0" x2="0" y2="1">
@@ -49,15 +52,11 @@
                             <stop offset="100%" style="stop-color: var(--gold); stop-opacity: 0"/>
                         </linearGradient>
                     </defs>
-                    <path d="M0,65 L85,60 L170,54 L255,46 L340,42 L425,34 L510,26 L595,20 L680,15"
-                          fill="none" style="stroke: var(--gold);" stroke-width="1.5" opacity="0.7"/>
-                    <path d="M0,65 L85,60 L170,54 L255,46 L340,42 L425,34 L510,26 L595,20 L680,15 L680,80 L0,80Z"
-                          fill="url(#gHub)"/>
+                    <path id="hubChartLine" d="" fill="none" style="stroke: var(--gold);" stroke-width="1.5" opacity="0.7"/>
+                    <path id="hubChartArea" d="" fill="url(#gHub)"/>
                 </svg>
             </div>
-            <div class="hub-chart-labels">
-                <span>Jan</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Now</span>
-            </div>
+            <div class="hub-chart-labels" id="hubChartLabels" style="display: none;"></div>
 
             <!-- ── Hub Cards ───────────────────────────────────────────── -->
             <div class="hub-cards-stack">
@@ -148,13 +147,13 @@
 
     <script type="module">
         import { installErrorReporting, setTelemetryClient } from './services/telemetry.js';
-        installErrorReporting({ page: 'hub', version: '3.51.1' });
+        installErrorReporting({ page: 'hub', version: '3.52.0' });
         import { renderNavbar, updateNavbarAuth } from './services/navbar.js';
         // src/hub.js is PURE and dependency-free (no imports at all), so this
         // does not drag in the service graph that CLAUDE.md warns about — it is
         // the same module the hub tests exercise, which is the point: the hub's
         // arithmetic is no longer a second, untested copy written inline here.
-        import { computeStockCardEUR, computeNetWorthEUR, hubAsOfLabel } from './src/hub.js';
+        import { computeStockCardEUR, computeNetWorthEUR, hubAsOfLabel, hubSparkline } from './src/hub.js';
 
         const SUPABASE_URL      = 'https://dybetrrhshqezokcxiid.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
@@ -280,12 +279,15 @@
                        { data: spendRows, error: spendErr },
                        { data: spendCats, error: catErr },
                        { data: holdRows, error: holdErr }] = await Promise.all([
+                    // The newest row drives the stock card; the rest draw the
+                    // sparkline. One query, one more row of headroom — not a
+                    // second round trip.
                     sbClient.from('snapshots')
                         .select('timestamp, total_market_value_eur, excluded_positions')
                         .eq('user_id', userId)
                         .not('total_market_value_eur', 'is', null)
                         .order('timestamp', { ascending: false })
-                        .limit(1),
+                        .limit(60),
                     sbClient.from('user_wines').select('qty, estimated_value, purchase_price, last_valued_at').eq('user_id', userId),
                     sbClient.from('spend_transactions').select('amount, category')
                         .eq('user_id', userId).gte('date', monthStart).lte('date', monthEnd),
@@ -300,6 +302,11 @@
                 if (holdErr)  console.warn('[hub] bank_holdings query:', holdErr.message);
 
                 const stockCard = computeStockCardEUR((snaps || [])[0] || null);
+
+                // Draw only what the snapshots actually say. Fewer than two
+                // usable rows means there is no trend to show, so the chart
+                // stays hidden rather than inventing one.
+                renderHubSparkline(snaps);
 
                 const wineRows  = wines || [];
                 const wineValue = wineRows.reduce((s, w) => s + ((w.estimated_value || 0) * (w.qty || 1)), 0);
@@ -366,7 +373,8 @@
                     holdValueEl.textContent = holdAll.length ? hubFmt(holdValue) : '— —';
                     if (holdDeltaEl) {
                         if (!holdAll.length) {
-                            holdDeltaEl.textContent = '';
+                            holdDeltaEl.textContent = 'add a holding';
+                            holdDeltaEl.className = 'hub-card-delta neutral';
                         } else if (holdStale.length) {
                             // Name what is missing from the total, in money.
                             holdDeltaEl.textContent =
@@ -400,7 +408,8 @@
                     spendValueEl.textContent = hasData ? hubFmt(spendOut) : '— —';
                     if (spendDeltaEl) {
                         if (!hasData) {
-                            spendDeltaEl.textContent = '';
+                            spendDeltaEl.textContent = 'import a statement';
+                            spendDeltaEl.className = 'hub-card-delta neutral';
                         } else if (spendIn > 0) {
                             const rate = (spendIn - spendOut) / spendIn * 100;
                             spendDeltaEl.textContent = `${rate.toFixed(0)}% saved`;
@@ -446,7 +455,8 @@
                             wineDeltaEl.textContent = '';
                         }
                     } else {
-                        wineDeltaEl.textContent = '';
+                        wineDeltaEl.textContent = 'add your first bottle';
+                        wineDeltaEl.className   = 'hub-card-delta neutral';
                     }
                 }
             } catch (err) {
@@ -454,7 +464,38 @@
             }
         }
 
+        function renderHubSparkline(snaps) {
+            const chartEl  = document.getElementById('hubChart');
+            const labelsEl = document.getElementById('hubChartLabels');
+            const lineEl   = document.getElementById('hubChartLine');
+            const areaEl   = document.getElementById('hubChartArea');
+            if (!chartEl || !labelsEl || !lineEl || !areaEl) return;
+
+            const spark = hubSparkline(snaps);
+            if (!spark) {
+                chartEl.style.display = 'none';
+                labelsEl.style.display = 'none';
+                lineEl.setAttribute('d', '');
+                areaEl.setAttribute('d', '');
+                labelsEl.textContent = '';
+                return;
+            }
+
+            lineEl.setAttribute('d', spark.line);
+            areaEl.setAttribute('d', spark.area);
+            // textContent per label, so a date string can never be markup.
+            labelsEl.textContent = '';
+            spark.labels.forEach(text => {
+                const span = document.createElement('span');
+                span.textContent = text;
+                labelsEl.appendChild(span);
+            });
+            chartEl.style.display = '';
+            labelsEl.style.display = '';
+        }
+
         function clearHubValues() {
+            renderHubSparkline(null);
             ['hubTotalValue', 'hubStockValue', 'hubWineValue', 'hubSpendValue', 'hubHoldValue'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.textContent = '— —';

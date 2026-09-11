@@ -15,8 +15,13 @@ import { renderPortfolio, updateHistoryDisplay } from './portfolio.js';
 
 /** Returns true when the current session has admin privileges. */
 export function isAdmin() {
-    // No Supabase configured → local-only mode, treat as admin
-    if (!state.supabaseClient) return true;
+    // No client → FAIL CLOSED. The URL and anon key are hardcoded and
+    // `lib/supabase.js` is vendored, so in production a null client means
+    // something FAILED to load, not that we are in a local-only mode. The old
+    // `return true` handed the admin-only API-key dialog to anyone whose
+    // browser dropped that one script. A genuine local mode, if ever wanted,
+    // needs an explicit flag rather than a null check doubling as one.
+    if (!state.supabaseClient) return false;
     // Supabase configured but not logged in → no privileges
     if (!state.currentUser) return false;
     return state.userRole === 'admin';

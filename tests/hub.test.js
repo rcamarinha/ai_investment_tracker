@@ -7,6 +7,7 @@ import {
     computeWineValue,
     computeWineCost,
     computeWineDelta,
+    hubSparkline,
 } from '../src/hub.js';
 
 // ── hubFmt ────────────────────────────────────────────────────────────────────
@@ -278,5 +279,128 @@ describe('computeWineDelta', () => {
     it('handles fractional percentage with correct decimal formatting', () => {
         const result = computeWineDelta(1050, 1000, [], NOW);
         expect(result.text).toBe('+5.0%');
+    });
+});
+
+
+// ── hubSparkline ──────────────────────────────────────────────────────────────
+//
+// This replaced a hardcoded rising <path> with fixed month labels that was drawn
+// identically for every account, including one created a minute ago. The tests
+// that matter most are the ones asserting it draws NOTHING — a chart nobody
+// computed is worse than no chart, and that is the whole reason it exists.
+
+describe('hubSparkline', () => {
+    const snap = (iso, v) => ({ timestamp: iso, total_market_value_eur: v });
+
+    it('returns null with no snapshots at all', () => {
+        expect(hubSparkline([])).toBeNull();
+        expect(hubSparkline(null)).toBeNull();
+        expect(hubSparkline(undefined)).toBeNull();
+    });
+
+    it('returns null with a single snapshot, because one point is not a trend', () => {
+        expect(hubSparkline([snap('2026-01-01T00:00:00Z', 1000)])).toBeNull();
+    });
+
+    it('returns null when rows carry no canonical EUR total', () => {
+        // Legacy rows written before the base currency was recorded. Skipped,
+        // never assumed to be EUR — the same rule computeStockCardEUR applies.
+        const rows = [
+            snap('2026-01-01T00:00:00Z', null),
+            snap('2026-02-01T00:00:00Z', null),
+        ];
+        expect(hubSparkline(rows)).toBeNull();
+    });
+
+    it('ignores unusable rows and needs two USABLE ones', () => {
+        const rows = [
+            snap('2026-02-01T00:00:00Z', 1000),
+            snap('2026-01-01T00:00:00Z', null),
+        ];
+        expect(hubSparkline(rows)).toBeNull();
+    });
+
+    it('draws chronologically even though snapshots arrive newest-first', () => {
+        // The query orders by timestamp descending. Drawing in that order would
+        // mirror every chart in the app.
+        const rows = [
+            snap('2026-03-01T00:00:00Z', 300),
+            snap('2026-02-01T00:00:00Z', 100),
+            snap('2026-01-01T00:00:00Z', 200),
+        ];
+        const out = hubSparkline(rows, { width: 600, height: 80 });
+        expect(out).not.toBeNull();
+        const xs = out.line.replace('M', '').split(' L').map(p => Number(p.split(',')[0]));
+        expect(xs).toEqual([...xs].sort((a, b) => a - b));
+        expect(xs[0]).toBe(0);
+        expect(xs[xs.length - 1]).toBe(600);
+    });
+
+    it('puts the highest value above the lowest', () => {
+        // SVG y grows downward, so the maximum must have the SMALLER y.
+        const rows = [snap('2026-01-01T00:00:00Z', 100), snap('2026-02-01T00:00:00Z', 900)];
+        const out = hubSparkline(rows);
+        const ys = out.line.replace('M', '').split(' L').map(p => Number(p.split(',')[1]));
+        expect(ys[1]).toBeLessThan(ys[0]);
+    });
+
+    it('keeps every point inside the viewBox', () => {
+        const rows = [
+            snap('2026-01-01T00:00:00Z', 0),
+            snap('2026-02-01T00:00:00Z', 5000),
+            snap('2026-03-01T00:00:00Z', 2500),
+        ];
+        const out = hubSparkline(rows, { width: 680, height: 80 });
+        const pts = out.line.replace('M', '').split(' L').map(p => p.split(',').map(Number));
+        for (const [x, y] of pts) {
+            expect(x).toBeGreaterThanOrEqual(0);
+            expect(x).toBeLessThanOrEqual(680);
+            expect(y).toBeGreaterThanOrEqual(0);
+            expect(y).toBeLessThanOrEqual(80);
+        }
+    });
+
+    it('centres a flat line instead of pinning it to an edge', () => {
+        const rows = [snap('2026-01-01T00:00:00Z', 500), snap('2026-02-01T00:00:00Z', 500)];
+        const out = hubSparkline(rows, { width: 600, height: 80 });
+        const ys = out.line.replace('M', '').split(' L').map(p => Number(p.split(',')[1]));
+        expect(ys[0]).toBe(ys[1]);
+        expect(ys[0]).toBeGreaterThan(20);
+        expect(ys[0]).toBeLessThan(60);
+    });
+
+    it('closes the area path back to the baseline', () => {
+        const rows = [snap('2026-01-01T00:00:00Z', 100), snap('2026-02-01T00:00:00Z', 200)];
+        const out = hubSparkline(rows, { width: 600, height: 80 });
+        expect(out.area.startsWith(out.line)).toBe(true);
+        expect(out.area.endsWith('L600,80 L0,80Z')).toBe(true);
+    });
+
+    it('labels from the real dates, never a fixed month list', () => {
+        const rows = [
+            snap('2026-01-05T00:00:00Z', 100),
+            snap('2026-01-06T00:00:00Z', 110),
+        ];
+        const out = hubSparkline(rows);
+        expect(out.labels).toHaveLength(2);
+        // The old markup said Jan Mar May Jul Sep Now regardless of the data.
+        expect(out.labels.join(' ')).not.toContain('Now');
+        out.labels.forEach(l => expect(l).toMatch(/\d/));
+    });
+
+    it('caps the label count regardless of how many snapshots there are', () => {
+        const rows = Array.from({ length: 40 }, (_, i) =>
+            snap(`2026-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`, 100 + i));
+        const out = hubSparkline(rows);
+        expect(out.labels.length).toBeLessThanOrEqual(4);
+    });
+
+    it('discards rows with an unparseable timestamp', () => {
+        const rows = [
+            snap('not-a-date', 100),
+            snap('2026-01-01T00:00:00Z', 200),
+        ];
+        expect(hubSparkline(rows)).toBeNull();
     });
 });

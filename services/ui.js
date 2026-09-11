@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { escapeHTML, formatCurrency, normalizeAssetType, getAssetCurrency, toBaseCurrency } from './utils.js';
+import { escapeHTML, formatCurrency, normalizeAssetType, getAssetCurrency, toBaseCurrency, bindActions } from './utils.js';
 import { getSector } from '../data/sectors.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
 import { renderPortfolio } from './portfolio.js';
@@ -30,11 +30,12 @@ export function renderPerspectiveTabs() {
     tabsContainer.innerHTML = Object.entries(INVESTMENT_PERSPECTIVES).map(([key, p]) => `
         <div class="persp-chip ${key === state.selectedPerspective ? 'active' : ''}"
              style="${key === state.selectedPerspective ? `border-color: ${p.color}; color: ${p.color};` : ''}"
-             onclick="selectPerspective('${key}')">
+             data-act="perspective" data-key="${escapeHTML(key)}">
             <span>${p.icon}</span>
             <span>${p.name}</span>
         </div>
     `).join('');
+    bindActions(tabsContainer, { perspective: d => selectPerspective(d.key) });
 
     const active = INVESTMENT_PERSPECTIVES[state.selectedPerspective];
     infoContainer.innerHTML = `
@@ -161,7 +162,7 @@ export function renderAllocationCharts() {
             const isActive = state.selectedSector === sector;
             const isDimmed = state.selectedSector && !isActive;
             return `
-                <div class="allocation-bar-row slicer${isActive ? ' active' : ''}${isDimmed ? ' dimmed' : ''}" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(sector).replace(/'/g, "\\'")}')">
+                <div class="allocation-bar-row slicer${isActive ? ' active' : ''}${isDimmed ? ' dimmed' : ''}" role="button" tabindex="0" data-act="sector" data-sector="${escapeHTML(sector)}">
                     <div class="allocation-bar-label" title="${escapeHTML(sector)}">${escapeHTML(sector)}</div>
                     <div class="allocation-bar-track">
                         <div class="allocation-bar-fill" style="width: ${pct}%; background: ${color};">
@@ -172,7 +173,8 @@ export function renderAllocationCharts() {
                 </div>
             `;
         }).join('');
-        sectorChart.innerHTML += `<div class="slicer-hint">Tap a sector to filter positions${state.selectedSector ? `<span class="slicer-clear" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(state.selectedSector).replace(/'/g, "\\'")}')">Clear filter</span>` : ''}</div>`;
+        sectorChart.innerHTML += `<div class="slicer-hint">Tap a sector to filter positions${state.selectedSector ? `<span class="slicer-clear" role="button" tabindex="0" data-act="sector" data-sector="${escapeHTML(state.selectedSector)}">Clear filter</span>` : ''}</div>`;
+        bindActions(sectorChart, { sector: d => toggleSectorFilter(d.sector) });
     }
 
     allocationSection.style.display = 'block';

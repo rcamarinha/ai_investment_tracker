@@ -372,9 +372,14 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
                 ${ideas.portfolioImpact ? `<div style="background: var(--surface); border-radius: 8px; padding: 15px; margin-bottom: 20px;"><div style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">${t('analysis.portfolio_impact')}</div><div style="color: var(--text-primary); font-size: 14px; line-height: 1.6;">${escapeHTML(ideas.portfolioImpact)}</div></div>` : ''}
                 <h3 style="color: var(--text-primary); font-size: 18px; margin-bottom: 15px;">${t('analysis.trade_ideas')}</h3>
                 ${(ideas.trades || ideas.ideas || []).map((trade, idx) => {
-                    const action = (trade.action || 'WATCH').toUpperCase();
-                    const color = actionColors[action] || '#7A8099';
-                    const icon = actionIcons[action] || '\uD83D\uDCCB';
+                    // Constrained to the known set BEFORE it reaches a class
+                    // attribute. This value comes from the model's JSON, and
+                    // `.toLowerCase()` does not remove a quote character, so an
+                    // unconstrained action could close the attribute.
+                    const rawAction = String(trade.action || 'WATCH').toUpperCase();
+                    const action = Object.hasOwn(actionColors, rawAction) ? rawAction : 'WATCH';
+                    const color = actionColors[action];
+                    const icon = actionIcons[action] || '\uD83D\uDCCB';   // action is now always a known key
                     return `
                     <div class="trade-idea-card ${action.toLowerCase()}">
                         <div class="trade-idea-header">
