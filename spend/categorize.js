@@ -13,9 +13,9 @@
  * Nothing here files a category the user cannot see and undo.
  */
 
-import state from './state.js?v=3.51.1';
-import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.51.1';
-import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.51.1';
+import state from './state.js?v=3.52.0';
+import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.52.0';
+import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.52.0';
 import { applyRules, ruleFromCorrection } from '../services/import-banks.js';
 import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun, applyPrecedents,
     needingCategorisation, mergeReviewQueue }

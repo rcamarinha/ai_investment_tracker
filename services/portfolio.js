@@ -3,9 +3,9 @@
  */
 
 import state from './state.js';
-import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord, normalizeAssetType, detectStockExchange } from './utils.js';
+import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord, normalizeAssetType, detectStockExchange, bindActions } from './utils.js';
 import { getSector } from '../data/sectors.js';
-import { renderAllocationCharts } from './ui.js';
+import { renderAllocationCharts, toggleSectorFilter } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveTransactionsToDB, deleteTransactionsForSymbol,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
@@ -194,7 +194,7 @@ export function renderPortfolio(opts = {}) {
                 ${Object.keys(state.marketPrices).length > 0 ? ` \u2022 ${positionsWithPrices} with live prices` : ' \u2022 Click "Update Prices" for live market data'}
                 ${hasRates ? ` \u2022 FX rates loaded` : ''}
                 ${inactiveToggle}
-                ${state.selectedSector ? `<span style="color: var(--gold); margin-left: 8px;">Filtered: ${escapeHTML(state.selectedSector)} <span style="cursor:pointer; color:var(--down);" role="button" tabindex="0" onclick="toggleSectorFilter('${escapeHTML(state.selectedSector).replace(/'/g, "\\'")}')">✕</span></span>` : ''}
+                ${state.selectedSector ? `<span style="color: var(--gold); margin-left: 8px;">Filtered: ${escapeHTML(state.selectedSector)} <span style="cursor:pointer; color:var(--down);" role="button" tabindex="0" data-act="sector" data-sector="${escapeHTML(state.selectedSector)}">✕</span></span>` : ''}
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end;">
@@ -324,7 +324,10 @@ export function renderPortfolio(opts = {}) {
             }
         }
 
-        const escapedSymbol = escapeHTML(pos.symbol).replace(/'/g, "\\'");
+        // Attribute-safe only. It no longer needs JS-string escaping because
+        // it is never interpolated into code — it rides in a `data-` attribute
+        // and is read back as a string by the delegated handler.
+        const escapedSymbol = escapeHTML(pos.symbol);
         const sector = getSector(pos.symbol);
         const tickerBadge = escapeHTML(pos.symbol.substring(0, 5));
         const displayName = pos.name
@@ -356,18 +359,18 @@ export function renderPortfolio(opts = {}) {
         const cardTxs = state.transactions[pos.symbol] || state.transactions[pos.symbol.toUpperCase()] || [];
         const txExpanded = cardTxs.length > 0 && state.cardTxExpanded.has(pos.symbol);
         const txButton = cardTxs.length > 0
-            ? `<button class="position-action-btn${txExpanded ? ' action-buy' : ''}" title="${cardTxs.length} transaction${cardTxs.length !== 1 ? 's' : ''} — click to ${txExpanded ? 'hide' : 'show'}" onclick="toggleCardTx('${escapedSymbol}')">&#x1F4D2;</button>`
+            ? `<button class="position-action-btn${txExpanded ? ' action-buy' : ''}" title="${cardTxs.length} transaction${cardTxs.length !== 1 ? 's' : ''} — click to ${txExpanded ? 'hide' : 'show'}" data-act="cardTx" data-symbol="${escapedSymbol}">&#x1F4D2;</button>`
             : '';
 
         // Action buttons: active positions get refresh/buy/sell/delete; inactive get just delete
         const actionButtons = isActive
-            ? `<button class="position-action-btn action-refresh" title="Refresh price" onclick="refreshSinglePrice('${escapedSymbol}')">&#x21bb;</button>
-               <button class="position-action-btn action-buy" title="Add shares" onclick="showEditPositionDialog('${escapedSymbol}','buy')">+</button>
-               <button class="position-action-btn action-sell" title="Sell shares" onclick="showEditPositionDialog('${escapedSymbol}','sell')">-</button>
+            ? `<button class="position-action-btn action-refresh" title="Refresh price" data-act="refresh" data-symbol="${escapedSymbol}">&#x21bb;</button>
+               <button class="position-action-btn action-buy" title="Add shares" data-act="buy" data-symbol="${escapedSymbol}">+</button>
+               <button class="position-action-btn action-sell" title="Sell shares" data-act="sell" data-symbol="${escapedSymbol}">-</button>
                ${txButton}
-               <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`
+               <button class="position-action-btn action-del" title="Delete position" data-act="delPos" data-symbol="${escapedSymbol}">&#x2717;</button>`
             : `${txButton}
-               <button class="position-action-btn action-del" title="Delete position" onclick="deletePosition('${escapedSymbol}')">&#x2717;</button>`;
+               <button class="position-action-btn action-del" title="Delete position" data-act="delPos" data-symbol="${escapedSymbol}">&#x2717;</button>`;
 
         // Expanded panel: this asset's income summary + full transaction history.
         let txPanel = '';
@@ -400,7 +403,7 @@ export function renderPortfolio(opts = {}) {
                                 <td>${escapeHTML(t.date || '')}</td>
                                 <td style="color: ${typeColor};">${escapeHTML(txTypeLabel(t.type))}</td>
                                 <td>${qty}</td><td>${price}</td><td>${amount}</td><td class="col-hide-mobile">${feeTax}</td>
-                                <td><button class="position-action-btn action-del" title="Delete transaction" onclick="deleteTransactionRow(${i})">✕</button></td>
+                                <td><button class="position-action-btn action-del" title="Delete transaction" data-act="delTx" data-index="${i}">✕</button></td>
                             </tr>`;
                         }).join('')}</tbody>
                     </table>
@@ -420,11 +423,11 @@ export function renderPortfolio(opts = {}) {
                 <div class="pos-sub">${cardSub}</div>
                 <div class="pos-sub">${positionSub}${timestampText ? ' \u00B7 ' + escapeHTML(timestampText) : ''}</div>
                 ${pos.untracked
-                    ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="Kept at cost \u2014 pricing disabled. Click to re-enable live pricing." onclick="reEnablePricing('${escapedSymbol}')">\u26A0 kept at cost \u00B7 <u>re-enable pricing</u></div>`
+                    ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="Kept at cost \u2014 pricing disabled. Click to re-enable live pricing." data-act="reEnable" data-symbol="${escapedSymbol}">\u26A0 kept at cost \u00B7 <u>re-enable pricing</u></div>`
                     : (isISIN(pos.symbol)
                         ? `<div class="pos-sub" style="color: var(--gold);" title="No ticker mapping \u2014 live price disabled. Re-import and map a ticker.">\u26A0 unmapped ISIN \u00B7 no live price</div>`
                         : (isActive && !hasPrice
-                            ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="No live price \u2014 click to find the right ticker (search by name, enter one, or keep at cost)." onclick="resolveCardTicker('${escapedSymbol}')">\u26A0 no live price \u00B7 <u>resolve ticker</u></div>`
+                            ? `<div class="pos-sub" style="color: var(--gold); cursor:pointer;" title="No live price \u2014 click to find the right ticker (search by name, enter one, or keep at cost)." data-act="resolveTicker" data-symbol="${escapedSymbol}">\u26A0 no live price \u00B7 <u>resolve ticker</u></div>`
                             : ''))}
                 ${(isActive && isUnvaluable)
                     ? `<div class="pos-sub" style="color: var(--gold);" title="${quoteCurrency == null && hasPrice
@@ -486,6 +489,20 @@ export function renderPortfolio(opts = {}) {
         : '';
 
     positionsDiv.innerHTML = reviewBanner + html + emptySearchNote;
+
+    // One delegated listener per container, bound once. Values arrive as
+    // strings from `data-` attributes and can never be compiled as code.
+    bindActions(positionsDiv, {
+        cardTx:        d => toggleCardTx(d.symbol),
+        refresh:       d => refreshSinglePrice(d.symbol),
+        buy:           d => showEditPositionDialog(d.symbol, 'buy'),
+        sell:          d => showEditPositionDialog(d.symbol, 'sell'),
+        delPos:        d => deletePosition(d.symbol),
+        reEnable:      d => reEnablePricing(d.symbol),
+        resolveTicker: d => resolveCardTicker(d.symbol),
+        delTx:         d => deleteTransactionRow(Number(d.index)),
+    });
+    bindActions(portfolioHeader, { sector: d => toggleSectorFilter(d.sector) });
 
     if (!opts.gridOnly) {
         renderAllocationCharts();
@@ -2525,6 +2542,7 @@ export function updateHistoryDisplay() {
         const historyLog = document.getElementById('historyLog');
         if (!historyLog) return;
 
+        bindActions(historyLog, { delSnap: d => deleteSnapshot(d.ts) });
         historyLog.innerHTML = `
             <h3 style="margin-bottom: 10px; color: var(--text-primary);">Snapshot Log</h3>
             <div style="max-height: 300px; overflow-y: auto;">
@@ -2540,7 +2558,7 @@ export function updateHistoryDisplay() {
                                 <div style="font-size: 13px; color: var(--text-secondary);">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <div style="font-size: 12px; color: var(--text-secondary);">${snapshot.positionCount} positions \u2022 ${snapshot.pricesAvailable} with prices</div>
-                                    <button onclick="deleteSnapshot('${ts}')" title="Delete this snapshot" class="btn-icon-hover-danger">\u{1F5D1}\u{FE0F}</button>
+                                    <button data-act="delSnap" data-ts="${ts}" title="Delete this snapshot" class="btn-icon-hover-danger">\u{1F5D1}\u{FE0F}</button>
                                 </div>
                             </div>
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; font-size: 13px;">

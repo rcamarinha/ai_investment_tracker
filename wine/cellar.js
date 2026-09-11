@@ -3,14 +3,14 @@
  */
 
 import { t } from '../data/i18n.js';
-import state from './state.js?v=3.51.1';
+import state from './state.js?v=3.52.0';
 import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
          deleteSnapshotFromDB, clearSnapshotsFromDB,
-         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js?v=3.51.1';
-import { renderAllocationCharts } from './ui.js?v=3.51.1';
-import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.51.1';
+         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js?v=3.52.0';
+import { renderAllocationCharts } from './ui.js?v=3.52.0';
+import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON, bindActions } from './utils.js?v=3.52.0';
 import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
-import { callWineAI } from './api.js?v=3.51.1';
+import { callWineAI } from './api.js?v=3.52.0';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
@@ -414,6 +414,16 @@ export function renderCellar() {
         bottlesDiv.innerHTML = result.map(b => renderBottleCard(b)).join('');
     }
 
+    // Delegated once on the container, so cards replaced later by
+    // updateBottleCard() keep working without rebinding anything.
+    // valuateSingleBottle lives in valuation.js, which already imports this
+    // module — reaching it through the window global that wine.html assigns
+    // avoids adding a second edge to that cycle for one call.
+    bindActions(bottlesDiv, {
+        editBottle: d => showEditBottleDialog(d.id),
+        valuate:    d => window.valuateSingleBottle?.(d.id),
+    });
+
     updateHistoryDisplay();
     renderAllocationCharts();
 }
@@ -511,8 +521,8 @@ function renderBottleCard(b) {
             </div>
             ${b.vintage ? `<div class="wc-vintage">${escapeHTML(String(b.vintage))}</div>` : ''}
             <div class="bottle-actions">
-                <button class="btn btn-sm btn-primary" onclick="showEditBottleDialog('${escapeHTML(b.id)}')" title="Edit bottle">${t('bottle.card.edit')}</button>
-                <button class="btn btn-sm btn-accent" onclick="valuateSingleBottle('${escapeHTML(b.id)}')" title="Refresh AI valuation">💎</button>
+                <button class="btn btn-sm btn-primary" data-act="editBottle" data-id="${escapeHTML(b.id)}" title="Edit bottle">${t('bottle.card.edit')}</button>
+                <button class="btn btn-sm btn-accent" data-act="valuate" data-id="${escapeHTML(b.id)}" title="Refresh AI valuation">💎</button>
             </div>
         </div>
 
@@ -560,7 +570,7 @@ function renderBottleCard(b) {
             </div>` : ''}` : `
             <div class="bottle-fin-row">
                 <span class="bottle-fin-muted">${t('bottle.card.no_valuation')}</span>
-                <span><button class="btn btn-sm btn-warning" onclick="valuateSingleBottle('${escapeHTML(b.id)}')">${t('bottle.card.get_estimate')}</button></span>
+                <span><button class="btn btn-sm btn-warning" data-act="valuate" data-id="${escapeHTML(b.id)}">${t('bottle.card.get_estimate')}</button></span>
             </div>`}
         </div>
 
@@ -954,7 +964,7 @@ export function updateHistoryDisplay() {
             ? `<span class="gain-up">+${fmt(gain)} (+${gainPct}%)</span>`
             : `<span class="gain-down">${fmt(gain)} (${gainPct}%)</span>`;
         const deleteBtn = s.id
-            ? `<button class="btn btn-sm btn-danger" onclick="deleteSnapshot('${escapeHTML(String(s.id))}')">✕</button>`
+            ? `<button class="btn btn-sm btn-danger" data-act="delSnap" data-id="${escapeHTML(String(s.id))}">✕</button>`
             : '';
         return `
         <div class="history-log-item">
@@ -967,6 +977,7 @@ export function updateHistoryDisplay() {
     }).join('');
 
     historyLog.innerHTML = rows;
+    bindActions(historyLog, { delSnap: d => deleteSnapshot(d.id) });
 }
 
 export async function deleteSnapshot(id) {

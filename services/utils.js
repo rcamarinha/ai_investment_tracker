@@ -8,11 +8,62 @@ import { normalizeCurrencyCode } from './money-core.js';
 
 // ── HTML / Formatting ───────────────────────────────────────────────────────
 
+// Escapes all five characters, NOT just the three a text node serialises.
+// The previous implementation set `textContent` on a div and read back
+// `innerHTML`, which is the HTML fragment serialisation of a TEXT NODE: it
+// escapes &, < and > and leaves both quote characters untouched. That is safe
+// in text position and unsafe in attribute position, and this function is used
+// in both. `wine/utils.js`, `spend/utils.js` and `holdings/utils.js` have
+// always escaped all five; `services/` was the only copy that did not.
+//
+// Escaping is defence in depth, not the fix for an attribute sink: an attribute
+// is HTML-decoded by the parser BEFORE its contents compile as JavaScript, so
+// `&#x27;` becomes a real quote again inside onclick="". Values belong in
+// `data-` attributes read back as strings — see `bindDelegation`.
 export function escapeHTML(str) {
-    if (str == null) return '';
-    const div = document.createElement('div');
-    div.textContent = String(str);
-    return div.innerHTML;
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+}
+
+/**
+ * Bind one delegated click/keyboard listener to a container whose children are
+ * re-rendered by innerHTML.
+ *
+ * Why this exists: interpolating a value into an `onclick=""` attribute is not
+ * made safe by escaping, because the parser HTML-decodes the attribute BEFORE
+ * its contents are compiled as JavaScript. `data-` attributes are only ever
+ * read back as strings, so a value can never become code. Mirrors
+ * `bindDelegation` in spend/ledger.js; services/ had no equivalent.
+ *
+ * Binding is idempotent — safe to call on every render, since the container
+ * survives the innerHTML replacement that destroys its children.
+ */
+export function bindActions(root, handlers) {
+    if (!root || root.dataset.actionsBound === '1') return;
+    root.dataset.actionsBound = '1';
+
+    const run = (ev) => {
+        const el = ev.target.closest('[data-act]');
+        if (!el || !root.contains(el)) return;
+        const fn = handlers[el.dataset.act];
+        if (typeof fn !== 'function') return;
+        ev.preventDefault();
+        fn(el.dataset, el);
+    };
+
+    root.addEventListener('click', run);
+    // role="button" elements never fired on Enter/Space under the old onclick
+    // attributes either, so this is a fix rather than a port.
+    root.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        if (!ev.target.closest('[data-act]')) return;
+        run(ev);
+    });
 }
 
 const CURRENCY_SYMBOLS = {

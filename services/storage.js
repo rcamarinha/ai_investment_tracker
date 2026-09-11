@@ -448,7 +448,7 @@ export async function savePriceHistoryToDB(priceRecords) {
 }
 
 export async function loadLatestPricesFromDB() {
-    if (!state.supabaseClient) return;
+    if (!state.supabaseClient || !state.currentUser) return;
 
     try {
         const tickers = [...new Set(state.portfolio.map(p => p.symbol.toUpperCase()))];
@@ -458,11 +458,21 @@ export async function loadLatestPricesFromDB() {
         const knownTickers = tickers.filter(t => state.assetDatabase[t]);
         if (knownTickers.length === 0) return;
 
+        // Scoped to the caller, and BOUNDED. Neither was true before: the
+        // policy allowed any authenticated user to read the whole table, and
+        // the rows carry `user_id` beside `ticker`, so an unscoped read was
+        // both a disclosure of everyone's holdings and an unbounded result set
+        // that grows forever. Only the newest row per ticker is ever used
+        // (see the dedupe below), so a cap of a few rows per ticker cannot
+        // change the outcome — it only stops the transfer.
+        const rowCap = Math.min(2000, knownTickers.length * 5);
         const { data, error } = await state.supabaseClient
             .from('price_history')
             .select('ticker, price, currency, source, fetched_at')
+            .eq('user_id', state.currentUser.id)
             .in('ticker', knownTickers)
-            .order('fetched_at', { ascending: false });
+            .order('fetched_at', { ascending: false })
+            .limit(rowCap);
 
         if (error) {
             console.warn('Failed to load latest prices from DB:', error.message);
