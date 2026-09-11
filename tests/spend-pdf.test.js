@@ -362,6 +362,36 @@ describe('statements printed newest-first', () => {
         const none = desc.map(r => ({ ...r, balance: null }));
         expect(scoreChainDirection(none)).toMatchObject({ direction: 'unknown', pairs: 0 });
     });
+
+    it('defaults to ascending when equal pairs fit each direction', () => {
+        // Pairs where asc === desc > 0: the tiebreaker in the ternary chain
+        // (desc > asc ? 'desc' : asc > 0 ? 'asc' : 'unknown') returns 'asc'.
+        // Constructed so pair(0,1) only fits ascending and pair(1,2) only fits
+        // descending, yielding exactly one vote each.
+        const tied = [
+            { date: '2026-01-01', description: 'A', amount:   0, balance: 100 },
+            { date: '2026-01-02', description: 'B', amount: -50, balance:  50 },
+            { date: '2026-01-03', description: 'C', amount:   0, balance: 100 },
+        ];
+        const result = scoreChainDirection(tied);
+        expect(result.asc).toBe(1);
+        expect(result.desc).toBe(1);
+        expect(result.direction).toBe('asc');
+    });
+
+    it('says unknown when pairs exist but none fit either formula', () => {
+        // Rows carry balances but no consecutive pair satisfies either chain
+        // direction — e.g. balances and amounts are mismatched noise.
+        const noMatch = [
+            { date: '2026-01-01', description: 'A', amount: -99, balance: 100 },
+            { date: '2026-01-02', description: 'B', amount:  40, balance:  60 },
+        ];
+        const result = scoreChainDirection(noMatch);
+        expect(result.pairs).toBe(1);
+        expect(result.asc).toBe(0);
+        expect(result.desc).toBe(0);
+        expect(result.direction).toBe('unknown');
+    });
 });
 
 // Chunking by characters bounds the PROMPT but not the ANSWER. A statement of
