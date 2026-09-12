@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { detectStockExchange, detectCurrency, normalizeAssetType, buildAssetRecord } from '../services/utils.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { detectStockExchange, detectCurrency, normalizeAssetType, buildAssetRecord, resolveAssetCurrency, toBaseCurrency } from '../services/utils.js';
+import state from '../services/state.js';
 
 // ── detectStockExchange ──────────────────────────────────────────────────────
 
@@ -454,4 +455,187 @@ describe('buildAssetRecord', () => {
     const rec = buildAssetRecord({ symbol: 'AAPL', untracked: 0 });
     expect(rec.untracked).toBe(false);
   });
+});
+
+// ── resolveAssetCurrency ─────────────────────────────────────────────────────
+//
+// The critical invariant: a BARE ISIN carries no venue information and must
+// resolve to { code: null } — NOT 'USD'. The old code fell through
+// detectStockExchange('') → 'US' → 'USD', so every ISIN-keyed holding bought
+// in EUR had its cost basis multiplied by the USD→EUR rate (~0.92), cutting the
+// portfolio total by ~8%. No error, no warning.
+
+describe('resolveAssetCurrency', () => {
+    beforeEach(() => {
+        state.assetDatabase = {};
+    });
+    afterEach(() => {
+        state.assetDatabase = {};
+    });
+
+    it('returns null code for a falsy symbol', () => {
+        expect(resolveAssetCurrency(null)).toEqual({ code: null, source: null });
+        expect(resolveAssetCurrency('')).toEqual({ code: null, source: null });
+        expect(resolveAssetCurrency(undefined)).toEqual({ code: null, source: null });
+    });
+
+    it('derives USD for a bare US ticker via the suffix path', () => {
+        const result = resolveAssetCurrency('AAPL');
+        expect(result.code).toBe('USD');
+        expect(result.source).toBe('suffix');
+    });
+
+    it('derives EUR for a Euronext Paris ticker', () => {
+        const result = resolveAssetCurrency('AIR.PA');
+        expect(result.code).toBe('EUR');
+        expect(result.source).toBe('suffix');
+    });
+
+    it('derives GBP for a London ticker', () => {
+        const result = resolveAssetCurrency('SHEL.L');
+        expect(result.code).toBe('GBP');
+        expect(result.source).toBe('suffix');
+    });
+
+    // The key regression test: a bare ISIN must never silently resolve to USD.
+    it('returns null for a bare ISIN with no DB entry — NOT USD', () => {
+        // FR0000131104 is Air Liquide. Without a DB entry mapping it to AIR.PA,
+        // there is no way to know which venue it trades on, so the answer must
+        // be null. Guessing USD would apply the wrong FX rate silently.
+        const result = resolveAssetCurrency('FR0000131104');
+        expect(result.code).toBeNull();
+        expect(result.source).toBeNull();
+    });
+
+    it('returns null for any well-formed ISIN with no DB entry', () => {
+        expect(resolveAssetCurrency('US0378331005').code).toBeNull(); // AAPL ISIN
+        expect(resolveAssetCurrency('GB0007980591').code).toBeNull(); // BP ISIN
+    });
+
+    it('uses the DB currency when the asset has one, regardless of symbol type', () => {
+        state.assetDatabase['AAPL'] = { currency: 'EUR', currency_source: 'override' };
+        const result = resolveAssetCurrency('AAPL');
+        expect(result.code).toBe('EUR');
+        expect(result.source).toBe('override');
+    });
+
+    it('defaults currency_source to "profile" when the DB entry has none', () => {
+        state.assetDatabase['AAPL'] = { currency: 'USD' };
+        const result = resolveAssetCurrency('AAPL');
+        expect(result.code).toBe('USD');
+        expect(result.source).toBe('profile');
+    });
+
+    it('resolves an ISIN via its DB pricingTicker suffix', () => {
+        // DeGiro exports use ISINs. Once the pricing service resolves AIR.PA
+        // from the ISIN, the currency can be derived from the ticker suffix.
+        state.assetDatabase['FR0000131104'] = { pricingTicker: 'AIR.PA' };
+        const result = resolveAssetCurrency('FR0000131104');
+        expect(result.code).toBe('EUR');
+        expect(result.source).toBe('suffix');
+    });
+
+    it('returns null when the ISIN pricingTicker is itself an ISIN', () => {
+        // An ISIN→ISIN mapping still carries no venue information.
+        state.assetDatabase['FR0000131104'] = { pricingTicker: 'US0378331005' };
+        const result = resolveAssetCurrency('FR0000131104');
+        expect(result.code).toBeNull();
+    });
+
+    it('DB currency takes precedence over the pricingTicker suffix', () => {
+        state.assetDatabase['FR0000131104'] = { currency: 'USD', pricingTicker: 'AIR.PA' };
+        const result = resolveAssetCurrency('FR0000131104');
+        expect(result.code).toBe('USD');
+        expect(result.source).toBe('profile');
+    });
+});
+
+// ── toBaseCurrency ────────────────────────────────────────────────────────────
+//
+// The "no fallback" invariant is the reason this function exists. The old code
+// returned the unconverted amount when a rate was missing, which silently fed
+// wrong numbers into totals, snapshots and the database as if they were correct.
+// NULL is the only honest answer when a conversion is not possible.
+
+describe('toBaseCurrency', () => {
+    beforeEach(() => {
+        state.baseCurrency = 'EUR';
+        state.exchangeRates = { USD: 1.1, GBP: 1.18 };
+    });
+    afterEach(() => {
+        state.baseCurrency = 'EUR';
+        state.exchangeRates = {};
+    });
+
+    it('returns null for a non-finite amount', () => {
+        expect(toBaseCurrency(NaN, 'USD')).toBeNull();
+        expect(toBaseCurrency(Infinity, 'USD')).toBeNull();
+        expect(toBaseCurrency('abc', 'USD')).toBeNull();
+    });
+
+    it('returns null for an unknown or unmappable currency', () => {
+        expect(toBaseCurrency(100, 'XYZ')).toBeNull();
+        expect(toBaseCurrency(100, null)).toBeNull();
+    });
+
+    it('returns the amount when source and target are the same currency — no rate needed', () => {
+        // Same-currency path bypasses exchangeRates entirely, so even an empty
+        // state.exchangeRates must not block this.
+        state.exchangeRates = {};
+        expect(toBaseCurrency(50, 'EUR', 'EUR')).toBe(50);
+        expect(toBaseCurrency(0, 'EUR', 'EUR')).toBe(0);
+    });
+
+    it('folds minor units before converting — 100 GBp is 1 GBP, not 100', () => {
+        // GBp (pence) has a factor of 0.01. A price quoted as 100p should
+        // reach the portfolio as 1 GBP × rate, never as 100 GBP × rate.
+        expect(toBaseCurrency(100, 'GBp', 'EUR')).toBeCloseTo(1 * 1.18, 10);
+    });
+
+    it('also folds GBX (the alternate pence code) to major units', () => {
+        expect(toBaseCurrency(200, 'GBX', 'EUR')).toBeCloseTo(2 * 1.18, 10);
+    });
+
+    // The critical "no-fallback" invariant.
+    it('returns null — never the unconverted amount — when the rate is absent', () => {
+        // JPY is not in state.exchangeRates. The correct answer is null, not 100.
+        // Returning 100 here would appear as "100 EUR" in the portfolio total,
+        // which is wrong by definition and carries no indication that it was guessed.
+        state.exchangeRates = { USD: 1.1 };
+        expect(toBaseCurrency(100, 'JPY', 'EUR')).toBeNull();
+    });
+
+    it('returns null when the exchange rate is zero', () => {
+        state.exchangeRates = { USD: 0 };
+        expect(toBaseCurrency(100, 'USD', 'EUR')).toBeNull();
+    });
+
+    it('returns null when the exchange rate is negative', () => {
+        state.exchangeRates = { USD: -1 };
+        expect(toBaseCurrency(100, 'USD', 'EUR')).toBeNull();
+    });
+
+    it('converts via state.exchangeRates when rates are present', () => {
+        // state.exchangeRates = { USD: 1.1 } means "1 USD = 1.1 EUR"
+        expect(toBaseCurrency(100, 'USD', 'EUR')).toBeCloseTo(110, 10);
+    });
+
+    it('uses state.baseCurrency when no targetBase is given', () => {
+        // Explicit 'EUR' target must equal the implicit default
+        expect(toBaseCurrency(100, 'USD')).toBe(toBaseCurrency(100, 'USD', 'EUR'));
+    });
+
+    it('cross-base: converts to a non-EUR target using the ratio of rates', () => {
+        // 100 GBP → USD via EUR: (100 × 1.18) / 1.1 ≈ 107.27
+        // Formula: major × (rateSrc / rateTarget)
+        //   rateSrc   = exchangeRates['GBP'] = 1.18
+        //   rateTarget = exchangeRates['USD'] = 1.1
+        expect(toBaseCurrency(100, 'GBP', 'USD')).toBeCloseTo(100 * (1.18 / 1.1), 10);
+    });
+
+    it('returns null for cross-base conversion when the target rate is missing', () => {
+        // Can't convert USD → JPY if we have neither rate
+        state.exchangeRates = { USD: 1.1 };
+        expect(toBaseCurrency(100, 'USD', 'JPY')).toBeNull();
+    });
 });
