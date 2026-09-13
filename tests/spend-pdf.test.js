@@ -503,3 +503,38 @@ describe('a document with no headings has no layout id', () => {
         expect(sectionSignature(['A'])).not.toBe(sectionSignature(['B']));
     });
 });
+
+// CGD and some other banks print rows with ISO dates, not dd/mm. The strict
+// candidate set (findCandidateLines) is empty for these documents, so the old
+// findSectionHeadings couldn't identify any "following transaction rows" — the
+// lookahead found nothing, every heading was filtered out, and the document
+// reported zero sections. The fix falls back to findLooseCandidates when the
+// strict set is empty, so the heading is visible on ISO-date documents.
+describe('findSectionHeadings — loose-candidate fallback for ISO-date documents', () => {
+    const L = (text, i, x = 60) => ({ text, y: 700 - i * 12, xs: [x] });
+
+    it('finds a heading when rows use ISO dates (loose candidates only)', () => {
+        // No row starts with dd/mm, so findCandidateLines returns [].
+        // findLooseCandidates matches the ISO-date rows, and the heading before
+        // them should be returned.
+        const doc = [
+            L('Statement 2026-07-01',              0),
+            L('DETALHE DAS COMPRAS CARTAO N. 042061', 1),
+            L('2026-07-04 DECATHLON GAIA 172,60',   2),
+            L('2026-07-08 CONTINENTE 43,20',         3),
+        ];
+        const headings = findSectionHeadings(doc);
+        expect(headings.map(h => h.text)).toContain('DETALHE DAS COMPRAS CARTAO N. 042061');
+    });
+
+    it('does not treat an ISO-date transaction row as a heading on such a document', () => {
+        const doc = [
+            L('DETALHE DAS COMPRAS CARTAO N. 042061', 0),
+            L('2026-07-04 DECATHLON GAIA 172,60',   1),
+            L('2026-07-08 CONTINENTE 43,20',         2),
+        ];
+        const headings = findSectionHeadings(doc);
+        // The ISO-date rows are candidates, so they are excluded as headings.
+        expect(headings.every(h => !h.text.startsWith('2026-'))).toBe(true);
+    });
+});
