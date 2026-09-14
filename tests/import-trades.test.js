@@ -20,6 +20,7 @@ import {
   dedupeTrades,
   computePositionsFromLedger,
 } from '../services/import-brokers.js';
+import { normalizeCurrencyCode } from '../services/money-core.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,27 @@ describe('detectCurrency', () => {
   it('detects GBP from £', () => expect(detectCurrency('£99')).toBe('GBP'));
   it('detects code from text', () => expect(detectCurrency('USD')).toBe('USD'));
   it('falls back when unknown', () => expect(detectCurrency('', 'EUR')).toBe('EUR'));
+
+  // London prices arrive in pence. "GBp" differs from "GBP" only by letter case,
+  // and the old case-insensitive check read it as pounds: a cost basis 100x high.
+  it('keeps pence as pence, never pounds', () => {
+    for (const raw of ['GBp', '1234,50 GBp', 'GBX', 'gbx', 'GBP.', 'GBPX']) {
+      expect(detectCurrency(raw), raw).toBe('GBX');
+    }
+  });
+  it('still reads real pounds as pounds', () => {
+    expect(detectCurrency('GBP')).toBe('GBP');
+    expect(detectCurrency('£99')).toBe('GBP');
+  });
+  it('keeps other minor units as their own code', () => {
+    expect(detectCurrency('ZAc')).toBe('ZAC');
+    expect(detectCurrency('ILa')).toBe('ILA');
+  });
+  it('returns a code the rest of the pipeline scales by one hundredth', () => {
+    // If the stored code were not one money-core recognises as a minor unit,
+    // conversion downstream would treat the pence price as pounds.
+    expect(normalizeCurrencyCode(detectCurrency('GBp'))).toEqual({ iso: 'GBP', factor: 0.01 });
+  });
 });
 
 describe('normalizeDate', () => {
@@ -965,5 +987,22 @@ describe('detectSplitPairs — early-break optimization', () => {
     const { kept, flagged } = detectSplitPairs(trades);
     expect(flagged).toHaveLength(0);
     expect(kept).toHaveLength(4);
+  });
+});
+
+// ── London pence through a real parser ───────────────────────────────────────
+// The price must stay in pence. Converting it to pounds at the boundary would
+// change the dedupe fingerprint, which includes price, and every London trade
+// already in the ledger would import again on the next export.
+describe('London pence through the DeGiro parser', () => {
+  const header = 'Date,Time,Product,ISIN,Reference,Venue,Quantity,Price,,Local value,,Value,,Exchange rate,Transaction costs,,Total,,Order ID';
+
+  it('records a GBp trade as GBX with the price left in pence', () => {
+    const csv = [header, '02-01-2024,09:00,Vodafone,GB00BH4HKS39,ref,LSE,100,7250,GBp,-725000,GBp,-8500,EUR,0.0117,-0.50,EUR,-8500.50,EUR,abc'].join('\n');
+    const { trades, errors } = parseDegiroCsv(csv);
+    expect(errors).toHaveLength(0);
+    expect(trades).toHaveLength(1);
+    expect(trades[0].currency).toBe('GBX');
+    expect(trades[0].price).toBe(7250);
   });
 });

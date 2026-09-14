@@ -23,6 +23,10 @@
 
 // ── Small dependency-free helpers (mirror of portfolio.js logic) ─────────────
 
+// Pure-to-pure: money-core has no DOM or network either, so this module stays
+// directly importable by tests. Currency handling goes through it, never beside it.
+import { normalizeCurrencyCode, MINOR_UNIT_CODES } from './money-core.js';
+
 export function isISIN(value) {
     return /^[A-Z]{2}[A-Z0-9]{10}$/.test(String(value || '').toUpperCase());
 }
@@ -76,9 +80,35 @@ export function parseSignedNumber(raw) {
     return negative ? -n : n;
 }
 
-/** Infer a currency code from a value string containing a symbol or code. */
+// The canonical, UPPERCASE-stable code for each minor unit, derived from
+// money-core rather than restated: the first MINOR_UNIT_CODES entry for an ISO
+// currency (GBX for GBP, ZAC for ZAR, ILA for ILS). Uppercase-stable matters —
+// "GBp" upper-cased is the valid code "GBP", which is pounds.
+const canonicalMinorCode = iso =>
+    Object.keys(MINOR_UNIT_CODES).find(k => MINOR_UNIT_CODES[k].iso === iso) ?? null;
+
+/**
+ * Infer a currency code from a value string containing a symbol or code.
+ *
+ * Minor-unit codes are checked FIRST and PRESERVED, not folded here. A price
+ * quoted in pence stays a pence price with a pence code, and conversion happens
+ * downstream: toBaseCurrency and deriveFxToBases both scale by the factor
+ * normalizeCurrencyCode reports. That is also how DeGiro's "GBX" rows have
+ * always been stored, so new rows stay consistent with the existing ledger.
+ * Folding to pounds here instead would change the stored price — and with it
+ * the dedupe fingerprint, which includes price — so the next export would
+ * re-import every London trade already in the ledger.
+ *
+ * The bug this closes: "GBp" matched /\bGBP\b/i before anything that knew
+ * pence from pounds by letter case, so a pence price was recorded as POUNDS,
+ * a hundred times too high.
+ */
 export function detectCurrency(raw, fallback = 'EUR') {
     const s = String(raw || '');
+    for (const token of s.match(/[A-Za-z]{3,4}\.?/g) || []) {
+        const unit = normalizeCurrencyCode(token);
+        if (unit && unit.factor !== 1) return canonicalMinorCode(unit.iso) || token.toUpperCase();
+    }
     if (/\$/.test(s) || /\bUSD\b/i.test(s)) return 'USD';
     if (/€/.test(s) || /\bEUR\b/i.test(s)) return 'EUR';
     if (/£/.test(s) || /\bGBP\b/i.test(s)) return 'GBP';
