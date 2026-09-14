@@ -3220,22 +3220,64 @@ body > #appNavbar + * {
 }
 
 
-/* ── Toast (DS naming, portfolio uses JS injection) ──────────────────────── */
+/* ── Toast Notifications ────────────────────────────────────────────────────
+   Moved here from css/wine.css, which only wine.html loads. spend/ and
+   holdings/ have always called showToast() while loading none of these rules,
+   so their toasts rendered unpositioned at the foot of the document with no
+   transition. Every page loads this file, so every tool now gets a real one —
+   which is also what lets services/ have a toast instead of alert(). */
+
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    max-width: 340px;
+}
 
 .toast {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 8px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-hover);
-    border-radius: 100px;
-    padding: 8px 16px;
-    font-size: 13px;
+    gap: 10px;
+    background: var(--ink-3);
+    border: 1px solid var(--border);
+    border-left-width: 4px;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 14px;
     color: var(--text-primary);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    pointer-events: all;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    transform: translateX(120%);
+    transition: transform 0.25s ease, opacity 0.25s ease;
+    opacity: 0;
 }
-.toast.success { border-color: rgba(76,175,132,0.4); }
-.toast-icon { flex-shrink: 0; }
+.toast.toast-visible {
+    transform: translateX(0);
+    opacity: 1;
+}
+.toast-success { border-left-color: var(--up); }
+.toast-error   { border-left-color: var(--down); }
+.toast-warning { border-left-color: var(--gold); }
+.toast-info    { border-left-color: var(--neutral); }
+
+.toast-icon {
+    font-size: 15px;
+    flex-shrink: 0;
+}
+.toast-success .toast-icon { color: var(--up); }
+.toast-error   .toast-icon { color: var(--down); }
+.toast-warning .toast-icon { color: var(--gold); }
+.toast-info    .toast-icon { color: var(--neutral); }
+
+.toast-msg { line-height: 1.4; }
+
+/* Used by showUndoToast() in wine/utils.js. */
 .toast-undo,
 .toast-undo-btn {
     font-family: var(--font-mono);

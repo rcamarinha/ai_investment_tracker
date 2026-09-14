@@ -20,6 +20,12 @@ DROP POLICY IF EXISTS "Authenticated users can insert price history" ON price_hi
 DROP POLICY IF EXISTS "Price history is insertable by all authenticated users" ON price_history;
 
 -- 5. Create the new scoped INSERT policy
+-- Drop the name this file is about to create, so it can be re-run. It could
+-- not be: supabase_schema.sql already carries this policy, so a second run
+-- aborted with 42710 "policy already exists". Production ran this once and is
+-- unaffected; this only makes a re-run safe. Same fix as 20260627. Found by
+-- tests/migrations.test.js, which applies every migration twice.
+DROP POLICY IF EXISTS "Users can insert own price history" ON price_history;
 CREATE POLICY "Users can insert own price history"
     ON price_history FOR INSERT
     WITH CHECK (auth.uid() = user_id);

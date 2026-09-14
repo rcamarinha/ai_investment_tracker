@@ -3,12 +3,13 @@
  */
 
 import state from './state.js';
-import { buildAssetRecord, normalizeAssetType } from './utils.js';
+import { buildAssetRecord, normalizeAssetType, showToast } from './utils.js';
 import { updateAuthBar, checkUserRole, cancelPasswordRecovery } from './auth.js';
 import { renderPortfolio, updateHistoryDisplay, saveTransactionsToStorage } from './portfolio.js';
 import { fetchAssetProfile, backfillFxRates } from './pricing.js';
 import { coerceTxDate } from './import-brokers.js';
 import { normalizeCurrencyCode, shouldOverwriteCurrency } from './money-core.js';
+import { reportHandled, reportDiagnostic } from './telemetry.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
 
@@ -110,7 +111,18 @@ export async function savePortfolioDB() {
         await saveAssetsToDB(assetRecords);
         await loadAssetsFromDB();
     } catch (err) {
+        // Same delete-then-insert shape as the ledger save below, and the same
+        // consequence: reaching here can mean `positions` is empty in the
+        // database. Less severe only because positions are DERIVED — they can be
+        // rebuilt from the ledger — which is exactly why the message says so
+        // rather than leaving the user to guess.
         console.error('Failed to save portfolio to DB:', err);
+        showToast(
+            'Could not save your positions. Do not reload the page \u2014 your holdings are still here. Try again.',
+            'error',
+            12000
+        );
+        reportHandled(err, { action: 'save-positions', rows: state.portfolio.length });
     }
 }
 
@@ -518,7 +530,12 @@ export async function loadLatestPricesFromDB() {
 }
 
 export async function loadPriceHistoryForAsset(ticker, limit = 30) {
-    if (!state.supabaseClient) return [];
+    // Scoped to the caller, and requires a session. This read was unscoped and
+    // ran without one, so it would have interleaved two users' price points for
+    // the same ticker in whatever chart it fed. It has no callers today, which
+    // is exactly why it was worth fixing rather than leaving: an unscoped read
+    // sitting in the file is how it gets called next year.
+    if (!state.supabaseClient || !state.currentUser) return [];
 
     try {
         const upperTicker = ticker.toUpperCase();
@@ -527,6 +544,7 @@ export async function loadPriceHistoryForAsset(ticker, limit = 30) {
         const { data, error } = await state.supabaseClient
             .from('price_history')
             .select('price, currency, source, fetched_at')
+            .eq('user_id', state.currentUser.id)
             .eq('ticker', upperTicker)
             .order('fetched_at', { ascending: false })
             .limit(limit);
@@ -548,17 +566,15 @@ export async function loadPriceHistoryForAsset(ticker, limit = 30) {
 export async function saveTransactionsToDB() {
     if (!state.supabaseClient || !state.currentUser) return;
 
+    // Declared out here so the catch can always report a count, whichever
+    // request failed.
+    let rows = [];
+
     try {
-        // Delete existing transactions for this user
-        const { error: deleteError } = await state.supabaseClient
-            .from('transactions')
-            .delete()
-            .eq('user_id', state.currentUser.id);
-
-        if (deleteError) throw deleteError;
-
+        // Build every row BEFORE touching the database. The old order deleted
+        // first and built second, so anything that threw while building ran
+        // after the ledger was already gone.
         // Flatten state.transactions into rows
-        const rows = [];
         for (const [symbol, txs] of Object.entries(state.transactions)) {
             for (const tx of txs) {
                 rows.push({
@@ -592,17 +608,64 @@ export async function saveTransactionsToDB() {
             }
         }
 
+
+        // ── Atomic path ─────────────────────────────────────────────────────
+        // save_transactions (migration 20260914) deletes and inserts inside ONE
+        // transaction, so a single bad row rolls the delete back and the ledger
+        // is left exactly as it was. The two-request version below cannot
+        // promise that: its DELETE commits before its INSERT is even sent.
+        const { error: rpcError } = await state.supabaseClient
+            .rpc('save_transactions', { p_rows: rows });
+
+        if (!rpcError) {
+            console.log('\u2713 Transactions saved to Supabase (atomic):', rows.length, 'records');
+            return;
+        }
+
+        // PGRST202 means the function does not exist yet — the migration has
+        // not been run. That is the ONLY error allowed to fall through to the
+        // old path. Anything else is a real failure of the atomic save, and
+        // retrying it non-atomically would reintroduce exactly the data loss
+        // this exists to prevent.
+        if (rpcError.code !== 'PGRST202') throw rpcError;
+
+        // ── Non-atomic fallback, only while the migration is not live ────────
+        // Recorded so its use is visible: once these stop arriving, this whole
+        // branch can be deleted.
+        reportDiagnostic('save-transactions-nonatomic', { action: 'save-transactions', rows: rows.length });
+
+        const { error: deleteError } = await state.supabaseClient
+            .from('transactions')
+            .delete()
+            .eq('user_id', state.currentUser.id);
+        if (deleteError) throw deleteError;
+
         if (rows.length > 0) {
             const { error: insertError } = await state.supabaseClient
                 .from('transactions')
                 .insert(rows);
-
             if (insertError) throw insertError;
         }
 
-        console.log('\u2713 Transactions saved to Supabase:', rows.length, 'records');
+        console.log('\u2713 Transactions saved to Supabase (non-atomic fallback):', rows.length, 'records');
     } catch (err) {
+        // This path DELETES every row for the user and then bulk inserts, and
+        // Postgres aborts the whole insert on one bad row. So reaching here can
+        // mean the ledger is GONE from the database, and the only signal used
+        // to be a console line nobody has open. A failure the user must know
+        // about gets a toast AND reportHandled — the standard this file was
+        // quietly exempt from.
+        //
+        // state.transactions still holds the data in memory, so the honest
+        // instruction is "do not reload" — that is the difference between a
+        // recoverable moment and a lost ledger.
         console.error('Failed to save transactions to DB:', err);
+        showToast(
+            'Could not save your transactions. Do not reload the page \u2014 your data is still here. Try again.',
+            'error',
+            12000
+        );
+        reportHandled(err, { action: 'save-transactions', rows: rows.length });
     }
 }
 

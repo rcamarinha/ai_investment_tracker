@@ -1,6 +1,6 @@
 {
   "name": "ai-investment-tracker",
-  "version": "3.52.0",
+  "version": "3.53.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "bump": "node scripts/bump-version.js"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "playwright": "^1.61.0",
     "vitest": "^4.1.8"
   },
