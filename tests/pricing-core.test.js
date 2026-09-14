@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildRawMaps, mapPricedToRaw, pooled } from '../services/pricing-core.js';
+import { buildRawMaps, mapPricedToRaw, pooled, planProxyBatches, mapProxyResults, normalizeForPricing } from '../services/pricing-core.js';
+import { normalizeQuote } from '../services/money-core.js';
 
 describe('buildRawMaps', () => {
   it('maps raw symbols to their normalized query form and reverse indexes', () => {
@@ -93,4 +94,59 @@ describe('pooled', () => {
     const results = await pooled([1, 2], async (x) => x, 0);
     expect(results.map(r => r.value)).toEqual([1, 2]);
   });
+});
+
+// ── quote proxy batching ─────────────────────────────────────────────────────
+describe('planProxyBatches', () => {
+    it('splits into requests of the given size', () => {
+        const syms = Array.from({ length: 60 }, (_, i) => `S${i}`);
+        expect(planProxyBatches(syms, 25).map(b => b.length)).toEqual([25, 25, 10]);
+    });
+
+    it('defaults to a batch size small enough to finish inside the function time limit', () => {
+        const syms = Array.from({ length: 26 }, (_, i) => `S${i}`);
+        expect(planProxyBatches(syms).map(b => b.length)).toEqual([25, 1]);
+    });
+
+    it('asks for each symbol once, in the upper-case form the proxy answers with', () => {
+        expect(planProxyBatches(['aapl', 'AAPL', ' msft '])).toEqual([['AAPL', 'MSFT']]);
+    });
+
+    it('normalizes suffixes the same way the per-symbol tier does', () => {
+        expect(planProxyBatches(['sap.frk'])).toEqual([[normalizeForPricing('sap.frk').toUpperCase()]]);
+    });
+
+    it('ignores blanks and returns nothing for nothing', () => {
+        expect(planProxyBatches([null, undefined, '', '  '])).toEqual([]);
+        expect(planProxyBatches([])).toEqual([]);
+    });
+});
+
+describe('mapProxyResults', () => {
+    it('keeps a good quote with its reported currency', () => {
+        const out = mapProxyResults({ AAPL: { price: 326.57, currency: 'USD', exchange: 'NasdaqGS' } }, normalizeQuote);
+        expect(out.AAPL).toMatchObject({ price: 326.57, currency: 'USD' });
+        expect(out.AAPL.source).toContain('NasdaqGS');
+    });
+
+    it('folds a London pence quote into pounds', () => {
+        // The per-symbol proxy tier already did this; the batch must not regress it.
+        const out = mapProxyResults({ 'VOD.L': { price: 7250, currency: 'GBp' } }, normalizeQuote);
+        expect(out['VOD.L'].currency).toBe('GBP');
+        expect(out['VOD.L'].price).toBeCloseTo(72.5, 10);
+    });
+
+    it('skips a symbol the proxy could not price', () => {
+        const out = mapProxyResults({ A: null, B: { price: 0 }, C: { price: -1 }, D: { price: 'x' }, E: { price: null } }, normalizeQuote);
+        expect(out).toEqual({});
+    });
+
+    it('keeps the price but claims no currency when the code is unreadable', () => {
+        const out = mapProxyResults({ X: { price: 10, currency: '??' } }, normalizeQuote);
+        expect(out.X).toMatchObject({ price: 10, currency: null });
+    });
+
+    it('keys its answer in upper case', () => {
+        expect(Object.keys(mapProxyResults({ msft: { price: 1, currency: 'USD' } }, normalizeQuote))).toEqual(['MSFT']);
+    });
 });
