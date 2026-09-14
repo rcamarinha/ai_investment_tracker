@@ -219,7 +219,15 @@ export function normalizeAiRows(rawRows = [], { accountId, currency = null, sour
             // The model's structural call, not a guess from the wording. A card
             // purchase listed under the card section is 'detail': its money is
             // already in the statement row that pays the card.
-            sourceRole: raw?.role === 'detail' ? 'detail' : 'statement'
+            sourceRole: raw?.role === 'detail' ? 'detail' : 'statement',
+            // The extractor names the section each detail row belongs to
+            // ("group"), so a two-card statement reconciles each card against its
+            // own settlement. This was never copied across: every card fell into
+            // one bucket, card routing never ran and no card account was ever
+            // created, while a test that did the mapping itself stayed green.
+            // Only detail rows carry one — a stray group on a statement row
+            // would make ordinary account money look like card spending.
+            detailGroup: raw?.role === 'detail' ? (raw?.group ?? null) : null
         }, { currency });
         const { ok, errors } = validateRow(candidate);
         if (ok) rows.push(candidate);
@@ -268,6 +276,22 @@ export function verifyRows(rows = []) {
  * `onProgress(done, total)` reports chunk progress; a long export is several
  * requests and silence for 30 seconds reads as a hang.
  */
+/**
+ * The rows that belong in THIS account's whole-statement total.
+ *
+ * Card purchases promoted to their own ledger are left out: they are the
+ * card's money, and counting them here breaks a total that is correct.
+ * Purchases that EXPANDED a settlement are counted: they replace a row that was
+ * in this account's chain, and sum to it by proof. The previous filter keyed on
+ * enrichedFrom alone, which both kinds carry, so every successful expansion
+ * dropped the settlement from the sum and a correct import reported that it
+ * did not add up. A guardrail that cries wolf on the good path teaches the user
+ * to click past it.
+ */
+export function rowsInStatementTotal(rows = []) {
+    return rows.filter(r => r.enrichedFrom !== 'card' || !!r.expandedFrom);
+}
+
 export async function importPdfStatement(file, { accountId, accountCurrency, hint, onProgress } = {}) {
     const { lines, pageCount } = await extractPdfLines(file);
     if (!lines.length) {
@@ -403,17 +427,15 @@ export async function importPdfStatement(file, { accountId, accountCurrency, hin
     }
 
     // The whole-statement check, run on what will actually be written to THIS
-    // account. Card rows are excluded: they belong to the card's ledger, so
-    // counting them here would break a total that is correct.
+    // account — see rowsInStatementTotal for which card rows count.
     //
     // This is the check the per-row chain cannot make. A row carrying no balance
     // is not in the chain at all, so a section that should never have been
     // imported passes every per-row test and still shows up in the money.
-    const total = reconcileStatementTotal(
-        rows.filter(r => r.enrichedFrom !== 'card'), lines);
+    const total = reconcileStatementTotal(rowsInStatementTotal(rows), lines);
 
     return {
-        rows, errors, parsed: rows.length, skipped: errors.length, total,
+        rows, errors, parsed: rows.length, total,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year, headings, broadened, rowOrder: order.direction,
         skipped: skipped.length,

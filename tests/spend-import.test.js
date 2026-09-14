@@ -5,7 +5,7 @@ import {
     locateHeaderBySignature,
     parseStyledNumber, detectDecimalStyle, detectDateFormat, parseDateWithFormat,
     spendFingerprint, buildExistingFingerprints, dedupeSpendRows,
-    mergeDetailSource, expandCardDetail, markCardSettlements, planCardRouting,
+    mergeDetailSource, expandCardDetail, markCardSettlements, planCardRouting, isRoutableCardRow,
     summarizeSections, sectionSignature, applyRules, ruleFromCorrection, DATE_FORMATS
 } from '../services/import-banks.js';
 
@@ -1054,5 +1054,85 @@ describe('an import shows what it imported', () => {
         // Not set to "today": a statement imported on the 1st of a month is all
         // last month's, and pinning today would hide it just as effectively.
         expect(clearViewFilters({ period: '2020-01' }).period).toBeNull();
+    });
+});
+
+// ── card routing moves only purchases the statement could not prove ─────────
+describe('isRoutableCardRow', () => {
+    const base = { enrichedFrom: 'card', detailGroup: 'bkcf' };
+
+    it('routes a card purchase the statement could not prove', () => {
+        expect(isRoutableCardRow({ ...base, expandedFrom: null })).toBe(true);
+    });
+
+    it('keeps a purchase that replaced a settlement in the account that paid it', () => {
+        expect(isRoutableCardRow({ ...base, expandedFrom: 'Cartoes bkcf - deb. mensal-cob' })).toBe(false);
+    });
+
+    it('ignores a card row with no section id', () => {
+        expect(isRoutableCardRow({ enrichedFrom: 'card', detailGroup: null })).toBe(false);
+    });
+
+    it('ignores ordinary account movements', () => {
+        expect(isRoutableCardRow({ enrichedFrom: null, detailGroup: 'bkcf' })).toBe(false);
+        expect(isRoutableCardRow(null)).toBe(false);
+    });
+
+    it('agrees with what expandCardDetail really stamps on a proven purchase', () => {
+        // Guards the predicate against drift in the markers it keys on. Routing a
+        // proven purchase would remove the outflow from the account, since the
+        // settlement is already gone, and count the spending again on the card.
+        const settlement = { accountId: 'a1', date: '2026-03-20', description: 'Cartoes bkcf - deb. mensal-cob',
+                             rawDescription: 'Cartoes bkcf - deb. mensal-cob', amount: -725.02, balance: 1088.51 };
+        const purchases = [
+            { accountId: 'a1', date: '2026-03-05', description: 'REVOLUTION SPORT', amount: -150.00, detailGroup: 'bkcf', balance: null },
+            { accountId: 'a1', date: '2026-03-11', description: 'CONTINENTE',       amount: -425.02, detailGroup: 'bkcf', balance: null },
+            { accountId: 'a1', date: '2026-03-14', description: 'GALP',             amount: -150.00, detailGroup: 'bkcf', balance: null }
+        ];
+        const r = expandCardDetail([settlement], purchases);
+        expect(r.expanded).toHaveLength(1);
+        const proven = r.rows.filter(x => x.expandedFrom);
+        expect(proven).toHaveLength(3);
+        expect(proven.every(x => x.enrichedFrom === 'card' && x.detailGroup === 'bkcf')).toBe(true);
+        expect(proven.some(isRoutableCardRow)).toBe(false);
+    });
+});
+
+// ── where a CSV row's currency came from ────────────────────────────────────
+describe('parseWithProfile currency provenance', () => {
+    // Built without any currency column, so these hold whatever the sample file
+    // happens to contain: the behaviour under test is what happens when the
+    // FILE says nothing about currency.
+    const profileWithoutCurrencyColumn = (extra = {}) => {
+        const d = buildProfileDraft(MILLENNIUM);
+        const { currency: _dropped, ...columnMap } = d.columnMap || {};
+        return {
+            columnMap, dateFormat: d.dateFormat, decimalStyle: d.decimalStyle,
+            invertSign: d.invertSign, skipRows: d.skipRows, label: 'test', ...extra
+        };
+    };
+
+    it('never claims the file stated a currency it did not print', () => {
+        // The parser used to pass a hardcoded 'EUR' as the row's own value, so
+        // every file without a currency column was stamped currencySource 'row'
+        // and a better-sourced currency could never correct it.
+        const { rows } = parseWithProfile(MILLENNIUM, profileWithoutCurrencyColumn(), { accountId: 'mil' });
+        expect(rows.length).toBeGreaterThan(0);
+        expect(rows.every(r => r.currencySource !== 'row')).toBe(true);
+    });
+
+    it('records a guess as a guess when nothing supplies a currency', () => {
+        const { rows } = parseWithProfile(MILLENNIUM, profileWithoutCurrencyColumn(), { accountId: 'mil' });
+        expect(rows[0]).toMatchObject({ currency: 'EUR', currencySource: 'assumed' });
+    });
+
+    it('falls back to the account currency, and records it as the account\'s', () => {
+        const { rows } = parseWithProfile(MILLENNIUM, profileWithoutCurrencyColumn(), { accountId: 'mil', currency: 'GBP' });
+        expect(rows[0]).toMatchObject({ currency: 'GBP', currencySource: 'account' });
+    });
+
+    it('treats a profile currency as a default, not as something the file said', () => {
+        const { rows } = parseWithProfile(MILLENNIUM, profileWithoutCurrencyColumn({ currency: 'USD' }), { accountId: 'mil' });
+        expect(rows[0]).toMatchObject({ currency: 'USD', currencySource: 'account' });
     });
 });
