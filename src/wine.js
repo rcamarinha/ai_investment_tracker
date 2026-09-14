@@ -395,3 +395,76 @@ export function buildCellarSnapshot(cellar, timestamp) {
         bottleCount:         totals.totalBottles,
     };
 }
+
+// ── Batch valuation triage ────────────────────────────────────────────────────
+
+/**
+ * Decide what to do with each result of a batch valuation, before anything is
+ * written. Pure, so these rules are tested rather than trusted.
+ *
+ * The batch path used to apply whatever came back. A missing or non-numeric
+ * price was written straight onto the bottle, a bottle the model never returned
+ * was counted as valued, and nothing compared a new value with the old one. The
+ * resulting figure feeds household net worth on the hub.
+ *
+ *   - Matched by id, never by position: the model can return fewer items than
+ *     it was sent. The first answer for a bottle wins.
+ *   - A price that is absent, non-numeric, zero or negative is an error, which
+ *     is what the single-bottle path has always enforced.
+ *   - A value outside the model's own low/high range is held back, and so is a
+ *     value that moved more than `maxJump` times from the previous valuation.
+ *     A first valuation has nothing to compare with, so it is applied.
+ *   - A bottle with no answer at all is missing, not valued.
+ *
+ * @param {Object[]} bottles  bottles sent for valuation, each with an id
+ * @param {Object[]} results  what the batch endpoint returned
+ * @param {{maxJump?: number}} [opts]
+ * @returns {{ apply: {bottle: Object, result: Object}[], errors: string[],
+ *             missing: Object[], heldBack: {bottle: Object, from: number|null, to: number, reason: string}[] }}
+ */
+export function triageBatchValuation(bottles = [], results = [], { maxJump = 3 } = {}) {
+    const byId = new Map(bottles.map(b => [b.id, b]));
+    const seen = new Set();
+    const apply = [], errors = [], heldBack = [];
+    const present = v => v !== null && v !== undefined && v !== '';
+
+    for (const result of results) {
+        const bottle = result && present(result.id) ? byId.get(result.id) : null;
+        if (!bottle || seen.has(bottle.id)) continue;
+        seen.add(bottle.id);
+        const label = bottle.name || bottle.id;
+
+        if (result.error) {
+            errors.push(`${label}: ${result.error}`);
+            continue;
+        }
+
+        // Absence is checked before coercion: Number(null) is 0, and 0 passes
+        // Number.isFinite.
+        const value = present(result.estimatedValue) ? Number(result.estimatedValue) : NaN;
+        if (!Number.isFinite(value) || value <= 0) {
+            errors.push(`${label}: the valuation came back without a usable price`);
+            continue;
+        }
+
+        const low = Number(result.valueLow);
+        const high = Number(result.valueHigh);
+        const hasRange = present(result.valueLow) && present(result.valueHigh)
+            && Number.isFinite(low) && Number.isFinite(high) && low > 0 && high >= low;
+        if (hasRange && (value < low || value > high)) {
+            heldBack.push({ bottle, from: present(bottle.estimatedValue) ? Number(bottle.estimatedValue) : null, to: value, reason: 'outside the range the valuation itself gave' });
+            continue;
+        }
+
+        const prior = present(bottle.estimatedValue) ? Number(bottle.estimatedValue) : NaN;
+        if (Number.isFinite(prior) && prior > 0 && (value > prior * maxJump || value < prior / maxJump)) {
+            heldBack.push({ bottle, from: prior, to: value, reason: 'moved too far from the previous valuation' });
+            continue;
+        }
+
+        apply.push({ bottle, result: { ...result, estimatedValue: value } });
+    }
+
+    const missing = bottles.filter(b => !seen.has(b.id));
+    return { apply, errors, missing, heldBack };
+}

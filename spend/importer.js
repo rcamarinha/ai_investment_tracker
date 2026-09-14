@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state, { clearViewFilters } from './state.js?v=3.53.0';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.53.0';
+import state, { clearViewFilters } from './state.js?v=3.54.0';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.54.0';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.53.0';
-import { renderAll } from './ledger.js?v=3.53.0';
+} from './storage.js?v=3.54.0';
+import { renderAll } from './ledger.js?v=3.54.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
-    planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS
+    planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS, isRoutableCardRow
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.53.0';
+import { importPdfStatement } from './pdf.js?v=3.54.0';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 
 const el = id => document.getElementById(id);
@@ -414,7 +414,10 @@ export async function confirmMapping() {
 
 function runImport(profile) {
     const accountId = state.importAccountId;
-    const parsed = parseWithProfile(state.importText, profile, { accountId, source: profile.label });
+    // The fallback for a file with no currency column. Recorded by the row
+    // contract as a guess ('account'), never as something the file said.
+    const currency = state.accounts.find(a => a.id === accountId)?.currency || null;
+    const parsed = parseWithProfile(state.importText, profile, { accountId, source: profile.label, currency });
     ingest(parsed, { profile, sourceRole: profile.sourceRole || 'statement' });
 }
 
@@ -479,13 +482,16 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
     // commit time: dedupe is per account, so checking a card purchase against
     // the current account's history would match nothing and re-add every
     // purchase on every import.
+    //
+    // Only UNPROVEN card purchases move to the card. A purchase that replaced a
+    // settlement debited from this account stays here — see isRoutableCardRow.
     const cardGroups = [...new Set(
-        ruled.rows.filter(r => r.enrichedFrom === 'card' && r.detailGroup).map(r => r.detailGroup)
+        ruled.rows.filter(isRoutableCardRow).map(r => r.detailGroup)
     )];
     const cardPlan = cardGroups.length ? planCardRouting(cardGroups, state.accounts, accountId) : [];
     const planByGroup = new Map(cardPlan.map(p => [p.group, p]));
     for (const row of ruled.rows) {
-        const p = row.detailGroup ? planByGroup.get(row.detailGroup) : null;
+        const p = isRoutableCardRow(row) ? planByGroup.get(row.detailGroup) : null;
         if (!p) continue;
         if (p.action === 'use') row.accountId = p.accountId;
         else if (p.action === 'create') row.pendingAccountGroup = p.group;

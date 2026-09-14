@@ -437,11 +437,18 @@ export function parseWithProfile(text, profile = {}, options = {}) {
             accountId, date,
             description: at(row, 'description'),
             amount,
-            currency: at(row, 'currency') || profile.currency || 'EUR',
+            // Only what the FILE said. A profile or account currency is a
+            // default, not a fact about this row — and passing one here, let
+            // alone a hardcoded 'EUR', stamped currencySource 'row' on a value
+            // the file never stated, so a later, better-sourced currency could
+            // never correct it. Defaults go in the second argument, where the
+            // contract records them as 'account' or 'assumed'. The PDF path
+            // already did this.
+            currency: at(row, 'currency') || undefined,
             balance: Number.isFinite(balanceRaw) ? balanceRaw : null,
             source: sourceLabel,
             sourceRole: profile.sourceRole || 'statement'
-        });
+        }, { currency: options.currency || profile.currency || null });
 
         // Every adapter passes through the same gate, so a bad row is reported
         // the same way whatever format it came from.
@@ -983,6 +990,24 @@ export function planCardRouting(groups = [], accounts = [], importAccountId = nu
             proposal: { type: 'card', label: `Card ${group}`.slice(0, 60), linkedAccountId: importAccountId }
         };
     });
+}
+
+/**
+ * Whether a row should be routed to a card account.
+ *
+ * Only card purchases the statement could NOT prove against a settlement. A
+ * purchase expandCardDetail put in the ledger replaces a settlement debited
+ * from THIS account — the proof is sum(purchases) === that settlement — so it
+ * belongs here. Routing it to the card as well would remove the outflow from
+ * this account, because the settlement is already gone, and count the same
+ * spending again on the card. An unproven purchase has no settlement here to
+ * replace: it is the card's own spending, and it goes to the card.
+ *
+ * Only reachable once detailGroup began reaching the row builder. Before that
+ * no row carried a group, so routing never ran for any of them.
+ */
+export function isRoutableCardRow(row) {
+    return row?.enrichedFrom === 'card' && !!row?.detailGroup && !row?.expandedFrom;
 }
 
 /**

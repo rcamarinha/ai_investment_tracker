@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { prefilterLines, chunkLines, normalizeAiRows, verifyRows } from '../spend/pdf.js';
+import { prefilterLines, chunkLines, normalizeAiRows, verifyRows, rowsInStatementTotal } from '../spend/pdf.js';
 import { expandCardDetail, sectionSignature } from '../services/import-banks.js';
 import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain, reconcileStatementTotal } from '../services/import-pdf.js';
 import { parseStyledNumber } from '../services/import-banks.js';
@@ -191,7 +191,10 @@ describe('card period that the statement does not settle', () => {
             { date: '2026-08-01', description: 'DECATHLON GAIA',  amount: -172.60, balance: null, role: 'detail', group: 'c1' },
             { date: '2026-08-13', description: 'ZOOMARINE',       amount: -162.50, balance: null, role: 'detail', group: 'c1' }
         ];
-        const { rows } = normalizeAiRows(raw.map(r => ({ ...r, detailGroup: r.group })), { accountId: 'a1' });
+        // Fed the extractor's real shape. This line used to map group to
+        // detailGroup by hand, which is exactly why it passed while production
+        // never received the field.
+        const { rows } = normalizeAiRows(raw, { accountId: 'a1' });
         const { rows: verified } = verifyRows(rows);
         const detail = verified.filter(r => r.sourceRole === 'detail');
         const statement = verified.filter(r => r.sourceRole !== 'detail');
@@ -501,5 +504,50 @@ describe('a document with no headings has no layout id', () => {
 
     it('still distinguishes documents that do have headings', () => {
         expect(sectionSignature(['A'])).not.toBe(sectionSignature(['B']));
+    });
+});
+
+// ── the card section id, and the whole-statement total ──────────────────────
+describe('the card section id reaches the row', () => {
+    it('carries the extractor group onto a detail row', () => {
+        const { rows } = normalizeAiRows([
+            { date: '2026-08-01', description: 'DECATHLON', amount: -10, balance: null, role: 'detail', group: 'c1' },
+        ], { accountId: 'a1' });
+        expect(rows[0].detailGroup).toBe('c1');
+    });
+
+    it('never gives a statement row a group, even if the extractor sent one', () => {
+        // A group on account money would make it look like card spending.
+        const { rows } = normalizeAiRows([
+            { date: '2026-08-01', description: 'TRF', amount: -10, balance: 100, role: 'statement', group: 'c1' },
+        ], { accountId: 'a1' });
+        expect(rows[0].detailGroup).toBeNull();
+    });
+
+    it('leaves a detail row with no group ungrouped', () => {
+        const { rows } = normalizeAiRows([
+            { date: '2026-08-01', description: 'X', amount: -10, balance: null, role: 'detail' },
+        ], { accountId: 'a1' });
+        expect(rows[0].detailGroup).toBeNull();
+    });
+});
+
+describe('which rows count toward the whole-statement total', () => {
+    const ordinary = { amount: 644, enrichedFrom: null, sourceRole: 'statement' };
+    const replacedSettlement = { amount: -30, enrichedFrom: 'card', expandedFrom: 'CARTOES BKCF', sourceRole: 'statement' };
+    const promotedToCard = { amount: -99, enrichedFrom: 'card', expandedFrom: null, sourceRole: 'statement' };
+
+    it('counts purchases that replaced a settlement, since they sum to it by proof', () => {
+        // Excluding these dropped the settlement from the sum, so a correct
+        // import reported that it did not add up.
+        expect(rowsInStatementTotal([ordinary, replacedSettlement])).toContain(replacedSettlement);
+    });
+
+    it('leaves out purchases promoted to the card, since they are the card\'s money', () => {
+        expect(rowsInStatementTotal([ordinary, promotedToCard])).not.toContain(promotedToCard);
+    });
+
+    it('keeps every ordinary account movement', () => {
+        expect(rowsInStatementTotal([ordinary])).toEqual([ordinary]);
     });
 });
