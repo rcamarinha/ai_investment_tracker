@@ -123,4 +123,54 @@ describe('failure handling is consistent across the app', () => {
             .map(s => s.path);
         expect(offenders, 'alert() blocks the page and reports nothing — use the module toast').toEqual([]);
     });
+
+    // ── services/ is the exception, and this is the ratchet that shrinks it ──
+    //
+    // The rule above deliberately skipped services/, which is how 66 blocking
+    // dialogs went on living under a standard that forbids them. Extending the
+    // ban outright would just fail, so instead the debt is COUNTED. It may go
+    // down. It may not go up.
+    //
+    // Lower the number when you remove some. If this test fails because the
+    // count dropped, that is the test working — edit the budget and move on.
+    const ALERT_BUDGET = {
+        'services/portfolio.js': 34,
+        'services/auth.js':      18,
+        'services/analysis.js':   6,
+        'services/pricing.js':    5,
+        'services/ui.js':         3,
+    };
+
+    // Comments mention alert() while discussing it; only calls count.
+    const stripComments = text => text
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+    it('never grows the number of blocking dialogs in services/', () => {
+        const grown = [];
+        for (const src of sources) {
+            if (!src.path.startsWith('services/')) continue;
+            const count = (stripComments(src.text).match(/\balert\s*\(/g) || []).length;
+            const budget = ALERT_BUDGET[src.path] ?? 0;
+            if (count > budget) grown.push(`${src.path}: ${count} > budget ${budget}`);
+        }
+        expect(grown, 'a new alert() in services/ — use showToast() from services/utils.js and reportHandled()').toEqual([]);
+    });
+
+    it('reports it loudly when a delete-then-insert save fails', () => {
+        // Both of these DELETE every row for the user and then bulk insert, and
+        // Postgres aborts the whole insert on one bad row. So the catch block is
+        // the difference between "try again" and a silently emptied table. It
+        // used to be console.error alone in both.
+        const storage = sources.find(s => s.path === 'services/storage.js');
+        expect(storage, 'services/storage.js must be readable').toBeTruthy();
+
+        for (const action of ['save-transactions', 'save-positions']) {
+            expect(storage.text, `${action} must call reportHandled with its action`)
+                .toContain(`reportHandled(err, { action: '${action}'`);
+        }
+        // Two toasts, one per save path, both on the error channel.
+        const errorToasts = (storage.text.match(/showToast\([\s\S]{0,200}?'error'/g) || []).length;
+        expect(errorToasts, 'each delete-then-insert catch needs a toast, not just a report').toBeGreaterThanOrEqual(2);
+    });
 });
