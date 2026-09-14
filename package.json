@@ -9,6 +9,7 @@
     "bump": "node scripts/bump-version.js"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "playwright": "^1.61.0",
     "vitest": "^4.1.8"
   },

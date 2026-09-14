@@ -116,11 +116,28 @@ END $$;
 -- nobody meant to touch. This table is a backup from the 2026-02 wine
 -- restructure; it is in no schema file but it is in production, holding a copy
 -- of cellar data, with RLS on and owner-scoped policies.
-DROP POLICY IF EXISTS "Users can update own wine bottles"           ON public.wine_bottles_backup_v1;
-DROP POLICY IF EXISTS "Users can update own wine_bottles_backup_v1" ON public.wine_bottles_backup_v1;
-CREATE POLICY "Users can update own wine_bottles_backup_v1"
-    ON public.wine_bottles_backup_v1 FOR UPDATE
-    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+--
+-- Guarded on the TABLE, not only the policy. `DROP POLICY IF EXISTS ... ON t`
+-- guards the policy name; if table t itself is absent it still errors. An
+-- earlier draft ran these three statements bare, so on any project without
+-- this backup table — a fresh build, or the new project the wine launch
+-- contemplates — the file failed, and because it is one transaction the
+-- price-history scoping above rolled back with it. The security fix would have
+-- silently not applied. Found by tests/migrations.test.js on its first run.
+-- EXECUTE, so no statement references the table until it is known to exist.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_tables
+        WHERE schemaname = 'public' AND tablename = 'wine_bottles_backup_v1'
+    ) THEN
+        EXECUTE 'DROP POLICY IF EXISTS "Users can update own wine bottles" ON public.wine_bottles_backup_v1';
+        EXECUTE 'DROP POLICY IF EXISTS "Users can update own wine_bottles_backup_v1" ON public.wine_bottles_backup_v1';
+        EXECUTE 'CREATE POLICY "Users can update own wine_bottles_backup_v1" '
+             || 'ON public.wine_bottles_backup_v1 FOR UPDATE '
+             || 'USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)';
+    END IF;
+END $$;
 
 -- ── 3. assets ───────────────────────────────────────────────────────────────
 -- The catalogue stays SHARED on purpose. Scoping its reads would cost a new

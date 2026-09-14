@@ -43,10 +43,20 @@ END $$;
 -- 3. The backup table keeps its ORIGINAL policy name, not the generated one.
 --    This is the step a naive rollback gets wrong, leaving production drifted
 --    from what was measured.
-DROP POLICY IF EXISTS "Users can update own wine_bottles_backup_v1" ON public.wine_bottles_backup_v1;
-DROP POLICY IF EXISTS "Users can update own wine bottles"           ON public.wine_bottles_backup_v1;
-CREATE POLICY "Users can update own wine bottles"
-    ON public.wine_bottles_backup_v1 FOR UPDATE USING (auth.uid() = user_id);
+--    Guarded on the table for the same reason as the forward migration: the
+--    policy-level IF EXISTS does not protect against the table being absent.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_tables
+        WHERE schemaname = 'public' AND tablename = 'wine_bottles_backup_v1'
+    ) THEN
+        EXECUTE 'DROP POLICY IF EXISTS "Users can update own wine_bottles_backup_v1" ON public.wine_bottles_backup_v1';
+        EXECUTE 'DROP POLICY IF EXISTS "Users can update own wine bottles" ON public.wine_bottles_backup_v1';
+        EXECUTE 'CREATE POLICY "Users can update own wine bottles" '
+             || 'ON public.wine_bottles_backup_v1 FOR UPDATE USING (auth.uid() = user_id)';
+    END IF;
+END $$;
 
 -- 4. assets back to USING-only.
 DROP POLICY IF EXISTS "Authenticated users can update assets" ON public.assets;
