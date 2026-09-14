@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord, normalizeAssetType, detectStockExchange, bindActions } from './utils.js';
+import { escapeHTML, formatCurrency, formatPercent, buildAssetRecord, normalizeAssetType, detectStockExchange, bindActions, showToast } from './utils.js';
 import { getSector } from '../data/sectors.js';
 import { renderAllocationCharts, toggleSectorFilter } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
@@ -1979,7 +1979,12 @@ function chunkText(text, maxLen) {
 /**
  * Extract trades from unstructured statement text via the extract-trades edge
  * function (used for Revolut PDF text and BancoBest option confirmations).
- * Returns an array of loose trade rows for normalizeTrades().
+ *
+ * Returns { rows, chunks, chunksFailed, failures }, not a bare array. A part
+ * whose answer was not valid JSON used to become an empty array: a five-part
+ * PDF with one unreadable part imported four fifths of its trades and reported
+ * success, leaving a plausible cost basis that was simply missing trades. The
+ * caller now sees exactly which parts failed.
  */
 async function extractTradesViaAI(text) {
     if (!state.supabaseUrl || !state.supabaseClient) {
@@ -1987,6 +1992,8 @@ async function extractTradesViaAI(text) {
     }
     const chunks = chunkText(text, 12000);
     const all = [];
+    const failures = [];
+    let chunksFailed = 0;
     const { data: { session } } = await state.supabaseClient.auth.getSession();
     const reportArea = document.getElementById('importReportArea');
 
@@ -2006,12 +2013,24 @@ async function extractTradesViaAI(text) {
         const data = JSON.parse(body);
         const out = data.content?.find(c => c.type === 'text')?.text || '';
         const clean = out.replace(/```json|```/g, '').trim();
+        const part = `Part ${i + 1} of ${chunks.length}`;
+
         let rows;
-        try { rows = JSON.parse(clean); } catch { rows = []; }
+        try {
+            rows = JSON.parse(clean);
+        } catch {
+            chunksFailed++;
+            failures.push(`${part}: the extractor's answer could not be read, so the trades in that part are missing.`);
+            continue;
+        }
         if (Array.isArray(rows)) all.push(...rows);
         else if (rows && Array.isArray(rows.trades)) all.push(...rows.trades);
+        else {
+            chunksFailed++;
+            failures.push(`${part}: the extractor answered without a list of trades.`);
+        }
     }
-    return all;
+    return { rows: all, chunks: chunks.length, chunksFailed, failures };
 }
 
 /** Render the trade-import review report (new vs duplicate vs skipped). */
@@ -2118,10 +2137,25 @@ export async function importTrades() {
         // ── Step 1: Parse to normalized trades (structured CSV or AI fallback) ──
         let parsed = parseBrokerExport(text);
         let usedAi = false;
+        // Carried onto the diagnostic whether or not the AI path runs.
+        let aiChunks = 0, aiChunksFailed = 0;
         if (!parsed.broker) {
             if (reportArea) reportArea.innerHTML = `<div style="color: var(--gold); padding: 10px; font-size: 13px;">⏳ No broker CSV detected — extracting trades with AI…</div>`;
-            const aiRows = await extractTradesViaAI(text);
-            parsed = normalizeTrades(aiRows, 'generic');
+            const ai = await extractTradesViaAI(text);
+            aiChunks = ai.chunks;
+            aiChunksFailed = ai.chunksFailed;
+            if (ai.chunksFailed > 0) {
+                // Refuse a partial import rather than commit it. A statement
+                // import can at least be checked against the document's own
+                // balances; a broker import has no independent check at all, so a
+                // missing part would never show up anywhere in the ledger.
+                // Re-running is safe: dedupe skips trades already imported.
+                showTradeReport(reportArea, { trades: [], duplicates: [], errors: ai.failures, broker: null, usedAi: true });
+                showToast(`${ai.chunksFailed} of ${ai.chunks} parts of this document could not be read, so nothing was imported. Try again; re-importing is safe.`, 'error', 12000);
+                reportDiagnostic('trade-import', { format: 'broker-ai', chunks: ai.chunks, chunksFailed: ai.chunksFailed, parsed: ai.rows.length });
+                return;
+            }
+            parsed = normalizeTrades(ai.rows, 'generic');
             usedAi = true;
         }
 
@@ -2339,7 +2373,9 @@ export async function importTrades() {
             format: 'broker',
             parsed: fresh.length,
             duplicates: duplicates.length,
-            flagged: state.ledgerNeedsReview ? 1 : 0
+            flagged: state.ledgerNeedsReview ? 1 : 0,
+            chunks: aiChunks,
+            chunksFailed: aiChunksFailed
         });
 
         closeImportDialog();

@@ -108,7 +108,8 @@ describe('failure handling is consistent across the app', () => {
         // where being wrong is both possible and invisible.
         const mustDiagnose = [
             { path: 'spend/importer.js',    what: 'statement import' },
-            { path: 'services/portfolio.js', what: 'broker trade import' }
+            { path: 'services/portfolio.js', what: 'broker trade import' },
+            { path: 'wine/valuation.js',     what: 'batch wine valuation' }
         ];
         const missing = mustDiagnose.filter(({ path }) => {
             const src = sources.find(s => s.path === path);
@@ -172,5 +173,17 @@ describe('failure handling is consistent across the app', () => {
         // Two toasts, one per save path, both on the error channel.
         const errorToasts = (storage.text.match(/showToast\([\s\S]{0,200}?'error'/g) || []).length;
         expect(errorToasts, 'each delete-then-insert catch needs a toast, not just a report').toBeGreaterThanOrEqual(2);
+    });
+
+    it('never quietly reads an unreadable extraction part as "no trades"', () => {
+        // A part whose JSON failed to parse became an empty array, so a PDF with
+        // one unreadable part imported the rest and reported success. A broker
+        // import has no independent check, so nothing else would ever notice.
+        const portfolio = sources.find(s => s.path === 'services/portfolio.js');
+        expect(portfolio, 'services/portfolio.js must be readable').toBeTruthy();
+        expect(portfolio.text, 'a failed parse must be counted, not swallowed')
+            .not.toMatch(/catch\s*\{\s*rows\s*=\s*\[\]\s*;?\s*\}/);
+        expect(portfolio.text, 'a partial extraction must be refused').toMatch(/if \(ai\.chunksFailed > 0\)/);
+        expect(portfolio.text, 'the diagnostic must say how many parts failed').toContain('chunksFailed: aiChunksFailed');
     });
 });

@@ -17,6 +17,8 @@ import { callWineAI } from './api.js?v=3.53.0';
 import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.53.0';
 import { renderCellar, updateBottleCard } from './cellar.js?v=3.53.0';
 import { showToast, repairTruncatedJSON } from './utils.js?v=3.53.0';
+import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
+import { triageBatchValuation } from '../src/wine.js';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
@@ -180,6 +182,7 @@ export async function valuateAllBottles(forceAll = false) {
         }));
 
         const allResults = [];
+        let batchesFailed = 0;
         const totalBatches = Math.ceil(bottleInfos.length / CLIENT_BATCH_SIZE);
         // Run batches with bounded concurrency instead of strictly sequentially.
         // Kept low (2) because each batch does grounded web-search valuations that
@@ -201,8 +204,11 @@ export async function valuateAllBottles(forceAll = false) {
                     }
                     allResults.push(...data.results);
                 } catch (err) {
-                    // One bad batch must not abort the rest; its bottles stay unvalued.
+                    // One bad batch must not abort the rest. Its bottles stay
+                    // unvalued, and the triage below counts them as missing.
+                    batchesFailed++;
                     console.warn(`[Valuation] Batch ${batchNum} failed:`, err.message);
+                    reportHandled(err, { action: 'wine-batch-valuation', chunks: totalBatches });
                 } finally {
                     completedBatches++;
                     if (btn) btn.textContent = `\uD83D\uDC8E Valuing\u2026 ${completedBatches}/${totalBatches} batches`;
@@ -215,60 +221,59 @@ export async function valuateAllBottles(forceAll = false) {
 
         if (btn) btn.textContent = `💎 Saving results...`;
 
-        // Apply results and persist — run DB saves in parallel.
-        // Match results to bottles by ID (not positional index) as a safeguard
-        // against AI responses that return fewer items than requested.
-        const errors = [];
-        const savePromises = [];
-        const bottleById = new Map(toValueate.map(b => [b.id, b]));
-
-        allResults.forEach((result) => {
-            const bottle = result.id ? bottleById.get(result.id) : null;
-            if (!bottle) {
-                if (result.id) console.warn('[Valuation] Result ID not found in batch:', result.id);
-                return;
-            }
-
-            if (result.error) {
-                errors.push(`${bottle.name || bottle.id}: ${result.error}`);
-                console.warn('[Valuation] Batch item failed:', bottle.name, result.error);
-                return;
-            }
-
+        // Decide what to do with every result BEFORE anything is written — see
+        // triageBatchValuation in src/wine.js. This used to apply whatever came
+        // back: a missing or non-numeric price was written to the bottle, a
+        // bottle the model never returned was counted as valued, and no value was
+        // compared with the last one. The figure reaches net worth on the hub.
+        const { apply, errors, missing, heldBack } = triageBatchValuation(toValueate, allResults);
+        let saveFailures = 0;
+        const savePromises = apply.map(({ bottle, result }) => {
             applyValuationResult(bottle, result);
-
-            savePromises.push(
-                saveBottleToDB(bottle).then(() =>
-                    Promise.all([
-                        saveWinePriceHistory(bottle),
-                        logAssetMovement({
-                            assetType:    'wine',
-                            wineId:       bottle.wineId,
-                            movementType: 'valuation_update',
-                            price:        bottle.estimatedValue,
-                            totalValue:   (bottle.qty || 0) * (bottle.estimatedValue || 0),
-                            notes:        bottle.valuationNote || null,
-                        }),
-                    ])
-                ).catch(err => {
-                    console.warn('[Valuation] DB save failed for', bottle.name, err);
-                    errors.push(`${bottle.name}: DB save failed`);
-                })
-            );
+            return saveBottleToDB(bottle).then(() =>
+                Promise.all([
+                    saveWinePriceHistory(bottle),
+                    logAssetMovement({
+                        assetType:    'wine',
+                        wineId:       bottle.wineId,
+                        movementType: 'valuation_update',
+                        price:        bottle.estimatedValue,
+                        totalValue:   (bottle.qty || 0) * (bottle.estimatedValue || 0),
+                        notes:        bottle.valuationNote || null,
+                    }),
+                ])
+            ).catch(err => {
+                saveFailures++;
+                errors.push(`${bottle.name}: could not be saved`);
+                reportHandled(err, { action: 'wine-valuation-save' });
+            });
         });
 
         await Promise.all(savePromises);
 
-        const done = toValueate.length - errors.length;
+        const done = apply.length - saveFailures;
         renderCellar();
 
-        if (errors.length > 0) {
-            showToast(`Valuations done: ${done} succeeded, ${errors.length} failed. Check console.`, 'warning', 6000);
-        } else {
-            showToast(`Valued ${done} bottle${done !== 1 ? 's' : ''} successfully.`);
-        }
+        // How it went, whether or not anything threw. A valuation's correctness
+        // cannot be checked as it runs, so these counts are the only record.
+        reportDiagnostic('wine-valuation', {
+            rows: toValueate.length,
+            parsed: done,
+            skipped: missing.length,
+            flagged: heldBack.length,
+            chunks: totalBatches,
+            chunksFailed: batchesFailed,
+        });
+
+        const parts = [`Valued ${done} bottle${done !== 1 ? 's' : ''}`];
+        if (errors.length)   parts.push(`${errors.length} failed`);
+        if (missing.length)  parts.push(`${missing.length} got no answer and are still unvalued`);
+        if (heldBack.length) parts.push(`${heldBack.length} held back because the price changed sharply. Value ${heldBack.length === 1 ? 'it' : 'them'} one at a time with 💎 to confirm`);
+        const allGood = !errors.length && !missing.length && !heldBack.length;
+        showToast(parts.join('. ') + '.', allGood ? 'success' : 'warning', allGood ? 4000 : 9000);
     } catch (err) {
         console.error('[Valuation] Batch error:', err);
+        reportHandled(err, { action: 'wine-batch-valuation' });
         showToast(`Batch valuation failed: ${err.message}`, 'error');
     } finally {
         state.valuationsLoading = false;
