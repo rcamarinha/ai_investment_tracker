@@ -9,7 +9,7 @@ import { renderPortfolio, updateHistoryDisplay, saveTransactionsToStorage } from
 import { fetchAssetProfile, backfillFxRates } from './pricing.js';
 import { coerceTxDate } from './import-brokers.js';
 import { normalizeCurrencyCode, shouldOverwriteCurrency } from './money-core.js';
-import { reportHandled } from './telemetry.js';
+import { reportHandled, reportDiagnostic } from './telemetry.js';
 
 // ── Supabase Initialization ─────────────────────────────────────────────────
 
@@ -566,20 +566,14 @@ export async function loadPriceHistoryForAsset(ticker, limit = 30) {
 export async function saveTransactionsToDB() {
     if (!state.supabaseClient || !state.currentUser) return;
 
-    // Declared out here so the catch can always report a count. Inside the try
-    // it sits AFTER the delete, so a failed delete would hit the temporal dead
-    // zone and turn a reportable failure into a different, confusing one.
+    // Declared out here so the catch can always report a count, whichever
+    // request failed.
     let rows = [];
 
     try {
-        // Delete existing transactions for this user
-        const { error: deleteError } = await state.supabaseClient
-            .from('transactions')
-            .delete()
-            .eq('user_id', state.currentUser.id);
-
-        if (deleteError) throw deleteError;
-
+        // Build every row BEFORE touching the database. The old order deleted
+        // first and built second, so anything that threw while building ran
+        // after the ledger was already gone.
         // Flatten state.transactions into rows
         for (const [symbol, txs] of Object.entries(state.transactions)) {
             for (const tx of txs) {
@@ -614,15 +608,46 @@ export async function saveTransactionsToDB() {
             }
         }
 
+
+        // ── Atomic path ─────────────────────────────────────────────────────
+        // save_transactions (migration 20260914) deletes and inserts inside ONE
+        // transaction, so a single bad row rolls the delete back and the ledger
+        // is left exactly as it was. The two-request version below cannot
+        // promise that: its DELETE commits before its INSERT is even sent.
+        const { error: rpcError } = await state.supabaseClient
+            .rpc('save_transactions', { p_rows: rows });
+
+        if (!rpcError) {
+            console.log('\u2713 Transactions saved to Supabase (atomic):', rows.length, 'records');
+            return;
+        }
+
+        // PGRST202 means the function does not exist yet — the migration has
+        // not been run. That is the ONLY error allowed to fall through to the
+        // old path. Anything else is a real failure of the atomic save, and
+        // retrying it non-atomically would reintroduce exactly the data loss
+        // this exists to prevent.
+        if (rpcError.code !== 'PGRST202') throw rpcError;
+
+        // ── Non-atomic fallback, only while the migration is not live ────────
+        // Recorded so its use is visible: once these stop arriving, this whole
+        // branch can be deleted.
+        reportDiagnostic('save-transactions-nonatomic', { action: 'save-transactions', rows: rows.length });
+
+        const { error: deleteError } = await state.supabaseClient
+            .from('transactions')
+            .delete()
+            .eq('user_id', state.currentUser.id);
+        if (deleteError) throw deleteError;
+
         if (rows.length > 0) {
             const { error: insertError } = await state.supabaseClient
                 .from('transactions')
                 .insert(rows);
-
             if (insertError) throw insertError;
         }
 
-        console.log('\u2713 Transactions saved to Supabase:', rows.length, 'records');
+        console.log('\u2713 Transactions saved to Supabase (non-atomic fallback):', rows.length, 'records');
     } catch (err) {
         // This path DELETES every row for the user and then bulk inserts, and
         // Postgres aborts the whole insert on one bad row. So reaching here can
