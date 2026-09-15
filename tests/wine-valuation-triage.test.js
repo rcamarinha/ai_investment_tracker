@@ -100,4 +100,50 @@ describe('triageBatchValuation', () => {
         const { apply } = triageBatchValuation([bottle('a')], [{ id: 'a', estimatedValue: 50, valueLow: 80, valueHigh: 20 }]);
         expect(apply).toHaveLength(1);
     });
+
+    it('attaches the original bottle object to every held-back entry', () => {
+        // The caller must know which bottle to queue for single-bottle confirmation.
+        const b = bottle('a', { estimatedValue: 50 });
+        const { heldBack } = triageBatchValuation([b], [{ id: 'a', estimatedValue: 400 }]);
+        expect(heldBack[0].bottle).toBe(b);
+    });
+
+    it('distinguishes the hold-back reason: jump-too-far vs outside-own-range', () => {
+        // The UI could show different confirmation copy for each case. Any
+        // refactor that conflates the two should be visible.
+        const jump = triageBatchValuation(
+            [bottle('a', { estimatedValue: 50 })],
+            [{ id: 'a', estimatedValue: 400 }],
+        ).heldBack[0];
+        expect(jump.reason).toMatch(/moved too far/i);
+
+        const range = triageBatchValuation(
+            [bottle('b')],
+            [{ id: 'b', estimatedValue: 500, valueLow: 40, valueHigh: 60 }],
+        ).heldBack[0];
+        expect(range.reason).toMatch(/range/i);
+    });
+
+    it('records from as null when a bottle with no prior value is range-blocked', () => {
+        // A newly-valued bottle has no estimatedValue on record.
+        // The heldBack entry records from:null so the UI knows there is nothing to compare.
+        const { heldBack } = triageBatchValuation(
+            [bottle('a')],
+            [{ id: 'a', estimatedValue: 500, valueLow: 40, valueHigh: 60 }],
+        );
+        expect(heldBack[0].from).toBeNull();
+        expect(heldBack[0].to).toBe(500);
+    });
+
+    it('treats a result entry with no id as unknown and counts its bottle as missing', () => {
+        // A model that omits the id field entirely leaves the bottle in missing,
+        // not in errors. The result has no usable anchor.
+        const { apply, errors, missing } = triageBatchValuation(
+            [bottle('a')],
+            [{ estimatedValue: 42 }],           // no id field
+        );
+        expect(apply).toHaveLength(0);
+        expect(errors).toHaveLength(0);          // not an error, just unresolvable
+        expect(missing.map(b => b.id)).toEqual(['a']);
+    });
 });
