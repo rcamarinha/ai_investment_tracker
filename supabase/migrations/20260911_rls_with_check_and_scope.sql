@@ -169,8 +169,9 @@ COMMIT;
 --   SELECT count(*) FILTER (WHERE user_id IS NULL) AS orphaned,
 --          count(*) AS total FROM price_history;
 --
---   -- 2. Is that backup-table policy name unique? If this returns more than
---   --    one row, stop and re-read the wine_bottles_backup_v1 block.
+--   -- 2. Informational only, no longer a reason to stop. The backup-table
+--   --    block drops its policy ON that table alone, so a same-named policy
+--   --    on any other table is never touched.
 --   SELECT tablename, policyname, cmd FROM pg_policies
 --   WHERE policyname = 'Users can update own wine bottles';
 --
@@ -189,14 +190,21 @@ COMMIT;
 --     AND (tablename IN ('price_history','wine_price_history') OR cmd = 'UPDATE')
 --   ORDER BY tablename, cmd;
 --
--- AFTER (NOT the SQL Editor): the editor runs as `postgres`, the table owner,
--- and BYPASSES RLS entirely — these tables have no FORCE ROW LEVEL SECURITY, so
--- `select count(*) from price_history` there returns every row and looks like
--- the migration failed. Scoping must be checked as a SECOND AUTHENTICATED USER
--- through the anon key: browser console on a logged-in probe account, or curl
--- to PostgREST with that user's JWT.
---   select count(*) from price_history;       -- expect 0 on a fresh account
---   select count(*) from wine_price_history;  -- expect 0
+-- AFTER, OPTIONAL: check the scoping as a signed-in user. Not in the SQL
+-- Editor: it runs as `postgres`, the table owner, and bypasses row security, so
+-- any count there shows every row and looks like the migration failed. And not
+-- as SQL in the browser console: the console runs JavaScript. An earlier
+-- version of this comment listed SQL beneath a mention of the console, and SQL
+-- pasted there fails with a syntax error. Signed in, on the portfolio page, in
+-- the browser console:
+--
+--   const s = (await import('/services/state.js')).default;
+--   const r = await s.supabaseClient.from('price_history').select('user_id');
+--   r.data.filter(x => x.user_id !== s.currentUser.id).length   // expect 0
+--
+-- Expect 0: no row owned by anyone else, and no row with no owner. This only
+-- tells before from after if the table holds rows that are not yours. On a
+-- project with one user, the pg_policies query above is the proof.
 --
 -- Then, as yourself, open portfolio.html and confirm the console still logs the
 -- same number of cached prices loaded as before. That is the one user-visible
