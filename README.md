@@ -27,7 +27,7 @@ The hub page shows a **cross-asset net worth summary** when logged in:
 - **Portfolio Import (snapshot)** — Paste current holdings from any spreadsheet or broker export (tab, comma, semicolon, pipe separated). Choose to **add to** or **replace** your existing portfolio
 - **ISIN Resolution** — Automatic ISIN-to-ticker resolution via a 4-tier strategy (local DB → Finnhub → FMP → Claude AI)
 - **Asset Type Normalization** — Imported asset types normalized to Stock, ETF, Crypto, REIT, Bond, Commodity, Cash, Other
-- **Live Market Prices** — 3-tier API fallback (Finnhub → FMP → Alpha Vantage) for ~98% fetch success
+- **Live Market Prices** — a keyless quote proxy prices every holding first, in batches, and reports each quote's currency; only what it misses falls through to Finnhub → FMP → Alpha Vantage, then an AI ticker resolver. London prices quoted in pence convert correctly, and no API key is needed to refresh
 - **International Stocks** — Smart ticker resolution for European exchanges (Paris, London, Frankfurt, Amsterdam, Milan, Swiss)
 - **Portfolio History** — Save snapshots over time with visual bar chart tracking
 - **AI Analysis** — Personalized portfolio insights via Claude with 6 investment perspectives
@@ -102,15 +102,15 @@ The wine tracker needs **only** the Anthropic API key. Gemini is called server-s
 
 Enter keys via the **🔑 API Keys** button in each tracker.
 
-### 3. Cloud Sync (optional — the whole suite)
+### 3. Database (Supabase)
 
-1. Create a free [Supabase](https://supabase.com/) project
-2. Run `supabase_schema.sql` in the SQL Editor (stock tracker tables)
-3. Run `wine_schema.sql` in the SQL Editor (wine cellar tables)
-4. Enter your Supabase URL and anon key in the API Keys dialog of each tracker
-5. Sign up / log in — data syncs automatically
+1. Create a [Supabase](https://supabase.com/) project
+2. In the SQL Editor, run the four baseline schema files: `supabase_schema.sql`, `wine_schema.sql`, `spend_schema.sql`, `holdings_schema.sql`
+3. Then run every file in `supabase/migrations/` in filename order, **except** any listed as a conditional recovery script in `tests/helpers/pg-harness.js`. Never run anything in `supabase/maintenance/` as a migration — those are rollbacks and operational scripts
+4. Set the project URL and publishable key in `services/state.js`, in each module's `state.js` and in `index.html`, then deploy the edge functions in `supabase/functions/`
+5. **Accounts are invite-only.** Public signup is disabled in the project's Authentication settings, and people are added with an invitation. Supabase's built-in email service sends only two auth emails an hour, so configure a custom SMTP provider before inviting several people at once
 
-Both trackers share the same Supabase project and user account.
+All four tools share one Supabase project and one account per person. Before any new migration is run against production, `npx vitest run` applies it to a real Postgres first.
 
 ---
 
@@ -231,21 +231,18 @@ npm install
 npx vitest run
 ```
 
-Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors without DOM or state dependencies).
+Tests import each pure module directly — the `services/*-core.js` family, the `import-*` parsers, `money-core.js`, `telemetry.js` — and use the `src/` mirrors only for logic still inside a DOM-coupled service. The whole suite runs in under two seconds.
 
-| Test file | What it covers |
-|-----------|---------------|
-| `ux-scenarios.html` | Interactive UX test suite — 8 scenarios (navigation, mobile, headers, contrast). Runs at `cacoventures.com/tests/ux-scenarios.html`. Session-only state; export results as `.txt` |
-| `wine.test.js` | Cellar totals, bottle gain/loss, allocation grouping, validation, label scan parsing, snapshot building |
-| `calculations.test.js` | Portfolio gain/loss, totals |
-| `allocation.test.js` | Portfolio weight calculations, type aggregation |
-| `import-parsing.test.js` | Flexible CSV/TSV import, ISIN detection, column mapping |
-| `import-trades.test.js` | Broker trade-export parsers (DeGiro/Revolut), dedupe, ledger→positions rebuild |
-| `position-management.test.js` | Add/buy/sell/remove positions, transactions, realized P&L |
-| `price-fetching.test.js` | 3-tier API fallback, rate limiting |
-| `snapshots.test.js` | Snapshot build and merge |
-| `ticker-resolution.test.js` | International ticker resolution, exchange suffixes |
-| `utils.test.js` | Currency/percent formatting, HTML escaping |
+| Area | Test files | What it guards |
+|------|------------|----------------|
+| **Rules, read from the source** | `db-constraints`, `failure-handling`, `html-escaping`, `ledger-save`, `price-refresh-order` | No code path emits a value a CHECK constraint would reject; failure handling follows one standard and blocking dialogs cannot grow; every escaper escapes five characters and no value reaches an inline handler; the client and the atomic save function agree on every column; a price refresh asks the keyless proxy first |
+| **Migrations, on a real Postgres** | `migrations`, `ledger-save-db` | Every migration applied twice through PGlite, every rollback applied and its migration re-applied, row-level security scoping what it claims, and the atomic ledger save rolling back a bad row |
+| **Money** | `money-core`, `fx-derivation`, `returns-xirr`, `price-cache-currency`, `quote-currency`, `calculations`, `allocation` | Minor units (pence is not pounds), trade-date FX, XIRR, currency provenance, totals and weights |
+| **Statement import** | `spend-import`, `spend-pdf`, `import-pdf`, `import-standards`, `import-contract`, `categorize-core`, `spend-core` | CSV, OFX and PDF parsing, balance chains and whole-statement totals, card routing and expansion, the row contract, categorisation precedent, savings rate |
+| **Broker import** | `import-trades`, `import-parsing`, `position-management` | DeGiro and Revolut parsers, dedupe, pence kept at the parse boundary, ledger to positions |
+| **Pricing and tickers** | `pricing-core`, `pricing-untracked`, `exchange-detection`, `sector-lookup`, `ticker-resolution`, `price-fetching` | Proxy batching, keep-at-cost, exchange and sector detection. `price-fetching` and part of `ticker-resolution` still exercise an old mirror and are due for removal |
+| **Wine, hub, holdings** | `wine`, `wine-ai-batch`, `wine-valuation-triage`, `hub`, `holdings-core`, `snapshots`, `telemetry`, `utils` | Cellar totals, batch valuation parsing and triage, the hub's figures and sparkline, bank holding valuation, snapshots, report redaction |
+| **Manual UX** | `ux-scenarios.html` | Interactive scenarios run in the browser at `cacoventures.com/tests/ux-scenarios.html` |
 
 ### Making changes
 
@@ -274,6 +271,27 @@ Tests import from `src/portfolio.js` and `src/wine.js` (pure function mirrors wi
 ---
 
 ## Changelog
+
+### v3.54.0
+- **Card purchases reach the right account.** A statement's card section id was never copied onto its rows, so card routing never ran and no card account was ever created — while the test for it did the mapping by hand and stayed green. Turning it on surfaced two more bugs, both fixed: a purchase proven to replace a settlement now stays in the account that paid it, and a correct statement no longer reports that it does not add up.
+- **A London price is never read as pounds.** A price quoted in `GBp` was recorded as pounds with the number still in pence, a hundred times too high. Pence is now kept as pence and converted downstream, which is how existing London trades were already stored, correctly.
+- **A CSV no longer claims a currency the file never printed.** A missing currency column is recorded as a guess from the account, so a better source can still correct it.
+- **An AI broker import with an unreadable part is refused, not half-imported.** A partial ledger would have left a plausible cost basis that was simply missing trades, and nothing else could have caught it.
+- **Batch wine valuation checks every answer before saving.** A missing price is rejected, a bottle the model skipped counts as unvalued rather than valued, and a value that jumps more than threefold is held back to confirm one at a time.
+- **Price refresh asks the keyless quote proxy first, in batches.** It used to be the last resort, called one symbol at a time. Most holdings now price in a few requests, only the misses reach the keyed services, and a signed-in user with no API keys can refresh. Shipped just after this version's bump; `services/` revalidates, so it needed none.
+
+### v3.53.0
+- **A failed save can no longer wipe your trade ledger.** Saving deleted every transaction and inserted them again as two separate requests, so one bad row left the ledger empty with nothing but a console message. Saves now run inside one database transaction that rolls back on failure (migration `20260914_atomic_transactions_save.sql`), and a failure tells you not to reload.
+- **Price history is private to its owner.** Its read policy let any signed-in account see every account's rows, which is an inventory of who holds what (migration `20260911_rls_with_check_and_scope.sql`).
+- **Toasts work on Spend and Bank Holdings.** Their styles lived in the wine stylesheet, which only the wine page loads, so both tools had been showing unstyled messages at the foot of the page.
+- **Every migration now runs through a real Postgres before it is run by hand.** The suite builds a database with PGlite, applies every migration twice and every rollback once. On its first run it caught a migration that would have silently failed on any new project.
+- **Test toolchain upgraded** to clear four Dependabot vulnerabilities. None of them reached the deployed site.
+
+### v3.52.0
+- **Security: a shared catalogue value can no longer run code in another person's session.** A sector name from the shared asset table reached an inline click handler through an escaper that left both quote characters intact. The escaper now escapes all five characters, and every handler that carried a value uses a delegated listener instead. A test enforces both rules.
+- **The hub's chart is real.** It was a hardcoded rising line with fixed month labels, drawn for every account including an empty one. It is now drawn from your own snapshots and hidden until there are at least two.
+- **Empty hub cards say what to do next** instead of sitting blank beside a dash.
+- **The admin check fails closed**, price history is read only for the signed-in user, and a previous session's ledger is no longer shown before sign-in.
 
 ### v3.51.1
 - **Fixed: importing a statement could leave no way to categorise it.** The Categorise button was hidden whenever any suggestion was still waiting for confirmation, and the suggestion queue lives only in the open page. So after categorising one statement and leaving a suggestion unanswered, the next import offered nothing — reloading the page was the only thing that brought the button back. The button now counts only spending that has neither a category nor a suggestion, so a new import always has somewhere to start, and a queue of unanswered suggestions still shows separately.

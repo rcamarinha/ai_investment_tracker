@@ -2,8 +2,8 @@
 
 ## Project Overview
 
-A **browser-based suite for one household's money**, in four tools sharing one auth, one design
-system and one hub: **Stock Portfolio** (import, live prices via a 3-tier API fallback, XIRR, AI
+A **browser-based suite for a household's money**, invite-only, in four tools sharing one auth, one design
+system and one hub: **Stock Portfolio** (import, live prices from a keyless quote proxy with keyed fallbacks, XIRR, AI
 analysis), **Wine Cellar** (inventory and AI valuation), **Spend** (bank-statement import,
 categorisation, savings rate) and **Bank Holdings** (bonds and funds no market API can price).
 
@@ -86,15 +86,18 @@ Note: Several services have circular imports (e.g., pricing ↔ portfolio, stora
 
 ### Hub Dashboard (index.html)
 
-After login, `loadHubValues(userId)` runs two parallel Supabase queries and populates the existing hub card DOM elements:
+After login, `loadHubValues(userId)` runs five parallel Supabase queries — snapshots, the cellar, this month's spend and its categories, and bank holdings — and fills the hub cards:
 
-- `#hubTotalValue` — stock market value + wine cellar value, **in EUR**; suffixed `*` when partial
+- `#hubTotalValue` — stock + wine + bank holdings, **in EUR**; suffixed `*` when partial, or when stale holdings were left out
 - `#hubStockValue` — `total_market_value_eur` from the **latest snapshot** carrying one
 - `#hubStockDelta` — `"as of 3 Aug"` (+ `"excludes N"`), or `"open Portfolio to calculate"` when no snapshot has a EUR total
 - `#hubWineValue` — SUM(estimated_value × qty) from `user_wines` (EUR by schema)
-- `#hubWineDelta` — % gain vs purchase price, or staleness label ("valued Xd ago")
+- `#hubWineDelta` — % gain vs purchase price, a staleness label ("valued Xd ago"), or `"add your first bottle"`
+- `#hubSpendValue` / `#hubSpendDelta` — this month's spend and savings rate, or `"import a statement"`
+- `#hubHoldValue` / `#hubHoldDelta` — bank holdings, or `"add a holding"`
+- `#hubChart` — a sparkline drawn by `hubSparkline()` in `src/hub.js` from up to 60 snapshots, **hidden below two usable ones**. It replaced a hardcoded rising path with fixed month labels that was drawn for every account, including an empty one. A chart nobody computed must not be drawn.
 
-`clearHubValues()` resets all to `"— —"` on logout.
+`clearHubValues()` resets every card to `"— —"` and hides the chart on logout. An empty card names the next step rather than sitting blank beside a dash.
 
 **Never sum `shares × avg_price` from `positions` here.** That table has no currency
 column, so the sum adds pounds to euros and to dollars; the old `computeStockValue()`
@@ -344,7 +347,7 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 
 - **ES modules require HTTP** — `file://` won't work; use a local server
 - **Circular imports** — Services cross-reference each other; this works because functions are called at runtime, not at module load time
-- **`window.*` globals** — onclick handlers require functions on `window`; these are set in the init block of `index.html`
+- **`window.*` globals** — static `onclick` attributes, such as the navbar's, call functions each page assigns to `window` in its init block. Anything rendered with a value goes through a delegated listener (`bindActions`) instead, never an inline handler — see the entry on interpolating into `onclick` below.
 - **API keys are never committed** — They live only in the user's browser localStorage
 - **Rate limiting** — Finnhub 1000ms, FMP 500ms, Alpha Vantage 12000ms between calls
 - **FMP endpoint** — Uses `/stable/quote-short` (not `/api/v3/quote`) due to CORS/auth issues
@@ -375,6 +378,6 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **Trades vs positions imports** — `importTrades()` writes the **transaction ledger** (every buy/sell) and then derives positions; `importPositions()` writes a **positions snapshot** only. Re-importing a broker export is safe because `dedupeTrades()` skips already-imported moves. `services/import-brokers.js` must stay **pure** (no DOM/network) — tests import it directly, so don't add a `src/` mirror for it
 - **Batch valuation result matching** — Results from the AI must be matched to bottles by `result.id` (a `Map` keyed by bottle ID), never by positional index. The AI can return fewer items than requested; index-based matching silently applies the wrong valuation to the wrong bottle Matching by id was necessary but not sufficient: `triageBatchValuation` (src/wine.js) also refuses an absent or non-numeric price, counts an unreturned bottle as missing rather than valued, and holds back a value outside the model's own range or more than threefold from the previous one. The broker AI path likewise **refuses a partial import** when any extraction part is unreadable — unlike a statement, a broker import has no balance to check a missing part against, so a partial ledger would be invisible.
 - **Valuation pricing rules** — 6 rules enforced in both single and batch prompts: (1) Portuguese retailers first, (2) 23% IVA on ex-tax sources, (3) exact bottle format, (4) current in-stock only, (5) cross-reference ≥3 sources using median, (6) weight specialist merchants for rare/collectible wines
-- **index.html must not import service modules** — `services/storage.js` pulls in the full service graph (pricing, portfolio, etc.). Hub dashboard queries are written inline in the `<script>` block to avoid this dependency chain
+- **index.html must not import the service graph** — `services/storage.js` pulls in pricing, portfolio and the rest. The hub imports only modules that stand alone (`services/navbar.js`, `services/telemetry.js`, `src/hub.js`), runs its queries inline, and keeps its arithmetic in the pure, tested `src/hub.js`.
 - **`services/`, `data/` and `src/` must NEVER be imported with a `?v=` query** — they are cache-busted by HTTP header (`max-age=0, must-revalidate` in `vercel.json`), not by URL. The browser keys the module registry on the full URL, so importing `./services/state.js?v=X` from an HTML entry point while the services import `./state.js` from each other creates **two separate module instances**: two `state` objects, and two copies of every module-level variable. That is not theoretical — it silently killed `setMissingTickerResolver()` (injected on one instance, read as `null` on the other, so the "resolve missing ticker" dialog never opened from re-enable/import) and made `state.baseCurrency` diverge from the toggle. `wine/`, `spend/` and `holdings/` are the exceptions: they version *every* URL consistently, so they stay `immutable` — see the next entry
 - **Module `?v=` strings must all match** (applies to `wine/`, `spend/` and `holdings/`) — The browser module cache uses the full URL (including query string) as the cache key. If `wine.html` imports `state.js?v=X` and `cellar.js` imports `state.js?v=Y`, they become two separate module instances — mutations to one don't affect the other. Always keep all `?v=` strings in `wine.html` and within `wine/` in sync with the project version
