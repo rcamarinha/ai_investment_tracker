@@ -160,10 +160,9 @@ const state = {
 ## Service Modules
 
 ### Pricing Service (`services/pricing.js`)
-- **`fetchStockPrice(symbol)`** - Tries Finnhub → FMP → Alpha Vantage in order
-- **`tryAlternativeFormats(symbol, assetName)`** - International ticker resolution (.PA, .L, .DE, etc.)
+- **`fetchMarketPrices()`** - Phased refresh behind a 15-minute freshness cache. **Phase 0** asks the keyless `quote-proxy` first, for everyone, batched (`planProxyBatches`: 25 symbols per request, two requests at a time, small enough to finish inside the edge function's time limit). Only its misses reach Phase A (FMP batch), Phase B (per-symbol `fetchStockPrice`, pooled) and Phase C (AI ticker resolver), so the keyed tiers and FMP's daily allowance are spent on what the proxy could not price. The proxy is the only tier that reports a currency; `mapProxyResults` folds pence to pounds exactly as the per-symbol tier does. A signed-in user with **no API keys** can refresh — the keys are what should stop reaching the browser.
+- **`fetchStockPrice(symbol)`** - Per-symbol fallback ladder: quote proxy first for pence venues, otherwise Finnhub → FMP → Alpha Vantage → quote proxy
 - **`fetchAssetProfile(symbol)`** - Gets sector/exchange metadata from APIs
-- **`fetchMarketPrices()`** - Batch fetching with rate limiting, progress UI, auto-snapshot
 
 ### Portfolio Service (`services/portfolio.js`)
 - **`renderPortfolio()`** - Renders portfolio grid with gains/losses, status icons

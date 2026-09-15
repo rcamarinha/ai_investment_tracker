@@ -16,14 +16,10 @@ import {
 } from './storage.js';
 import { analyzeMovers } from './analysis.js';
 import { normalizeQuote, normalizeCurrencyCode } from './money-core.js';
+import { reportHandled } from './telemetry.js';
 // Pure exchange-suffix / batch-parse / freshness helpers — shared with the test
 // mirror (src/portfolio.js) so the shipped code is what the tests exercise.
-import {
-    normalizeForPricing, parseFmpBatchResponse, isPriceFresh,
-    buildRawMaps, mapPricedToRaw, pooled,
-    extractLlmJsonArray, classifyFmpBatchText,
-    deriveFxToBases, lookupFxTableForDate,
-} from './pricing-core.js';
+import { normalizeForPricing, parseFmpBatchResponse, isPriceFresh, buildRawMaps, mapPricedToRaw, pooled, extractLlmJsonArray, classifyFmpBatchText, deriveFxToBases, lookupFxTableForDate, planProxyBatches, mapProxyResults } from './pricing-core.js';
 export { normalizeForPricing, pooled };
 
 // ── FMP daily-quota guard ────────────────────────────────────────────────────
@@ -202,6 +198,47 @@ async function fetchQuoteViaProxy(symbol) {
     const data = await response.json();
     const hit = data?.results?.[String(symbol).toUpperCase()];
     return (hit && Number(hit.price) > 0) ? hit : null;
+}
+
+// Small requests, two at a time — see planProxyBatches for why not a hundred.
+const PROXY_BATCH_SIZE = 25;
+const PROXY_CONCURRENCY = 2;
+
+/**
+ * Price many symbols through the quote proxy in a few requests.
+ *
+ * Returns { NORMALIZED_SYMBOL: { price, currency, source } }, or null when the
+ * proxy cannot be asked at all (no session), so the caller can tell "priced
+ * nothing" from "could not try". A failed request is not fatal: its symbols
+ * fall through to the keyed tiers, exactly as they did before this phase.
+ */
+async function batchFetchViaProxy(querySymbols) {
+    if (!state.supabaseUrl || !state.supabaseClient || !querySymbols.length) return null;
+    const { data: { session } } = await state.supabaseClient.auth.getSession();
+    if (!session?.access_token) return null;
+
+    const merged = {};
+    await pooled(planProxyBatches(querySymbols, PROXY_BATCH_SIZE), async (batch) => {
+        try {
+            const response = await fetch(`${state.supabaseUrl}/functions/v1/quote-proxy`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': state.supabaseAnonKey,
+                    'Authorization': `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ symbols: batch }),
+            });
+            if (!response.ok) throw new Error(`quote-proxy HTTP ${response.status}`);
+            const data = await response.json();
+            Object.assign(merged, mapProxyResults(data?.results, normalizeQuote));
+        } catch (err) {
+            // Handled by falling back, so the user need not hear about it — but
+            // a proxy that quietly failed every batch would slow every refresh.
+            reportHandled(err, { action: 'quote-proxy-batch', rows: batch.length });
+        }
+    }, PROXY_CONCURRENCY);
+    return merged;
 }
 
 /**
@@ -569,11 +606,17 @@ export async function fetchMarketPrices(opts = {}) {
         return;
     }
 
-    if (!state.alphaVantageKey && !state.finnhubKey && !state.fmpKey) {
+    // Refuse only when nothing can answer. The keyless quote proxy needs just a
+    // signed-in session, so a user with no API keys is no longer turned away —
+    // which matters because the keys are exactly what should stop reaching the
+    // browser once other people have accounts.
+    const canUseProxy = !!(state.supabaseUrl && state.supabaseClient && state.currentUser);
+    const hasKeys = !!(state.alphaVantageKey || state.finnhubKey || state.fmpKey);
+    if (!canUseProxy && !hasKeys) {
         alert(
-            '\uD83D\uDD11 API Keys Required\n\n' +
-            'Click the "\uD83D\uDD11 API Keys" button to configure your API keys.\n\n' +
-            'You need at least one free API key to fetch live prices.'
+            '🔑 Sign in to fetch live prices\n\n' +
+            'Live prices come from a quote service that needs you to be signed in, ' +
+            'or from an API key configured under 🔑 API Keys.'
         );
         return;
     }
@@ -612,6 +655,8 @@ export async function fetchMarketPrices(opts = {}) {
         delayBetweenCalls = 12000;
         apiInfo = 'Using Alpha Vantage only (5 calls/min - slower)';
     }
+    // The quote proxy now runs first for everyone — Phase 0 below.
+    apiInfo = apiInfo ? `Quote proxy (first) + ${apiInfo}` : 'Quote proxy only (no API keys configured)';
 
     console.log('=== FETCH PRICES ===');
     console.log('API Configuration:', apiInfo);
@@ -694,6 +739,30 @@ export async function fetchMarketPrices(opts = {}) {
         const nowMs = Date.now();
         let toFetch = symbols.filter(s => !isPriceFresh(state.priceMetadata[s], FRESH_WINDOW_MS, nowMs));
         console.log(`Fresh (skipped): ${symbols.length - toFetch.length} | To fetch: ${toFetch.length}`);
+
+        // Phase 0: the keyless quote proxy, batched, for everything still to fetch.
+        //
+        // It used to be the LAST tier — first only for pence venues — and was
+        // called one symbol per request although the proxy accepts a hundred. It
+        // is also the only tier that reports a currency. Asking it first, in a
+        // few requests, means the keyed tiers and the FMP daily allowance are
+        // spent only on what it could not price. Misses fall through to the
+        // phases below exactly as before, so no holding loses a tier.
+        if (toFetch.length) {
+            refreshBtn.textContent = 'Quotes...';
+            const quotes = await batchFetchViaProxy(toFetch.map(queryOf));
+            if (quotes) {
+                for (const sym of toFetch) {
+                    const q = quotes[normalizeForPricing(String(queryOf(sym))).toUpperCase()];
+                    if (q) recordSuccess(sym, q.price, q.source, { currency: q.currency, pricedAs: queryOf(sym) });
+                }
+                // Same rule as Phase A: drop only what was priced THIS run, never
+                // a stale cached success.
+                toFetch = toFetch.filter(s => !refreshedThisRun.has(s));
+                console.log(`Phase 0 (quote proxy): priced ${refreshedThisRun.size} | still to fetch ${toFetch.length}`);
+                renderPortfolio();
+            }
+        }
 
         // Phase A: one FMP batch pass over everything.
         if (state.fmpKey && toFetch.length) {

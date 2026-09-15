@@ -202,3 +202,59 @@ export function classifyFmpBatchText(text) {
     if (!Array.isArray(json)) return { unsupported: true, json };
     return { unsupported: false, json };
 }
+
+// ── Quote proxy batching ──────────────────────────────────────────────────────
+
+/**
+ * Split query symbols into quote-proxy requests: normalized to the Yahoo-style
+ * suffix the proxy expects, upper-cased (the proxy keys its answer that way),
+ * de-duplicated, then chunked.
+ *
+ * Kept small on purpose. The proxy fetches each symbol with an 8-second timeout,
+ * five at a time, so a request of its full hundred could outlast the edge
+ * function's own time limit when Yahoo is slow. Several short requests fail
+ * independently instead of all together.
+ *
+ * @param {string[]} symbols
+ * @param {number} [size]
+ * @returns {string[][]}
+ */
+export function planProxyBatches(symbols, size = 25) {
+    const n = Math.max(1, size | 0);
+    const unique = [...new Set((symbols || [])
+        .filter(s => s !== null && s !== undefined && String(s).trim() !== '')
+        .map(s => normalizeForPricing(String(s).trim()).toUpperCase()))];
+    const batches = [];
+    for (let i = 0; i < unique.length; i += n) batches.push(unique.slice(i, i + n));
+    return batches;
+}
+
+/**
+ * Turn a quote-proxy `results` map into usable quotes.
+ *
+ * Only a positive, finite price counts. Minor units are folded through the
+ * normalizer the caller passes — money-core's normalizeQuote in production —
+ * so a London "GBp" quote arrives in pounds, exactly as the per-symbol proxy
+ * tier already does. A currency the normalizer cannot understand keeps its
+ * price but reports no currency, leaving the caller to infer it rather than
+ * trust a guess.
+ *
+ * @param {Object} results   { SYMBOL: { price, currency, exchange } | null }
+ * @param {Function} normalize  ({price, currency}) => ({price, currency}) | null
+ * @returns {Object} { SYMBOL: { price, currency, source } }
+ */
+export function mapProxyResults(results, normalize) {
+    const out = {};
+    for (const [sym, q] of Object.entries(results || {})) {
+        if (!q || q.price === null || q.price === undefined || q.price === '') continue;
+        const price = Number(q.price);
+        if (!Number.isFinite(price) || price <= 0) continue;
+        const norm = normalize({ price, currency: q.currency });
+        out[String(sym).toUpperCase()] = {
+            price: norm ? norm.price : price,
+            currency: norm ? norm.currency : null,
+            source: `Yahoo (quote proxy${q.exchange ? `: ${q.exchange}` : ''})`,
+        };
+    }
+    return out;
+}
