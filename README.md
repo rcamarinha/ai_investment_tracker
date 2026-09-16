@@ -108,7 +108,8 @@ Enter keys via the **🔑 API Keys** button in each tracker.
 2. In the SQL Editor, run the four baseline schema files: `supabase_schema.sql`, `wine_schema.sql`, `spend_schema.sql`, `holdings_schema.sql`
 3. Then run every file in `supabase/migrations/` in filename order, **except** any listed as a conditional recovery script in `tests/helpers/pg-harness.js`. Never run anything in `supabase/maintenance/` as a migration — those are rollbacks and operational scripts
 4. Set the project URL and publishable key in `services/state.js`, in each module's `state.js` and in `index.html`, then deploy the edge functions in `supabase/functions/`
-5. **Accounts are invite-only.** Public signup is disabled in the project's Authentication settings, and people are added with an invitation. Supabase's built-in email service sends only two auth emails an hour, so configure a custom SMTP provider before inviting several people at once
+5. **Accounts are invite-only.** Public signup is disabled in the project's Authentication settings, and an admin invites people from `admin.html` (linked from the hub for admins). That page calls the `admin-invite` edge function — deploy it with `npx supabase functions deploy admin-invite --no-verify-jwt`. Make someone an admin with `insert into admin_users (user_id) values ('<their auth user id>');`
+6. **Email and redirects.** Supabase's built-in email service sends only two auth emails an hour and only to your organisation's team members, so configure a custom SMTP provider before inviting anyone else. Set the Site URL to your domain, and list only your own origins under Redirect URLs — never a wildcard such as `*.vercel.app`, which would let a stranger receive someone else's password-reset link
 
 All four tools share one Supabase project and one account per person. Before any new migration is run against production, `npx vitest run` applies it to a real Postgres first.
 
@@ -211,6 +212,8 @@ Click **🤖 AI Analysis** for a full assessment of your cellar:
 - **API keys** are stored only in `localStorage` in your browser. They are never sent to any server other than the relevant API provider directly.
 - **Supabase anon key** is designed for public use — Row Level Security (RLS) is enabled on all tables so each user can only read and write their own data.
 - **HTML output** — all user-supplied and AI-returned content rendered via `innerHTML` is passed through `escapeHTML`, which escapes `&`, `<`, `>`, `"`, and `'`.
+- **Invitations** — only the `admin-invite` edge function holds the power to create accounts, and it checks `admin_users` on the server for every request. The admin page is hidden from everyone else as a courtesy, not as the protection. Revoking can only remove an invitation nobody has accepted.
+- **Invitation links** — the hub refuses an invitation link when the browser is already signed in, because such a link's tokens are not bound to the browser that opens it. Test invitations in a private window.
 - **Direct browser API calls** — the Anthropic SDK header `anthropic-dangerous-direct-browser-access: true` is the intended mechanism for client-side API calls. Never commit your API key to source control.
 
 ---
@@ -241,7 +244,8 @@ Tests import each pure module directly — the `services/*-core.js` family, the 
 | **Statement import** | `spend-import`, `spend-pdf`, `import-pdf`, `import-standards`, `import-contract`, `categorize-core`, `spend-core` | CSV, OFX and PDF parsing, balance chains and whole-statement totals, card routing and expansion, the row contract, categorisation precedent, savings rate |
 | **Broker import** | `import-trades`, `import-parsing`, `position-management` | DeGiro and Revolut parsers, dedupe, pence kept at the parse boundary, ledger to positions |
 | **Pricing and tickers** | `pricing-core`, `pricing-untracked`, `exchange-detection`, `sector-lookup`, `ticker-resolution`, `price-fetching` | Proxy batching, keep-at-cost, exchange and sector detection. `price-fetching` and part of `ticker-resolution` still exercise an old mirror and are due for removal |
-| **Wine, hub, holdings** | `wine`, `wine-ai-batch`, `wine-valuation-triage`, `hub`, `holdings-core`, `snapshots`, `telemetry`, `utils` | Cellar totals, batch valuation parsing and triage, the hub's figures and sparkline, bank holding valuation, snapshots, report redaction |
+| **Wine, hub, holdings** | `wine`, `wine-ai-batch`, `wine-valuation-triage`, `hub`, `holdings-core`, `snapshots`, `telemetry`, `utils` | Cellar totals, batch valuation parsing and triage, the hub's figures and sparkline, invitation and expired-link handling, bank holding valuation, snapshots, report redaction |
+| **Accounts and invitations** | `account`, `invite-core` | Sign-in actions never throw and say nothing about whether an address has an account; revoking can never delete an account in use; an invitation can only land on an allowed origin |
 | **Manual UX** | `ux-scenarios.html` | Interactive scenarios run in the browser at `cacoventures.com/tests/ux-scenarios.html` |
 
 ### Making changes
@@ -271,6 +275,13 @@ Tests import each pure module directly — the `services/*-core.js` family, the 
 ---
 
 ## Changelog
+
+### Unreleased — admin invitations
+No version bump: nothing in `wine/`, `spend/`, `holdings/`, `css/` or `lib/` changed.
+- **Admins invite people by email** from a new admin page, linked from the hub and the portfolio page for admins only. It lists who was invited and who joined, and revokes an invitation nobody has accepted. Needs the `admin-invite` edge function deployed.
+- **Opening an invitation asks for a password**, instead of signing the person in once and leaving them unable to sign in again. An expired or used link now says so.
+- **The Sign Up button is gone.** Public signup is disabled, so it could only fail; the menu says accounts are by invitation.
+- **The hub's sign-in messages are toasts**, not blocking browser dialogs.
 
 ### v3.54.0
 - **Card purchases reach the right account.** A statement's card section id was never copied onto its rows, so card routing never ran and no card account was ever created — while the test for it did the mapping by hand and stayed green. Turning it on surfaced two more bugs, both fixed: a purchase proven to replace a settlement now stays in the account that paid it, and a correct statement no longer reports that it does not add up.

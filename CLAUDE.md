@@ -22,6 +22,7 @@ ai_investment_tracker/
 ├── wine.html                   # Wine cellar
 ├── spend.html                  # Spending and bank statements
 ├── holdings.html               # Bank-held bonds and funds
+├── admin.html                  # Admins only: invite people, see who joined (services/admin.js)
 ├── css/styles.css              # All styles + button style guide
 ├── lib/                        # Vendored: CSP is script-src 'self', nothing loads from a CDN
 │   ├── supabase.js
@@ -33,6 +34,9 @@ ai_investment_tracker/
 │   └── category-icons.js       # Searchable spend-category icons (EN + PT keywords)
 ├── services/                   # Shared logic. NEVER imported with ?v= (see Pitfalls)
 │   ├── state.js, utils.js, ui.js, navbar.js, auth.js, storage.js
+│   ├── account.js              # Sign-in actions over an injected client; no imports, never throws
+│   ├── toast.js                # showToast with no imports, so the hub can use it
+│   ├── admin.js                # Admin page; every decision is made by the admin-invite function
 │   ├── pricing.js, pricing-core.js, portfolio.js, analysis.js
 │   ├── money-core.js           # Currency: ISO codes, minor units (GBp != GBP), conversion
 │   ├── returns-core.js         # XIRR, cash flows, yearly income
@@ -54,7 +58,8 @@ ai_investment_tracker/
 │   ├── migrations/             # Hand-run SQL (see Pitfalls: run by the user, not by a deploy)
 │   ├── maintenance/            # Operational scripts — NEVER run as a migration
 │   └── functions/              # Edge functions (analyze-portfolio, extract-trades, extract-statement,
-│                               #   resolve-tickers, quote-proxy, wine-ai, categorize-transactions)
+│                               #   resolve-tickers, quote-proxy, wine-ai, categorize-transactions,
+│                               #   admin-invite); _shared/ holds pure modules they import and tests reach
 ├── vercel.json                 # Headers and cache rules: services/data/src revalidate,
 │                               #   wine/spend/holdings/css/lib are immutable and versioned by ?v=
 └── package.json, vitest.config.js
@@ -106,8 +111,9 @@ portfolio page already computed with per-trade FX, so there is only one implemen
 currency conversion in the app. Snapshots without `total_market_value_eur` (legacy rows,
 written before the base currency was recorded) are **skipped, not assumed to be EUR**.
 
-index.html imports only `services/navbar.js` and `src/hub.js` — the latter is pure and
-dependency-free (zero imports), so it does not drag in the service graph. All other
+index.html imports only `services/navbar.js`, `services/telemetry.js`, `services/account.js`,
+`services/toast.js`, `data/i18n.js` and `src/hub.js` — each stands alone, so none drags in the
+service graph. All other
 service modules remain forbidden here: `services/storage.js` pulls in pricing, portfolio
 and the rest.
 
@@ -236,6 +242,22 @@ broker-agnostic via the `income[]` stream, so it slots in); cash-balance modelin
 ### Auth Service (`services/auth.js`)
 - **`handleLogin()`** / **`handleSignup()`** / **`handleLogout()`**
 - **`updateAuthBar()`** - Render login/logout UI
+- **`updateActionVisibility()`** - Shows `#apiKeyBtn` and `#adminPageBtn` to admins only
+
+### Invitations (`admin.html`, `services/admin.js`, `supabase/functions/admin-invite`)
+
+Public signup is disabled, so an invitation is the only way an account is created, and the
+auth server's invite endpoint needs the service role. The `admin-invite` function verifies the
+caller's token, checks `admin_users` with the service role, then lists users, invites by email
+or revokes an invitation nobody has accepted (by deleting that unconfirmed user). Status is read
+from `auth.users` itself, so there is **no invitations table and no migration**. The decisions
+live in `supabase/functions/_shared/invite-core.js`, pure so `tests/invite-core.test.js` can
+reach them. Deploy with `npx supabase functions deploy admin-invite --no-verify-jwt`.
+
+The invitation link lands on the hub. `inviteLinkDecision` (src/hub.js) puts a signed-out
+arrival into set-a-password mode and **strips the link when a session already exists**;
+`authLinkError` explains an expired link. Sign-in actions on the hub and the admin page go
+through `services/account.js`; the other four pages still carry their own copies.
 
 ## Data Modules
 
@@ -361,6 +383,8 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **`DROP POLICY IF EXISTS name ON t` guards the policy, not the table** — if `t` itself is absent the statement errors. `20260911` referenced `wine_bottles_backup_v1`, which exists in production and in no schema file, so on any other project — including the fresh one the wine launch contemplates — the whole file failed, and because it runs as one transaction its price-history security fix rolled back with it. Invisible in production; found by the migration harness on its first run. Guard on `pg_tables` and use `EXECUTE`, so nothing references the table until it is known to exist. Relatedly, a migration must drop the policy name it is **about to create**, not only the old names, or a second run aborts with 42710 — `20260217` and the first draft of `20260911` both got this wrong.
 - **A delete-then-insert save must be loud, and `services/` had no way to be loud** — `saveTransactionsToDB` and `savePortfolioDB` (services/storage.js) delete every row for the user and then bulk insert, and Postgres aborts the whole insert on one bad row. So the catch block is the difference between "try again" and a silently emptied table, and it was `console.error` alone in both. The reason it stayed that way is that **`services/` had no toast at all** — only `alert()`, which the failure-handling standard bans, and which `tests/failure-handling.test.js` grandfathered by scoping its rule to `^(spend|wine|holdings|src)/`. That exemption is now a **counted ratchet** (`ALERT_BUDGET` in that test): the number of blocking dialogs in `services/` may go down and may not go up. Lower the budget as you remove them. Note the toast styles moved from `css/wine.css` to `css/styles.css` — only wine.html loaded the former, so `spend/` and `holdings/` had been calling `showToast()` for months while loading none of its rules, rendering unpositioned at the foot of the document.
 - **The app is no longer one trusted household** — signup is invite-only rather than closed, so an account holder is an untrusted party. Anything reachable with a valid session is reachable by someone who is not you. Two consequences that are easy to forget when adding a feature: a shared table that any authenticated user can write is an input channel into everyone else's pages, and an edge function gated only on "is this a valid token" has no per-user ceiling. Before adding either, ask what a stranger with a free account does with it.
+- **An implicit-flow auth link is not bound to the browser that opens it** — supabase-js reads any `access_token`/`refresh_token` in the hash and replaces the stored session, checking only that the server accepts the token. So anyone can build a `#…&type=invite` link from their own session. The hub's first invite handling then asked the person to choose a password, which made an account swap look like onboarding, and whatever they imported next would have landed where the sender could read it. `inviteLinkDecision` refuses the link when a session already exists, and the password form names the account. The durable fix is a `token_hash` invite template verified with `verifyOtp`; it is in the plan. Test invitations in a private window: opening one while signed in is now refused by design.
+- **`.btn` overrides the `hidden` attribute** — the class sets its own `display`, and the app has no `[hidden]{display:none!important}` rule, so `el.hidden = true` on a button leaves it on screen. Toggle `style.display` instead; the hub's admin link showed to signed-out visitors until a screenshot caught it.
 - **PDF statements go through the extraction service, not a parser** — a single-section statement parses deterministically (`services/import-pdf.js` reconstructs printed lines from pdf.js coordinates), but real statements interleave several sections with different layouts on the same printed row. Measured on a real one, a single line pattern reconciled 14% of rows. Do **not** try to fix this by splitting lines on x-gaps: within a row the description→amount gap is as large as the gap between two side-by-side sections, so it strips amounts off legitimate rows — it raised pattern coverage from 33% to 91% while leaving every balance check broken.
 - **Currency and number formats are shared, not per-module** — `services/money-core.js` owns currency (`normalizeCurrencyCode` knows minor units, so `GBp` is pence and not `GBP`) and `services/import-banks.js` owns number and date parsing (`parseStyledNumber`, `detectDecimalStyle`, `detectDateFormat`). Spend originally had neither: it uppercased currency codes itself and defaulted to `'EUR'` in three places, and `import-pdf.js` kept a private `parseNum`. The duplicate parser is how the same sign bug — a trailing minus read as positive — came to exist twice and be found twice. Money handling added to a new area goes through these, never beside them. **Minor units are preserved at ingestion, not folded:** a London price stays in pence with the code `GBX`, because conversion already scales by the factor downstream (`toBaseCurrency`, `deriveFxToBases`) and the dedupe fingerprint includes price — folding to pounds at the boundary would re-import every London trade already in the ledger. `detectCurrency` once read `GBp` as pounds, a 100x cost basis, because a case-insensitive check ran before anything that knew pence from pounds by letter case. Likewise a CSV with no currency column must not claim one: the parser passed a hardcoded `'EUR'` as the row's own value, so the contract recorded `currencySource: 'row'` for a currency the file never printed; defaults belong in `normalizeRow`'s second argument.
 - **Never let a deterministic pattern decide whether the AI extractor runs** — `findCandidateLines` required `dd/mm` at the START of a row, and `ingest` refused any PDF where it matched nothing. A bank using ISO dates, month names, or a date mid-row was rejected with "no dated transaction lines found" without the extractor ever seeing it, which inverts the reason that tier exists. The strict pass is now a preference, not a gate: `findLooseCandidates` widens to any line carrying both a date and an amount, and only a document with neither is refused. Widening is safe because balance continuity still checks whatever comes back — a looser filter cannot make a wrong import look right.
