@@ -41,7 +41,7 @@ import { __testing } from '../services/telemetry.js';
 
 const root = join(import.meta.dirname, '..');
 const MODULE_DIRS = ['services', 'spend', 'wine', 'holdings', 'src'];
-const PAGES = ['index.html', 'portfolio.html', 'wine.html', 'spend.html', 'holdings.html'];
+const PAGES = ['index.html', 'portfolio.html', 'wine.html', 'spend.html', 'holdings.html', 'admin.html'];
 
 const sources = MODULE_DIRS.flatMap(dir => {
     const abs = join(root, dir);
