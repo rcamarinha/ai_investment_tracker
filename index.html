@@ -44,6 +44,11 @@
                  Empty and hidden until real snapshots exist. This used to be a
                  hardcoded rising path with fixed month labels, drawn the same
                  for an account created a minute ago. -->
+            <!-- Hidden by inline display, not the hidden attribute: .btn sets its own
+                 display, which overrides [hidden], so the link showed to everyone. -->
+            <a id="hubAdminLink" href="admin.html" class="btn btn-sm btn-key"
+               style="display:none;align-self:flex-start;margin:0 0 12px;">🛡️ Admin · invite people</a>
+
             <div class="hub-chart" id="hubChart" style="height: 80px; display: none;">
                 <svg viewBox="0 0 680 80" preserveAspectRatio="none" style="height:80px">
                     <defs>
@@ -153,7 +158,11 @@
         // does not drag in the service graph that CLAUDE.md warns about — it is
         // the same module the hub tests exercise, which is the point: the hub's
         // arithmetic is no longer a second, untested copy written inline here.
-        import { computeStockCardEUR, computeNetWorthEUR, hubAsOfLabel, hubSparkline } from './src/hub.js';
+        import { computeStockCardEUR, computeNetWorthEUR, hubAsOfLabel, hubSparkline, inviteLinkDecision, authLinkError } from './src/hub.js';
+        // Both stand alone (no imports), so neither drags in the service graph.
+        import { createAccountActions } from './services/account.js';
+        import { showToast } from './services/toast.js';
+        import { t } from './data/i18n.js';
 
         const SUPABASE_URL      = 'https://dybetrrhshqezokcxiid.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_1exZf5F28-XEl-AxelyxEQ_Yb6WEQMz';
@@ -171,85 +180,62 @@
         }
 
         // ── Auth handlers (must be on window for navbar onclick attrs) ───────
-        window.handleLogin = async function () {
-            if (!sbClient) { alert('Auth service not ready — please refresh the page.'); return; }
-            const email    = (document.getElementById('authEmail')?.value ?? '').trim();
-            const password = document.getElementById('authPassword')?.value ?? '';
-            if (!email || !password) { alert('Please enter email and password.'); return; }
-            try {
-                const { error } = await sbClient.auth.signInWithPassword({ email, password });
-                if (error) throw error;
-            } catch (err) { alert('Login failed: ' + err.message); }
+        // The logic is services/account.js, shared and tested; this page only
+        // reads its inputs and shows the result. These were five alert() copies,
+        // and this is the page an invited person sets their first password on.
+        const account = createAccountActions({
+            getClient: () => sbClient,
+            redirectTo: () => window.location.origin + '/',
+        });
+        const val = id => document.getElementById(id)?.value ?? '';
+        const showResult = (res) => {
+            if (!res.ok) { showToast(res.message, 'warning', 8000); return false; }
+            if (res.message) showToast(res.message, 'success', 6000);
+            return true;
         };
 
-        window.handleSignup = async function () {
-            if (!sbClient) { alert('Auth service not ready — please refresh the page.'); return; }
-            const email    = (document.getElementById('authEmail')?.value ?? '').trim();
-            const password = document.getElementById('authPassword')?.value ?? '';
-            if (!email || !password) { alert('Please enter email and password.'); return; }
-            if (password.length < 6) { alert('Password must be at least 6 characters.'); return; }
-            try {
-                const { error } = await sbClient.auth.signUp({ email, password });
-                if (error) throw error;
-                alert('Account created! Check your email to confirm your account, then log in.');
-            } catch (err) { alert('Sign up failed: ' + err.message); }
+        window.handleLogin = async () => showResult(await account.login(val('authEmail'), val('authPassword')));
+        window.handleGoogleLogin = async () => showResult(await account.googleLogin());
+        window.handleForgotPassword = async () => {
+            if (!val('authEmail').trim()) document.getElementById('authEmail')?.focus();
+            showResult(await account.forgotPassword(val('authEmail')));
         };
-
-        window.handleLogout = async function () {
-            try {
-                await sbClient.auth.signOut();
-                currentUser = null;
+        window.handleLogout = async () => {
+            if (showResult(await account.logout())) { currentUser = null; refreshNavbarAuth(); }
+        };
+        window.handlePasswordReset = async () => {
+            if (showResult(await account.setPassword(val('newPassword'), val('confirmPassword')))) {
+                passwordRecoveryMode = false;
                 refreshNavbarAuth();
-            } catch (err) { alert('Logout failed: ' + err.message); }
-        };
-
-        window.handleGoogleLogin = async function () {
-            if (!sbClient) { alert('Auth service not ready — please refresh the page.'); return; }
-            try {
-                const { error } = await sbClient.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: { redirectTo: window.location.origin + window.location.pathname }
-                });
-                if (error) throw error;
-            } catch (err) { alert('Google sign-in failed: ' + err.message); }
-        };
-
-        window.handleForgotPassword = async function () {
-            if (!sbClient) { alert('Auth service not ready — please refresh the page.'); return; }
-            const emailInput = document.getElementById('authEmail');
-            const email = emailInput ? emailInput.value.trim() : '';
-            if (!email) { alert('Please enter your email address first.'); if (emailInput) emailInput.focus(); return; }
-            const redirectTo = window.location.origin + window.location.pathname.replace(/\.html$/, '');
-            console.log('[auth] resetPasswordForEmail →', email, 'redirect:', redirectTo);
-            try {
-                const { error } = await sbClient.auth.resetPasswordForEmail(email, { redirectTo });
-                if (error) throw error;
-                alert(`Password reset email sent to ${email}. Follow the link to set a new password.`);
-            } catch (err) {
-                console.error('[auth] resetPasswordForEmail failed:', err);
-                alert('Failed to send reset email: ' + err.message);
             }
         };
-
-        window.handlePasswordReset = async function () {
-            const newPassword     = document.getElementById('newPassword')?.value;
-            const confirmPassword = document.getElementById('confirmPassword')?.value;
-            if (!newPassword || !confirmPassword) { alert('Please fill in both password fields.'); return; }
-            if (newPassword !== confirmPassword) { alert('Passwords do not match.'); return; }
-            if (newPassword.length < 6) { alert('Password must be at least 6 characters.'); return; }
-            try {
-                const { error } = await sbClient.auth.updateUser({ password: newPassword });
-                if (error) throw error;
-                passwordRecoveryMode = false;
-                alert('Password updated successfully. You are now logged in.');
-                refreshNavbarAuth();
-            } catch (err) { alert('Failed to update password: ' + err.message); }
-        };
-
         window.cancelPasswordRecovery = function () {
             passwordRecoveryMode = false;
             refreshNavbarAuth();
         };
+        // Public signup is disabled in Supabase; the navbar no longer offers it.
+        window.handleSignup = () => showToast(t('auth.invite_only'), 'info');
+
+        // ── Admin link ───────────────────────────────────────────────────────
+        // Courtesy, not the boundary: admin.html's function refuses non-admins.
+        // RLS lets a user read only their own admin_users row, so this asks
+        // "am I an admin" and nothing else. Any failure leaves the link hidden.
+        let adminCheckedFor;
+        async function refreshAdminLink() {
+            const link = document.getElementById('hubAdminLink');
+            const uid = currentUser?.id ?? null;
+            if (!link || uid === adminCheckedFor) return;
+            adminCheckedFor = uid;
+            link.style.display = 'none';
+            if (!uid || !sbClient) return;
+            try {
+                const { data, error } = await sbClient.from('admin_users').select('user_id').eq('user_id', uid).maybeSingle();
+                if (error) throw error;
+                if (currentUser?.id === uid) link.style.display = data ? '' : 'none';
+            } catch (err) {
+                console.warn('[hub] admin check failed; link stays hidden:', err?.message || err);
+            }
+        }
 
         // ── Hub dashboard helpers ────────────────────────────────────────────
         function hubFmt(val) {
@@ -509,6 +495,45 @@
         // ── Boot Supabase ────────────────────────────────────────────────────
         if (typeof supabase !== 'undefined') {
             try {
+                // Read BEFORE the client is created: it consumes an invitation link
+                // and clears it from the address bar. The admin-invite function
+                // sends every invitation here, so this is the only page that needs it.
+                const hadStoredSession = (() => {
+                    try {
+                        for (let i = 0; i < localStorage.length; i++) {
+                            const k = localStorage.key(i);
+                            if (k && k.startsWith('sb-') && k.endsWith('-auth-token')) return true;
+                        }
+                    } catch (err) { /* storage blocked → treat as signed out */ }
+                    return false;
+                })();
+                // A refused link (usually an invitation opened too late) comes back
+                // as an error in the hash. Say so, then clear it from the address bar.
+                const linkError = authLinkError(window.location.hash);
+                if (linkError) {
+                    showToast(t(linkError.expired ? 'auth.link_expired' : 'auth.link_failed'), 'warning', 12000);
+                    history.replaceState(null, '', window.location.pathname + window.location.search);
+                }
+                const inviteDecision = inviteLinkDecision(window.location.hash, hadStoredSession);
+                if (inviteDecision === 'refuse') {
+                    // Nothing ties an invite link's tokens to this browser, so a link
+                    // built from someone else's session would swap this person into
+                    // that account. Strip it before the client can read it.
+                    history.replaceState(null, '', window.location.pathname + window.location.search);
+                    console.warn('Ignored an invitation link: this browser is already signed in.');
+                }
+                // Decided once, at the first sign-in event that carries a user, from
+                // whichever path sees it first. After that nothing — a token refresh
+                // an hour later included — can reopen the prompt.
+                let inviteHandled = inviteDecision !== 'prompt';
+                const handleInviteArrival = () => {
+                    if (inviteHandled || !currentUser) return;
+                    inviteHandled = true;
+                    passwordRecoveryMode = true;
+                    refreshNavbarAuth();
+                    const dropdown = document.getElementById('navAuthDropdown');
+                    if (dropdown && dropdown.style.display === 'none') window.navbarToggleAuthDropdown?.();
+                };
                 sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 setTelemetryClient(sbClient);
                 sbClient.auth.onAuthStateChange((event, session) => {
@@ -516,8 +541,13 @@
                     if (event === 'PASSWORD_RECOVERY') passwordRecoveryMode = true;
                     else if (event === 'USER_UPDATED' && passwordRecoveryMode) passwordRecoveryMode = false;
                     refreshNavbarAuth();
+                    // An invitation signs the person in with no password. Ask for one,
+                    // once, and open the menu so the form is in front of them —
+                    // otherwise they finish joining unable to sign in again.
+                    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') handleInviteArrival();
                     if (currentUser) loadHubValues(currentUser.id);
                     else clearHubValues();
+                    refreshAdminLink();
                 });
                 // Backup for the rare race where INITIAL_SESSION fires before the
                 // listener registers. Guarded, because unguarded it re-ran the
@@ -528,7 +558,9 @@
                     if (currentUser || !session?.user) return;
                     currentUser = session.user;
                     refreshNavbarAuth();
+                    handleInviteArrival();
                     loadHubValues(currentUser.id);
+                    refreshAdminLink();
                 }).catch(err => console.error('getSession failed:', err));
             } catch (err) {
                 console.error('Supabase init failed:', err);

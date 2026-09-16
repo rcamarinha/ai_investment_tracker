@@ -46,6 +46,7 @@ function getCurrentPage() {
     if (path.includes('wine.html'))      return 'wine';
     if (path.includes('spend.html'))     return 'spend';
     if (path.includes('holdings.html'))  return 'holdings';
+    if (path.includes('admin'))          return 'admin';
     return 'hub';
 }
 
@@ -55,7 +56,8 @@ function buildAuthDropdownHTML(user, passwordRecoveryMode) {
     if (passwordRecoveryMode) {
         return `
             <div class="nav-dropdown-inner">
-                <p style="color:var(--text-secondary);font-size:13px;margin:0 0 8px;">${t('auth.set_password')}</p>
+                <p style="color:var(--text-secondary);font-size:13px;margin:0 0 4px;">${t('auth.set_password')}</p>
+                ${user?.email ? `<p style="color:var(--text-primary);font-size:12px;margin:0 0 8px;word-break:break-all;">${esc(user.email)}</p>` : ''}
                 <input type="password" id="newPassword"
                        placeholder="${t('auth.new_password_ph')}"
                        style="width:100%;padding:8px 10px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:13px;box-sizing:border-box;" />
@@ -96,11 +98,12 @@ function buildAuthDropdownHTML(user, passwordRecoveryMode) {
                        placeholder="${t('auth.password_ph')}"
                        onkeydown="if(event.key==='Enter') handleLogin()"
                        style="width:100%;padding:8px 10px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:13px;box-sizing:border-box;" />
-                <div style="display:flex;gap:8px;">
-                    <button class="btn btn-sm btn-primary" style="flex:1;" onclick="handleLogin()">${t('auth.login_btn')}</button>
-                    <button class="btn btn-sm btn-key" style="flex:1;" onclick="handleSignup()">${t('auth.signup_btn')}</button>
-                </div>
+                <button class="btn btn-sm btn-primary" style="width:100%;" onclick="handleLogin()">${t('auth.login_btn')}</button>
                 <button class="auth-forgot-link" onclick="handleForgotPassword()">${t('auth.forgot')}</button>
+                <!-- Public signup is disabled in Supabase, so the Sign Up button that
+                     stood here could only ever fail. Accounts come from invitations. -->
+                <p style="color:var(--text-tertiary);font-size:11px;margin:4px 0 0;text-align:center;">${t('auth.invite_only')}</p>
+                <p style="color:var(--text-tertiary);font-size:11px;margin:2px 0 0;text-align:center;">${t('auth.invite_hint')}</p>
             </div>
         </div>`;
 }

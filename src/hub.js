@@ -210,3 +210,69 @@ export function computeWineDelta(wineValue, wineCost, wines, now = Date.now()) {
 
     return { text: '', cls: 'neutral' };
 }
+
+// ── Invitations ───────────────────────────────────────────────────────────────
+
+/**
+ * Whether the page was opened from a Supabase invitation link.
+ *
+ * An invitation signs the person in with no password. The auth client reads the
+ * link and emits SIGNED_IN, not PASSWORD_RECOVERY, so without this check the hub
+ * treated them as an ordinary returning user: they would finish "joining" and be
+ * unable to sign in again. Must be read BEFORE the client is created, because
+ * the client consumes the link and clears it from the address bar.
+ *
+ * @param {string} hash  window.location.hash
+ * @returns {boolean}
+ */
+export function isInviteLink(hash) {
+    const raw = String(hash ?? '').replace(/^#/, '');
+    if (!raw) return false;
+    const params = new URLSearchParams(raw);
+    return params.get('type') === 'invite' && !!params.get('access_token');
+}
+
+/**
+ * What the hub does with an invitation link, given whether this browser already
+ * held a session when the page loaded.
+ *
+ *   'prompt'  nobody was signed in: let the client read the link, then ask for a password
+ *   'refuse'  someone was signed in: strip the link before the client can read it
+ *   null      not an invitation link
+ *
+ * The link's tokens are not bound to anything this browser started. Any account
+ * holder can paste their own tokens into a "#...&type=invite" link, and the
+ * client would silently swap a signed-in victim into the sender's account —
+ * then this page would ask them to choose a password, which looks exactly like
+ * onboarding, and whatever they import next lands where the sender can read it.
+ * A real invitee has no account yet, so they arrive signed out. Someone already
+ * signed in has no reason to accept an invitation, and keeps their own session.
+ *
+ * @param {string}  hash              window.location.hash
+ * @param {boolean} hadStoredSession  a session existed before the client was created
+ * @returns {'prompt'|'refuse'|null}
+ */
+export function inviteLinkDecision(hash, hadStoredSession) {
+    if (!isInviteLink(hash)) return null;
+    return hadStoredSession ? 'refuse' : 'prompt';
+}
+
+/**
+ * Whether the page was opened from a sign-in link the auth server refused —
+ * most often an invitation or reset link that expired or was already used.
+ *
+ * The server sends those back as "#error=...&error_code=otp_expired&...", and
+ * the hub recognised only the success shape, so an invited person who opened
+ * the email a few days late landed on a signed-out page with no word of why.
+ *
+ * @param {string} hash  window.location.hash
+ * @returns {{code: string, expired: boolean} | null}
+ */
+export function authLinkError(hash) {
+    const raw = String(hash ?? '').replace(/^#/, '');
+    if (!raw) return null;
+    const params = new URLSearchParams(raw);
+    if (!params.get('error') && !params.get('error_code')) return null;
+    const code = params.get('error_code') || params.get('error') || 'unknown';
+    return { code, expired: code === 'otp_expired' };
+}

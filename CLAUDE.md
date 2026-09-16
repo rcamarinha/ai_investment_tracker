@@ -2,8 +2,8 @@
 
 ## Project Overview
 
-A **browser-based suite for one household's money**, in four tools sharing one auth, one design
-system and one hub: **Stock Portfolio** (import, live prices via a 3-tier API fallback, XIRR, AI
+A **browser-based suite for a household's money**, invite-only, in four tools sharing one auth, one design
+system and one hub: **Stock Portfolio** (import, live prices from a keyless quote proxy with keyed fallbacks, XIRR, AI
 analysis), **Wine Cellar** (inventory and AI valuation), **Spend** (bank-statement import,
 categorisation, savings rate) and **Bank Holdings** (bonds and funds no market API can price).
 
@@ -22,6 +22,7 @@ ai_investment_tracker/
 ├── wine.html                   # Wine cellar
 ├── spend.html                  # Spending and bank statements
 ├── holdings.html               # Bank-held bonds and funds
+├── admin.html                  # Admins only: invite people, see who joined (services/admin.js)
 ├── css/styles.css              # All styles + button style guide
 ├── lib/                        # Vendored: CSP is script-src 'self', nothing loads from a CDN
 │   ├── supabase.js
@@ -33,6 +34,9 @@ ai_investment_tracker/
 │   └── category-icons.js       # Searchable spend-category icons (EN + PT keywords)
 ├── services/                   # Shared logic. NEVER imported with ?v= (see Pitfalls)
 │   ├── state.js, utils.js, ui.js, navbar.js, auth.js, storage.js
+│   ├── account.js              # Sign-in actions over an injected client; no imports, never throws
+│   ├── toast.js                # showToast with no imports, so the hub can use it
+│   ├── admin.js                # Admin page; every decision is made by the admin-invite function
 │   ├── pricing.js, pricing-core.js, portfolio.js, analysis.js
 │   ├── money-core.js           # Currency: ISO codes, minor units (GBp != GBP), conversion
 │   ├── returns-core.js         # XIRR, cash flows, yearly income
@@ -54,7 +58,8 @@ ai_investment_tracker/
 │   ├── migrations/             # Hand-run SQL (see Pitfalls: run by the user, not by a deploy)
 │   ├── maintenance/            # Operational scripts — NEVER run as a migration
 │   └── functions/              # Edge functions (analyze-portfolio, extract-trades, extract-statement,
-│                               #   resolve-tickers, quote-proxy, wine-ai, categorize-transactions)
+│                               #   resolve-tickers, quote-proxy, wine-ai, categorize-transactions,
+│                               #   admin-invite); _shared/ holds pure modules they import and tests reach
 ├── vercel.json                 # Headers and cache rules: services/data/src revalidate,
 │                               #   wine/spend/holdings/css/lib are immutable and versioned by ?v=
 └── package.json, vitest.config.js
@@ -86,15 +91,18 @@ Note: Several services have circular imports (e.g., pricing ↔ portfolio, stora
 
 ### Hub Dashboard (index.html)
 
-After login, `loadHubValues(userId)` runs two parallel Supabase queries and populates the existing hub card DOM elements:
+After login, `loadHubValues(userId)` runs five parallel Supabase queries — snapshots, the cellar, this month's spend and its categories, and bank holdings — and fills the hub cards:
 
-- `#hubTotalValue` — stock market value + wine cellar value, **in EUR**; suffixed `*` when partial
+- `#hubTotalValue` — stock + wine + bank holdings, **in EUR**; suffixed `*` when partial, or when stale holdings were left out
 - `#hubStockValue` — `total_market_value_eur` from the **latest snapshot** carrying one
 - `#hubStockDelta` — `"as of 3 Aug"` (+ `"excludes N"`), or `"open Portfolio to calculate"` when no snapshot has a EUR total
 - `#hubWineValue` — SUM(estimated_value × qty) from `user_wines` (EUR by schema)
-- `#hubWineDelta` — % gain vs purchase price, or staleness label ("valued Xd ago")
+- `#hubWineDelta` — % gain vs purchase price, a staleness label ("valued Xd ago"), or `"add your first bottle"`
+- `#hubSpendValue` / `#hubSpendDelta` — this month's spend and savings rate, or `"import a statement"`
+- `#hubHoldValue` / `#hubHoldDelta` — bank holdings, or `"add a holding"`
+- `#hubChart` — a sparkline drawn by `hubSparkline()` in `src/hub.js` from up to 60 snapshots, **hidden below two usable ones**. It replaced a hardcoded rising path with fixed month labels that was drawn for every account, including an empty one. A chart nobody computed must not be drawn.
 
-`clearHubValues()` resets all to `"— —"` on logout.
+`clearHubValues()` resets every card to `"— —"` and hides the chart on logout. An empty card names the next step rather than sitting blank beside a dash.
 
 **Never sum `shares × avg_price` from `positions` here.** That table has no currency
 column, so the sum adds pounds to euros and to dollars; the old `computeStockValue()`
@@ -103,8 +111,9 @@ portfolio page already computed with per-trade FX, so there is only one implemen
 currency conversion in the app. Snapshots without `total_market_value_eur` (legacy rows,
 written before the base currency was recorded) are **skipped, not assumed to be EUR**.
 
-index.html imports only `services/navbar.js` and `src/hub.js` — the latter is pure and
-dependency-free (zero imports), so it does not drag in the service graph. All other
+index.html imports only `services/navbar.js`, `services/telemetry.js`, `services/account.js`,
+`services/toast.js`, `data/i18n.js` and `src/hub.js` — each stands alone, so none drags in the
+service graph. All other
 service modules remain forbidden here: `services/storage.js` pulls in pricing, portfolio
 and the rest.
 
@@ -233,6 +242,22 @@ broker-agnostic via the `income[]` stream, so it slots in); cash-balance modelin
 ### Auth Service (`services/auth.js`)
 - **`handleLogin()`** / **`handleSignup()`** / **`handleLogout()`**
 - **`updateAuthBar()`** - Render login/logout UI
+- **`updateActionVisibility()`** - Shows `#apiKeyBtn` and `#adminPageBtn` to admins only
+
+### Invitations (`admin.html`, `services/admin.js`, `supabase/functions/admin-invite`)
+
+Public signup is disabled, so an invitation is the only way an account is created, and the
+auth server's invite endpoint needs the service role. The `admin-invite` function verifies the
+caller's token, checks `admin_users` with the service role, then lists users, invites by email
+or revokes an invitation nobody has accepted (by deleting that unconfirmed user). Status is read
+from `auth.users` itself, so there is **no invitations table and no migration**. The decisions
+live in `supabase/functions/_shared/invite-core.js`, pure so `tests/invite-core.test.js` can
+reach them. Deploy with `npx supabase functions deploy admin-invite --no-verify-jwt`.
+
+The invitation link lands on the hub. `inviteLinkDecision` (src/hub.js) puts a signed-out
+arrival into set-a-password mode and **strips the link when a session already exists**;
+`authLinkError` explains an expired link. Sign-in actions on the hub and the admin page go
+through `services/account.js`; the other four pages still carry their own copies.
 
 ## Data Modules
 
@@ -344,7 +369,7 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 
 - **ES modules require HTTP** — `file://` won't work; use a local server
 - **Circular imports** — Services cross-reference each other; this works because functions are called at runtime, not at module load time
-- **`window.*` globals** — onclick handlers require functions on `window`; these are set in the init block of `index.html`
+- **`window.*` globals** — static `onclick` attributes, such as the navbar's, call functions each page assigns to `window` in its init block. Anything rendered with a value goes through a delegated listener (`bindActions`) instead, never an inline handler — see the entry on interpolating into `onclick` below.
 - **API keys are never committed** — They live only in the user's browser localStorage
 - **Rate limiting** — Finnhub 1000ms, FMP 500ms, Alpha Vantage 12000ms between calls
 - **FMP endpoint** — Uses `/stable/quote-short` (not `/api/v3/quote`) due to CORS/auth issues
@@ -358,6 +383,8 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **`DROP POLICY IF EXISTS name ON t` guards the policy, not the table** — if `t` itself is absent the statement errors. `20260911` referenced `wine_bottles_backup_v1`, which exists in production and in no schema file, so on any other project — including the fresh one the wine launch contemplates — the whole file failed, and because it runs as one transaction its price-history security fix rolled back with it. Invisible in production; found by the migration harness on its first run. Guard on `pg_tables` and use `EXECUTE`, so nothing references the table until it is known to exist. Relatedly, a migration must drop the policy name it is **about to create**, not only the old names, or a second run aborts with 42710 — `20260217` and the first draft of `20260911` both got this wrong.
 - **A delete-then-insert save must be loud, and `services/` had no way to be loud** — `saveTransactionsToDB` and `savePortfolioDB` (services/storage.js) delete every row for the user and then bulk insert, and Postgres aborts the whole insert on one bad row. So the catch block is the difference between "try again" and a silently emptied table, and it was `console.error` alone in both. The reason it stayed that way is that **`services/` had no toast at all** — only `alert()`, which the failure-handling standard bans, and which `tests/failure-handling.test.js` grandfathered by scoping its rule to `^(spend|wine|holdings|src)/`. That exemption is now a **counted ratchet** (`ALERT_BUDGET` in that test): the number of blocking dialogs in `services/` may go down and may not go up. Lower the budget as you remove them. Note the toast styles moved from `css/wine.css` to `css/styles.css` — only wine.html loaded the former, so `spend/` and `holdings/` had been calling `showToast()` for months while loading none of its rules, rendering unpositioned at the foot of the document.
 - **The app is no longer one trusted household** — signup is invite-only rather than closed, so an account holder is an untrusted party. Anything reachable with a valid session is reachable by someone who is not you. Two consequences that are easy to forget when adding a feature: a shared table that any authenticated user can write is an input channel into everyone else's pages, and an edge function gated only on "is this a valid token" has no per-user ceiling. Before adding either, ask what a stranger with a free account does with it.
+- **An implicit-flow auth link is not bound to the browser that opens it** — supabase-js reads any `access_token`/`refresh_token` in the hash and replaces the stored session, checking only that the server accepts the token. So anyone can build a `#…&type=invite` link from their own session. The hub's first invite handling then asked the person to choose a password, which made an account swap look like onboarding, and whatever they imported next would have landed where the sender could read it. `inviteLinkDecision` refuses the link when a session already exists, and the password form names the account. The durable fix is a `token_hash` invite template verified with `verifyOtp`; it is in the plan. Test invitations in a private window: opening one while signed in is now refused by design.
+- **`.btn` overrides the `hidden` attribute** — the class sets its own `display`, and the app has no `[hidden]{display:none!important}` rule, so `el.hidden = true` on a button leaves it on screen. Toggle `style.display` instead; the hub's admin link showed to signed-out visitors until a screenshot caught it.
 - **PDF statements go through the extraction service, not a parser** — a single-section statement parses deterministically (`services/import-pdf.js` reconstructs printed lines from pdf.js coordinates), but real statements interleave several sections with different layouts on the same printed row. Measured on a real one, a single line pattern reconciled 14% of rows. Do **not** try to fix this by splitting lines on x-gaps: within a row the description→amount gap is as large as the gap between two side-by-side sections, so it strips amounts off legitimate rows — it raised pattern coverage from 33% to 91% while leaving every balance check broken.
 - **Currency and number formats are shared, not per-module** — `services/money-core.js` owns currency (`normalizeCurrencyCode` knows minor units, so `GBp` is pence and not `GBP`) and `services/import-banks.js` owns number and date parsing (`parseStyledNumber`, `detectDecimalStyle`, `detectDateFormat`). Spend originally had neither: it uppercased currency codes itself and defaulted to `'EUR'` in three places, and `import-pdf.js` kept a private `parseNum`. The duplicate parser is how the same sign bug — a trailing minus read as positive — came to exist twice and be found twice. Money handling added to a new area goes through these, never beside them. **Minor units are preserved at ingestion, not folded:** a London price stays in pence with the code `GBX`, because conversion already scales by the factor downstream (`toBaseCurrency`, `deriveFxToBases`) and the dedupe fingerprint includes price — folding to pounds at the boundary would re-import every London trade already in the ledger. `detectCurrency` once read `GBp` as pounds, a 100x cost basis, because a case-insensitive check ran before anything that knew pence from pounds by letter case. Likewise a CSV with no currency column must not claim one: the parser passed a hardcoded `'EUR'` as the row's own value, so the contract recorded `currencySource: 'row'` for a currency the file never printed; defaults belong in `normalizeRow`'s second argument.
 - **Never let a deterministic pattern decide whether the AI extractor runs** — `findCandidateLines` required `dd/mm` at the START of a row, and `ingest` refused any PDF where it matched nothing. A bank using ISO dates, month names, or a date mid-row was rejected with "no dated transaction lines found" without the extractor ever seeing it, which inverts the reason that tier exists. The strict pass is now a preference, not a gate: `findLooseCandidates` widens to any line carrying both a date and an amount, and only a document with neither is refused. Widening is safe because balance continuity still checks whatever comes back — a looser filter cannot make a wrong import look right.
@@ -375,6 +402,6 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **Trades vs positions imports** — `importTrades()` writes the **transaction ledger** (every buy/sell) and then derives positions; `importPositions()` writes a **positions snapshot** only. Re-importing a broker export is safe because `dedupeTrades()` skips already-imported moves. `services/import-brokers.js` must stay **pure** (no DOM/network) — tests import it directly, so don't add a `src/` mirror for it
 - **Batch valuation result matching** — Results from the AI must be matched to bottles by `result.id` (a `Map` keyed by bottle ID), never by positional index. The AI can return fewer items than requested; index-based matching silently applies the wrong valuation to the wrong bottle Matching by id was necessary but not sufficient: `triageBatchValuation` (src/wine.js) also refuses an absent or non-numeric price, counts an unreturned bottle as missing rather than valued, and holds back a value outside the model's own range or more than threefold from the previous one. The broker AI path likewise **refuses a partial import** when any extraction part is unreadable — unlike a statement, a broker import has no balance to check a missing part against, so a partial ledger would be invisible.
 - **Valuation pricing rules** — 6 rules enforced in both single and batch prompts: (1) Portuguese retailers first, (2) 23% IVA on ex-tax sources, (3) exact bottle format, (4) current in-stock only, (5) cross-reference ≥3 sources using median, (6) weight specialist merchants for rare/collectible wines
-- **index.html must not import service modules** — `services/storage.js` pulls in the full service graph (pricing, portfolio, etc.). Hub dashboard queries are written inline in the `<script>` block to avoid this dependency chain
+- **index.html must not import the service graph** — `services/storage.js` pulls in pricing, portfolio and the rest. The hub imports only modules that stand alone (`services/navbar.js`, `services/telemetry.js`, `src/hub.js`), runs its queries inline, and keeps its arithmetic in the pure, tested `src/hub.js`.
 - **`services/`, `data/` and `src/` must NEVER be imported with a `?v=` query** — they are cache-busted by HTTP header (`max-age=0, must-revalidate` in `vercel.json`), not by URL. The browser keys the module registry on the full URL, so importing `./services/state.js?v=X` from an HTML entry point while the services import `./state.js` from each other creates **two separate module instances**: two `state` objects, and two copies of every module-level variable. That is not theoretical — it silently killed `setMissingTickerResolver()` (injected on one instance, read as `null` on the other, so the "resolve missing ticker" dialog never opened from re-enable/import) and made `state.baseCurrency` diverge from the toggle. `wine/`, `spend/` and `holdings/` are the exceptions: they version *every* URL consistently, so they stay `immutable` — see the next entry
 - **Module `?v=` strings must all match** (applies to `wine/`, `spend/` and `holdings/`) — The browser module cache uses the full URL (including query string) as the cache key. If `wine.html` imports `state.js?v=X` and `cellar.js` imports `state.js?v=Y`, they become two separate module instances — mutations to one don't affect the other. Always keep all `?v=` strings in `wine.html` and within `wine/` in sync with the project version

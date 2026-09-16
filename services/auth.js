@@ -67,13 +67,13 @@ export async function checkUserRole() {
 
 /** Show or hide admin-only UI elements based on current role. */
 export function updateActionVisibility() {
-    const apiKeyBtn = document.getElementById('apiKeyBtn');
-    if (!apiKeyBtn) return;
-
-    if (isAdmin()) {
-        apiKeyBtn.style.display = '';
-    } else {
-        apiKeyBtn.style.display = 'none';
+    // Admin-only controls. Hiding them is courtesy, not security: the API key
+    // dialog writes nothing server-side, and the admin page is refused by the
+    // admin-invite function for anyone not in admin_users.
+    const show = isAdmin();
+    for (const id of ['apiKeyBtn', 'adminPageBtn']) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = show ? '' : 'none';
     }
 }
 
