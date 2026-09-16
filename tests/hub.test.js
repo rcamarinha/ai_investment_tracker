@@ -283,6 +283,25 @@ describe('computeWineDelta', () => {
         const result = computeWineDelta(1050, 1000, [], NOW);
         expect(result.text).toBe('+5.0%');
     });
+
+    it('treats an unparseable last_valued_at string as absent, not as NaN days', () => {
+        // new Date('bad-date') is truthy (an Invalid Date object) but getTime() returns
+        // NaN, which would produce "valued NaNd ago" without the isNaN guard.
+        const wines = [{ qty: 1, estimated_value: 150, last_valued_at: 'bad-date' }];
+        const result = computeWineDelta(150, 0, wines, NOW);
+        expect(result.text).toBe('');
+        expect(result.cls).toBe('neutral');
+    });
+
+    it('uses a valid date alongside an invalid one without NaN contamination', () => {
+        const wines = [
+            { qty: 1, estimated_value: 100, last_valued_at: 'not-a-date' },
+            { qty: 1, estimated_value: 50,  last_valued_at: '2026-06-01T00:00:00.000Z' },
+        ];
+        const result = computeWineDelta(150, 0, wines, NOW);
+        // The valid date (3d ago) is used; the invalid one is silently dropped.
+        expect(result.text).toBe('valued 3d ago');
+    });
 });
 
 

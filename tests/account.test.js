@@ -105,6 +105,22 @@ describe('setPassword', () => {
         expect(r.ok).toBe(true);
         expect(calls).toEqual([['updateUser', { password: 'secret12' }]]);
     });
+
+    it('confirms the success message so invite-flow callers know what to show', () => {
+        // An invited person's first action is setting a password. If this message
+        // changes silently, the hub toast breaks their onboarding flow.
+        const { client } = fakeClient();
+        return actionsFor(client).setPassword('secret12', 'secret12').then(r => {
+            expect(r.message).toBe('Password set. You are signed in.');
+        });
+    });
+
+    it('turns a server rejection into a message, never throws', async () => {
+        const { client } = fakeClient({ error: new Error('Password too weak') });
+        const r = await actionsFor(client).setPassword('secret12', 'secret12');
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Password too weak');
+    });
 });
 
 describe('googleLogin and logout', () => {
@@ -118,5 +134,28 @@ describe('googleLogin and logout', () => {
         const { client, calls } = fakeClient();
         expect(await actionsFor(client).logout()).toEqual({ ok: true });
         expect(calls).toEqual([['signOut']]);
+    });
+
+    it('turns a Google sign-in failure into a message, never throws', async () => {
+        const { client } = fakeClient({ error: new Error('OAuth popup blocked') });
+        const r = await actionsFor(client).googleLogin();
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('OAuth popup blocked');
+    });
+
+    it('turns a sign-out failure into a message, never throws', async () => {
+        const { client } = fakeClient({ error: new Error('Network error') });
+        const r = await actionsFor(client).logout();
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Network error');
+    });
+});
+
+describe('forgotPassword server errors', () => {
+    it('turns a send failure into a message, never throws', async () => {
+        const { client } = fakeClient({ error: new Error('Email rate limit exceeded') });
+        const r = await actionsFor(client).forgotPassword('jane@example.com');
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Email rate limit exceeded');
     });
 });
