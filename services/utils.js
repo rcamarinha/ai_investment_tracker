@@ -31,7 +31,8 @@ export function escapeHTML(str) {
 }
 
 /**
- * Show a transient toast.
+ * Show a transient toast. Implemented in ./toast.js, which has no imports so the
+ * hub can use it without pulling in this module's service graph.
  *
  * services/ had no notifier at all — it used alert(), which the project's own
  * failure-handling standard bans: it blocks the page, it reports nothing, and
@@ -39,43 +40,10 @@ export function escapeHTML(str) {
  * scoped itself to spend|wine|holdings|src precisely to grandfather this file,
  * which is how 66 blocking dialogs survived the rule that forbids them.
  *
- * Deliberately a fourth copy rather than an import from a module: wine/, spend/
- * and holdings/ each keep their own so they stay independently extractable, and
- * services/ importing one of them would couple two tools to make one file
- * shorter. The styles are shared (css/styles.css) — those were the thing that
- * genuinely should not have been duplicated.
+ * wine/, spend/ and holdings/ each keep their own copy so they stay
+ * independently extractable. The styles are shared (css/styles.css).
  */
-export function showToast(message, type = 'success', duration = 4000) {
-    let container = document.getElementById('toastContainer');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'toastContainer';
-        container.className = 'toast-container';
-        document.body.appendChild(container);
-    }
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    const icons = { success: '\u2713', error: '\u2715', warning: '\u26A0', info: '\u2139' };
-
-    // Built as nodes, not innerHTML: a toast often carries an error message,
-    // and an error message often carries text from somewhere else.
-    const icon = document.createElement('span');
-    icon.className = 'toast-icon';
-    icon.textContent = icons[type] || icons.info;
-    const msg = document.createElement('span');
-    msg.className = 'toast-msg';
-    msg.textContent = String(message);
-    toast.append(icon, msg);
-
-    container.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add('toast-visible'));
-    const dismiss = () => {
-        toast.classList.remove('toast-visible');
-        toast.addEventListener('transitionend', () => toast.remove(), { once: true });
-    };
-    const timer = setTimeout(dismiss, duration);
-    toast.addEventListener('click', () => { clearTimeout(timer); dismiss(); });
-}
+export { showToast } from './toast.js';
 
 /**
  * Bind one delegated click/keyboard listener to a container whose children are

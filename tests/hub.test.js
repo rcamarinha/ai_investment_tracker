@@ -8,6 +8,9 @@ import {
     computeWineCost,
     computeWineDelta,
     hubSparkline,
+    isInviteLink,
+    inviteLinkDecision,
+    authLinkError,
 } from '../src/hub.js';
 
 // ── hubFmt ────────────────────────────────────────────────────────────────────
@@ -402,5 +405,86 @@ describe('hubSparkline', () => {
             snap('2026-01-01T00:00:00Z', 200),
         ];
         expect(hubSparkline(rows)).toBeNull();
+    });
+});
+
+// ── isInviteLink ──────────────────────────────────────────────────────────────
+//
+// An invitation signs someone in with no password. If the hub misses the link,
+// they finish joining unable to sign in again, so this is the gate that makes an
+// invitation usable at all.
+
+describe('isInviteLink', () => {
+    it('recognises an invitation link', () => {
+        expect(isInviteLink('#access_token=abc&expires_in=3600&refresh_token=def&token_type=bearer&type=invite')).toBe(true);
+    });
+
+    it('does not mistake a password-reset link for an invitation', () => {
+        expect(isInviteLink('#access_token=abc&type=recovery')).toBe(false);
+    });
+
+    it('does not mistake a sign-up confirmation or magic link for an invitation', () => {
+        expect(isInviteLink('#access_token=abc&type=signup')).toBe(false);
+        expect(isInviteLink('#access_token=abc&type=magiclink')).toBe(false);
+    });
+
+    it('requires a token, so a hand-typed #type=invite does nothing', () => {
+        expect(isInviteLink('#type=invite')).toBe(false);
+    });
+
+    it('treats an empty or missing hash as no invitation', () => {
+        for (const hash of ['', '#', null, undefined]) expect(isInviteLink(hash)).toBe(false);
+    });
+
+    it('works with or without the leading #', () => {
+        expect(isInviteLink('access_token=abc&type=invite')).toBe(true);
+    });
+});
+
+// ── inviteLinkDecision ────────────────────────────────────────────────────────
+//
+// An invite link's tokens are not tied to this browser, so anyone can craft one
+// from their own session. Honouring it for someone already signed in would swap
+// them into the sender's account and then ask for a password, which looks like
+// onboarding. Found by the security audit before this shipped.
+
+describe('inviteLinkDecision', () => {
+    const INVITE = '#access_token=abc&refresh_token=def&type=invite';
+
+    it('asks a signed-out arrival to choose a password', () => {
+        expect(inviteLinkDecision(INVITE, false)).toBe('prompt');
+    });
+
+    it('refuses the link when a session already exists, so it cannot swap accounts', () => {
+        expect(inviteLinkDecision(INVITE, true)).toBe('refuse');
+    });
+
+    it('leaves every other link alone, signed in or not', () => {
+        for (const had of [true, false]) {
+            expect(inviteLinkDecision('#access_token=abc&type=recovery', had)).toBeNull();
+            expect(inviteLinkDecision('', had)).toBeNull();
+            expect(inviteLinkDecision('#type=invite', had)).toBeNull();
+        }
+    });
+});
+
+// ── authLinkError ─────────────────────────────────────────────────────────────
+//
+// An invitation opened late comes back as an error hash. Without this the hub
+// showed a signed-out page and said nothing.
+
+describe('authLinkError', () => {
+    it('recognises an expired link', () => {
+        expect(authLinkError('#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'))
+            .toEqual({ code: 'otp_expired', expired: true });
+    });
+
+    it('reports other refusals without calling them expired', () => {
+        expect(authLinkError('#error=server_error&error_description=x')).toEqual({ code: 'server_error', expired: false });
+    });
+
+    it('ignores a successful link and an empty hash', () => {
+        expect(authLinkError('#access_token=abc&type=invite')).toBeNull();
+        for (const hash of ['', '#', null, undefined]) expect(authLinkError(hash)).toBeNull();
     });
 });
