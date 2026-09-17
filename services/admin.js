@@ -66,9 +66,16 @@ async function callAdmin(payload) {
     return { status: res.status, body: body || {} };
 }
 
-// A 4xx that carries our own `error` is an answer to show. Anything else — a
-// 5xx, or a gateway 404 because the function is not deployed — is a failure.
-const isAnswer = r => r.status >= 400 && r.status < 500 && typeof r.body?.error === 'string';
+// An answer we can show as it stands: our own `error`, from a request the
+// function itself refused or could not complete. Only a reply with no message
+// of ours — a gateway 404 because the function is not deployed, an HTML error
+// page — is treated as a failure of the call.
+const isAnswer = r => r.status >= 400 && typeof r.body?.error === 'string';
+
+// The function tells an administrator why something failed; a non-admin gets
+// nothing. Show the reason when it is there — it is the only copy the one
+// person who can act on it will see.
+const reasonFrom = r => [r.body?.error, r.body?.detail].filter(Boolean).join(' — ');
 
 async function loadAccess() {
     if (!state.currentUser) {
@@ -92,6 +99,10 @@ async function loadPeople() {
             access = 'signed-out';
         } else if (r.status === 403) {
             access = 'denied';
+        } else if (isAnswer(r)) {
+            access = 'ready';
+            people = [];
+            showToast(reasonFrom(r), 'error', 14000);
         } else {
             throw new Error(r.body?.error || r.body?.message || `admin-invite answered ${r.status}`);
         }
@@ -125,8 +136,12 @@ async function sendInvite() {
             if (input) input.value = '';
             await loadPeople();
         } else if (isAnswer(r)) {
-            showToast(r.body.error, 'warning', 9000);
-            if (r.status === 401 || r.status === 403) await loadAccess();
+            showToast(reasonFrom(r), 'warning', 14000);
+            reportHandled(new Error(reasonFrom(r)), { action: 'admin-invite' });
+            // The account can exist even when the email did not go out, so the
+            // list must be re-read rather than assumed unchanged.
+            if (r.status >= 500) await loadPeople();
+            else if (r.status === 401 || r.status === 403) await loadAccess();
         } else {
             throw new Error(r.body?.error || r.body?.message || `admin-invite answered ${r.status}`);
         }
@@ -156,7 +171,7 @@ async function revoke(id) {
     try {
         const r = await callAdmin({ action: 'revoke', userId: id });
         if (r.status === 200) showToast('Invitation revoked. Its link no longer works.', 'success', 6000);
-        else if (isAnswer(r)) showToast(r.body.error, 'warning', 9000);
+        else if (isAnswer(r)) showToast(reasonFrom(r), 'warning', 12000);
         else throw new Error(r.body?.error || r.body?.message || `admin-invite answered ${r.status}`);
     } catch (err) {
         showToast(`The invitation was not revoked: ${err.message}`, 'error', 9000);
