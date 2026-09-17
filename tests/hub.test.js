@@ -283,6 +283,25 @@ describe('computeWineDelta', () => {
         const result = computeWineDelta(1050, 1000, [], NOW);
         expect(result.text).toBe('+5.0%');
     });
+
+    it('returns empty string when last_valued_at is an invalid date string', () => {
+        // new Date('bad-date').getTime() === NaN — the guard must filter it out before
+        // the sort, otherwise NaN arithmetic produces 'valued NaNd ago'.
+        const wines = [{ qty: 1, estimated_value: 100, last_valued_at: 'bad-date' }];
+        const result = computeWineDelta(100, 0, wines, NOW);
+        expect(result.text).toBe('');
+        expect(result.cls).toBe('neutral');
+    });
+
+    it('ignores invalid dates and falls back to the valid one', () => {
+        const wines = [
+            { qty: 1, estimated_value: 50, last_valued_at: 'not-a-date' },
+            { qty: 1, estimated_value: 50, last_valued_at: '2026-06-01T00:00:00.000Z' }, // 3d before NOW
+        ];
+        const result = computeWineDelta(100, 0, wines, NOW);
+        expect(result.text).toBe('valued 3d ago');
+        expect(result.cls).toBe('neutral');
+    });
 });
 
 
