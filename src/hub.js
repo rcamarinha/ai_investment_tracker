@@ -200,6 +200,7 @@ export function computeWineDelta(wineValue, wineCost, wines, now = Date.now()) {
         const lastValued = (wines || [])
             .filter(w => w.last_valued_at)
             .map(w => new Date(w.last_valued_at))
+            .filter(d => !isNaN(d.getTime()))
             .sort((a, b) => b - a)[0];
 
         if (lastValued) {

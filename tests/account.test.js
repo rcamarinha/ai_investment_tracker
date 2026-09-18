@@ -120,3 +120,44 @@ describe('googleLogin and logout', () => {
         expect(calls).toEqual([['signOut']]);
     });
 });
+
+describe('setPassword — additional paths', () => {
+    it('returns a confirmation message on success', async () => {
+        const { client } = fakeClient();
+        const r = await actionsFor(client).setPassword('secret12', 'secret12');
+        expect(r.ok).toBe(true);
+        expect(r.message).toMatch(/password set/i);
+    });
+
+    it('turns a server error into a message instead of throwing', async () => {
+        const { client } = fakeClient({ error: new Error('Auth session missing') });
+        const r = await actionsFor(client).setPassword('secret12', 'secret12');
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Auth session missing');
+    });
+});
+
+describe('googleLogin and logout — error paths', () => {
+    it('turns a Google sign-in server error into a message instead of throwing', async () => {
+        const { client } = fakeClient({ error: new Error('Provider error') });
+        const r = await actionsFor(client).googleLogin();
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Provider error');
+    });
+
+    it('turns a sign-out server error into a message instead of throwing', async () => {
+        const { client } = fakeClient({ error: new Error('Session not found') });
+        const r = await actionsFor(client).logout();
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Session not found');
+    });
+});
+
+describe('forgotPassword error path', () => {
+    it('turns a server error into a message instead of throwing', async () => {
+        const { client } = fakeClient({ error: new Error('Email rate limit exceeded') });
+        const r = await actionsFor(client).forgotPassword('jane@example.com');
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Email rate limit exceeded');
+    });
+});
