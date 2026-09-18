@@ -551,3 +551,59 @@ describe('which rows count toward the whole-statement total', () => {
         expect(rowsInStatementTotal([ordinary])).toEqual([ordinary]);
     });
 });
+
+// An account number, IBAN or NIB sits at the left margin, carries no money and
+// is printed in uppercase, so it passes every other heading shape test.
+// A false heading routes real money to the wrong account — the guard is not
+// cosmetic.
+describe('account numbers and IBANs are not headings', () => {
+    const L = (text, i) => ({ text, y: 700 - i * 12, xs: [60] });
+
+    it('rejects a line whose digit run is 8 or more after collapsing spaces', () => {
+        // "00012345678901" is 14 consecutive digits — a typical account number.
+        // Without the guard it becomes a heading and routes subsequent rows to
+        // a phantom account, sending real money to the wrong place.
+        const doc = [
+            L('CONTA 00012345678901 ACTIVA', 0),
+            L('04/08 COMPRA SUPERMERCADO 45,00', 1),
+        ];
+        expect(findSectionHeadings(doc)).toHaveLength(0);
+    });
+
+    it('accepts a heading whose digit run is shorter than 8', () => {
+        // A card-section heading: "042061" is 6 digits — a partial card number,
+        // not an account id. The 8-digit threshold should leave it alone.
+        const doc = [
+            L('DETALHE CARTAO N. 042061', 0),
+            L('04/08 COMPRA SUPERMERCADO 45,00', 1),
+        ];
+        expect(findSectionHeadings(doc).map(l => l.text)).toEqual(['DETALHE CARTAO N. 042061']);
+    });
+});
+
+// Before the fix, findSectionHeadings used the same strict "row starts with
+// a date" check as findCandidateLines. When a bank prints the date mid-row
+// (CGD: "COMPRA SUPERMERCADO 2026-07-30 45,00"), the strict set was empty and
+// every lookahead check returned false — no heading could qualify, so a
+// document with real headings reported zero sections.
+describe('headings in documents whose rows carry dates mid-row', () => {
+    const L = (text, i) => ({ text, y: 700 - i * 12, xs: [60] });
+
+    it('falls back to loose date detection when no row leads with a date', () => {
+        const doc = [
+            L('MOVIMENTOS DE CONTA', 0),
+            L('COMPRA SUPERMERCADO 2026-07-30 45,00', 1),
+            L('DEBITO DIRETO EDP 2026-07-31 80,00', 2),
+        ];
+        expect(findSectionHeadings(doc).map(l => l.text)).toEqual(['MOVIMENTOS DE CONTA']);
+    });
+
+    it('does not return a transaction row as a heading in the fallback path', () => {
+        const doc = [
+            L('MOVIMENTOS DE CONTA', 0),
+            L('COMPRA SUPERMERCADO 2026-07-30 45,00', 1),
+        ];
+        const headings = findSectionHeadings(doc).map(l => l.text);
+        expect(headings).not.toContain('COMPRA SUPERMERCADO 2026-07-30 45,00');
+    });
+});

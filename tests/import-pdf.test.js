@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    groupIntoLines, findCandidateLines, proposeLinePattern, detectStatementYear,
+    groupIntoLines, findCandidateLines, findLooseCandidates, proposeLinePattern, detectStatementYear,
     parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
 } from '../services/import-pdf.js';
 
@@ -187,5 +187,50 @@ describe('buildPdfDraft', () => {
     it('reports failure rather than a bad guess on an unreadable document', () => {
         expect(buildPdfDraft([{ text: 'scanned image, no text', xs: [], y: 0 }]))
             .toMatchObject({ ok: false, matched: 0 });
+    });
+});
+
+// findLooseCandidates is the fallback gate for documents where the strict
+// "date-leading" filter (findCandidateLines) matches nothing — CGD ISO-date
+// style, mid-row dates, month-name dates. If this function is broken, those
+// documents are refused outright with "no dated transaction lines found".
+describe('findLooseCandidates', () => {
+    const L = text => ({ text, y: 0, xs: [60] });
+
+    it('accepts a line with a dd/mm date and a money amount', () => {
+        const lines = [L('04/08 COMPRA SUPERMERCADO 45,00')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('accepts a line with a mid-row ISO date (CGD style)', () => {
+        // CGD prints "COMPRA SUPERMERCADO 2026-07-30 45,00"
+        const lines = [L('COMPRA SUPERMERCADO 2026-07-30 45,00')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('accepts a line with a month-name date', () => {
+        const lines = [L('04 Ago 2026 DECATHLON GAIA 172,60')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('rejects a line longer than 200 characters even if it has a date and money', () => {
+        const long = '04/08 ' + 'X'.repeat(200) + ' 45,00';
+        expect(findLooseCandidates([L(long)])).toHaveLength(0);
+    });
+
+    it('rejects a line with money but no date', () => {
+        // Note: D_SLASH matches digit sequences like "1.23", so a safe test
+        // uses only comma-decimal amounts with no dot that could masquerade.
+        const lines = [L('TOTAL DO MES 250,00')];
+        expect(findLooseCandidates(lines)).toHaveLength(0);
+    });
+
+    it('rejects a line with a date but no money amount', () => {
+        const lines = [L('2026-07-30 TEXTO SEM VALOR')];
+        expect(findLooseCandidates(lines)).toHaveLength(0);
+    });
+
+    it('returns an empty array for an empty input', () => {
+        expect(findLooseCandidates([])).toHaveLength(0);
     });
 });
