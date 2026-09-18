@@ -17,6 +17,7 @@ import { escapeHTML, showToast, bindActions } from './utils.js';
 import { reportHandled, setTelemetryClient } from './telemetry.js';
 import { createAccountActions } from './account.js';
 import { t } from '../data/i18n.js';
+import { summarizeUsage } from './admin-report-core.js';
 
 let access = 'loading';      // loading | signed-out | denied | ready | unavailable
 let people = [];
@@ -25,6 +26,8 @@ let revokeTimer = null;
 const REVOKE_ARM_MS = 5000;
 let sending = false;
 let loadedFor;               // user id the list was last loaded for
+let usage = null;            // summarizeUsage() output
+let usageState = 'idle';     // idle | loading | ready | missing | error
 
 const account = createAccountActions({
     getClient: () => state.supabaseClient,
@@ -115,6 +118,30 @@ async function loadPeople() {
     }
     pendingRevoke = null;
     render();
+    if (access === 'ready') loadUsage();
+}
+
+// Usage comes from a database function, not the invite function: it reads
+// across accounts, checks admin_users itself, and returns counts and dates only
+// (see supabase/migrations/20260918_admin_usage_report.sql). The page must work
+// before that migration has run, so a missing function is a state, not an error.
+async function loadUsage() {
+    if (!state.supabaseClient) return;
+    if (usageState !== 'ready') { usageState = 'loading'; render(); }
+    try {
+        const { data, error } = await state.supabaseClient.rpc('admin_usage_report');
+        if (error) {
+            if (error.code === 'PGRST202') { usageState = 'missing'; render(); return; }
+            throw new Error(error.message || String(error));
+        }
+        usage = summarizeUsage(data);
+        usageState = 'ready';
+    } catch (err) {
+        usageState = 'error';
+        showToast(`Usage could not be loaded: ${err.message}`, 'error', 9000);
+        reportHandled(err, { action: 'admin-usage' });
+    }
+    render();
 }
 
 async function sendInvite() {
@@ -191,6 +218,54 @@ function setSendButton() {
 
 const notice = text => `<div class="card"><p style="color:var(--text-secondary);margin:0;">${escapeHTML(text)}</p></div>`;
 
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+function renderUsage() {
+    const card = inner => `<div class="card"><h2 class="section-heading">Usage</h2>${inner}</div>`;
+    const quiet = text => `<p style="color:var(--text-secondary);font-size:13px;margin:0;">${escapeHTML(text)}</p>`;
+    if (usageState === 'idle' || usageState === 'loading') return card(quiet('Loading usage…'));
+    if (usageState === 'missing') return card(quiet('Usage appears once the admin_usage_report migration has been run in the Supabase SQL Editor.'));
+    if (usageState === 'error' || !usage) return card(quiet('Usage could not be loaded. Reload the page to try again.'));
+
+    const { totals, tools } = usage;
+    const tile = (label, value, cls = '') =>
+        `<div class="stat-tile"><div class="st-label">${escapeHTML(label)}</div><div class="st-value ${cls}">${escapeHTML(String(value))}</div></div>`;
+    const toolRows = tools.map(tool => `
+        <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+            <span style="color:var(--text-primary);">${escapeHTML(tool.label)}</span>
+            <span style="color:var(--text-secondary);text-align:right;">${escapeHTML(plural(tool.users, 'person', 'people'))} · ${escapeHTML(String(tool.active30))} active this month</span>
+        </div>`).join('');
+
+    return card(`
+        <div class="stat-tiles">
+            ${tile('Accounts', totals.accounts)}
+            ${tile('Active · 7 days', totals.active7, 'up')}
+            ${tile('Active · 30 days', totals.active30)}
+            ${tile('Joined · 30 days', totals.joined30, 'gold')}
+        </div>
+        <div style="margin-top:14px;">${toolRows}</div>
+        <p style="color:var(--text-tertiary);font-size:12px;margin:10px 0 0;">
+            Active means signed in, saved something, refreshed prices, or ran an import or valuation.
+            Only reading a page leaves no trace, so these are lower bounds.
+            ${totals.unused ? escapeHTML(plural(totals.unused, 'account has', 'accounts have')) + ' nothing in any tool yet.' : ''}
+        </p>`);
+}
+
+/** The activity line under a person in the list, when usage has loaded. */
+function activityLine(id) {
+    const u = usageState === 'ready' ? usage?.byId.get(id) : null;
+    if (!u) return '';
+    const tools = u.used.map(t => `${t.label} ${t.items}`).join(' · ');
+    const parts = [
+        u.lastActiveMs ? `Active ${fmtDate(u.lastActiveMs)}` : 'No activity yet',
+        tools,
+    ].filter(Boolean).join(' · ');
+    const problems = u.problems30
+        ? `<div style="font-size:11px;margin-top:2px;color:var(--down);">${escapeHTML(plural(u.problems30, 'problem', 'problems'))} reported this month</div>`
+        : '';
+    return `<div style="font-size:11px;margin-top:2px;color:var(--text-secondary);">${escapeHTML(parts)}</div>${problems}`;
+}
+
 function render() {
     const root = document.getElementById('adminBody');
     if (!root) return;
@@ -216,12 +291,14 @@ function render() {
                     <div style="color:var(--text-primary);font-size:14px;word-break:break-all;">${escapeHTML(p.email || 'No email')}</div>
                     <div style="font-size:12px;margin-top:2px;color:${s.color};">${escapeHTML(s.label)}</div>
                     <div style="font-size:11px;margin-top:2px;color:var(--text-tertiary);">${escapeHTML(when)}</div>
+                    ${activityLine(p.id)}
                 </div>
                 ${action}
             </div>`;
     }).join('');
 
     root.innerHTML = `
+        ${renderUsage()}
         <div class="card">
             <h2 class="section-heading">Invite someone</h2>
             <p style="color:var(--text-secondary);font-size:13px;margin:0 0 12px;">They get an email with a link. Opening it signs them in and asks them to choose a password.</p>
@@ -230,7 +307,7 @@ function render() {
                        style="flex:1 1 240px;padding:10px 12px;background:var(--ink-2);color:var(--text-primary);border:1px solid var(--border-hover);border-radius:6px;font-size:14px;box-sizing:border-box;" />
                 <button class="btn btn-primary" data-act="invite">Send invitation</button>
             </div>
-            <p style="color:var(--text-tertiary);font-size:12px;margin:10px 0 0;">Supabase's built-in email service sends two sign-in emails an hour, shared with password resets.</p>
+            <p style="color:var(--text-tertiary);font-size:12px;margin:10px 0 0;">The link works once and expires. If it has expired, revoke the invitation and send a new one.</p>
         </div>
         <div class="card">
             <h2 class="section-heading">People</h2>

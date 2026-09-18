@@ -26,11 +26,12 @@
                 <span>Admin</span>
                 <span class="header-version">v3.54.0</span>
             </h1>
-            <p>Invite people and see who has joined</p>
+            <p>Who uses the app, and invitations</p>
         </div>
 
-        <!-- Rendered by services/admin.js. Every action is decided by the
-             admin-invite edge function, never by this page. -->
+        <!-- Rendered by services/admin.js. Nothing is decided here: invitations
+             by the admin-invite edge function, usage by the admin_usage_report
+             database function. Both check admin_users themselves. -->
         <div id="adminBody"></div>
 
     </div>
