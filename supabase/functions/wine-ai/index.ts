@@ -30,6 +30,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recordUsage } from "../_shared/usage.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
@@ -66,12 +67,18 @@ function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, s
 
 // ── Gemini helper ─────────────────────────────────────────────────────────────
 
+// Records one upstream call against the person who made the request. Passed
+// down explicitly rather than held in a module variable: one isolate serves
+// concurrent requests, so a module-level "current user" could credit one
+// person's call to another. Every attempt is recorded, refused ones included.
+type Meter = (provider: string, model: string, ok: boolean, response?: unknown) => void;
+
 interface GeminiResult {
   text: string;
   groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
 }
 
-async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: boolean): Promise<GeminiResult & { usedGrounding: boolean }> {
+async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: boolean, meter: Meter): Promise<GeminiResult & { usedGrounding: boolean }> {
   const body: Record<string, unknown> = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { maxOutputTokens: maxTokens },
@@ -83,19 +90,23 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
   // 20s hard limit per Gemini call so Claude fallback can still run within the
   // 55s client timeout. Grounded searches occasionally stall; without this the
   // whole edge-function invocation hangs until the client aborts the request.
-  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+  const res = await fetch(GEMINI_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // Key in a header, not the URL: Deno puts the full URL in network error
+    // messages, and those are logged, so a ?key= URL leaks the key into logs.
+    headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY ?? "" },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(20000),
   });
 
   if (!res.ok) {
+    meter("gemini", GEMINI_MODEL, false);
     const errText = await res.text().catch(() => "");
     throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
   }
 
   const data = await res.json();
+  meter("gemini", GEMINI_MODEL, true, data);
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
   const groundingChunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? undefined;
@@ -110,13 +121,13 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
  * If the ungrounded attempt also fails with 429, waits and retries once more.
  * If all attempts fail, throws — meaning the Gemini key is dead or exhausted.
  */
-async function callGemini(prompt: string, maxTokens = 8192): Promise<GeminiResult> {
+async function callGemini(prompt: string, maxTokens: number, meter: Meter): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
   // Attempt 1: with Google Search grounding (default)
   try {
     console.log("[wine-ai] Gemini grounded request (with Google Search)");
-    const result = await _callGeminiOnce(prompt, maxTokens, true);
+    const result = await _callGeminiOnce(prompt, maxTokens, true, meter);
     console.log("[wine-ai] Gemini: grounded response OK");
     return result;
   } catch (err) {
@@ -129,7 +140,7 @@ async function callGemini(prompt: string, maxTokens = 8192): Promise<GeminiResul
   // Attempt 2: without grounding (bypasses grounding quota)
   try {
     console.log("[wine-ai] Gemini ungrounded request (no Google Search)");
-    const result = await _callGeminiOnce(prompt, maxTokens, false);
+    const result = await _callGeminiOnce(prompt, maxTokens, false, meter);
     console.log("[wine-ai] Gemini: ungrounded response OK");
     return result;
   } catch (err) {
@@ -141,7 +152,7 @@ async function callGemini(prompt: string, maxTokens = 8192): Promise<GeminiResul
 
   // Attempt 3: final retry without grounding
   console.log("[wine-ai] Gemini final ungrounded retry");
-  const result = await _callGeminiOnce(prompt, maxTokens, false);
+  const result = await _callGeminiOnce(prompt, maxTokens, false, meter);
   console.log("[wine-ai] Gemini: final retry OK");
   return result;
 }
@@ -156,7 +167,8 @@ async function callGeminiVision(
   prompt: string,
   imageBase64: string,
   mediaType: string,
-  maxTokens = 1024,
+  maxTokens: number,
+  meter: Meter,
 ): Promise<{ text: string }> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
@@ -171,18 +183,22 @@ async function callGeminiVision(
     generationConfig: { maxOutputTokens: maxTokens },
   };
 
-  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+  const res = await fetch(GEMINI_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // Key in a header, not the URL: Deno puts the full URL in network error
+    // messages, and those are logged, so a ?key= URL leaks the key into logs.
+    headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY ?? "" },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
+    meter("gemini", GEMINI_MODEL, false);
     const errText = await res.text().catch(() => "");
     throw new Error(`Gemini Vision API error ${res.status}: ${errText.slice(0, 300)}`);
   }
 
   const data = await res.json();
+  meter("gemini", GEMINI_MODEL, true, data);
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
   return { text };
@@ -190,7 +206,7 @@ async function callGeminiVision(
 
 // ── Claude text helper ────────────────────────────────────────────────────────
 
-async function callClaude(prompt: string, maxTokens = 8192, useWebSearch = true): Promise<{ text: string }> {
+async function callClaude(prompt: string, maxTokens: number, useWebSearch: boolean, meter: Meter): Promise<{ text: string }> {
   if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY_Wine secret not set on the server.");
 
   const headers: Record<string, string> = {
@@ -217,11 +233,13 @@ async function callClaude(prompt: string, maxTokens = 8192, useWebSearch = true)
   });
 
   if (!res.ok) {
+    meter("anthropic", CLAUDE_MODEL, false);
     const errText = await res.text().catch(() => "");
     throw new Error(`Claude API error ${res.status}: ${errText.slice(0, 300)}`);
   }
 
   const data = await res.json();
+  meter("anthropic", CLAUDE_MODEL, true, data);
   const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
     .filter(b => b.type === "text")
     .map(b => b.text ?? "")
@@ -232,12 +250,12 @@ async function callClaude(prompt: string, maxTokens = 8192, useWebSearch = true)
 
 // ── Single-bottle valuation: Gemini → Claude fallback ─────────────────────────
 
-async function handleValuation(prompt: string, corsHeaders: Record<string, string>): Promise<Response> {
+async function handleValuation(prompt: string, corsHeaders: Record<string, string>, meter: Meter): Promise<Response> {
   let geminiError = "";
 
   // 1. Try Gemini (with Google Search grounding)
   try {
-    const { text, groundingChunks } = await callGemini(prompt, 4096);
+    const { text, groundingChunks } = await callGemini(prompt, 4096, meter);
     if (text.trim()) {
       console.log("[wine-ai] Valuation via Gemini");
       return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null }, 200, corsHeaders);
@@ -255,7 +273,7 @@ async function handleValuation(prompt: string, corsHeaders: Record<string, strin
 
   // 2. Fallback: Claude with web search
   try {
-    const { text } = await callClaude(prompt, 4096, true);
+    const { text } = await callClaude(prompt, 4096, true, meter);
     console.log("[wine-ai] Valuation via Claude (fallback)");
     return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude", _geminiError: geminiError }, 200, corsHeaders);
   } catch (err) {
@@ -413,13 +431,13 @@ function padResults(results: ValuationResult[], chunk: BottleInfo[], chunkIdx: n
   return padded.slice(0, chunk.length);
 }
 
-async function valuateChunk(chunk: BottleInfo[], chunkIdx: number): Promise<ValuationResult[]> {
+async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter): Promise<ValuationResult[]> {
   const prompt = buildBatchPrompt(chunk);
   const maxTokens = 4096; // 3 bottles × ~500 tokens each — well within limit
 
   // 1. Try Gemini
   try {
-    const { text } = await callGemini(prompt, maxTokens);
+    const { text } = await callGemini(prompt, maxTokens, meter);
     const parsed = parseBatchText(text, chunk, chunkIdx, "Gemini");
     if (parsed) {
       console.log(`[wine-ai] Chunk ${chunkIdx}: Gemini OK (${parsed.length} results)`);
@@ -432,7 +450,7 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number): Promise<Valu
 
   // 2. Fallback: Claude
   console.log(`[wine-ai] Chunk ${chunkIdx}: falling back to Claude`);
-  const { text } = await callClaude(prompt, maxTokens, true);
+  const { text } = await callClaude(prompt, maxTokens, true, meter);
   const parsed = parseBatchText(text, chunk, chunkIdx, "Claude");
   if (parsed) {
     console.log(`[wine-ai] Chunk ${chunkIdx}: Claude fallback OK (${parsed.length} results)`);
@@ -444,7 +462,7 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number): Promise<Valu
   return chunk.map(b => ({ id: b.id, error: "No valid JSON from Gemini or Claude" } as ValuationResult));
 }
 
-async function handleBatchValuation(bottles: BottleInfo[], corsHeaders: Record<string, string>): Promise<Response> {
+async function handleBatchValuation(bottles: BottleInfo[], corsHeaders: Record<string, string>, meter: Meter): Promise<Response> {
   if (!bottles || bottles.length === 0) {
     return jsonResponse({ error: "bottles array is empty" }, 400, corsHeaders);
   }
@@ -468,7 +486,7 @@ async function handleBatchValuation(bottles: BottleInfo[], corsHeaders: Record<s
   for (let idx = 0; idx < chunks.length; idx++) {
     if (idx > 0) await sleep(INTER_CHUNK_DELAY_MS);
     try {
-      const chunkResults = await valuateChunk(chunks[idx], idx);
+      const chunkResults = await valuateChunk(chunks[idx], idx, meter);
       results.push(...chunkResults);
     } catch (err) {
       // Whole chunk threw unexpectedly — fill with error stubs and keep going
@@ -496,6 +514,7 @@ async function handleLabel(
   image: { base64: string; mediaType: string } | undefined,
   maxTokens: number,
   corsHeaders: Record<string, string>,
+  meter: Meter,
 ): Promise<Response> {
   // 1. Try Gemini Vision (primary)
   if (GEMINI_API_KEY && image?.base64) {
@@ -506,6 +525,7 @@ async function handleLabel(
         image.base64,
         image.mediaType || "image/jpeg",
         maxTokens,
+        meter,
       );
       console.log("[wine-ai] Label: Gemini Vision OK");
       // Normalise to the same shape as the Claude response so the client needs no changes
@@ -543,6 +563,7 @@ async function handleLabel(
   });
 
   if (!anthropicRes.ok) {
+    meter("anthropic", CLAUDE_MODEL, false);
     const errBody = await anthropicRes.text().catch(() => "");
     console.error(`[wine-ai] Anthropic API error ${anthropicRes.status}:`, errBody.slice(0, 300));
     return jsonResponse(
@@ -552,19 +573,20 @@ async function handleLabel(
   }
 
   const data = await anthropicRes.json();
+  meter("anthropic", CLAUDE_MODEL, true, data);
   return jsonResponse({ ...data, _source: "claude" }, 200, corsHeaders);
 }
 
 // ── Cellar analysis: Gemini primary (grounded), Claude fallback ───────────────
 
-async function handleAnalysis(prompt: string, maxTokens: number, corsHeaders: Record<string, string>): Promise<Response> {
+async function handleAnalysis(prompt: string, maxTokens: number, corsHeaders: Record<string, string>, meter: Meter): Promise<Response> {
   let geminiError = "";
 
   // 1. Try Gemini with Google Search grounding
   if (GEMINI_API_KEY) {
     try {
       console.log("[wine-ai] Cellar analysis via Gemini (primary)");
-      const { text } = await callGemini(prompt, maxTokens);
+      const { text } = await callGemini(prompt, maxTokens, meter);
       return jsonResponse({ content: [{ type: "text", text }], _source: "gemini" }, 200, corsHeaders);
     } catch (err) {
       geminiError = err instanceof Error ? err.message : String(err);
@@ -579,7 +601,7 @@ async function handleAnalysis(prompt: string, maxTokens: number, corsHeaders: Re
 
   try {
     console.log("[wine-ai] Cellar analysis via Claude (fallback)");
-    const { text } = await callClaude(prompt, maxTokens, false);
+    const { text } = await callClaude(prompt, maxTokens, false, meter);
     return jsonResponse({ content: [{ type: "text", text }], _source: "claude" }, 200, corsHeaders);
   } catch (err) {
     const claudeMsg = err instanceof Error ? err.message : String(err);
@@ -612,6 +634,8 @@ Deno.serve(async (req) => {
   if (!token) {
     return jsonResponse({ error: "Missing authorization token" }, 401, corsHeaders);
   }
+  // The verified caller, for recording usage — never taken from the request body.
+  let userId = "";
   {
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: `Bearer ${token}` } },
@@ -622,7 +646,10 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Invalid or expired token. Please log in again." }, 401, corsHeaders);
     }
     console.log("[wine-ai] Authenticated user:", data.user.id);
+    userId = data.user.id;
   }
+  const meter: Meter = (provider, model, ok, response) =>
+    recordUsage({ userId, fn: "wine-ai", provider, model, ok, response });
 
   let body: {
     requestType: string;
@@ -662,7 +689,7 @@ Deno.serve(async (req) => {
   // ── Valuation routes (Gemini primary, Claude fallback) ───────────────────
   if (requestType === "valuation") {
     if (!prompt) return jsonResponse({ error: "prompt is required for valuation" }, 400, corsHeaders);
-    return handleValuation(prompt, corsHeaders);
+    return handleValuation(prompt, corsHeaders, meter);
   }
 
   if (requestType === "batch-valuation") {
@@ -672,19 +699,19 @@ Deno.serve(async (req) => {
     if (bottles.length > MAX_BATCH_SIZE) {
       return jsonResponse({ error: `Too many bottles (max ${MAX_BATCH_SIZE} per request)` }, 400, corsHeaders);
     }
-    return handleBatchValuation(bottles, corsHeaders);
+    return handleBatchValuation(bottles, corsHeaders, meter);
   }
 
   // ── Label route (Gemini Vision primary, Claude Vision fallback) ───────────
   if (requestType === "label") {
     if (!prompt) return jsonResponse({ error: "prompt is required for label" }, 400, corsHeaders);
-    return handleLabel(prompt, image, maxTokens, corsHeaders);
+    return handleLabel(prompt, image, maxTokens, corsHeaders, meter);
   }
 
   // ── Analysis route (Gemini primary, Claude fallback) ─────────────────────
   if (requestType === "analysis") {
     if (!prompt) return jsonResponse({ error: "prompt is required for analysis" }, 400, corsHeaders);
-    return handleAnalysis(prompt, maxTokens, corsHeaders);
+    return handleAnalysis(prompt, maxTokens, corsHeaders, meter);
   }
 
   return jsonResponse({ error: `Unknown requestType: ${requestType}` }, 400, corsHeaders);

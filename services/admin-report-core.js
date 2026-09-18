@@ -109,3 +109,90 @@ export function summarizeUsage(report, now = Date.now()) {
 
     return { totals, tools, people, byId: new Map(people.map(p => [p.id, p])) };
 }
+
+// ── AI and API usage (admin_ai_usage_report) ─────────────────────────────────
+
+/**
+ * List prices, US dollars per million tokens. The report returns tokens, never
+ * money; this table is the only place a token becomes a cost, so a price change
+ * is a one-line edit here.
+ *
+ * Sources, checked 18 September 2026: Claude — Anthropic's published API rates
+ * (claude-api reference, cached June 2026). Gemini 2.5 Flash — ai.google.dev
+ * pricing page, paid tier; its "thinking" tokens are billed as output and are
+ * already counted as output by the recorder.
+ *
+ * What the estimate leaves out, and the page says so: web searches (billed per
+ * search by both providers, recorded separately as units), and Gemini's free
+ * tier — on a free key that share really costs nothing.
+ */
+export const MODEL_PRICES = {
+    'claude-opus-4-6':            { input: 5.00, output: 25.00 },
+    'claude-sonnet-4-6':          { input: 3.00, output: 15.00 },
+    'claude-haiku-4-5':           { input: 1.00, output: 5.00 },
+    'claude-haiku-4-5-20251001':  { input: 1.00, output: 5.00 },
+    'gemini-2.5-flash':           { input: 0.30, output: 2.50 },
+};
+
+export const FUNCTION_LABELS = {
+    'analyze-portfolio':       'Portfolio analysis',
+    'extract-trades':          'Broker import',
+    'extract-statement':       'Statement import',
+    'categorize-transactions': 'Categorisation',
+    'resolve-tickers':         'Ticker lookup',
+    'wine-ai':                 'Cellar AI',
+    'quote-proxy':             'Price quotes',
+};
+
+/** Estimated list-price cost in USD for one row, or null when the model has no known price. */
+export function estimateCost(row, prices = MODEL_PRICES) {
+    if (!row?.model) return row?.provider === 'yahoo' ? 0 : null;
+    const p = prices[row.model];
+    if (!p) return null;
+    return (toCount(row.input_tokens) * p.input + toCount(row.output_tokens) * p.output) / 1_000_000;
+}
+
+/**
+ * @param {{rows?: object[]}} report  admin_ai_usage_report's result
+ * @returns {{
+ *   totals: {calls, failures, inputTokens, outputTokens, cost, searches, quotes},
+ *   byFunction: object[], byPerson: Map<string, object>, unpriced: string[]
+ * }}
+ */
+export function summarizeAiUsage(report, prices = MODEL_PRICES) {
+    const rows = (Array.isArray(report?.rows) ? report.rows : []).filter(r => r && r.user_id && r.fn);
+    const blank = () => ({ calls: 0, failures: 0, inputTokens: 0, outputTokens: 0, cost: 0, searches: 0, quotes: 0, lastMs: null });
+    const add = (acc, r) => {
+        const cost = estimateCost(r, prices);
+        acc.calls += toCount(r.calls);
+        acc.failures += toCount(r.failures);
+        acc.inputTokens += toCount(r.input_tokens);
+        acc.outputTokens += toCount(r.output_tokens);
+        acc.cost += cost ?? 0;
+        // Units mean different things per provider: symbols quoted for the
+        // keyless proxy, web searches for a model. Kept apart so neither
+        // number is inflated by the other.
+        if (r.provider === 'yahoo') acc.quotes += toCount(r.units);
+        else acc.searches += toCount(r.units);
+        const last = toMs(r.last_at);
+        if (last !== null && (acc.lastMs === null || last > acc.lastMs)) acc.lastMs = last;
+        return acc;
+    };
+
+    const totals = blank();
+    const fnMap = new Map();
+    const byPerson = new Map();
+    const unpriced = new Set();
+
+    for (const r of rows) {
+        add(totals, r);
+        if (!fnMap.has(r.fn)) fnMap.set(r.fn, { fn: r.fn, label: FUNCTION_LABELS[r.fn] || r.fn, ...blank() });
+        add(fnMap.get(r.fn), r);
+        if (!byPerson.has(r.user_id)) byPerson.set(r.user_id, blank());
+        add(byPerson.get(r.user_id), r);
+        if (estimateCost(r, prices) === null) unpriced.add(r.model || r.provider);
+    }
+
+    const byFunction = [...fnMap.values()].sort((a, b) => (b.cost - a.cost) || (b.calls - a.calls));
+    return { totals, byFunction, byPerson, unpriced: [...unpriced].sort() };
+}

@@ -9,3 +9,6 @@ supabase/.temp/
 # HTTP — these are scratch files and must never ship (a stray copy of a page
 # here would be served publicly).
 __audit_*.html
+
+# Written by `deno check` when run without --no-lock; never needed here.
+deno.lock

@@ -139,3 +139,83 @@ describe('ordering and robustness', () => {
         }
     });
 });
+
+// ── AI and API usage ──────────────────────────────────────────────────────────
+
+import { summarizeAiUsage, estimateCost, MODEL_PRICES, FUNCTION_LABELS } from '../services/admin-report-core.js';
+
+const aiRow = (overrides = {}) => ({
+    user_id: 'ana', fn: 'wine-ai', provider: 'anthropic', model: 'claude-opus-4-6',
+    calls: 1, failures: 0, input_tokens: 0, output_tokens: 0, units: 0, last_at: daysAgo(1), ...overrides,
+});
+
+describe('estimateCost', () => {
+    it('prices input and output separately, per million tokens', () => {
+        // Opus 4.6 at $5 in / $25 out: 1M in + 1M out = $30.
+        expect(estimateCost(aiRow({ input_tokens: 1_000_000, output_tokens: 1_000_000 }))).toBeCloseTo(30);
+        // Gemini 2.5 Flash at $0.30 / $2.50.
+        expect(estimateCost(aiRow({ model: 'gemini-2.5-flash', provider: 'gemini', input_tokens: 2_000_000, output_tokens: 400_000 })))
+            .toBeCloseTo(0.6 + 1.0);
+    });
+
+    it('says it does not know, rather than calling an unknown model free', () => {
+        expect(estimateCost(aiRow({ model: 'some-future-model', input_tokens: 1000 }))).toBeNull();
+    });
+
+    it('prices the keyless quote proxy at nothing', () => {
+        expect(estimateCost(aiRow({ fn: 'quote-proxy', provider: 'yahoo', model: null, units: 25 }))).toBe(0);
+    });
+
+    it('has a price for every model the functions call today', () => {
+        for (const m of ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'gemini-2.5-flash']) {
+            expect(MODEL_PRICES[m], m).toBeTruthy();
+        }
+    });
+});
+
+describe('summarizeAiUsage', () => {
+    const report = { rows: [
+        aiRow({ calls: 3, failures: 1, input_tokens: 4000, output_tokens: 1000, units: 2 }),
+        aiRow({ model: 'gemini-2.5-flash', provider: 'gemini', calls: 5, input_tokens: 10_000, output_tokens: 2000, units: 3 }),
+        aiRow({ user_id: 'ben', fn: 'analyze-portfolio', model: 'claude-sonnet-4-6', calls: 2, input_tokens: 3000, output_tokens: 600 }),
+        aiRow({ user_id: 'ben', fn: 'quote-proxy', provider: 'yahoo', model: null, calls: 4, units: 90 }),
+    ] };
+
+    it('adds up calls, failures and tokens across everything', () => {
+        const s = summarizeAiUsage(report);
+        expect(s.totals).toMatchObject({ calls: 14, failures: 1, inputTokens: 17_000, outputTokens: 3600 });
+    });
+
+    it('keeps web searches and quoted symbols apart', () => {
+        const s = summarizeAiUsage(report);
+        expect(s.totals.searches).toBe(5);
+        expect(s.totals.quotes).toBe(90);
+    });
+
+    it('estimates cost per person', () => {
+        const s = summarizeAiUsage(report);
+        const ana = (4000 * 5 + 1000 * 25 + 10_000 * 0.3 + 2000 * 2.5) / 1e6;
+        expect(s.byPerson.get('ana').cost).toBeCloseTo(ana, 8);
+        expect(s.byPerson.get('ben').cost).toBeCloseTo((3000 * 3 + 600 * 15) / 1e6, 8);
+    });
+
+    it('groups by feature with a readable name, most expensive first', () => {
+        const s = summarizeAiUsage(report);
+        expect(s.byFunction[0]).toMatchObject({ fn: 'wine-ai', label: FUNCTION_LABELS['wine-ai'], calls: 8 });
+        expect(s.byFunction.map(f => f.fn)).toContain('quote-proxy');
+    });
+
+    it('names models it could not price, so the total is not silently low', () => {
+        const s = summarizeAiUsage({ rows: [aiRow({ model: 'claude-next-9', input_tokens: 5000 })] });
+        expect(s.unpriced).toEqual(['claude-next-9']);
+        expect(s.totals.cost).toBe(0);
+    });
+
+    it('survives an empty or malformed report', () => {
+        for (const r of [null, {}, { rows: null }, { rows: [null, { fn: 'x' }] }]) {
+            const s = summarizeAiUsage(r);
+            expect(s.totals.calls).toBe(0);
+            expect(s.byFunction).toEqual([]);
+        }
+    });
+});

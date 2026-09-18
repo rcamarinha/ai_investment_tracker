@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recordUsage } from "../_shared/usage.ts";
 
 // Server-side quote proxy for symbols the free API tiers can't price —
 // primarily EU-listed UCITS ETFs (Xetra/LSE/Euronext), which have no US twin
@@ -66,12 +67,15 @@ Deno.serve(async (req) => {
   if (!token) {
     return new Response(JSON.stringify({ error: "Missing authorization token" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
+  // The verified caller, for recording usage — never taken from the request body.
+  let userId = "";
   {
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } });
     const { data, error } = await sb.auth.getUser(token);
     if (error || !data?.user) {
       return new Response(JSON.stringify({ error: "Invalid or expired token. Please log in again." }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    userId = data.user.id;
   }
 
   try {
@@ -88,6 +92,12 @@ Deno.serve(async (req) => {
         results[String(sym).toUpperCase()] = await fetchYahooQuote(String(sym).trim());
       }));
     }
+
+    // One row per request: units = symbols asked for. Keyless, so it costs
+    // nothing in money — it is recorded for volume, and a request where nothing
+    // priced is marked failed, which is what a Yahoo outage looks like.
+    const priced = Object.values(results).filter(Boolean).length;
+    recordUsage({ userId, fn: "quote-proxy", provider: "yahoo", ok: priced > 0, units: symbols.length });
 
     return new Response(JSON.stringify({ results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

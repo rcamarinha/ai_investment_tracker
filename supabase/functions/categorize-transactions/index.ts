@@ -22,6 +22,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recordUsage } from "../_shared/usage.ts";
 
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
@@ -96,11 +97,18 @@ Transactions:
 ${JSON.stringify(transactions)}`;
 }
 
-async function callGemini(prompt: string): Promise<string> {
+// Records one upstream call. Every attempt is recorded, so a Gemini failure
+// that falls back to Claude shows as two calls — and a truncated Gemini answer
+// is recorded as failed WITH its tokens, because they were spent regardless.
+type Meter = (provider: string, model: string, ok: boolean, response?: unknown) => void;
+
+async function callGemini(prompt: string, meter: Meter): Promise<string> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
-  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+  const res = await fetch(GEMINI_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // Key in a header, not the URL: Deno puts the full URL in network error
+    // messages, and those are logged, so a ?key= URL leaks the key into logs.
+    headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY ?? "" },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       // Deterministic: the same statement must extract identically every time,
@@ -120,11 +128,13 @@ async function callGemini(prompt: string): Promise<string> {
     signal: AbortSignal.timeout(25000),
   });
   if (!res.ok) {
+    meter("gemini", GEMINI_MODEL, false);
     const errText = await res.text().catch(() => "");
     throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
   }
   const data = await res.json();
   const candidate = data.candidates?.[0];
+  meter("gemini", GEMINI_MODEL, !(candidate?.finishReason && candidate.finishReason !== "STOP"), data);
   // A truncated answer must fail loudly so the Claude fallback runs, rather
   // than yielding half a JSON array that parses to nothing.
   if (candidate?.finishReason && candidate.finishReason !== "STOP") {
@@ -134,7 +144,7 @@ async function callGemini(prompt: string): Promise<string> {
   return parts.map((p: { text?: string }) => p.text ?? "").join("");
 }
 
-async function callClaude(prompt: string): Promise<string> {
+async function callClaude(prompt: string, meter: Meter): Promise<string> {
   if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY secret not set on the server.");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -152,10 +162,12 @@ async function callClaude(prompt: string): Promise<string> {
     signal: AbortSignal.timeout(25000),
   });
   if (!res.ok) {
+    meter("anthropic", CLAUDE_MODEL, false);
     const errText = await res.text().catch(() => "");
     throw new Error(`Anthropic API error ${res.status}: ${errText.slice(0, 300)}`);
   }
   const data = await res.json();
+  meter("anthropic", CLAUDE_MODEL, true, data);
   return (data.content ?? []).find((c: { type: string }) => c.type === "text")?.text ?? "";
 }
 
@@ -203,6 +215,10 @@ Deno.serve(async (req) => {
   if (authError || !userData?.user) {
     return jsonResponse({ error: "Invalid or expired token. Please sign in again." }, 401, corsHeaders);
   }
+  // The verified caller, for recording usage — never taken from the request body.
+  const userId = userData.user.id;
+  const meter: Meter = (provider, model, ok, response) =>
+    recordUsage({ userId, fn: "categorize-transactions", provider, model, ok, response });
 
   let body: { transactions?: TxIn[]; categories?: string[] };
   try {
@@ -224,12 +240,12 @@ Deno.serve(async (req) => {
   let text = "";
   let provider = "gemini";
   try {
-    text = await callGemini(prompt);
+    text = await callGemini(prompt, meter);
   } catch (geminiErr) {
     console.error("[categorize-transactions] gemini failed:", geminiErr);
     provider = "claude";
     try {
-      text = await callClaude(prompt);
+      text = await callClaude(prompt, meter);
     } catch (claudeErr) {
       console.error("[categorize-transactions] claude failed:", claudeErr);
       // Generic to the caller; details stay in the logs.

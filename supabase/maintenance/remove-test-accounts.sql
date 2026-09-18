@@ -20,6 +20,10 @@
 -- cannot be caught even if it somehow held nothing. Belt and braces, because
 -- this is the one script in the repository that destroys accounts.
 --
+-- REQUIRES the 20260919_usage_events migration. Run that first: until then
+-- this script stops with "relation usage_events does not exist" — which is the
+-- safe failure, since nothing is deleted.
+--
 -- Run step 1. Read the list. Only then run step 2.
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +64,9 @@ candidates AS (
       AND NOT EXISTS (SELECT 1 FROM spend_scenarios       x WHERE x.user_id = u.id)
       AND NOT EXISTS (SELECT 1 FROM spend_bank_profiles   x WHERE x.user_id = u.id)
       AND NOT EXISTS (SELECT 1 FROM spend_pending_details x WHERE x.user_id = u.id)
+      -- An account that only used the AI features owns no other rows, but it
+      -- is not a test account.
+      AND NOT EXISTS (SELECT 1 FROM usage_events          x WHERE x.user_id = u.id)
 )
 SELECT count(*) AS would_delete FROM candidates;
 -- Then look at them one by one:
@@ -109,6 +116,7 @@ SELECT count(*) AS would_delete FROM candidates;
 --       AND NOT EXISTS (SELECT 1 FROM spend_scenarios       x WHERE x.user_id = u.id)
 --       AND NOT EXISTS (SELECT 1 FROM spend_bank_profiles   x WHERE x.user_id = u.id)
 --       AND NOT EXISTS (SELECT 1 FROM spend_pending_details x WHERE x.user_id = u.id)
+--       AND NOT EXISTS (SELECT 1 FROM usage_events          x WHERE x.user_id = u.id)
 -- )
 -- DELETE FROM auth.users u
 -- USING candidates c
