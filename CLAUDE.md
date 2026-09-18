@@ -22,7 +22,7 @@ ai_investment_tracker/
 ├── wine.html                   # Wine cellar
 ├── spend.html                  # Spending and bank statements
 ├── holdings.html               # Bank-held bonds and funds
-├── admin.html                  # Admins only: invite people, see who joined (services/admin.js)
+├── admin.html                  # Admins only: usage, invitations, who joined (services/admin.js)
 ├── css/styles.css              # All styles + button style guide
 ├── lib/                        # Vendored: CSP is script-src 'self', nothing loads from a CDN
 │   ├── supabase.js
@@ -36,7 +36,9 @@ ai_investment_tracker/
 │   ├── state.js, utils.js, ui.js, navbar.js, auth.js, storage.js
 │   ├── account.js              # Sign-in actions over an injected client; no imports, never throws
 │   ├── toast.js                # showToast with no imports, so the hub can use it
-│   ├── admin.js                # Admin page; every decision is made by the admin-invite function
+│   ├── admin.js                # Admin page; decides nothing — the admin-invite function and
+│   │                           #   admin_usage_report() both check admin_users themselves
+│   ├── admin-report-core.js    # Pure: what "active" and "uses a tool" mean on the dashboard
 │   ├── pricing.js, pricing-core.js, portfolio.js, analysis.js
 │   ├── money-core.js           # Currency: ISO codes, minor units (GBp != GBP), conversion
 │   ├── returns-core.js         # XIRR, cash flows, yearly income
@@ -258,6 +260,23 @@ The invitation link lands on the hub. `inviteLinkDecision` (src/hub.js) puts a s
 arrival into set-a-password mode and **strips the link when a session already exists**;
 `authLinkError` explains an expired link. Sign-in actions on the hub and the admin page go
 through `services/account.js`; the other four pages still carry their own copies.
+
+### Usage dashboard (`admin_usage_report()`)
+
+The admin page's Usage card comes from one database function, not an edge function and never
+a policy: `public.admin_usage_report()` (migration `20260918_admin_usage_report.sql`) is
+SECURITY DEFINER with an empty `search_path`, raises 42501 unless the caller is in
+`admin_users`, and returns every account with **counts and timestamps only** — rows per tool,
+the latest activity in each, and app_errors counts. Two rules, both asserted in
+`tests/admin-usage-report-db.test.js`: it takes **no parameters** (one that accepted a user id
+would be a backdoor into a single person's data), and it returns **no amount** — the per-tool
+figure is a row count, never a sum. Widening its fields is a decision, not a detail.
+
+"Active" is defined once, in `services/admin-report-core.js`: the latest of sign-in, a save in
+any tool, a price-refresh snapshot, or an import/valuation diagnostic. **Not** `last_sign_in_at`
+alone — sessions refresh themselves for weeks, so a daily user can go a month without signing in.
+Reading a page leaves no trace, so the counts are lower bounds and the page says so. AI calls and
+cost per person need usage counting in the AI functions first (plan P5).
 
 ## Data Modules
 

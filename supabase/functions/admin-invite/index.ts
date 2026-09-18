@@ -59,6 +59,9 @@ Deno.serve(async (req) => {
   // headers. An escaped exception would reach the browser as a bare "Failed to
   // fetch", indistinguishable from the function not being deployed.
   let action: string | undefined;
+  // Once this is true the caller is a verified administrator, so a failure can
+  // name its cause. Before it, an error says nothing: the caller is a stranger.
+  let callerIsAdmin = false;
   try {
     // ── Who is calling ────────────────────────────────────────────────────────
     const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
@@ -81,6 +84,7 @@ Deno.serve(async (req) => {
       return json(req, 500, { error: "Could not confirm administrator access." });
     }
     if (!adminRow) return json(req, 403, { error: "Only an administrator can manage invitations." });
+    callerIsAdmin = true;
 
     let body: Payload = {};
     try { body = await req.json(); } catch { return json(req, 400, { error: "Invalid request." }); }
@@ -112,6 +116,18 @@ Deno.serve(async (req) => {
             error: "Too many emails sent recently. Supabase's built-in email service allows two an hour; try again later, or set up your own SMTP provider.",
           });
         }
+        // Delivery, not the invitation, is what usually fails here: Supabase's
+        // built-in sender only delivers to members of your own Supabase team.
+        // The auth server creates the account and sends the email in one
+        // transaction, so a failed send should roll the account back — but the
+        // page re-reads the list rather than trusting that, and says to revoke
+        // anything left pending.
+        if (/sending|smtp|mail/i.test(msg)) {
+          return json(req, 502, {
+            error: "The invitation email could not be sent. Supabase's built-in sender only delivers to members of your Supabase team — configure your own SMTP provider under Authentication → Emails. If the address shows as pending below, revoke it before inviting again.",
+            detail: msg,
+          });
+        }
         throw error;
       }
       return json(req, 200, { invited: parsed.email });
@@ -135,7 +151,13 @@ Deno.serve(async (req) => {
     return json(req, 400, { error: "Unknown action." });
   } catch (err) {
     // Logged server-side with the detail; the caller gets nothing internal.
-    console.error("[admin-invite]", action, (err as Error)?.message || err);
-    return json(req, 500, { error: "Something went wrong. Try again." });
+    const detail = (err as Error)?.message || String(err);
+    console.error("[admin-invite]", action, detail);
+    // The detail goes no further than an administrator, and without it the page
+    // can only say "something went wrong", which is no help to the one person
+    // who can act on it.
+    return json(req, 500, callerIsAdmin
+      ? { error: "Something went wrong. Try again.", detail }
+      : { error: "Something went wrong. Try again." });
   }
 });
