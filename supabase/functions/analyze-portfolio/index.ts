@@ -1,6 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recordUsage } from "../_shared/usage.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+// Named once: the request and the usage record must agree, and the admin
+// page prices by this exact string (MODEL_PRICES in services/admin-report-core.js).
+const CLAUDE_MODEL = "claude-sonnet-4-6";
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
 
@@ -44,6 +48,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+  // Who is calling, kept for recording usage — taken from the verified token,
+  // never from the request body.
+  let userId = "";
   {
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: `Bearer ${token}` } },
@@ -57,6 +64,7 @@ Deno.serve(async (req) => {
       });
     }
     console.log("[analyze-portfolio] Authenticated user:", data.user.id);
+    userId = data.user.id;
   }
 
   if (!ANTHROPIC_API_KEY) {
@@ -137,13 +145,14 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: CLAUDE_MODEL,
         max_tokens: maxTokens,
         messages: [{ role: "user", content: promptContent }],
       }),
     });
 
     if (!response.ok) {
+      recordUsage({ userId, fn: "analyze-portfolio", provider: "anthropic", model: CLAUDE_MODEL, ok: false });
       const errBody = await response.text().catch(() => "");
       console.error(`[analyze-portfolio] Anthropic API error ${response.status}:`, errBody.slice(0, 300));
       return new Response(
@@ -156,12 +165,13 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
     }
 
     const data = await response.json();
+    recordUsage({ userId, fn: "analyze-portfolio", provider: "anthropic", model: CLAUDE_MODEL, response: data });
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("[analyze-portfolio] Unexpected error:", err.message || err);
+    console.error("[analyze-portfolio] Unexpected error:", (err as Error)?.message || err);
     return new Response(
       JSON.stringify({ error: "Internal server error" }),
       {

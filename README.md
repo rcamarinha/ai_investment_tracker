@@ -245,7 +245,7 @@ Tests import each pure module directly — the `services/*-core.js` family, the 
 | **Broker import** | `import-trades`, `import-parsing`, `position-management` | DeGiro and Revolut parsers, dedupe, pence kept at the parse boundary, ledger to positions |
 | **Pricing and tickers** | `pricing-core`, `pricing-untracked`, `exchange-detection`, `sector-lookup`, `ticker-resolution`, `price-fetching` | Proxy batching, keep-at-cost, exchange and sector detection. `price-fetching` and part of `ticker-resolution` still exercise an old mirror and are due for removal |
 | **Wine, hub, holdings** | `wine`, `wine-ai-batch`, `wine-valuation-triage`, `hub`, `holdings-core`, `snapshots`, `telemetry`, `utils` | Cellar totals, batch valuation parsing and triage, the hub's figures and sparkline, invitation and expired-link handling, bank holding valuation, snapshots, report redaction |
-| **Accounts and invitations** | `account`, `invite-core`, `admin-report-core`, `admin-usage-report-db` | Sign-in actions never throw and say nothing about whether an address has an account; revoking can never delete an account in use; an invitation can only land on an allowed origin; the usage report refuses non-admins, takes no parameters and returns no amount; what "active" means |
+| **Accounts and invitations** | `account`, `invite-core`, `admin-report-core`, `admin-usage-report-db`, `usage-core`, `usage-events-db` | Sign-in actions never throw and say nothing about whether an address has an account; revoking can never delete an account in use; an invitation can only land on an allowed origin; the usage report refuses non-admins, takes no parameters and returns no amount; what "active" means |
 | **Manual UX** | `ux-scenarios.html` | Interactive scenarios run in the browser at `cacoventures.com/tests/ux-scenarios.html` |
 
 ### Making changes
@@ -276,16 +276,14 @@ Tests import each pure module directly — the `services/*-core.js` family, the 
 
 ## Changelog
 
-### Unreleased — admin usage dashboard
-- **The admin page shows who uses the app:** accounts, active in the last 7 and 30 days, recent signups, how many people use each tool, and per person when they were last active, what they use, and any problems reported this month. Counts and dates only — never an amount. Needs the `20260918_admin_usage_report.sql` migration; until it runs, the page says so.
-- **An invitation failure now says why**, for example that the email could not be sent, instead of "Something went wrong".
-
-### Unreleased — admin invitations
-No version bump: nothing in `wine/`, `spend/`, `holdings/`, `css/` or `lib/` changed.
-- **Admins invite people by email** from a new admin page, linked from the hub and the portfolio page for admins only. It lists who was invited and who joined, and revokes an invitation nobody has accepted. Needs the `admin-invite` edge function deployed.
-- **Opening an invitation asks for a password**, instead of signing the person in once and leaving them unable to sign in again. An expired or used link now says so.
-- **The Sign Up button is gone.** Public signup is disabled, so it could only fail; the menu says accounts are by invitation.
-- **The hub's sign-in messages are toasts**, not blocking browser dialogs.
+### v3.55.0
+Invitations, the admin dashboard, and a record of what the AI costs.
+- **Admins invite people by email** from a new admin page, linked from the hub and the portfolio page for admins only. It lists who was invited and who joined, and revokes an invitation nobody has accepted. Needs the `admin-invite` edge function.
+- **Opening an invitation asks for a password**, instead of signing the person in once and leaving them unable to sign in again. An expired or used link now says so, and an invitation link opened while already signed in is refused, so nobody can be switched into someone else's account.
+- **The Sign Up button is gone.** Public signup is disabled, so it could only fail; the menu says accounts are by invitation. The hub's sign-in messages are toasts, not blocking dialogs.
+- **The admin page shows who uses the app:** accounts, active in the last 7 and 30 days, recent signups, how many people use each tool, and per person when they were last active, what they use, and problems reported this month. Counts and dates only, never an amount. Needs the `20260918_admin_usage_report.sql` migration.
+- **Every AI call and price lookup is now recorded** — who, which feature, which model, tokens, failures, web searches — and the admin page shows calls, tokens and an estimated cost per feature and per person over the last 30 days. Counted, not limited. Needs the `20260919_usage_events.sql` migration and the seven functions redeployed; history starts from that deploy.
+- **An invitation failure says why**, for example that the email could not be sent.
 
 ### v3.54.0
 - **Card purchases reach the right account.** A statement's card section id was never copied onto its rows, so card routing never ran and no card account was ever created — while the test for it did the mapping by hand and stayed green. Turning it on surfaced two more bugs, both fixed: a purchase proven to replace a settlement now stays in the account that paid it, and a correct statement no longer reports that it does not add up.

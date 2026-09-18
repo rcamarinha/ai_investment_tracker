@@ -17,7 +17,7 @@ import { escapeHTML, showToast, bindActions } from './utils.js';
 import { reportHandled, setTelemetryClient } from './telemetry.js';
 import { createAccountActions } from './account.js';
 import { t } from '../data/i18n.js';
-import { summarizeUsage } from './admin-report-core.js';
+import { summarizeUsage, summarizeAiUsage } from './admin-report-core.js';
 
 let access = 'loading';      // loading | signed-out | denied | ready | unavailable
 let people = [];
@@ -28,6 +28,8 @@ let sending = false;
 let loadedFor;               // user id the list was last loaded for
 let usage = null;            // summarizeUsage() output
 let usageState = 'idle';     // idle | loading | ready | missing | error
+let aiUsage = null;          // summarizeAiUsage() output
+let aiState = 'idle';        // same states, for admin_ai_usage_report
 
 const account = createAccountActions({
     getClient: () => state.supabaseClient,
@@ -118,7 +120,33 @@ async function loadPeople() {
     }
     pendingRevoke = null;
     render();
-    if (access === 'ready') loadUsage();
+    // The usage panels come from the database, not the invitations function,
+    // so an unreachable function must not hide them. Each report checks
+    // admin_users itself and refuses anyone else.
+    if (access === 'ready' || access === 'unavailable') { loadUsage(); loadAiUsage(); }
+}
+
+// AI and API usage: one row per model call, recorded by the edge functions
+// (supabase/migrations/20260919_usage_events.sql). Like the usage report, a
+// missing function means the migration has not run yet — a state, not an error.
+async function loadAiUsage() {
+    if (!state.supabaseClient) return;
+    if (aiState !== 'ready') { aiState = 'loading'; render(); }
+    try {
+        const { data, error } = await state.supabaseClient.rpc('admin_ai_usage_report');
+        if (error) {
+            if (error.code === 'PGRST202') { aiState = 'missing'; render(); return; }
+            if (error.code === '42501') { aiState = 'denied'; render(); return; }
+            throw new Error(error.message || String(error));
+        }
+        aiUsage = summarizeAiUsage(data);
+        aiState = 'ready';
+    } catch (err) {
+        aiState = 'error';
+        showToast(`AI usage could not be loaded: ${err.message}`, 'error', 9000);
+        reportHandled(err, { action: 'admin-ai-usage' });
+    }
+    render();
 }
 
 // Usage comes from a database function, not the invite function: it reads
@@ -132,6 +160,7 @@ async function loadUsage() {
         const { data, error } = await state.supabaseClient.rpc('admin_usage_report');
         if (error) {
             if (error.code === 'PGRST202') { usageState = 'missing'; render(); return; }
+            if (error.code === '42501') { usageState = 'denied'; render(); return; }
             throw new Error(error.message || String(error));
         }
         usage = summarizeUsage(data);
@@ -251,6 +280,55 @@ function renderUsage() {
         </p>`);
 }
 
+const fmtUsd = n => n > 0 && n < 0.01 ? '<$0.01' : `$${n.toFixed(2)}`;
+const fmtTokens = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
+
+function renderAiUsage() {
+    const card = inner => `<div class="card"><h2 class="section-heading">AI and price lookups · last 30 days</h2>${inner}</div>`;
+    const quiet = text => `<p style="color:var(--text-secondary);font-size:13px;margin:0;">${escapeHTML(text)}</p>`;
+    if (aiState === 'idle' || aiState === 'loading') return card(quiet('Loading AI usage…'));
+    if (aiState === 'missing') return card(quiet('AI usage appears once the usage_events migration has been run and the functions redeployed.'));
+    if (aiState === 'error' || !aiUsage) return card(quiet('AI usage could not be loaded. Reload the page to try again.'));
+    const { totals, byFunction, unpriced } = aiUsage;
+    if (!totals.calls) {
+        return card(quiet('Nothing recorded yet. Counting starts from the moment the updated functions are deployed; earlier use was never recorded.'));
+    }
+
+    const tile = (label, value, cls = '') =>
+        `<div class="stat-tile"><div class="st-label">${escapeHTML(label)}</div><div class="st-value ${cls}">${escapeHTML(String(value))}</div></div>`;
+    const rows = byFunction.map(f => {
+        const detail = [
+            plural(f.calls, 'call', 'calls'),
+            f.failures ? `${f.failures} failed` : '',
+            f.inputTokens || f.outputTokens ? `${fmtTokens(f.inputTokens)} in · ${fmtTokens(f.outputTokens)} out` : '',
+            f.quotes ? plural(f.quotes, 'symbol', 'symbols') : '',
+            f.searches ? plural(f.searches, 'web search', 'web searches') : '',
+        ].filter(Boolean).join(' · ');
+        return `
+        <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap;">
+            <span style="color:var(--text-primary);">${escapeHTML(f.label)}</span>
+            <span style="color:var(--text-secondary);text-align:right;">${escapeHTML(detail)}${f.fn === 'quote-proxy' ? '' : ` · <span style="color:var(--text-primary);">${escapeHTML(fmtUsd(f.cost))}</span>`}</span>
+        </div>`;
+    }).join('');
+
+    const caveats = [
+        'Cost is an estimate at list prices in US dollars, from the tokens each call reported.',
+        totals.searches ? 'Web searches are billed separately and are not included.' : '',
+        'On a free Gemini key, Gemini calls really cost nothing.',
+        unpriced.length ? `No price known for ${unpriced.join(', ')}, so those calls are left out of the total.` : '',
+    ].filter(Boolean).join(' ');
+
+    return card(`
+        <div class="stat-tiles">
+            ${tile('Calls', totals.calls)}
+            ${tile('Est. cost', fmtUsd(totals.cost), 'gold')}
+            ${tile('Failed calls', totals.failures, totals.failures ? 'down' : '')}
+            ${tile('Symbols quoted', totals.quotes)}
+        </div>
+        <div style="margin-top:14px;">${rows}</div>
+        <p style="color:var(--text-tertiary);font-size:12px;margin:10px 0 0;">${escapeHTML(caveats)}</p>`);
+}
+
 /** The activity line under a person in the list, when usage has loaded. */
 function activityLine(id) {
     const u = usageState === 'ready' ? usage?.byId.get(id) : null;
@@ -260,10 +338,16 @@ function activityLine(id) {
         u.lastActiveMs ? `Active ${fmtDate(u.lastActiveMs)}` : 'No activity yet',
         tools,
     ].filter(Boolean).join(' · ');
+    const ai = aiState === 'ready' ? aiUsage?.byPerson.get(id) : null;
+    const aiLine = ai && ai.calls
+        ? `<div style="font-size:11px;margin-top:2px;color:var(--text-secondary);">${escapeHTML(
+            [`AI ${plural(ai.calls, 'call', 'calls')}`, ai.cost ? `~${fmtUsd(ai.cost)}` : '', ai.quotes ? plural(ai.quotes, 'symbol quoted', 'symbols quoted') : '']
+                .filter(Boolean).join(' · '))} this month</div>`
+        : '';
     const problems = u.problems30
         ? `<div style="font-size:11px;margin-top:2px;color:var(--down);">${escapeHTML(plural(u.problems30, 'problem', 'problems'))} reported this month</div>`
         : '';
-    return `<div style="font-size:11px;margin-top:2px;color:var(--text-secondary);">${escapeHTML(parts)}</div>${problems}`;
+    return `<div style="font-size:11px;margin-top:2px;color:var(--text-secondary);">${escapeHTML(parts)}</div>${aiLine}${problems}`;
 }
 
 function render() {
@@ -273,7 +357,15 @@ function render() {
     if (access === 'loading')     { root.innerHTML = notice('Checking your access…'); return; }
     if (access === 'signed-out')  { root.innerHTML = notice('Sign in with an administrator account to manage invitations.'); return; }
     if (access === 'denied')      { root.innerHTML = notice('This page is for administrators.'); return; }
-    if (access === 'unavailable') { root.innerHTML = notice('The invitations service could not be reached, so nothing can be managed here yet.'); return; }
+    if (access === 'unavailable') {
+        // Invitations are down, but the usage reports may not be.
+        const reports = [
+            usageState === 'ready' || usageState === 'missing' ? renderUsage() : '',
+            aiState === 'ready' || aiState === 'missing' ? renderAiUsage() : '',
+        ].join('');
+        root.innerHTML = reports + notice('The invitations service could not be reached, so invitations cannot be managed right now.');
+        return;
+    }
 
     // Keep whatever was typed across a re-render.
     const typed = document.getElementById('inviteEmail')?.value || '';
@@ -299,6 +391,7 @@ function render() {
 
     root.innerHTML = `
         ${renderUsage()}
+        ${renderAiUsage()}
         <div class="card">
             <h2 class="section-heading">Invite someone</h2>
             <p style="color:var(--text-secondary);font-size:13px;margin:0 0 12px;">They get an email with a link. Opening it signs them in and asks them to choose a password.</p>

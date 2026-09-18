@@ -38,7 +38,7 @@ ai_investment_tracker/
 │   ├── toast.js                # showToast with no imports, so the hub can use it
 │   ├── admin.js                # Admin page; decides nothing — the admin-invite function and
 │   │                           #   admin_usage_report() both check admin_users themselves
-│   ├── admin-report-core.js    # Pure: what "active" and "uses a tool" mean on the dashboard
+│   ├── admin-report-core.js    # Pure: what "active" means; AI cost from MODEL_PRICES
 │   ├── pricing.js, pricing-core.js, portfolio.js, analysis.js
 │   ├── money-core.js           # Currency: ISO codes, minor units (GBp != GBP), conversion
 │   ├── returns-core.js         # XIRR, cash flows, yearly income
@@ -61,7 +61,7 @@ ai_investment_tracker/
 │   ├── maintenance/            # Operational scripts — NEVER run as a migration
 │   └── functions/              # Edge functions (analyze-portfolio, extract-trades, extract-statement,
 │                               #   resolve-tickers, quote-proxy, wine-ai, categorize-transactions,
-│                               #   admin-invite); _shared/ holds pure modules they import and tests reach
+│                               #   admin-invite); _shared/ holds invite-core, usage-core (pure, tested) and usage.ts
 ├── vercel.json                 # Headers and cache rules: services/data/src revalidate,
 │                               #   wine/spend/holdings/css/lib are immutable and versioned by ?v=
 └── package.json, vitest.config.js
@@ -275,8 +275,33 @@ figure is a row count, never a sum. Widening its fields is a decision, not a det
 "Active" is defined once, in `services/admin-report-core.js`: the latest of sign-in, a save in
 any tool, a price-refresh snapshot, or an import/valuation diagnostic. **Not** `last_sign_in_at`
 alone — sessions refresh themselves for weeks, so a daily user can go a month without signing in.
-Reading a page leaves no trace, so the counts are lower bounds and the page says so. AI calls and
-cost per person need usage counting in the AI functions first (plan P5).
+Reading a page leaves no trace, so the counts are lower bounds and the page says so.
+
+### AI and API usage (`usage_events`, `supabase/functions/_shared/usage.ts`)
+
+Every upstream call from the seven server functions — each AI model call, and each quote-proxy
+request — writes one `usage_events` row: person, function, provider, model, ok, input and output
+tokens, and `units` (web searches for a model call, symbols for the proxy). **Counted, not
+enforced**: nothing reads the table to refuse a request. Rules a new function or call site must follow:
+
+- **Record every attempt, through `recordUsage`**, a refused one included (`ok: false`), so a
+  Gemini 429 that falls back to Claude shows as two calls. A truncated Gemini answer is recorded as
+  failed *with* its tokens — they were spent.
+- **`recordUsage` owns its own service-role client.** Each function's existing client carries the
+  caller's token in its Authorization header, so its writes run as that user, and `usage_events`
+  refuses every user write by design. Writing through the function's client fails silently.
+- **Pass the meter down explicitly; never hold "the current user" in a module variable.** One
+  isolate serves concurrent requests, so a module-level user would credit one person's call to
+  another (`wine-ai` threads `meter` through every handler for this reason).
+- **The user id comes from `auth.getUser`, never the request body.**
+- Token reading lives in the pure `_shared/usage-core.js` (tested): Anthropic cache tokens fold into
+  input; Gemini `thoughtsTokenCount` counts as output because that is how it is billed.
+
+`admin_ai_usage_report()` returns tokens, never money. Cost is estimated on the admin page from
+`MODEL_PRICES` in `services/admin-report-core.js` — the one place a price lives — and a model with
+no entry is named on the page rather than counted as free. The browser's own keyed price calls
+(Finnhub/FMP/Alpha Vantage) never reach the server, so they cannot be counted until P3 part 2 moves
+them behind a function.
 
 ## Data Modules
 
@@ -379,6 +404,13 @@ tested); it simulates `auth.uid()`; and it checks against the repo's schema file
 from production — so green means "correct against the schema we believe exists", not "safe against
 the live database". A file in `migrations/` that is really a conditional recovery procedure belongs in
 `CONDITIONAL_SCRIPTS`, where the test asserts it still describes itself that way and still refuses.
+
+**Edge functions are type-checked separately: `npm run check:functions`.** The vitest suite and an
+esbuild parse cannot see Deno types, and **Supabase's deploy does not fail on a type error** —
+`analyze-portfolio` and `extract-trades` shipped with one for months. So a wrong argument through a
+function's call chain surfaces only as a broken feature in production. The script runs `deno check`
+(Deno's official npm build via npx, nothing to install) on every function; run it before handing any
+function over for deploy. It caught two real type errors in the usage helper on its first run.
 
 ### Debugging
 

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recordUsage } from "../_shared/usage.ts";
 
 // Resolve a priceable ticker (and, as a last resort, a live price) for holdings
 // that every price API rejected. Uses live web search: Gemini 2.5 Flash + Google
@@ -44,7 +45,11 @@ Instruments:
 ${list}`;
 }
 
-async function callGemini(prompt: string): Promise<string> {
+// Records one upstream call. Every attempt is recorded, a refused one included,
+// so a Gemini 429 that falls back to Claude shows as two calls, not one.
+type Meter = (provider: string, model: string, ok: boolean, response?: unknown) => void;
+
+async function callGemini(prompt: string, meter: Meter): Promise<string> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE not set");
   const attempt = async (grounding: boolean) => {
     const body: Record<string, unknown> = {
@@ -52,14 +57,20 @@ async function callGemini(prompt: string): Promise<string> {
       generationConfig: { maxOutputTokens: 4000 },
     };
     if (grounding) body.tools = [{ google_search: {} }];
-    const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+    const res = await fetch(GEMINI_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Key in a header, not the URL: Deno puts the full URL in network error
+      // messages, and those are logged, so a ?key= URL leaks the key into logs.
+      headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY ?? "" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30000),
     });
-    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+    if (!res.ok) {
+      meter("gemini", "gemini-2.5-flash", false);
+      throw new Error(`Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+    }
     const data = await res.json();
+    meter("gemini", "gemini-2.5-flash", true, data);
     const parts = data.candidates?.[0]?.content?.parts ?? [];
     return parts.map((p: { text?: string }) => p.text ?? "").join("");
   };
@@ -67,7 +78,7 @@ async function callGemini(prompt: string): Promise<string> {
   catch (e) { if (!String(e).includes("429")) throw e; return await attempt(false); }
 }
 
-async function callClaude(prompt: string): Promise<string> {
+async function callClaude(prompt: string, meter: Meter): Promise<string> {
   if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -85,8 +96,12 @@ async function callClaude(prompt: string): Promise<string> {
     }),
     signal: AbortSignal.timeout(45000),
   });
-  if (!res.ok) throw new Error(`Claude ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+  if (!res.ok) {
+    meter("anthropic", CLAUDE_MODEL, false);
+    throw new Error(`Claude ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+  }
   const data = await res.json();
+  meter("anthropic", CLAUDE_MODEL, true, data);
   return (data.content ?? []).filter((c: { type: string }) => c.type === "text").map((c: { text: string }) => c.text).join("");
 }
 
@@ -101,13 +116,18 @@ Deno.serve(async (req) => {
   if (!token) {
     return new Response(JSON.stringify({ error: "Missing authorization token" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
+  // The verified caller, for recording usage — never taken from the request body.
+  let userId = "";
   {
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } });
     const { data, error } = await sb.auth.getUser(token);
     if (error || !data?.user) {
       return new Response(JSON.stringify({ error: "Invalid or expired token. Please log in again." }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    userId = data.user.id;
   }
+  const meter: Meter = (provider, model, ok, response) =>
+    recordUsage({ userId, fn: "resolve-tickers", provider, model, ok, response });
 
   try {
     const body = await req.json();
@@ -123,10 +143,10 @@ Deno.serve(async (req) => {
     // Gemini + Google Search first; Claude + web_search as fallback.
     let text = "", source = "gemini";
     try {
-      text = await callGemini(prompt);
+      text = await callGemini(prompt, meter);
     } catch (gErr) {
       console.warn("[resolve-tickers] Gemini failed, falling back to Claude:", (gErr as Error).message);
-      try { text = await callClaude(prompt); source = "claude"; }
+      try { text = await callClaude(prompt, meter); source = "claude"; }
       catch (cErr) {
         console.error("[resolve-tickers] both providers failed:", (cErr as Error).message);
         return new Response(JSON.stringify({ error: "Resolver temporarily unavailable." }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
