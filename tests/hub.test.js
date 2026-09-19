@@ -283,6 +283,24 @@ describe('computeWineDelta', () => {
         const result = computeWineDelta(1050, 1000, [], NOW);
         expect(result.text).toBe('+5.0%');
     });
+
+    it('ignores a last_valued_at that is not a valid date string', () => {
+        // A truthy but unparseable string creates an Invalid Date; without the
+        // guard getTime() returns NaN, and the result shows "valued NaNd ago".
+        const wines = [{ last_valued_at: 'not-a-date' }];
+        const result = computeWineDelta(100, 0, wines, NOW);
+        expect(result.text).toBe('');
+        expect(result.cls).toBe('neutral');
+    });
+
+    it('uses a valid date when mixed with an invalid one', () => {
+        const wines = [
+            { last_valued_at: 'not-a-date' },
+            { last_valued_at: '2026-06-01T00:00:00.000Z' }, // 3 days before NOW
+        ];
+        const result = computeWineDelta(100, 0, wines, NOW);
+        expect(result.text).toBe('valued 3d ago');
+    });
 });
 
 
