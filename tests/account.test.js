@@ -120,3 +120,33 @@ describe('googleLogin and logout', () => {
         expect(calls).toEqual([['signOut']]);
     });
 });
+
+describe('server errors are turned into messages, never thrown', () => {
+    it('wraps a logout server error', async () => {
+        const { client } = fakeClient({ error: new Error('Network error') });
+        const r = await actionsFor(client).logout();
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Network error');
+    });
+
+    it('wraps a googleLogin server error', async () => {
+        const { client } = fakeClient({ error: new Error('OAuth provider unreachable') });
+        const r = await actionsFor(client).googleLogin();
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('OAuth provider unreachable');
+    });
+
+    it('wraps a forgotPassword server error', async () => {
+        const { client } = fakeClient({ error: new Error('Rate limited') });
+        const r = await actionsFor(client).forgotPassword('jane@example.com');
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Rate limited');
+    });
+
+    it('wraps a setPassword server error', async () => {
+        const { client } = fakeClient({ error: new Error('Password too common') });
+        const r = await actionsFor(client).setPassword('secret12', 'secret12');
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Password too common');
+    });
+});
