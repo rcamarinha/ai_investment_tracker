@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    groupIntoLines, findCandidateLines, proposeLinePattern, detectStatementYear,
+    groupIntoLines, findCandidateLines, findLooseCandidates, proposeLinePattern, detectStatementYear,
     parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
 } from '../services/import-pdf.js';
 
@@ -187,5 +187,62 @@ describe('buildPdfDraft', () => {
     it('reports failure rather than a bad guess on an unreadable document', () => {
         expect(buildPdfDraft([{ text: 'scanned image, no text', xs: [], y: 0 }]))
             .toMatchObject({ ok: false, matched: 0 });
+    });
+});
+
+// ── findLooseCandidates ───────────────────────────────────────────────────────
+//
+// The fallback that `findSectionHeadings` uses when `findCandidateLines` finds
+// nothing. Includes any line with a date ANYWHERE (not just at the start) AND a
+// money figure. Banks using ISO dates, month names, or dates mid-description are
+// rejected by the strict set; this tier catches them so the extractor at least
+// sees the document instead of refusing it outright.
+
+describe('findLooseCandidates', () => {
+    const line = text => ({ text, y: 0, xs: [60] });
+
+    it('includes a line with an ISO date mid-row and a money figure', () => {
+        const result = findLooseCandidates([line('COMPRA SUPERMERCADO 2026-07-30 45,00')]);
+        expect(result).toHaveLength(1);
+    });
+
+    it('includes a line that starts with a dd/mm date and a money figure', () => {
+        const result = findLooseCandidates([line('30/07 COMPRA 45,00')]);
+        expect(result).toHaveLength(1);
+    });
+
+    it('includes a line with a month-name date (dd Mon YYYY) and a money figure', () => {
+        // D_NAME requires a year: \d{1,2} + month-word + year digit run
+        const result = findLooseCandidates([line('30 Jul 2026 COMPRA 45,00')]);
+        expect(result).toHaveLength(1);
+    });
+
+    it('excludes a line with money but no recognisable date', () => {
+        // Use 250,00 — a decimal like 1.234,56 contains "1.2" which D_SLASH
+        // could match, so a plain thousand-separator can look like a date.
+        const result = findLooseCandidates([line('SALDO CONTA 250,00')]);
+        expect(result).toHaveLength(0);
+    });
+
+    it('excludes a line with a date but no money figure', () => {
+        const result = findLooseCandidates([line('30/07 COMPRA SUPERMERCADO')]);
+        expect(result).toHaveLength(0);
+    });
+
+    it('excludes a line longer than 200 characters even when it has both', () => {
+        const long = '2026-07-30 ' + 'A'.repeat(195) + ' 45,00';
+        expect(long.length).toBeGreaterThan(200);
+        const result = findLooseCandidates([line(long)]);
+        expect(result).toHaveLength(0);
+    });
+
+    it('keeps matching lines and drops non-matching ones from a mixed list', () => {
+        const lines = [
+            line('30/07 COMPRA 45,00'),
+            line('SALDO CONTA 250,00'),
+            line('2026-07-31 PAGAMENTO 100,00'),
+        ];
+        const result = findLooseCandidates(lines);
+        expect(result).toHaveLength(2);
     });
 });
