@@ -231,6 +231,16 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('shares (reit)')).toBe('REIT');
   });
 
+  it('normalizes Stock (REIT) → REIT (AI resolver variant)', () => {
+    expect(normalizeAssetType('Stock (REIT)')).toBe('REIT');
+    expect(normalizeAssetType('stock (reit)')).toBe('REIT');
+  });
+
+  it('normalizes REIT Shares → REIT (AI resolver variant)', () => {
+    expect(normalizeAssetType('REIT Shares')).toBe('REIT');
+    expect(normalizeAssetType('reit shares')).toBe('REIT');
+  });
+
   it('preserves canonical Stock', () => {
     expect(normalizeAssetType('Stock')).toBe('Stock');
   });
@@ -415,6 +425,31 @@ describe('buildAssetRecord', () => {
   it('defaults asset_type to Stock when type is absent', () => {
     const rec = buildAssetRecord({ symbol: 'AAPL' });
     expect(rec.asset_type).toBe('Stock');
+  });
+
+  // ── asset_type normalization via normalizeAssetType (PR #224) ───────────────
+  // The AI ISIN resolver returned free-text labels ('Shares', 'Shares (REIT)')
+  // that bypassed normalizeAssetType, splitting one asset class into synonym
+  // buckets in the allocation chart. buildAssetRecord now normalizes at ingest.
+
+  it('normalizes AI-returned type "Shares" to canonical "Stock"', () => {
+    const rec = buildAssetRecord({ symbol: 'VNQ', type: 'Shares' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  it('normalizes AI-returned type "Shares (REIT)" to canonical "REIT"', () => {
+    const rec = buildAssetRecord({ symbol: 'NLY', type: 'Shares (REIT)' });
+    expect(rec.asset_type).toBe('REIT');
+  });
+
+  it('normalizes AI-returned type "Stock (REIT)" to canonical "REIT"', () => {
+    const rec = buildAssetRecord({ symbol: 'O', type: 'Stock (REIT)' });
+    expect(rec.asset_type).toBe('REIT');
+  });
+
+  it('normalizes AI-returned type "REIT Shares" to canonical "REIT"', () => {
+    const rec = buildAssetRecord({ symbol: 'AMT', type: 'REIT Shares' });
+    expect(rec.asset_type).toBe('REIT');
   });
 
   it('detects European exchange and currency from suffix', () => {
