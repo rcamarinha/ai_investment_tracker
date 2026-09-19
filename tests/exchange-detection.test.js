@@ -222,6 +222,28 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('adr')).toBe('Stock');
   });
 
+  it('normalizes stocks → Stock', () => {
+    expect(normalizeAssetType('stocks')).toBe('Stock');
+    expect(normalizeAssetType('Stocks')).toBe('Stock');
+  });
+
+  it('normalizes ordinary share / ordinary shares → Stock', () => {
+    expect(normalizeAssetType('ordinary share')).toBe('Stock');
+    expect(normalizeAssetType('ordinary shares')).toBe('Stock');
+    expect(normalizeAssetType('Ordinary Shares')).toBe('Stock');
+  });
+
+  it('normalizes GDR → Stock', () => {
+    expect(normalizeAssetType('gdr')).toBe('Stock');
+    expect(normalizeAssetType('GDR')).toBe('Stock');
+  });
+
+  it('normalizes preferred stock / preference share → Stock', () => {
+    expect(normalizeAssetType('preferred stock')).toBe('Stock');
+    expect(normalizeAssetType('Preferred Stock')).toBe('Stock');
+    expect(normalizeAssetType('preference share')).toBe('Stock');
+  });
+
   it('normalizes Shares → Stock (AI resolver label — the chart-splitting bug)', () => {
     expect(normalizeAssetType('Shares')).toBe('Stock');
   });
@@ -256,6 +278,36 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('ucits')).toBe('ETF');
   });
 
+  it('normalizes etp → ETF', () => {
+    expect(normalizeAssetType('etp')).toBe('ETF');
+    expect(normalizeAssetType('ETP')).toBe('ETF');
+  });
+
+  it('normalizes exchange traded fund → ETF', () => {
+    expect(normalizeAssetType('exchange traded fund')).toBe('ETF');
+    expect(normalizeAssetType('Exchange Traded Fund')).toBe('ETF');
+  });
+
+  it('normalizes tracker → ETF', () => {
+    expect(normalizeAssetType('tracker')).toBe('ETF');
+    expect(normalizeAssetType('Tracker')).toBe('ETF');
+  });
+
+  it('normalizes sicav → ETF', () => {
+    expect(normalizeAssetType('sicav')).toBe('ETF');
+    expect(normalizeAssetType('SICAV')).toBe('ETF');
+  });
+
+  it('normalizes oeic → ETF', () => {
+    expect(normalizeAssetType('oeic')).toBe('ETF');
+    expect(normalizeAssetType('OEIC')).toBe('ETF');
+  });
+
+  it('normalizes unit trust → ETF', () => {
+    expect(normalizeAssetType('unit trust')).toBe('ETF');
+    expect(normalizeAssetType('Unit Trust')).toBe('ETF');
+  });
+
   it('preserves canonical ETF', () => {
     expect(normalizeAssetType('ETF')).toBe('ETF');
   });
@@ -277,6 +329,11 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('coin')).toBe('Crypto');
   });
 
+  it('normalizes digital asset → Crypto', () => {
+    expect(normalizeAssetType('digital asset')).toBe('Crypto');
+    expect(normalizeAssetType('Digital Asset')).toBe('Crypto');
+  });
+
   it('preserves canonical Crypto', () => {
     expect(normalizeAssetType('Crypto')).toBe('Crypto');
   });
@@ -290,6 +347,21 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('real estate')).toBe('REIT');
   });
 
+  it('normalizes real estate investment trust → REIT', () => {
+    expect(normalizeAssetType('real estate investment trust')).toBe('REIT');
+    expect(normalizeAssetType('Real Estate Investment Trust')).toBe('REIT');
+  });
+
+  it('normalizes stock (reit) → REIT', () => {
+    expect(normalizeAssetType('stock (reit)')).toBe('REIT');
+    expect(normalizeAssetType('Stock (REIT)')).toBe('REIT');
+  });
+
+  it('normalizes reit shares → REIT', () => {
+    expect(normalizeAssetType('reit shares')).toBe('REIT');
+    expect(normalizeAssetType('REIT Shares')).toBe('REIT');
+  });
+
   it('preserves canonical REIT', () => {
     expect(normalizeAssetType('REIT')).toBe('REIT');
   });
@@ -299,8 +371,23 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('bond')).toBe('Bond');
   });
 
+  it('normalizes bonds → Bond', () => {
+    expect(normalizeAssetType('bonds')).toBe('Bond');
+    expect(normalizeAssetType('Bonds')).toBe('Bond');
+  });
+
   it('normalizes fixed income → Bond', () => {
     expect(normalizeAssetType('fixed income')).toBe('Bond');
+  });
+
+  it('normalizes debt → Bond', () => {
+    expect(normalizeAssetType('debt')).toBe('Bond');
+    expect(normalizeAssetType('Debt')).toBe('Bond');
+  });
+
+  it('normalizes note → Bond', () => {
+    expect(normalizeAssetType('note')).toBe('Bond');
+    expect(normalizeAssetType('Note')).toBe('Bond');
   });
 
   it('normalizes treasury → Bond', () => {
@@ -309,6 +396,16 @@ describe('normalizeAssetType', () => {
 
   it('normalizes government bond → Bond', () => {
     expect(normalizeAssetType('government bond')).toBe('Bond');
+  });
+
+  it('normalizes corporate bond → Bond', () => {
+    expect(normalizeAssetType('corporate bond')).toBe('Bond');
+    expect(normalizeAssetType('Corporate Bond')).toBe('Bond');
+  });
+
+  it('normalizes bond etf → Bond', () => {
+    expect(normalizeAssetType('bond etf')).toBe('Bond');
+    expect(normalizeAssetType('Bond ETF')).toBe('Bond');
   });
 
   it('preserves canonical Bond', () => {
@@ -453,5 +550,50 @@ describe('buildAssetRecord', () => {
   it('untracked: 0 coerced to false via !!', () => {
     const rec = buildAssetRecord({ symbol: 'AAPL', untracked: 0 });
     expect(rec.untracked).toBe(false);
+  });
+
+  // ── type normalisation via normalizeAssetType (applied since PR #224) ──────
+  // Before PR #224, buildAssetRecord used `position.type || 'Stock'`, so AI-
+  // sourced free-text labels like 'Shares' stored verbatim in the asset DB and
+  // split allocation charts into synonym buckets. Now every upsert normalises.
+
+  it('normalizes Shares → Stock', () => {
+    const rec = buildAssetRecord({ symbol: 'VOD.L', type: 'Shares' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  it('normalizes Ordinary Shares → Stock', () => {
+    const rec = buildAssetRecord({ symbol: 'HSBA.L', type: 'Ordinary Shares' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  it('normalizes GDR → Stock', () => {
+    const rec = buildAssetRecord({ symbol: 'SBER', type: 'GDR' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  it('normalizes Preferred Stock → Stock', () => {
+    const rec = buildAssetRecord({ symbol: 'BRK-B', type: 'Preferred Stock' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  it('normalizes UCITS → ETF', () => {
+    const rec = buildAssetRecord({ symbol: 'VWCE.DE', type: 'UCITS' });
+    expect(rec.asset_type).toBe('ETF');
+  });
+
+  it('normalizes Shares (REIT) → REIT', () => {
+    const rec = buildAssetRecord({ symbol: 'CRIT.L', type: 'Shares (REIT)' });
+    expect(rec.asset_type).toBe('REIT');
+  });
+
+  it('normalizes Stock (REIT) → REIT', () => {
+    const rec = buildAssetRecord({ symbol: 'O', type: 'Stock (REIT)' });
+    expect(rec.asset_type).toBe('REIT');
+  });
+
+  it('normalizes REIT Shares → REIT', () => {
+    const rec = buildAssetRecord({ symbol: 'VNQ', type: 'REIT Shares' });
+    expect(rec.asset_type).toBe('REIT');
   });
 });
