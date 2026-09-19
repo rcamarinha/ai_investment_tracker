@@ -222,6 +222,35 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('adr')).toBe('Stock');
   });
 
+  it('normalizes stocks → Stock (plural form)', () => {
+    expect(normalizeAssetType('stocks')).toBe('Stock');
+  });
+
+  it('normalizes ordinary share → Stock', () => {
+    expect(normalizeAssetType('ordinary share')).toBe('Stock');
+    expect(normalizeAssetType('Ordinary Share')).toBe('Stock');
+  });
+
+  it('normalizes ordinary shares → Stock', () => {
+    expect(normalizeAssetType('ordinary shares')).toBe('Stock');
+    expect(normalizeAssetType('Ordinary Shares')).toBe('Stock');
+  });
+
+  it('normalizes GDR → Stock', () => {
+    expect(normalizeAssetType('gdr')).toBe('Stock');
+    expect(normalizeAssetType('GDR')).toBe('Stock');
+  });
+
+  it('normalizes preferred stock → Stock', () => {
+    expect(normalizeAssetType('preferred stock')).toBe('Stock');
+    expect(normalizeAssetType('Preferred Stock')).toBe('Stock');
+  });
+
+  it('normalizes preference share → Stock', () => {
+    expect(normalizeAssetType('preference share')).toBe('Stock');
+    expect(normalizeAssetType('Preference Share')).toBe('Stock');
+  });
+
   it('normalizes Shares → Stock (AI resolver label — the chart-splitting bug)', () => {
     expect(normalizeAssetType('Shares')).toBe('Stock');
   });
@@ -252,8 +281,38 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('mutual fund')).toBe('ETF');
   });
 
+  it('normalizes etp → ETF', () => {
+    expect(normalizeAssetType('etp')).toBe('ETF');
+    expect(normalizeAssetType('ETP')).toBe('ETF');
+  });
+
+  it('normalizes exchange traded fund → ETF', () => {
+    expect(normalizeAssetType('exchange traded fund')).toBe('ETF');
+    expect(normalizeAssetType('Exchange Traded Fund')).toBe('ETF');
+  });
+
+  it('normalizes tracker → ETF', () => {
+    expect(normalizeAssetType('tracker')).toBe('ETF');
+  });
+
   it('normalizes ucits → ETF', () => {
     expect(normalizeAssetType('ucits')).toBe('ETF');
+    expect(normalizeAssetType('UCITS')).toBe('ETF');
+  });
+
+  it('normalizes sicav → ETF', () => {
+    expect(normalizeAssetType('sicav')).toBe('ETF');
+    expect(normalizeAssetType('SICAV')).toBe('ETF');
+  });
+
+  it('normalizes oeic → ETF', () => {
+    expect(normalizeAssetType('oeic')).toBe('ETF');
+    expect(normalizeAssetType('OEIC')).toBe('ETF');
+  });
+
+  it('normalizes unit trust → ETF', () => {
+    expect(normalizeAssetType('unit trust')).toBe('ETF');
+    expect(normalizeAssetType('Unit Trust')).toBe('ETF');
   });
 
   it('preserves canonical ETF', () => {
@@ -277,6 +336,11 @@ describe('normalizeAssetType', () => {
     expect(normalizeAssetType('coin')).toBe('Crypto');
   });
 
+  it('normalizes digital asset → Crypto', () => {
+    expect(normalizeAssetType('digital asset')).toBe('Crypto');
+    expect(normalizeAssetType('Digital Asset')).toBe('Crypto');
+  });
+
   it('preserves canonical Crypto', () => {
     expect(normalizeAssetType('Crypto')).toBe('Crypto');
   });
@@ -288,6 +352,21 @@ describe('normalizeAssetType', () => {
 
   it('normalizes real estate → REIT', () => {
     expect(normalizeAssetType('real estate')).toBe('REIT');
+  });
+
+  it('normalizes real estate investment trust → REIT', () => {
+    expect(normalizeAssetType('real estate investment trust')).toBe('REIT');
+    expect(normalizeAssetType('Real Estate Investment Trust')).toBe('REIT');
+  });
+
+  it('normalizes Stock (REIT) → REIT (AI resolver label variant)', () => {
+    expect(normalizeAssetType('stock (reit)')).toBe('REIT');
+    expect(normalizeAssetType('Stock (REIT)')).toBe('REIT');
+  });
+
+  it('normalizes REIT Shares → REIT (AI resolver label variant)', () => {
+    expect(normalizeAssetType('reit shares')).toBe('REIT');
+    expect(normalizeAssetType('REIT Shares')).toBe('REIT');
   });
 
   it('preserves canonical REIT', () => {
@@ -309,6 +388,30 @@ describe('normalizeAssetType', () => {
 
   it('normalizes government bond → Bond', () => {
     expect(normalizeAssetType('government bond')).toBe('Bond');
+  });
+
+  it('normalizes bonds → Bond (plural form)', () => {
+    expect(normalizeAssetType('bonds')).toBe('Bond');
+    expect(normalizeAssetType('Bonds')).toBe('Bond');
+  });
+
+  it('normalizes debt → Bond', () => {
+    expect(normalizeAssetType('debt')).toBe('Bond');
+  });
+
+  it('normalizes note → Bond', () => {
+    expect(normalizeAssetType('note')).toBe('Bond');
+    expect(normalizeAssetType('Note')).toBe('Bond');
+  });
+
+  it('normalizes corporate bond → Bond', () => {
+    expect(normalizeAssetType('corporate bond')).toBe('Bond');
+    expect(normalizeAssetType('Corporate Bond')).toBe('Bond');
+  });
+
+  it('normalizes bond etf → Bond', () => {
+    expect(normalizeAssetType('bond etf')).toBe('Bond');
+    expect(normalizeAssetType('Bond ETF')).toBe('Bond');
   });
 
   it('preserves canonical Bond', () => {
@@ -414,6 +517,43 @@ describe('buildAssetRecord', () => {
 
   it('defaults asset_type to Stock when type is absent', () => {
     const rec = buildAssetRecord({ symbol: 'AAPL' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  // ── type normalization via normalizeAssetType (PR #224 — AI resolver stores raw strings) ──
+
+  it('normalizes type: Shares → asset_type: Stock (AI resolver label, chart-split bug)', () => {
+    const rec = buildAssetRecord({ symbol: 'AAPL', type: 'Shares' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  it('normalizes type: Ordinary Shares → asset_type: Stock', () => {
+    const rec = buildAssetRecord({ symbol: 'AZN.L', type: 'Ordinary Shares' });
+    expect(rec.asset_type).toBe('Stock');
+  });
+
+  it('normalizes type: Shares (REIT) → asset_type: REIT', () => {
+    const rec = buildAssetRecord({ symbol: 'VICI', type: 'Shares (REIT)' });
+    expect(rec.asset_type).toBe('REIT');
+  });
+
+  it('normalizes type: Stock (REIT) → asset_type: REIT', () => {
+    const rec = buildAssetRecord({ symbol: 'AMT', type: 'Stock (REIT)' });
+    expect(rec.asset_type).toBe('REIT');
+  });
+
+  it('normalizes type: REIT Shares → asset_type: REIT', () => {
+    const rec = buildAssetRecord({ symbol: 'PLD', type: 'REIT Shares' });
+    expect(rec.asset_type).toBe('REIT');
+  });
+
+  it('normalizes type: UCITS → asset_type: ETF', () => {
+    const rec = buildAssetRecord({ symbol: 'IWDA.AS', type: 'UCITS' });
+    expect(rec.asset_type).toBe('ETF');
+  });
+
+  it('normalizes type: Preferred Stock → asset_type: Stock', () => {
+    const rec = buildAssetRecord({ symbol: 'BRK.A', type: 'Preferred Stock' });
     expect(rec.asset_type).toBe('Stock');
   });
 
