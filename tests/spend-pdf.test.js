@@ -333,6 +333,25 @@ describe('headings versus wrapped descriptions', () => {
                      L('05/08 FARMACIA 20,00', 2, 60)];
         expect(findSectionHeadings(doc).map(l => l.text)).toEqual(['DETALHE DAS COMPRAS CARTAO N. 042061']);
     });
+
+    it('rejects an account/IBAN number that otherwise looks like a heading', () => {
+        // The digit-run check collapses spaces before testing, so 'CONTA ORDEM
+        // 00012345678901 ACTIVA' becomes 14 consecutive digits — above the limit.
+        // A false heading routes real money to the wrong account.
+        const doc = [L('04/08 COMPRA 45,00', 0, 60),
+                     L('CONTA ORDEM 00012345678901 ACTIVA', 1, 60),
+                     L('05/08 FARMACIA 20,00', 2, 60)];
+        expect(findSectionHeadings(doc)).toHaveLength(0);
+    });
+
+    it('rejects a NIB/IBAN whose digit groups are separated by spaces', () => {
+        // 'NIB 00 12 34 56 78 90' → after replace(/\s/g,'') → '001234567890'
+        // (12 consecutive digits), which exceeds the 7-digit threshold.
+        const doc = [L('04/08 COMPRA 45,00', 0, 60),
+                     L('NIB 00 12 34 56 78 90', 1, 60),
+                     L('05/08 FARMACIA 20,00', 2, 60)];
+        expect(findSectionHeadings(doc)).toHaveLength(0);
+    });
 });
 
 // A statement printed newest-first fails every pair of the ascending chain, so
