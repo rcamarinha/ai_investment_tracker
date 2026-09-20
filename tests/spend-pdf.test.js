@@ -333,6 +333,20 @@ describe('headings versus wrapped descriptions', () => {
                      L('05/08 FARMACIA 20,00', 2, 60)];
         expect(findSectionHeadings(doc).map(l => l.text)).toEqual(['DETALHE DAS COMPRAS CARTAO N. 042061']);
     });
+    it('excludes a line whose text contains an IBAN-style digit run', () => {
+        // 'CONTA 00012345678901 ACTIVA' → after removing spaces the digit run is 14 → excluded
+        const doc = [L('04/08 COMPRA 45,00', 0, 60),
+                     L('CONTA 00012345678901 ACTIVA', 1, 60),
+                     L('05/08 FARMACIA 20,00', 2, 60)];
+        expect(findSectionHeadings(doc)).toHaveLength(0);
+    });
+    it('excludes a spaced IBAN whose digit run only exceeds 8 after spaces are removed', () => {
+        // 'PT50 0035 0668' → after strip → '0035066' (7 chars per group) → '00350668' is 8+
+        const doc = [L('04/08 COMPRA 45,00', 0, 60),
+                     L('IBAN PT50 0035 0668 0000 9280', 1, 60),
+                     L('05/08 FARMACIA 20,00', 2, 60)];
+        expect(findSectionHeadings(doc)).toHaveLength(0);
+    });
 });
 
 // A statement printed newest-first fails every pair of the ascending chain, so

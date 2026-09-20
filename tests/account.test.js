@@ -119,4 +119,40 @@ describe('googleLogin and logout', () => {
         expect(await actionsFor(client).logout()).toEqual({ ok: true });
         expect(calls).toEqual([['signOut']]);
     });
+
+    it('turns a server error from logout into a message instead of throwing', async () => {
+        const { client } = fakeClient({ error: new Error('Session expired') });
+        const r = await actionsFor(client).logout();
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Sign-out failed');
+        expect(r.message).toContain('Session expired');
+    });
+
+    it('turns a server error from googleLogin into a message instead of throwing', async () => {
+        const { client } = fakeClient({ error: new Error('OAuth unavailable') });
+        const r = await actionsFor(client).googleLogin();
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('Google sign-in failed');
+        expect(r.message).toContain('OAuth unavailable');
+    });
+});
+
+describe('forgotPassword server errors', () => {
+    it('returns ok:false with the server reason instead of throwing', async () => {
+        const { client } = fakeClient({ error: new Error('SMTP not configured') });
+        const r = await actionsFor(client).forgotPassword('jane@example.com');
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('The reset email was not sent');
+        expect(r.message).toContain('SMTP not configured');
+    });
+});
+
+describe('setPassword server errors', () => {
+    it('returns ok:false with the server reason instead of throwing', async () => {
+        const { client } = fakeClient({ error: new Error('Auth token expired') });
+        const r = await actionsFor(client).setPassword('secret12', 'secret12');
+        expect(r.ok).toBe(false);
+        expect(r.message).toContain('The password was not set');
+        expect(r.message).toContain('Auth token expired');
+    });
 });
