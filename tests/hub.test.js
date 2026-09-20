@@ -283,6 +283,26 @@ describe('computeWineDelta', () => {
         const result = computeWineDelta(1050, 1000, [], NOW);
         expect(result.text).toBe('+5.0%');
     });
+
+    it('ignores a last_valued_at that cannot be parsed, and falls back to no label', () => {
+        // new Date('garbage') yields NaN. Without the isFinite filter it sorts
+        // unpredictably and .getTime() returns NaN, rendering "valued NaNd ago".
+        const wines = [{ qty: 1, estimated_value: 100, last_valued_at: 'not-a-date' }];
+        const result = computeWineDelta(100, 0, wines, NOW);
+        expect(result.text).toBe('');
+        expect(result.cls).toBe('neutral');
+    });
+
+    it('uses the most recent valid date and discards any unparseable ones', () => {
+        const wines = [
+            { qty: 1, estimated_value: 50, last_valued_at: 'garbage' },
+            { qty: 1, estimated_value: 50, last_valued_at: '2026-06-01T00:00:00.000Z' },
+        ];
+        // 2026-06-01 is exactly 3 days before NOW (2026-06-04)
+        const result = computeWineDelta(100, 0, wines, NOW);
+        expect(result.text).toBe('valued 3d ago');
+        expect(result.cls).toBe('neutral');
+    });
 });
 
 

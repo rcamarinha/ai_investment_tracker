@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    groupIntoLines, findCandidateLines, proposeLinePattern, detectStatementYear,
+    groupIntoLines, findCandidateLines, findLooseCandidates, proposeLinePattern, detectStatementYear,
     parseWithLineProfile, buildPdfDraft, LINE_PATTERNS
 } from '../services/import-pdf.js';
 
@@ -187,5 +187,56 @@ describe('buildPdfDraft', () => {
     it('reports failure rather than a bad guess on an unreadable document', () => {
         expect(buildPdfDraft([{ text: 'scanned image, no text', xs: [], y: 0 }]))
             .toMatchObject({ ok: false, matched: 0 });
+    });
+});
+
+// ── findLooseCandidates ───────────────────────────────────────────────────────
+//
+// The strict filter (findCandidateLines) required a date AT THE START of the
+// row, so banks that print the date mid-row, use ISO yyyy-mm-dd, or lead with
+// a reference number were refused entirely. findLooseCandidates widens to any
+// line that contains a date AND a money figure anywhere; balance-chain checking
+// then rejects wrong results, so a looser gate cannot make a bad import pass.
+
+describe('findLooseCandidates', () => {
+    const L = text => ({ text, y: 0, xs: [0] });
+
+    it('includes a row with an ISO date in the middle and an amount', () => {
+        // CGD-style: date is mid-row rather than leading
+        const lines = [L('COMPRA SUPERMERCADO 2026-07-30 45,00')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('includes a row with a leading dd/mm/yyyy date and an amount', () => {
+        const lines = [L('26/01/2026 Compra supermercado -11,00 7.685,81')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('includes a row with a month-name date (with year) and an amount', () => {
+        // D_NAME requires a trailing year — "30 Jul" alone is not enough
+        const lines = [L('30 Jul 2026 Transfer abroad 250,00')];
+        expect(findLooseCandidates(lines)).toHaveLength(1);
+    });
+
+    it('excludes a row that has a date but no money figure', () => {
+        const lines = [L('2026-07-30 Some description')];
+        expect(findLooseCandidates(lines)).toHaveLength(0);
+    });
+
+    it('excludes a row with a money figure but no date pattern', () => {
+        // Use amounts that cannot be confused with a date (no 1-2 digit . 1-2 digit pattern)
+        const lines = [L('Balance carried forward 500,00')];
+        expect(findLooseCandidates(lines)).toHaveLength(0);
+    });
+
+    it('excludes lines longer than 200 characters even when date and money are present', () => {
+        const long = '2026-07-30 ' + 'A'.repeat(190) + ' 45,00';
+        expect(long.length).toBeGreaterThan(200);
+        expect(findLooseCandidates([L(long)])).toHaveLength(0);
+    });
+
+    it('returns an empty array for an empty input', () => {
+        expect(findLooseCandidates([])).toEqual([]);
+        expect(findLooseCandidates()).toEqual([]);
     });
 });
