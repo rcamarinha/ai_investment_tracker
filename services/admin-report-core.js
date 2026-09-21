@@ -118,9 +118,9 @@ export function summarizeUsage(report, now = Date.now()) {
  * is a one-line edit here.
  *
  * Sources, checked 18 September 2026: Claude — Anthropic's published API rates
- * (claude-api reference, cached June 2026). Gemini 2.5 Flash — ai.google.dev
- * pricing page, paid tier; its "thinking" tokens are billed as output and are
- * already counted as output by the recorder.
+ * (claude-api reference, cached June 2026). Gemini 2.5 Flash, and 3.5 Flash
+ * (checked 21 September) — ai.google.dev pricing page, paid tier; "thinking"
+ * tokens are billed as output and are already counted as output by the recorder.
  *
  * What the estimate leaves out, and the page says so: web searches (billed per
  * search by both providers, recorded separately as units), and Gemini's free
@@ -132,6 +132,7 @@ export const MODEL_PRICES = {
     'claude-haiku-4-5':           { input: 1.00, output: 5.00 },
     'claude-haiku-4-5-20251001':  { input: 1.00, output: 5.00 },
     'gemini-2.5-flash':           { input: 0.30, output: 2.50 },
+    'gemini-3.5-flash':           { input: 1.50, output: 9.00 },
 };
 
 export const FUNCTION_LABELS = {
