@@ -1,25 +1,16 @@
 /**
- * Tests for wine-ai edge function batch valuation parsing utilities.
+ * Batch wine valuation: the prompt and how an answer becomes results.
  *
- * These functions live in supabase/functions/wine-ai/index.ts (Deno/server)
- * and are mirrored as pure functions in src/wine-ai-utils.js for testability.
- *
- * Risky behaviours covered:
- *  - sanitiseJson: strips markdown fences, converts Python literals, removes
- *    trailing commas — required for reliable Gemini JSON extraction.
- *  - parseBatchText: array strategy + object fallback strategy — the fallback
- *    was added specifically because Gemini returns a bare {} for single-bottle
- *    batches; without it the whole batch result would be silently dropped.
- *  - parseBatchText: id injection — each result picks up the corresponding
- *    bottle id from the chunk so the UI can match results back to bottles.
- *  - buildBatchPrompt: structure, wine field inclusion, unknown-wine fallback,
- *    non-standard bottle sizes, pricing rules present in prompt.
- *  - isValidGeminiText: guards the Claude fallback trigger — Gemini HTTP 200
- *    with empty/whitespace text must not be treated as a successful response.
+ * Imports supabase/functions/_shared/wine-batch-core.js — the module the
+ * wine-ai function itself runs. These tests used to check a copy in
+ * src/wine-ai-utils.js, and only ever handed in results that already carried
+ * the right ids, so nothing noticed that the server matched by POSITION: a model
+ * that skipped or reordered a wine put one bottle's price on another. A result
+ * now belongs to a bottle only if it names that bottle's ref.
  */
 
 import { describe, it, expect } from 'vitest';
-import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText, padResults } from '../src/wine-ai-utils.js';
+import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText, padResults } from '../supabase/functions/_shared/wine-batch-core.js';
 
 // ── sanitiseJson ─────────────────────────────────────────────────────────────
 
@@ -86,118 +77,94 @@ describe('sanitiseJson', () => {
 
 // ── parseBatchText — strategy 1: JSON array ───────────────────────────────────
 
-describe('parseBatchText — array strategy', () => {
+describe('parseBatchText — matching by ref', () => {
   const chunk = [
     { id: 'bottle-1', name: 'Château Margaux', vintage: 2018 },
     { id: 'bottle-2', name: 'Penfolds Grange',  vintage: 2017 },
+    { id: 'bottle-3', name: 'Barca Velha',      vintage: 2011 },
   ];
+  const ids = r => r.results.map(x => [x.id, x.estimatedValue]);
 
-  it('parses a clean JSON array response', () => {
+  it('gives each result the id of the bottle it names', () => {
     const text = JSON.stringify([
-      { estimatedValue: 250, confidence: 'high' },
-      { estimatedValue: 400, confidence: 'medium' },
+      { ref: 1, estimatedValue: 250 }, { ref: 2, estimatedValue: 400 }, { ref: 3, estimatedValue: 900 },
     ]);
-    const result = parseBatchText(text, chunk, 0, 'Gemini');
-    expect(result).toHaveLength(2);
-    expect(result[0].estimatedValue).toBe(250);
-    expect(result[1].estimatedValue).toBe(400);
+    expect(ids(parseBatchText(text, chunk))).toEqual([['bottle-1', 250], ['bottle-2', 400], ['bottle-3', 900]]);
   });
 
-  it('injects bottle ids from the chunk', () => {
-    const text = JSON.stringify([
-      { estimatedValue: 250 },
-      { estimatedValue: 400 },
-    ]);
-    const result = parseBatchText(text, chunk, 0, 'Gemini');
-    expect(result[0].id).toBe('bottle-1');
-    expect(result[1].id).toBe('bottle-2');
+  it('a skipped middle wine leaves THAT bottle empty, not its neighbour (the old bug)', () => {
+    // Positionally, 900 would have landed on bottle-2.
+    const text = JSON.stringify([{ ref: 1, estimatedValue: 250 }, { ref: 3, estimatedValue: 900 }]);
+    const parsed = parseBatchText(text, chunk);
+    expect(ids(parsed)).toEqual([['bottle-1', 250], ['bottle-3', 900]]);
+    expect(padResults(parsed.results, chunk, 'Gemini').map(r => r.error ? 'error' : r.estimatedValue))
+      .toEqual([250, 'error', 900]);
   });
 
-  it('parses array wrapped in markdown fences', () => {
-    const text = '```json\n' + JSON.stringify([{ estimatedValue: 99 }]) + '\n```';
-    const result = parseBatchText(text, [{ id: 'b1' }], 0, 'Gemini');
-    expect(result).not.toBeNull();
-    expect(result[0].estimatedValue).toBe(99);
-    expect(result[0].id).toBe('b1');
+  it('a reordered answer still lands on the right bottles', () => {
+    const text = JSON.stringify([{ ref: 3, estimatedValue: 900 }, { ref: 1, estimatedValue: 250 }, { ref: 2, estimatedValue: 400 }]);
+    expect(Object.fromEntries(ids(parseBatchText(text, chunk)))).toEqual({ 'bottle-1': 250, 'bottle-2': 400, 'bottle-3': 900 });
   });
 
-  it('parses array with Python-style None drinkWindow', () => {
-    const text = '[{"estimatedValue": 120, "drinkWindow": None}]';
-    const result = parseBatchText(text, [{ id: 'b1' }], 0, 'Gemini');
-    expect(result).not.toBeNull();
-    expect(result[0].drinkWindow).toBeNull();
+  it('accepts a ref written as a string', () => {
+    expect(ids(parseBatchText('[{"ref": "2", "estimatedValue": 400}]', chunk))).toEqual([['bottle-2', 400]]);
   });
 
-  it('parses array with trailing comma', () => {
-    const text = '[{"estimatedValue": 100,}]';
-    const result = parseBatchText(text, [{ id: 'b1' }], 0, 'Gemini');
-    expect(result).not.toBeNull();
-    expect(result[0].estimatedValue).toBe(100);
+  it('drops a result with no ref when there is more than one bottle, rather than guess', () => {
+    const parsed = parseBatchText(JSON.stringify([{ estimatedValue: 250 }, { estimatedValue: 400 }]), chunk);
+    expect(parsed.results).toEqual([]);
+    expect(parsed.unmatched).toBe(2);
   });
 
-  it('parses array preceded by preamble text', () => {
-    const text = 'Here are the valuations:\n[{"estimatedValue": 75}]';
-    const result = parseBatchText(text, [{ id: 'b1' }], 0, 'Claude');
-    expect(result).not.toBeNull();
-    expect(result[0].estimatedValue).toBe(75);
+  it('drops a ref outside the list, and a second result for the same bottle', () => {
+    const text = JSON.stringify([{ ref: 4, estimatedValue: 1 }, { ref: 1, estimatedValue: 250 }, { ref: 1, estimatedValue: 999 }]);
+    const parsed = parseBatchText(text, chunk);
+    expect(ids(parsed)).toEqual([['bottle-1', 250]]);
+    expect(parsed.unmatched).toBe(2);
+  });
+
+  it('does not pass the ref through to the stored result', () => {
+    expect(parseBatchText('[{"ref": 1, "estimatedValue": 5}]', chunk).results[0]).not.toHaveProperty('ref');
   });
 });
 
-// ── parseBatchText — strategy 2: object fallback ──────────────────────────────
+describe('parseBatchText — one bottle', () => {
+  const solo = [{ id: 'solo-bottle' }];
 
-describe('parseBatchText — object fallback (single-bottle Gemini quirk)', () => {
-  it('recovers a bare object response as a single-element array', () => {
-    const text = '{"estimatedValue": 180, "confidence": "high"}';
-    const chunk = [{ id: 'solo-bottle' }];
-    const result = parseBatchText(text, chunk, 0, 'Gemini');
-    expect(result).toHaveLength(1);
-    expect(result[0].estimatedValue).toBe(180);
-    expect(result[0].id).toBe('solo-bottle');
+  it('needs no ref: there is nothing to confuse it with', () => {
+    expect(parseBatchText('[{"estimatedValue": 180}]', solo).results).toEqual([{ estimatedValue: 180, id: 'solo-bottle' }]);
   });
 
-  it('uses chunk[0].id for the recovered object', () => {
-    const text = '{"estimatedValue": 55}';
-    const chunk = [{ id: 'my-id' }];
-    const result = parseBatchText(text, chunk, 0, 'Gemini');
-    expect(result[0].id).toBe('my-id');
+  it('recovers a bare object (a Gemini habit with one wine)', () => {
+    expect(parseBatchText('{"estimatedValue": 180, "confidence": "high"}', solo).results[0])
+      .toMatchObject({ id: 'solo-bottle', estimatedValue: 180 });
   });
 
-  it('recovers object wrapped in markdown fences', () => {
-    const text = '```json\n{"estimatedValue": 200}\n```';
-    const chunk = [{ id: 'fence-id' }];
-    const result = parseBatchText(text, chunk, 0, 'Gemini');
-    expect(result).not.toBeNull();
-    expect(result[0].estimatedValue).toBe(200);
-  });
-
-  it('recovers object with Python None', () => {
-    const text = '{"drinkWindow": None, "estimatedValue": 50}';
-    const chunk = [{ id: 'b1' }];
-    const result = parseBatchText(text, chunk, 0, 'Gemini');
-    expect(result).not.toBeNull();
-    expect(result[0].drinkWindow).toBeNull();
+  it('still refuses a ref that names another wine', () => {
+    expect(parseBatchText('[{"ref": 2, "estimatedValue": 180}]', solo).results).toEqual([]);
   });
 });
 
-// ── parseBatchText — null on total failure ─────────────────────────────────────
+describe('parseBatchText — reading the answer', () => {
+  const solo = [{ id: 'b1' }];
 
-describe('parseBatchText — returns null when parsing fails', () => {
-  const chunk = [{ id: 'b1' }];
-
-  it('returns null for empty text', () => {
-    expect(parseBatchText('', chunk, 0, 'Gemini')).toBeNull();
+  it('reads JSON inside markdown fences', () => {
+    expect(parseBatchText('```json\n[{"estimatedValue": 99}]\n```', solo).results[0].estimatedValue).toBe(99);
   });
 
-  it('returns null for plain prose with no JSON', () => {
-    expect(parseBatchText('I cannot value this wine.', chunk, 0, 'Gemini')).toBeNull();
+  it('reads Python None and a trailing comma', () => {
+    const r = parseBatchText('[{"estimatedValue": 120, "drinkWindow": None,}]', solo).results[0];
+    expect(r).toMatchObject({ estimatedValue: 120, drinkWindow: null });
   });
 
-  it('returns null for broken JSON that cannot be recovered', () => {
-    expect(parseBatchText('[{broken json', chunk, 0, 'Gemini')).toBeNull();
+  it('reads an array after preamble text', () => {
+    expect(parseBatchText('Here are the valuations:\n[{"estimatedValue": 75}]', solo).results[0].estimatedValue).toBe(75);
   });
 
-  it('returns null when the response is just whitespace', () => {
-    expect(parseBatchText('   \n  ', chunk, 0, 'Gemini')).toBeNull();
+  it('returns null when nothing is readable, so the other provider is tried', () => {
+    for (const text of ['', '   \n  ', 'I cannot value this wine.', '[{broken json']) {
+      expect(parseBatchText(text, solo), JSON.stringify(text)).toBeNull();
+    }
   });
 });
 
@@ -255,6 +222,10 @@ describe('buildBatchPrompt', () => {
     // always written into the fields list. This verifies that behaviour.
     const prompt = buildBatchPrompt([{ id: 'b1', bottleSize: '0.75L' }]);
     expect(prompt).toContain('Bottle format: 0.75L');
+  });
+
+  it('asks for the ref every result is matched by', () => {
+    expect(buildBatchPrompt([makeBottle()])).toContain('"ref": <the wine\'s number from the list above');
   });
 
   it('includes correct count in the instruction line', () => {
@@ -380,74 +351,18 @@ describe('isValidGeminiText', () => {
 // causes all subsequent valuations to be written to the WRONG bottles.
 // padResults ensures the results array always has exactly chunk.length entries.
 
-describe('padResults — prevents batch misalignment data corruption', () => {
-  const chunk = [
-    { id: 'bottle-1', name: 'Wine A' },
-    { id: 'bottle-2', name: 'Wine B' },
-    { id: 'bottle-3', name: 'Wine C' },
-  ];
+describe('padResults — one entry per bottle, in order', () => {
+  const chunk = [{ id: 'bottle-1' }, { id: 'bottle-2' }, { id: 'bottle-3' }];
 
-  it('returns results unchanged when length matches chunk.length', () => {
-    const results = [
-      { id: 'bottle-1', estimatedValue: 100 },
-      { id: 'bottle-2', estimatedValue: 200 },
-      { id: 'bottle-3', estimatedValue: 300 },
-    ];
-    const padded = padResults(results, chunk, 0, 'Gemini');
-    expect(padded).toHaveLength(3);
-    expect(padded[0].estimatedValue).toBe(100);
+  it('keeps matched results and marks the rest as errors naming the provider', () => {
+    const padded = padResults([{ id: 'bottle-3', estimatedValue: 300 }], chunk, 'Claude');
+    expect(padded.map(r => r.id)).toEqual(['bottle-1', 'bottle-2', 'bottle-3']);
     expect(padded[2].estimatedValue).toBe(300);
+    expect(padded[0].error).toContain('Claude');
+    expect(padded[1].error).toContain('AI did not return a valuation');
   });
 
-  it('pads with error stubs when AI returns fewer results', () => {
-    const results = [
-      { id: 'bottle-1', estimatedValue: 100 },
-      { id: 'bottle-2', estimatedValue: 200 },
-    ];
-    const padded = padResults(results, chunk, 0, 'Gemini');
-    expect(padded).toHaveLength(3);
-    expect(padded[0].estimatedValue).toBe(100);
-    expect(padded[1].estimatedValue).toBe(200);
-    expect(padded[2].id).toBe('bottle-3');
-    expect(padded[2].error).toContain('AI did not return a valuation');
-  });
-
-  it('pads when AI returns only 1 result for a 3-bottle chunk', () => {
-    const results = [{ id: 'bottle-1', estimatedValue: 50 }];
-    const padded = padResults(results, chunk, 0, 'Claude');
-    expect(padded).toHaveLength(3);
-    expect(padded[0].id).toBe('bottle-1');
-    expect(padded[1].id).toBe('bottle-2');
-    expect(padded[1].error).toContain('Claude');
-    expect(padded[2].id).toBe('bottle-3');
-    expect(padded[2].error).toContain('Claude');
-  });
-
-  it('truncates when AI returns more results than chunk.length', () => {
-    const results = [
-      { id: 'bottle-1', estimatedValue: 100 },
-      { id: 'bottle-2', estimatedValue: 200 },
-      { id: 'bottle-3', estimatedValue: 300 },
-      { id: 'bottle-4', estimatedValue: 400 },
-    ];
-    const padded = padResults(results, chunk, 0, 'Gemini');
-    expect(padded).toHaveLength(3);
-    expect(padded[2].id).toBe('bottle-3');
-  });
-
-  it('error stubs include the source name', () => {
-    const results = [{ id: 'bottle-1', estimatedValue: 100 }];
-    const padded = padResults(results, chunk, 0, 'Gemini');
-    expect(padded[1].error).toContain('Gemini');
-    expect(padded[2].error).toContain('Gemini');
-  });
-
-  it('handles empty results array gracefully', () => {
-    const padded = padResults([], chunk, 0, 'Gemini');
-    expect(padded).toHaveLength(3);
-    expect(padded[0].id).toBe('bottle-1');
-    expect(padded[1].id).toBe('bottle-2');
-    expect(padded[2].id).toBe('bottle-3');
-    padded.forEach(r => expect(r.error).toBeDefined());
+  it('marks every bottle when nothing matched', () => {
+    padResults([], chunk, 'Gemini').forEach(r => expect(r.error).toContain('Gemini'));
   });
 });
