@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText, padResults } from '../supabase/functions/_shared/wine-batch-core.js';
+import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText, padResults, geminiSearchCount, SEARCH_REMINDER, VALUATION_SYSTEM_INSTRUCTION } from '../supabase/functions/_shared/wine-batch-core.js';
 
 // ── sanitiseJson ─────────────────────────────────────────────────────────────
 
@@ -364,5 +364,44 @@ describe('padResults — one entry per bottle, in order', () => {
 
   it('marks every bottle when nothing matched', () => {
     padResults([], chunk, 'Gemini').forEach(r => expect(r.error).toContain('Gemini'));
+  });
+});
+
+// ── Whether Gemini really searched ────────────────────────────────────────────
+//
+// Offering Google Search does not make Gemini use it: in the first 3.5 batch,
+// 23 of 24 answers ran no search and priced wines from memory. wine-ai accepts
+// a valuation only when this count is above zero.
+
+describe('geminiSearchCount', () => {
+  const withQueries = q => ({ candidates: [{ groundingMetadata: { webSearchQueries: q } }] });
+
+  it('counts the searches Gemini reports', () => {
+    expect(geminiSearchCount(withQueries(['barca velha 2011 preço', 'barca velha garrafeira nacional']))).toBe(2);
+  });
+
+  it('is zero when Gemini answered from memory (no grounding metadata at all)', () => {
+    expect(geminiSearchCount({ candidates: [{ content: { parts: [{ text: '[]' }] } }] })).toBe(0);
+  });
+
+  it('is zero for an empty query list, a missing candidate or no body', () => {
+    expect(geminiSearchCount(withQueries([]))).toBe(0);
+    expect(geminiSearchCount({ candidates: [] })).toBe(0);
+    expect(geminiSearchCount(null)).toBe(0);
+  });
+});
+
+describe('what Gemini is told about searching', () => {
+  it('the system instruction requires a search whatever the model believes it knows', () => {
+    expect(VALUATION_SYSTEM_INSTRUCTION).toMatch(/must perform Google Searches before answering/);
+    expect(VALUATION_SYSTEM_INSTRUCTION).toMatch(/regardless of how confident/);
+  });
+
+  it('the retry says why the first answer was refused', () => {
+    expect(SEARCH_REMINDER).toMatch(/rejected because it ran no Google Search/);
+  });
+
+  it('the batch prompt asks for Google Search, as the single-bottle prompt does', () => {
+    expect(buildBatchPrompt([{ id: 'b1', name: 'X' }])).toContain('Use Google Search');
   });
 });

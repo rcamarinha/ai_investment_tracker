@@ -38,6 +38,32 @@ export function isValidGeminiText(text) {
 }
 
 /**
+ * How many web searches a Gemini answer actually ran. Offering the search tool
+ * does not make Gemini use it: in the first batch run on 3.5, 23 of 24 answers
+ * ran none and priced wines from memory. A valuation needs this above zero.
+ * @param {any} body Gemini's parsed generateContent response
+ * @returns {number}
+ */
+export function geminiSearchCount(body) {
+  const queries = body?.candidates?.[0]?.groundingMetadata?.webSearchQueries;
+  return Array.isArray(queries) ? queries.length : 0;
+}
+
+/**
+ * System instruction for every Gemini valuation. Search stays the model's
+ * decision (Google offers no setting to force it), but a system instruction
+ * outranks the prompt text; geminiSearchCount is the check that it worked.
+ */
+export const VALUATION_SYSTEM_INSTRUCTION =
+  "You must perform Google Searches before answering, regardless of how confident you are in your own knowledge. " +
+  "Wine prices change and your training data is out of date: every price you give must come from a search made for this request.";
+
+/** Put in front of the prompt when Gemini answered without searching once. */
+export const SEARCH_REMINDER =
+  "Your previous answer was rejected because it ran no Google Search. " +
+  "Run Google searches for every wine below before answering, and base each price on what they return.\n\n";
+
+/**
  * @param {Array<Record<string, any>>} bottles
  * @param {string} [today] YYYY-MM-DD, for tests
  * @returns {string}
@@ -60,7 +86,7 @@ export function buildBatchPrompt(bottles, today = new Date().toISOString().slice
     return `${i + 1}. ${fields || "(unknown wine)"}`;
   }).join("\n");
 
-  return `You are a wine investment expert. Use web search to find current retail and auction market prices for each wine below, then return valuations.
+  return `You are a wine investment expert. Use Google Search to find current retail and auction market prices for each wine below, then return valuations. Search before answering: a price not found in a search made now is not a valuation.
 
 Today's date: ${today}
 

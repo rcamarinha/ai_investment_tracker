@@ -31,7 +31,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recordUsage } from "../_shared/usage.ts";
-import { buildBatchPrompt, parseBatchText, padResults } from "../_shared/wine-batch-core.js";
+import { buildBatchPrompt, parseBatchText, padResults, geminiSearchCount, SEARCH_REMINDER, VALUATION_SYSTEM_INSTRUCTION } from "../_shared/wine-batch-core.js";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
@@ -95,13 +95,23 @@ type Meter = (provider: string, model: string, ok: boolean, response?: unknown) 
 interface GeminiResult {
   text: string;
   groundingChunks?: Array<{ web?: { uri: string; title: string } }>;
+  searches: number;
 }
 
-async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: boolean, meter: Meter): Promise<GeminiResult & { usedGrounding: boolean }> {
+async function _callGeminiOnce(
+  prompt: string,
+  maxTokens: number,
+  useGrounding: boolean,
+  meter: Meter,
+  systemInstruction?: string,
+): Promise<GeminiResult & { usedGrounding: boolean }> {
   const body: Record<string, unknown> = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { maxOutputTokens: maxTokens },
   };
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
   if (useGrounding) {
     body.tools = [{ google_search: {} }];
   }
@@ -146,16 +156,32 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
   console.log(
     `[wine-ai] Gemini ${GEMINI_MODEL} ${mode}: ${Date.now() - started}ms,` +
     ` finish=${data.candidates?.[0]?.finishReason ?? "none"},` +
-    ` searches=${data.candidates?.[0]?.groundingMetadata?.webSearchQueries?.length ?? 0},` +
+    ` searches=${geminiSearchCount(data)},` +
     ` in=${u.promptTokenCount ?? "?"} out=${u.candidatesTokenCount ?? "?"} thinking=${u.thoughtsTokenCount ?? 0}/${maxTokens}`,
   );
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
   const groundingChunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? undefined;
-  return { text, groundingChunks, usedGrounding: useGrounding };
+  return { text, groundingChunks, searches: geminiSearchCount(data), usedGrounding: useGrounding };
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/**
+ * Gemini for a valuation: grounded only, and only an answer that actually ran a
+ * search. Gemini decides for itself whether to use the search tool, and in the
+ * first 3.5 batch it priced 23 of 24 wines from memory. An unsearched answer is
+ * asked again once with a firm reminder; a second one throws, so the caller
+ * falls back to Claude, which searches.
+ */
+async function callGeminiSearched(prompt: string, maxTokens: number, meter: Meter): Promise<GeminiResult> {
+  const first = await callGemini(prompt, maxTokens, meter, false, VALUATION_SYSTEM_INSTRUCTION);
+  if (first.searches > 0) return first;
+  console.warn("[wine-ai] Gemini answered without searching — asking again with a reminder");
+  const second = await callGemini(SEARCH_REMINDER + prompt, maxTokens, meter, false, VALUATION_SYSTEM_INSTRUCTION);
+  if (second.searches > 0) return second;
+  throw new Error("Gemini answered twice without running a search");
+}
 
 /**
  * Call Gemini with Google Search grounding (default).
@@ -164,13 +190,19 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
  * If the ungrounded attempt also fails with 429, waits and retries once more.
  * If all attempts fail, throws — meaning the Gemini key is dead or exhausted.
  */
-async function callGemini(prompt: string, maxTokens: number, meter: Meter, allowUngrounded = true): Promise<GeminiResult> {
+async function callGemini(
+  prompt: string,
+  maxTokens: number,
+  meter: Meter,
+  allowUngrounded = true,
+  systemInstruction?: string,
+): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
   // Attempt 1: with Google Search grounding (default)
   try {
     console.log("[wine-ai] Gemini grounded request (with Google Search)");
-    const result = await _callGeminiOnce(prompt, maxTokens, true, meter);
+    const result = await _callGeminiOnce(prompt, maxTokens, true, meter, systemInstruction);
     console.log("[wine-ai] Gemini: grounded response OK");
     return result;
   } catch (err) {
@@ -318,7 +350,7 @@ async function handleValuation(prompt: string, corsHeaders: Record<string, strin
 
   // 1. Try Gemini (with Google Search grounding)
   try {
-    const { text, groundingChunks } = await callGemini(prompt, GEMINI_VALUATION_TOKENS, meter, false);
+    const { text, groundingChunks } = await callGeminiSearched(prompt, GEMINI_VALUATION_TOKENS, meter);
     if (text.trim()) {
       console.log("[wine-ai] Valuation via Gemini");
       return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null }, 200, corsHeaders);
@@ -404,7 +436,7 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter)
 
   // 1. Gemini, with search only: a valuation never falls back to an unsearched guess.
   try {
-    const { text } = await callGemini(prompt, maxTokens, meter, false);
+    const { text } = await callGeminiSearched(prompt, maxTokens, meter);
     const results = accept(text, "Gemini");
     if (results) return results;
   } catch (err) {
