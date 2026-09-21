@@ -61,7 +61,8 @@ ai_investment_tracker/
 │   ├── maintenance/            # Operational scripts — NEVER run as a migration
 │   └── functions/              # Edge functions (analyze-portfolio, extract-trades, extract-statement,
 │                               #   resolve-tickers, quote-proxy, wine-ai, categorize-transactions,
-│                               #   admin-invite); _shared/ holds invite-core, usage-core, wine-batch-core (pure, tested) and usage.ts
+│                               #   admin-invite); _shared/ holds ai.ts + ai-core/ai-tasks (the one AI call layer and task registry),
+│                               #   analysis-prompts, invite-core, usage-core, wine-batch-core (pure, tested) and usage.ts
 ├── vercel.json                 # Headers and cache rules: services/data/src revalidate,
 │                               #   wine/spend/holdings/css/lib are immutable and versioned by ?v=
 └── package.json, vitest.config.js
@@ -301,6 +302,31 @@ no entry is named on the page rather than counted as free. Keyed price calls go 
 `market-data` and are recorded there, with `units` = symbols; `QUOTE_PROVIDERS` in
 admin-report-core.js prices them at nothing (free plans refuse, never bill) and counts their units
 as symbols, never as web searches.
+
+### AI calls (`_shared/ai.ts`, `_shared/ai-tasks.js`, plan P9)
+
+**One call layer and one task table; not one gateway function, not one model.** An edge function
+runs a model only through `runTask(name, { userId, prompt })`. The task's model, output cap, time
+limit, search cap and fallback live in `AI_TASKS` (`_shared/ai-tasks.js`), chosen from
+`APPROVED_MODELS` in two tiers: **extract** (cheap, thinking off, no search: statements,
+categories, trades) and **research** (may search and think: prices, tickers, analysis). The same
+rules apply to every call: a time limit, a usage row even for a timeout, a cut-off (`max_tokens` /
+`MAX_TOKENS`) or empty reply is a failure, search is capped, key in a header, one timing log line,
+and never an error body or model output in a log. `_shared/ai-core.js` is the pure half (request
+bodies, reading replies), tested in `tests/ai-core.test.js`.
+
+- **The browser never sends a prompt.** It sends data; the function builds the prompt from
+  checked fields. analyze-portfolio's prompts are in `_shared/analysis-prompts.js`, which the admin's
+  own-key path in `services/analysis.js` imports too (from the browser, the same file), so the two
+  paths cannot drift. Before this, analyze-portfolio ran any prompt it was sent, with no time limit,
+  and returned Claude's raw reply: a free Claude for any account holder.
+- **`tests/ai-tasks.test.js` holds the rules**: every model priced in `MODEL_PRICES`, every call
+  timed, worst case (primary + fallback) inside the page's wait and 150s, extract tier unsearched.
+  It also reads every function's source: only `_shared/ai.ts` may name a provider URL, and no
+  function may read `prompt` from the body. Functions not yet migrated are listed
+  (`NOT_YET_ON_AI_TS`, `STILL_ACCEPTS_A_PROMPT`) and the lists may only shrink.
+- **`_shared` is bundled into each function at deploy**, so a change to `ai.ts` reaches only the
+  functions redeployed after it.
 
 ### Keyed price APIs (`market-data`, since migration 20260920)
 
