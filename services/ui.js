@@ -189,10 +189,14 @@ export function showApiKeyDialog() {
     }
     const dialog = document.getElementById('apiKeyDialog');
     if (!dialog) { console.error('apiKeyDialog element not found'); return; }
+    // The three price keys are server secrets now; show only whether each is set.
+    const status = document.getElementById('keyedProvidersStatus');
+    if (status) {
+        const p = state.keyedProviders || {};
+        const mark = on => (on ? '\u2713' : '\u2717');
+        status.textContent = `Finnhub ${mark(p.finnhub)} \u00b7 FMP ${mark(p.fmp)} \u00b7 Alpha Vantage ${mark(p.alphavantage)}`;
+    }
     const inputs = {
-        finnhubKeyInput: state.finnhubKey,
-        fmpKeyInput: state.fmpKey,
-        alphaVantageKeyInput: state.alphaVantageKey,
         anthropicKeyInput: state.anthropicKey,
         supabaseUrlInput: state.supabaseUrl,
         supabaseAnonKeyInput: state.supabaseAnonKey
@@ -211,22 +215,16 @@ export function closeApiKeyDialog() {
 
 export function saveApiKeys() {
     const getValue = id => document.getElementById(id)?.value.trim() ?? '';
-    const fhKey = getValue('finnhubKeyInput');
-    const fmpKeyInput = getValue('fmpKeyInput');
-    const avKey = getValue('alphaVantageKeyInput');
     const antKey = getValue('anthropicKeyInput');
     const sbUrl = getValue('supabaseUrlInput');
     const sbKey = getValue('supabaseAnonKeyInput');
 
-    state.finnhubKey = fhKey;
-    state.fmpKey = fmpKeyInput;
-    state.alphaVantageKey = avKey;
     state.anthropicKey = antKey;
     state.supabaseUrl = sbUrl;
     state.supabaseAnonKey = sbKey;
 
     // Persist to localStorage
-    const keys = { finnhubKey: fhKey, fmpKey: fmpKeyInput, alphaVantageKey: avKey, anthropicKey: antKey, supabaseUrl: sbUrl, supabaseAnonKey: sbKey };
+    const keys = { anthropicKey: antKey, supabaseUrl: sbUrl, supabaseAnonKey: sbKey };
     try {
         for (const [k, v] of Object.entries(keys)) {
             if (v) localStorage.setItem(k, v);
@@ -246,12 +244,6 @@ export function saveApiKeys() {
     }
 
     let msg = '\u2713 Settings saved!\n\n';
-    if (fhKey || fmpKeyInput || avKey) {
-        msg += 'Fetch Strategy:\n';
-        if (fhKey) msg += '1\uFE0F\u20E3 Finnhub (Primary - 60/min)\n';
-        if (fmpKeyInput) msg += '2\uFE0F\u20E3 FMP (Fallback - 250/day)\n';
-        if (avKey) msg += '3\uFE0F\u20E3 Alpha Vantage (Last resort - 5/min)\n';
-    }
     if (sbUrl && sbKey) {
         msg += '\n\u2601\uFE0F Cloud database configured! Use the auth bar to sign up or log in.';
     }
@@ -262,9 +254,6 @@ export function saveApiKeys() {
 
 export function clearApiKeys() {
     if (confirm('\u26A0\uFE0F Clear all API keys and cloud settings?\n\nYou will need to re-enter them to fetch prices and sync.')) {
-        state.finnhubKey = '';
-        state.fmpKey = '';
-        state.alphaVantageKey = '';
         state.anthropicKey = '';
         state.supabaseUrl = '';
         state.supabaseAnonKey = '';
@@ -276,8 +265,7 @@ export function clearApiKeys() {
         localStorage.removeItem('anthropicKey');
         localStorage.removeItem('supabaseUrl');
         localStorage.removeItem('supabaseAnonKey');
-        ['finnhubKeyInput', 'fmpKeyInput', 'alphaVantageKeyInput', 'anthropicKeyInput',
-            'supabaseUrlInput', 'supabaseAnonKeyInput'].forEach(id => {
+        ['anthropicKeyInput', 'supabaseUrlInput', 'supabaseAnonKeyInput'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });

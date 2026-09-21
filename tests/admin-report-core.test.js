@@ -162,6 +162,12 @@ describe('estimateCost', () => {
         expect(estimateCost(aiRow({ model: 'some-future-model', input_tokens: 1000 }))).toBeNull();
     });
 
+    it('prices the free keyed price APIs at nothing, rather than calling them unpriced', () => {
+        for (const provider of ['finnhub', 'fmp', 'alphavantage']) {
+            expect(estimateCost(aiRow({ fn: 'market-data', provider, model: null, units: 3 })), provider).toBe(0);
+        }
+    });
+
     it('prices the keyless quote proxy at nothing', () => {
         expect(estimateCost(aiRow({ fn: 'quote-proxy', provider: 'yahoo', model: null, units: 25 }))).toBe(0);
     });
@@ -203,6 +209,15 @@ describe('summarizeAiUsage', () => {
         const s = summarizeAiUsage(report);
         expect(s.byFunction[0]).toMatchObject({ fn: 'wine-ai', label: FUNCTION_LABELS['wine-ai'], calls: 8 });
         expect(s.byFunction.map(f => f.fn)).toContain('quote-proxy');
+    });
+
+    it('counts symbols from the keyed price APIs as quotes, never as web searches', () => {
+        const s = summarizeAiUsage({ rows: [
+            aiRow({ fn: 'market-data', provider: 'fmp', model: null, calls: 2, units: 60 }),
+            aiRow({ fn: 'market-data', provider: 'finnhub', model: null, calls: 5, units: 5 }),
+        ] });
+        expect(s.totals).toMatchObject({ quotes: 65, searches: 0, cost: 0 });
+        expect(s.unpriced).toEqual([]);
     });
 
     it('names models it could not price, so the total is not silently low', () => {

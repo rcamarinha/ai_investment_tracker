@@ -124,56 +124,14 @@
             <div class="card">
                 <h2 class="section-heading">🔑 API Key Management</h2>
 
-                <div class="api-info-block">
-                    <h3 class="api-info-title">3-Tier Strategy:</h3>
-                    <div class="api-tier">
-                        <span class="api-tier-badge tier-primary">PRIMARY</span>
-                        <div class="api-tier-body">
-                            <div class="api-tier-name">🚀 Finnhub — 60 calls/min, unlimited daily</div>
-                            <div class="api-tier-desc">Fast and reliable. Best for US & EU stocks.</div>
-                        </div>
-                    </div>
-                    <div class="api-tier">
-                        <span class="api-tier-badge tier-fallback">FALLBACK #1</span>
-                        <div class="api-tier-body">
-                            <div class="api-tier-name">⚡ Financial Modeling Prep — 250/day</div>
-                            <div class="api-tier-desc">Generous daily limit. Covers what Finnhub misses.</div>
-                        </div>
-                    </div>
-                    <div class="api-tier">
-                        <span class="api-tier-badge tier-last">FALLBACK #2</span>
-                        <div class="api-tier-body">
-                            <div class="api-tier-name">🔄 Alpha Vantage — 5/min, 25/day</div>
-                            <div class="api-tier-desc">Last resort. Good international coverage. Use sparingly.</div>
-                        </div>
-                    </div>
-                    <div class="api-info-detail">
-                        💡 <strong>Strategy:</strong> Finnhub primary (fast), FMP for what it misses (generous limit), Alpha Vantage last resort (strict limits)
-                    </div>
-                </div>
-
                 <div class="form-field-section">
-                    <label class="form-label-bold">🚀 Finnhub API Key (Primary - Fast &amp; Unlimited)</label>
-                    <div class="position-form-group">
-                        <input type="text" id="finnhubKeyInput" placeholder="Enter your Finnhub API key" />
+                    <label class="form-label-bold">📈 Price API keys</label>
+                    <div class="form-helper">
+                        Finnhub, FMP and Alpha Vantage keys are held on the server and never reach a browser.
+                        Everyone's prices use them through the <code>market-data</code> function.
+                        To change one: <code>npx supabase secrets set FINNHUB_API_KEY=… FMP_API_KEY=… ALPHAVANTAGE_API_KEY=…</code>
                     </div>
-                    <div class="form-helper">Get free key: <a href="https://finnhub.io/register" target="_blank">https://finnhub.io/register</a><br>✓ 60 calls/minute • ✓ Unlimited daily • ✓ Best for US stocks</div>
-                </div>
-
-                <div class="form-field-section">
-                    <label class="form-label-bold">⚡ Financial Modeling Prep API Key (Fallback #1 - Generous Limit)</label>
-                    <div class="position-form-group">
-                        <input type="text" id="fmpKeyInput" placeholder="Enter your FMP API key" />
-                    </div>
-                    <div class="form-helper">Get free key: <a href="https://site.financialmodelingprep.com/developer/docs/" target="_blank">https://financialmodelingprep.com</a><br>✓ 250 calls/day • ✓ Using quote-short endpoint (better free tier support)</div>
-                </div>
-
-                <div class="form-field-section">
-                    <label class="form-label-bold">🔄 Alpha Vantage API Key (Fallback #2 - Last Resort)</label>
-                    <div class="position-form-group">
-                        <input type="text" id="alphaVantageKeyInput" placeholder="Enter your Alpha Vantage API key" />
-                    </div>
-                    <div class="form-helper">Get free key: <a href="https://www.alphavantage.co/support/#api-key" target="_blank">https://www.alphavantage.co/support/#api-key</a><br>✓ 5 calls/minute, 25/day • ✓ Good international coverage • ✓ Use sparingly</div>
+                    <div class="form-helper" id="keyedProvidersStatus"></div>
                 </div>
 
                 <hr class="hr-divider">
@@ -210,9 +168,7 @@
                 <div class="alert alert-info">
                     <div class="alert-icon">ℹ️</div>
                     <div>
-                        <strong>🔒 Security:</strong> API keys saved in your browser only (localStorage). Supabase anon key is safe for public use.
-                        <br><br>
-                        <strong>📊 Coverage:</strong> All 3 price APIs combined = ~98%+ success rate. Finnhub ~85%, FMP ~10%, Alpha Vantage ~5%.
+                        <strong>🔒 Security:</strong> The Anthropic key is saved in this browser only (localStorage). Price API keys live on the server. The Supabase anon key is safe for public use.
                     </div>
                 </div>
 
@@ -589,13 +545,12 @@
             }
         }
 
-        // Load API keys from localStorage
-        const storedAVKey = localStorage.getItem('alphaVantageKey');
-        if (storedAVKey) state.alphaVantageKey = storedAVKey;
-        const storedFHKey = localStorage.getItem('finnhubKey');
-        if (storedFHKey) state.finnhubKey = storedFHKey;
-        const storedFMPKey = localStorage.getItem('fmpKey');
-        if (storedFMPKey) state.fmpKey = storedFMPKey;
+        // The three price keys used to be copied into this browser from the
+        // database. They now live only on the server (market-data function), so
+        // remove any copy an earlier version left behind.
+        for (const k of ['finnhubKey', 'fmpKey', 'alphaVantageKey']) {
+            try { localStorage.removeItem(k); } catch { /* storage blocked */ }
+        }
         const storedAntKey = localStorage.getItem('anthropicKey');
         if (storedAntKey) state.anthropicKey = storedAntKey;
 
@@ -645,8 +600,10 @@
             if (warningDiv) warningDiv.style.display = 'block';
         }
 
-        // Auto-fetch prices if portfolio exists and API keys available
-        if (state.portfolio.length > 0 && (state.finnhubKey || state.fmpKey || state.alphaVantageKey)) {
+        // Auto-fetch prices if a portfolio exists and someone is signed in. Not
+        // gated on the keyed providers: that answer has not arrived yet here,
+        // and the keyless proxy prices most holdings on its own.
+        if (state.portfolio.length > 0 && hasStoredSession) {
             console.log('Auto-fetching prices on page load...');
             setTimeout(() => fetchMarketPrices(), 1000);
         }
@@ -662,7 +619,7 @@
         };
 
         console.log('=== APP INITIALIZED ===');
-        console.log('API Keys:', { finnhub: !!state.finnhubKey, fmp: !!state.fmpKey, alphaVantage: !!state.alphaVantageKey, anthropic: !!state.anthropicKey });
+        console.log('Anthropic key in this browser:', !!state.anthropicKey, '— price keys are on the server');
         console.log('Portfolio positions:', state.portfolio.length);
         console.log('History snapshots:', state.portfolioHistory.length);
     </script>

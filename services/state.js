@@ -16,9 +16,9 @@ const state = {
                                // asset (writing it back would corrupt the EU
                                // listing's own currency).
     pricesLoading: false,
-    alphaVantageKey: '',
-    finnhubKey: '',
-    fmpKey: '',
+    // Which keyed price APIs the market-data function has keys for. The keys
+    // themselves never reach the browser; this holds booleans only.
+    keyedProviders: { finnhub: false, fmp: false, alphavantage: false },
     anthropicKey: '',
     portfolioHistory: [],
     supabaseUrl: 'https://dybetrrhshqezokcxiid.supabase.co',

@@ -9,7 +9,7 @@ import { renderAllocationCharts, toggleSectorFilter } from './ui.js';
 import { saveSnapshotToDB, clearHistoryFromDB, savePortfolioDB,
          saveTransactionsToDB, deleteTransactionsForSymbol,
          saveAssetsToDB, loadAssetsFromDB, deleteSnapshotFromDB } from './storage.js';
-import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled, setUntracked, backfillFxRates, applyResolveDecisions } from './pricing.js';
+import { fetchMarketPrices, fetchStockPrice, getExchangeRate, searchTickerByName, pooled, setUntracked, backfillFxRates, applyResolveDecisions, keyedFetch } from './pricing.js';
 import { getAssetCurrency, toBaseCurrency } from './utils.js';
 import { buildCashFlows, xirr, summarizeCashFlows, computeYearlyIncome, computeYearlyXirr } from './returns-core.js';
 import { parseBrokerExport, normalizeTrades,
@@ -775,13 +775,12 @@ function lookupIdentifierInDB(identifier) {
  * Returns array of { ticker, name, type, exchange } candidates.
  */
 async function lookupISINviaFinnhub(isin) {
-    if (!state.finnhubKey) return [];
+    if (!state.keyedProviders.finnhub) return [];
     const candidates = [];
 
     // Method 1: Company Profile 2 (direct ISIN→ticker mapping)
     try {
-        const url = `https://finnhub.io/api/v1/stock/profile2?isin=${encodeURIComponent(isin)}&token=${state.finnhubKey}`;
-        const response = await fetch(url);
+        const response = await keyedFetch('finnhub', 'profile-isin', { isin });
         if (response.ok) {
             const data = await response.json();
             if (data && data.ticker) {
@@ -800,8 +799,7 @@ async function lookupISINviaFinnhub(isin) {
     // Method 2: Symbol Search (may return additional exchange listings)
     try {
         await new Promise(resolve => setTimeout(resolve, 500));
-        const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(isin)}&token=${state.finnhubKey}`;
-        const response = await fetch(url);
+        const response = await keyedFetch('finnhub', 'search', { query: isin });
         if (response.ok) {
             const data = await response.json();
             if (data.result && data.result.length > 0) {
@@ -830,12 +828,11 @@ async function lookupISINviaFinnhub(isin) {
  * Returns array of { ticker, name, type, exchange } candidates.
  */
 async function lookupISINviaFMP(isin) {
-    if (!state.fmpKey) return [];
+    if (!state.keyedProviders.fmp) return [];
     const candidates = [];
 
     try {
-        const url = `https://financialmodelingprep.com/stable/search-isin?isin=${encodeURIComponent(isin)}&apikey=${state.fmpKey}`;
-        const response = await fetch(url);
+        const response = await keyedFetch('fmp', 'search-isin', { isin });
         if (response.ok) {
             const data = await response.json();
             if (data && Array.isArray(data) && data.length > 0) {
@@ -988,12 +985,12 @@ async function resolveIdentifiers(identifiers) {
 
     // Tier 1: Finnhub (profile2+search = 2 calls/ISIN; pool of 2 with a 1s wave
     // gap keeps in-flight well under the 60/min limit).
-    const afterFinnhub = state.finnhubKey
+    const afterFinnhub = state.keyedProviders.finnhub
         ? await resolveTier(needsResolution, lookupISINviaFinnhub, 'Finnhub', 2, 1000)
         : [...needsResolution];
 
     // Tier 2: FMP (1 call/ISIN; pool of 4).
-    const needsClaude = (state.fmpKey && afterFinnhub.length > 0)
+    const needsClaude = (state.keyedProviders.fmp && afterFinnhub.length > 0)
         ? await resolveTier(afterFinnhub, lookupISINviaFMP, 'FMP', 4, 300)
         : [...afterFinnhub];
 
@@ -2741,10 +2738,9 @@ async function searchAssets(query) {
     if (!query || query.length < 1) return [];
 
     // Tier 1: Finnhub symbol search
-    if (state.finnhubKey) {
+    if (state.keyedProviders.finnhub) {
         try {
-            const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${state.finnhubKey}`;
-            const response = await fetch(url);
+            const response = await keyedFetch('finnhub', 'search', { query });
             if (response.ok) {
                 const data = await response.json();
                 if (data.result && data.result.length > 0) {
@@ -2761,10 +2757,9 @@ async function searchAssets(query) {
     }
 
     // Tier 2: FMP symbol search
-    if (state.fmpKey) {
+    if (state.keyedProviders.fmp) {
         try {
-            const url = `https://financialmodelingprep.com/api/v3/search?query=${encodeURIComponent(query)}&limit=8&apikey=${state.fmpKey}`;
-            const response = await fetch(url);
+            const response = await keyedFetch('fmp', 'search-v3', { query });
             if (response.ok) {
                 const data = await response.json();
                 if (data && Array.isArray(data) && data.length > 0) {
@@ -3080,7 +3075,7 @@ export function submitPosition() {
     renderPortfolio();
 
     // Try to fetch price for new position
-    if (mode === 'add' && (state.finnhubKey || state.fmpKey || state.alphaVantageKey)) {
+    if (mode === 'add' && state.currentUser) {
         setTimeout(async () => {
             console.log(`Auto-fetching price for new position ${symbol}...`);
             const result = await fetchStockPrice(symbol);
@@ -3124,8 +3119,8 @@ export async function setBaseCurrency(currency) {
 // -- Refresh Single Asset Price --
 
 export async function refreshSinglePrice(symbol) {
-    if (!state.finnhubKey && !state.fmpKey && !state.alphaVantageKey) {
-        alert('No API keys configured. Set up at least one pricing API key first.');
+    if (!state.currentUser) {
+        alert('Sign in to refresh prices.');
         return;
     }
 

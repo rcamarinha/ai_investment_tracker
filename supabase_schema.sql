@@ -89,10 +89,9 @@ CREATE POLICY "Users can read their own admin row"
     USING (auth.uid() = user_id);
 
 -- ============================================
--- App Config: shared API keys (admin-managed)
+-- App Config: admin-managed settings
 -- ============================================
--- Pricing keys (finnhubKey, fmpKey, alphaVantageKey) are readable by all
--- authenticated users so they never need to configure their own keys.
+-- Holds no API keys: the price keys moved to market-data's secrets (see below).
 -- No frontend writes allowed (no INSERT/UPDATE/DELETE policy = all client
 -- writes blocked; only the service role can change these).
 -- NOTE: adminEmails is deprecated as of 2026-07 — admin status now derives
@@ -115,22 +114,10 @@ CREATE POLICY "Admin users can read config"
         SELECT 1 FROM admin_users WHERE user_id = auth.uid()
     ));
 
--- All authenticated users can read the shared pricing API keys.
--- This lets every logged-in user fetch market prices without configuring their own keys.
-CREATE POLICY "Authenticated users can read pricing keys"
-    ON app_config FOR SELECT
-    USING (
-        auth.role() = 'authenticated'
-        AND key IN ('finnhubKey', 'fmpKey', 'alphaVantageKey')
-    );
-
--- Insert the shared API keys
--- IMPORTANT: Replace the placeholder values below with your actual API keys
--- before running this schema. Never commit real keys to version control.
-INSERT INTO app_config (key, value) VALUES
-    ('finnhubKey', 'YOUR_FINNHUB_KEY_HERE'),
-    ('fmpKey', 'YOUR_FMP_KEY_HERE'),
-    ('alphaVantageKey', 'YOUR_ALPHA_VANTAGE_KEY_HERE');
+-- The shared price-API keys (Finnhub, FMP, Alpha Vantage) are NOT stored here.
+-- They used to be, under a policy every signed-in account could read; since
+-- migration 20260920 they live only as secrets of the market-data edge function:
+--   npx supabase secrets set FINNHUB_API_KEY=… FMP_API_KEY=… ALPHAVANTAGE_API_KEY=…
 
 -- ============================================
 -- Assets table: stores asset metadata (sector, exchange, ISIN mappings)

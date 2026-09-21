@@ -142,11 +142,20 @@ export const FUNCTION_LABELS = {
     'resolve-tickers':         'Ticker lookup',
     'wine-ai':                 'Cellar AI',
     'quote-proxy':             'Price quotes',
+    'market-data':             'Market data (keyed APIs)',
 };
+
+/**
+ * Providers whose work is counted in symbols, not tokens, and that cost nothing
+ * per call: Yahoo through the keyless proxy, and the free plans of Finnhub, FMP
+ * and Alpha Vantage through market-data. Going over a free plan's limit gets a
+ * refusal, never a bill. Their units are symbols quoted — never web searches.
+ */
+export const QUOTE_PROVIDERS = ['yahoo', 'finnhub', 'fmp', 'alphavantage'];
 
 /** Estimated list-price cost in USD for one row, or null when the model has no known price. */
 export function estimateCost(row, prices = MODEL_PRICES) {
-    if (!row?.model) return row?.provider === 'yahoo' ? 0 : null;
+    if (!row?.model) return QUOTE_PROVIDERS.includes(row?.provider) ? 0 : null;
     const p = prices[row.model];
     if (!p) return null;
     return (toCount(row.input_tokens) * p.input + toCount(row.output_tokens) * p.output) / 1_000_000;
@@ -172,7 +181,7 @@ export function summarizeAiUsage(report, prices = MODEL_PRICES) {
         // Units mean different things per provider: symbols quoted for the
         // keyless proxy, web searches for a model. Kept apart so neither
         // number is inflated by the other.
-        if (r.provider === 'yahoo') acc.quotes += toCount(r.units);
+        if (QUOTE_PROVIDERS.includes(r.provider)) acc.quotes += toCount(r.units);
         else acc.searches += toCount(r.units);
         const last = toMs(r.last_at);
         if (last !== null && (acc.lastMs === null || last > acc.lastMs)) acc.lastMs = last;

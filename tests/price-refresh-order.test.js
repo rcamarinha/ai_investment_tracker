@@ -15,6 +15,14 @@ const src = readFileSync(join(import.meta.dirname, '..', 'services', 'pricing.js
 const refresh = src.slice(src.indexOf('export async function fetchMarketPrices'));
 
 describe('price refresh order', () => {
+    it('waits to learn which keyed providers exist before planning the tiers', () => {
+        // The page auto-refreshes a second after load, while the answer is still
+        // in flight; without this wait every visit's first refresh ran keyless.
+        const waitAt = refresh.indexOf('await keyedProvidersKnown()');
+        expect(waitAt, 'fetchMarketPrices must await keyedProvidersKnown()').toBeGreaterThan(-1);
+        expect(waitAt).toBeLessThan(refresh.indexOf('hasKeys'));
+    });
+
     it('asks the keyless quote proxy before any keyed tier', () => {
         const proxy = refresh.indexOf('batchFetchViaProxy(toFetch');
         const fmpBatch = refresh.indexOf('batchFetchFMP([...new Set(toFetch');
