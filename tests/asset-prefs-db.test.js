@@ -142,3 +142,116 @@ describe('the backfill keeps today\'s behaviour', () => {
         expect(rows).toEqual([{ untracked: false }]);
     });
 });
+
+// ── The rules added after review ─────────────────────────────────────────────
+//
+// The first draft closed the two personal columns but left three shared ones
+// open to changes that silently corrupted other accounts: a hijacked ISIN, a
+// currency marked 'user' that nothing could ever correct, and junk tickers.
+// It also claimed to be an allow-list while enumerating what was frozen, and it
+// rewrote values nobody had changed.
+
+const asBen = sql => asUser(db, 'authenticated', BEN, () => db.query(sql));
+const row = async ticker => (await db.query(
+    `SELECT ticker, name, sector, currency, currency_source, isin, source FROM assets WHERE ticker = $1`, [ticker])).rows[0];
+
+describe('currency', () => {
+    it('lets a browser improve a suffix guess, but never claim the rank nothing can overwrite', async () => {
+        await db.exec(`UPDATE assets SET currency = 'USD', currency_source = 'suffix' WHERE ticker = 'AAPL'`);
+        await asBen(`UPDATE assets SET currency = 'EUR', currency_source = 'user' WHERE ticker = 'AAPL'`);
+        expect(await row('AAPL')).toMatchObject({ currency: 'EUR', currency_source: 'profile' });
+    });
+
+    it('never overwrites a currency a provider has confirmed', async () => {
+        await db.exec(`UPDATE assets SET currency = 'USD', currency_source = 'quote' WHERE ticker = 'AAPL'`);
+        await asBen(`UPDATE assets SET currency = 'GBP', currency_source = 'profile' WHERE ticker = 'AAPL'`);
+        expect(await row('AAPL')).toMatchObject({ currency: 'USD', currency_source: 'quote' });
+    });
+
+    it('refuses something that is not a currency code, keeping pence codes', async () => {
+        await asBen(`INSERT INTO assets (ticker, name, currency) VALUES ('BAD1', 'x', 'dollars')`);
+        expect((await row('BAD1')).currency).toBe('');
+        await asBen(`INSERT INTO assets (ticker, name, currency, currency_source) VALUES ('VOD.L', 'Vodafone', 'GBp', 'quote')`);
+        expect(await row('VOD.L')).toMatchObject({ currency: 'GBp', currency_source: 'quote' });
+    });
+});
+
+describe('ISIN', () => {
+    it('keeps a mapped ISIN fixed, since imports trust it', async () => {
+        await db.exec(`UPDATE assets SET isin = 'US0378331005' WHERE ticker = 'AAPL'`);
+        await asBen(`UPDATE assets SET isin = 'US5949181045' WHERE ticker = 'AAPL'`);
+        expect((await row('AAPL')).isin).toBe('US0378331005');
+    });
+
+    it('refuses a second row claiming an ISIN that is already mapped', async () => {
+        await db.exec(`UPDATE assets SET isin = 'US0378331005' WHERE ticker = 'AAPL'`);
+        await expect(asBen(`INSERT INTO assets (ticker, name, isin) VALUES ('AAAA', 'Not Apple', 'US0378331005')`))
+            .rejects.toMatchObject({ code: '23505' });
+    });
+
+    it('drops something that is not an ISIN rather than storing it', async () => {
+        await asBen(`INSERT INTO assets (ticker, name, isin) VALUES ('X1', 'x', 'not-an-isin')`);
+        expect((await row('X1')).isin).toBeNull();
+    });
+});
+
+describe('the catalogue itself', () => {
+    it('refuses a malformed ticker, so junk cannot crowd out real rows', async () => {
+        for (const ticker of ['aapl lower', '', '  ', 'A'.repeat(41), "x'; drop"]) {
+            await expect(asBen(`INSERT INTO assets (ticker, name) VALUES ('${ticker.replace(/'/g, "''")}', 'x')`), ticker)
+                .rejects.toMatchObject({ code: '22023' });
+        }
+    });
+
+    it('accepts the ticker shapes the app really uses', async () => {
+        await asBen(`INSERT INTO assets (ticker, name) VALUES ('BRK.B','a'),('VWRL.L','b'),('EURUSD=X','d'),('IE00B3RBWM25','e')`);
+        expect((await db.query(`SELECT count(*)::int AS c FROM assets`)).rows[0].c).toBe(5);
+    });
+
+    it('never rewrites a value the request did not change', async () => {
+        await db.exec(`UPDATE assets SET sector = NULL WHERE ticker = 'AAPL'`);
+        await asBen(`UPDATE assets SET name = 'Apple Inc.' WHERE ticker = 'AAPL'`);
+        expect(await row('AAPL')).toMatchObject({ name: 'Apple Inc.', sector: null });
+    });
+
+    it('lets the server repair what a browser may not touch', async () => {
+        // The SQL editor and the service role are exempt, so a bad value stays fixable.
+        await db.exec(`UPDATE assets SET pricing_ticker = 'AAPL.MX', untracked = true WHERE ticker = 'AAPL'`);
+        expect((await db.query(`SELECT pricing_ticker, untracked FROM assets WHERE ticker = 'AAPL'`)).rows[0])
+            .toEqual({ pricing_ticker: 'AAPL.MX', untracked: true });
+    });
+});
+
+describe('the backfill, after review', () => {
+    it('includes someone who holds the ticker only in their transaction ledger', async () => {
+        await db.exec(`
+            UPDATE assets SET untracked = true WHERE ticker = 'AAPL';
+            INSERT INTO transactions (user_id, symbol, type, shares, price) VALUES ('${ANA}', 'AAPL', 'buy', 1, 1);
+        `);
+        await applySql(db, MIGRATION);
+        expect((await db.query(`SELECT user_id FROM user_asset_prefs`)).rows).toEqual([{ user_id: ANA }]);
+    });
+
+    it('drops an empty pricing ticker instead of aborting the whole file', async () => {
+        await db.exec(`
+            UPDATE assets SET pricing_ticker = '   ', untracked = true WHERE ticker = 'AAPL';
+            INSERT INTO positions (user_id, symbol, shares, avg_price) VALUES ('${ANA}', 'AAPL', 1, 1);
+        `);
+        expect(await applySql(db, MIGRATION)).toBeNull();
+        expect((await db.query(`SELECT untracked, pricing_ticker FROM user_asset_prefs`)).rows)
+            .toEqual([{ untracked: true, pricing_ticker: null }]);
+    });
+
+    it('does not revive old shared values for a new holder when pasted again later', async () => {
+        await db.exec(`
+            UPDATE assets SET untracked = true WHERE ticker = 'AAPL';
+            INSERT INTO positions (user_id, symbol, shares, avg_price) VALUES ('${ANA}', 'AAPL', 1, 1);
+        `);
+        await applySql(db, MIGRATION);
+        // Later, Ben buys AAPL; someone pastes the migration again.
+        await db.exec(`INSERT INTO positions (user_id, symbol, shares, avg_price) VALUES ('${BEN}', 'AAPL', 1, 1)`);
+        await applySql(db, MIGRATION);
+        const users = (await db.query(`SELECT user_id FROM user_asset_prefs ORDER BY user_id`)).rows.map(r => r.user_id);
+        expect(users).toEqual([ANA]);
+    });
+});

@@ -248,10 +248,9 @@ export async function saveAssetsToDB(assets) {
             if (asset.isin) upsertData.isin = asset.isin;
             // Provenance of the ISIN→ticker mapping ('user' = manually entered)
             if (asset.source) upsertData.source = asset.source;
-            // Learned ticker that actually returns a price (e.g. EU suffix remap)
-            if (asset.pricing_ticker) upsertData.pricing_ticker = asset.pricing_ticker;
-            // "Kept at cost" flag — always written (incl. false) so re-enabling sticks
-            if (typeof asset.untracked === 'boolean') upsertData.untracked = asset.untracked;
+            // pricing_ticker and untracked are NOT sent: they are personal choices
+            // and live in user_asset_prefs (saveAssetPref). The catalogue's trigger
+            // ignores them from a browser anyway.
 
             // currency_source arrives with migration 20260811. If that migration
             // hasn't been applied yet, drop the column and retry rather than
@@ -344,7 +343,9 @@ export async function loadAssetPrefs() {
         .select('ticker, untracked, pricing_ticker')
         .eq('user_id', state.currentUser.id);
     if (error) {
-        console.warn('Asset preferences unavailable (run migration 20260921):', error.message);
+        // Nothing to tell the user: pricing carries on with the catalogue's
+        // facts. Reported so a missing migration does not go unnoticed.
+        reportHandled(error, { action: 'load-asset-prefs' });
         return;
     }
     (data || []).forEach(p => {
@@ -378,7 +379,11 @@ export async function saveAssetPref(ticker, patch) {
     const { error } = await state.supabaseClient
         .from('user_asset_prefs')
         .upsert(row, { onConflict: 'user_id,ticker' });
-    if (error) console.warn(`Failed to save asset preference for ${key}:`, error.message);
+    if (error) {
+        // The person just made this choice and will see it revert on reload.
+        showToast(`Could not save your setting for ${key}. It will not survive a reload.`, 'error', 8000);
+        reportHandled(error, { action: 'save-asset-pref' });
+    }
 }
 
 export async function updateAssetInDB(ticker, updates) {
