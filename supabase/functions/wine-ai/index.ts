@@ -5,7 +5,7 @@
  *
  *   label           → Gemini Vision (primary) → Claude Vision fallback
  *   valuation       → Gemini (Google Search grounding) → Claude fallback
- *   batch-valuation → Gemini chunked 5 at a time (parallel) → Claude fallback per chunk
+ *   batch-valuation → one Gemini call per chunk (the page sends one bottle) → Claude fallback
  *   analysis        → Gemini (Google Search grounding) → Claude fallback
  *
  * Secrets required:
@@ -31,6 +31,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recordUsage } from "../_shared/usage.ts";
+import { buildBatchPrompt, parseBatchText, padResults } from "../_shared/wine-batch-core.js";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
@@ -158,11 +159,12 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /**
  * Call Gemini with Google Search grounding (default).
- * On 429 (grounding quota exceeded), waits briefly then retries without grounding.
+ * On 429 (grounding quota exceeded), waits briefly then retries without grounding —
+ * unless allowUngrounded is false (valuations), when it throws for the fallback.
  * If the ungrounded attempt also fails with 429, waits and retries once more.
  * If all attempts fail, throws — meaning the Gemini key is dead or exhausted.
  */
-async function callGemini(prompt: string, maxTokens: number, meter: Meter): Promise<GeminiResult> {
+async function callGemini(prompt: string, maxTokens: number, meter: Meter, allowUngrounded = true): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
   // Attempt 1: with Google Search grounding (default)
@@ -174,6 +176,10 @@ async function callGemini(prompt: string, maxTokens: number, meter: Meter): Prom
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!msg.includes("429")) throw err; // non-quota error → propagate immediately
+    // A price the model recalls from memory is a guess stored as a valuation, and
+    // it reaches net worth on the hub. Valuations refuse it and go to Claude,
+    // which searches; cellar analysis can still use an unsearched answer.
+    if (!allowUngrounded) throw err;
     console.warn("[wine-ai] Gemini grounding quota hit (429), waiting 2s then retrying without Google Search...");
     await sleep(2000);
   }
@@ -312,7 +318,7 @@ async function handleValuation(prompt: string, corsHeaders: Record<string, strin
 
   // 1. Try Gemini (with Google Search grounding)
   try {
-    const { text, groundingChunks } = await callGemini(prompt, GEMINI_VALUATION_TOKENS, meter);
+    const { text, groundingChunks } = await callGemini(prompt, GEMINI_VALUATION_TOKENS, meter, false);
     if (text.trim()) {
       console.log("[wine-ai] Valuation via Gemini");
       return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null }, 200, corsHeaders);
@@ -372,134 +378,35 @@ interface ValuationResult {
   error?: string;
 }
 
-function buildBatchPrompt(bottles: BottleInfo[]): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const lines = bottles.map((b, i) => {
-    const size = b.bottleSize || "0.75L";
-    const isStandard = size === "0.75L";
-    const fields = [
-      b.name        && `Wine name: ${b.name}`,
-      b.winery      && `Winery/Producer: ${b.winery}`,
-      b.vintage     && `Vintage: ${b.vintage}`,
-      b.region      && `Region: ${b.region}`,
-      b.appellation && `Appellation: ${b.appellation}`,
-      b.varietal    && `Grape variety: ${b.varietal}`,
-      b.country     && `Country: ${b.country}`,
-      `Bottle format: ${size}${isStandard ? " (standard)" : ""}`,
-      b.purchasePrice && `Purchase price: €${b.purchasePrice}/bottle`,
-    ].filter(Boolean).join(", ");
-    return `${i + 1}. ${fields || "(unknown wine)"}`;
-  }).join("\n");
-
-  return `You are a wine investment expert. Use web search to find current retail and auction market prices for each wine below, then return valuations.
-
-Today's date: ${today}
-
-Wines to value:
-${lines}
-
-Return a JSON array with exactly ${bottles.length} objects, one per wine, in the same order. Each object must have:
-{
-  "estimatedValue": <EUR per bottle in the specified bottle format, number>,
-  "estimatedValueUSD": <USD per bottle in the specified bottle format, number>,
-  "valueLow": <low end EUR, number>,
-  "valueHigh": <high end EUR, number>,
-  "drinkWindow": <"YYYY-YYYY" or null>,
-  "confidence": <"high"|"medium"|"low">,
-  "sources": <brief citation string>,
-  "valuationNote": <1-2 sentence explanation>
-}
-
-Pricing rules (follow strictly, in priority order):
-1. NATIONAL PRIORITY: Search Portuguese retail sites first — Garrafeira Nacional, Garrafeira Soares, Wine.pt, Niepoort shop, JMF shop, Adega Mayor. Only use international sources (Wine-Searcher, Vivino, auction houses) if no Portuguese retailer lists the wine.
-2. VAT FILTER: If sourcing from an international ex-tax aggregator (e.g. Wine-Searcher merchant average), multiply by 1.23 to add Portuguese IVA (23%) so the estimate reflects real replacement cost in Portugal.
-3. BOTTLE SIZE: Search for the EXACT bottle format listed per wine. Do not extrapolate from 750ml pricing. If no exact-format listing exists, state this in the valuationNote.
-4. CURRENT PRICES ONLY: Use in-stock retail or recent auction hammer prices. Skip out-of-stock listings (prices are likely outdated). Never use historical launch/release prices as current value.
-5. CROSS-REFERENCE MULTIPLE SOURCES: Always check at least 3 sources. Use the MEDIAN price across found sources as the estimatedValue — do NOT anchor to the single cheapest listing. If one source is 30%+ below all others, it is likely ex-tax, an error, or a different format — exclude it or apply the VAT adjustment.
-6. RARE & COLLECTIBLE WINES: For Port, Burgundy, Bordeaux First Growths, and other collectible/investment-grade wines, weight specialist merchants and major auction houses more heavily than generic aggregators.
-
-Additional rules:
-- Be vintage-specific (do NOT average across years).
-- If you cannot find data for a wine, use low confidence and estimate conservatively.
-- Return ONLY the JSON array. No markdown fences, no preamble.`;
-}
-
-/** Sanitise common Gemini JSON quirks before parsing. */
-function sanitiseJson(s: string): string {
-  return s
-    .replace(/```json\s*/gi, "").replace(/```\s*/g, "") // strip markdown fences
-    .replace(/\bNone\b/g, "null")                       // Python-style None
-    .replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false")
-    .replace(/,(\s*[}\]])/g, "$1");                     // trailing commas
-}
-
-/** Parse a JSON array of ValuationResult from an AI response text. Returns null on failure. */
-function parseBatchText(
-  text: string,
-  chunk: BottleInfo[],
-  chunkIdx: number,
-  source: string
-): ValuationResult[] | null {
-  const clean = sanitiseJson(text);
-
-  // 1. Try JSON array [...]
-  const arrayMatch = clean.match(/\[[\s\S]*\]/);
-  if (arrayMatch) {
-    try {
-      const parsed: ValuationResult[] = JSON.parse(arrayMatch[0]);
-      return parsed.map((r, i) => ({ ...r, id: chunk[i]?.id }));
-    } catch {
-      console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): array JSON parse failed, trying object fallback`);
-    }
-  } else {
-    console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): no JSON array found. Snippet:`, text.slice(0, 200));
-  }
-
-  // 2. Object fallback {...} — Gemini sometimes returns a bare object for single-wine batches
-  const objMatch = clean.match(/\{[\s\S]*\}/);
-  if (objMatch) {
-    try {
-      const parsed: ValuationResult = JSON.parse(objMatch[0]);
-      console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): recovered single object as array`);
-      return [{ ...parsed, id: chunk[0]?.id }];
-    } catch {
-      console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): object fallback parse also failed`);
-    }
-  }
-
-  return null;
-}
-
-// Chunk size for Gemini grounding: keep small (3) so each grounded web-search
-// completes well within the edge function timeout (60s free / 150s paid).
+// Chunk size for Gemini grounding. The page sends one bottle per request, so a
+// chunk is normally one bottle; this caps what a direct caller can bundle.
 const CHUNK_SIZE = 3;
-
-/** Ensure results array has exactly chunk.length entries, padding with error stubs if the AI returned fewer. */
-function padResults(results: ValuationResult[], chunk: BottleInfo[], chunkIdx: number, source: string): ValuationResult[] {
-  if (results.length >= chunk.length) return results.slice(0, chunk.length);
-  console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): AI returned ${results.length}/${chunk.length} results — padding missing entries with error stubs`);
-  const padded = [...results];
-  const returnedIds = new Set(results.map(r => r.id));
-  for (const b of chunk) {
-    if (!returnedIds.has(b.id)) {
-      padded.push({ id: b.id, error: `AI did not return a valuation for this bottle (${source})` } as ValuationResult);
-    }
-  }
-  return padded.slice(0, chunk.length);
-}
 
 async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter): Promise<ValuationResult[]> {
   const prompt = buildBatchPrompt(chunk);
-  const maxTokens = GEMINI_VALUATION_TOKENS; // thinking + 3 bottles × ~500 tokens
+  const maxTokens = GEMINI_VALUATION_TOKENS; // thinking + ~500 tokens per bottle
 
-  // 1. Try Gemini
-  try {
-    const { text } = await callGemini(prompt, maxTokens, meter);
-    const parsed = parseBatchText(text, chunk, chunkIdx, "Gemini");
-    if (parsed) {
-      console.log(`[wine-ai] Chunk ${chunkIdx}: Gemini OK (${parsed.length} results)`);
-      return padResults(parsed, chunk, chunkIdx, "Gemini");
+  // Each provider's answer is matched to bottles by the ref it names, never by
+  // position (see _shared/wine-batch-core.js); a bottle nothing names gets an
+  // explicit error rather than a neighbour's price.
+  const accept = (text: string, source: string): ValuationResult[] | null => {
+    const parsed = parseBatchText(text, chunk);
+    if (!parsed) {
+      console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): no readable JSON. Snippet:`, text.slice(0, 200));
+      return null;
     }
+    if (parsed.unmatched) {
+      console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): ${parsed.unmatched} result(s) named no bottle in this chunk and were dropped`);
+    }
+    console.log(`[wine-ai] Chunk ${chunkIdx}: ${source} OK (${parsed.results.length}/${chunk.length} matched)`);
+    return padResults(parsed.results, chunk, source) as ValuationResult[];
+  };
+
+  // 1. Gemini, with search only: a valuation never falls back to an unsearched guess.
+  try {
+    const { text } = await callGemini(prompt, maxTokens, meter, false);
+    const results = accept(text, "Gemini");
+    if (results) return results;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[wine-ai] Chunk ${chunkIdx}: Gemini failed — ${msg}`);
@@ -507,12 +414,10 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter)
 
   // 2. Fallback: Claude
   console.log(`[wine-ai] Chunk ${chunkIdx}: falling back to Claude`);
-  const { text } = await callClaude(prompt, maxTokens, true, meter, SEARCHES_BATCH);
-  const parsed = parseBatchText(text, chunk, chunkIdx, "Claude");
-  if (parsed) {
-    console.log(`[wine-ai] Chunk ${chunkIdx}: Claude fallback OK (${parsed.length} results)`);
-    return padResults(parsed, chunk, chunkIdx, "Claude");
-  }
+  const searches = chunk.length === 1 ? SEARCHES_SINGLE : SEARCHES_BATCH;
+  const { text } = await callClaude(prompt, maxTokens, true, meter, searches);
+  const results = accept(text, "Claude");
+  if (results) return results;
 
   // Both failed — return error stubs so other chunks still succeed
   console.error(`[wine-ai] Chunk ${chunkIdx}: both Gemini and Claude failed`);
@@ -733,7 +638,10 @@ Deno.serve(async (req) => {
 
   // ── Input validation ───────────────────────────────────────────────────────
   const MAX_PROMPT_LENGTH  = 15_000;
-  const MAX_BATCH_SIZE     = 50;
+  // One chunk per request: chunks run one after another, and each can take a
+  // Gemini try plus a Claude fallback, so more than one cannot finish inside
+  // Supabase's 150s. It also caps what one request can spend.
+  const MAX_BATCH_SIZE     = CHUNK_SIZE;
   const MAX_IMAGE_BASE64   = 2 * 1024 * 1024; // 2 MB
 
   if (prompt && prompt.length > MAX_PROMPT_LENGTH) {

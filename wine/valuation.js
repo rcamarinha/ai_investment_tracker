@@ -12,11 +12,11 @@
  * (not in the DB schema) and applied to in-memory bottle state on load.
  */
 
-import state from './state.js?v=3.55.1';
-import { callWineAI } from './api.js?v=3.55.1';
-import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.55.1';
-import { renderCellar, updateBottleCard } from './cellar.js?v=3.55.1';
-import { showToast, repairTruncatedJSON } from './utils.js?v=3.55.1';
+import state from './state.js?v=3.55.2';
+import { callWineAI } from './api.js?v=3.55.2';
+import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.55.2';
+import { renderCellar, updateBottleCard } from './cellar.js?v=3.55.2';
+import { showToast, repairTruncatedJSON } from './utils.js?v=3.55.2';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 import { triageBatchValuation } from '../src/wine.js';
 
@@ -159,11 +159,12 @@ export async function valuateAllBottles(forceAll = false) {
     const btn = document.getElementById('valuateBtn');
     if (btn) { btn.disabled = true; btn.textContent = `💎 Sending ${toValueate.length} bottle(s) for valuation...`; }
 
-    // Send at most CLIENT_BATCH_SIZE bottles per edge-function request, sequentially.
-    // Keep small (3) so each Gemini grounded web-search completes well within the
-    // edge function timeout (60s free / 150s paid). Larger batches risk timeouts
-    // when Gemini does per-wine price lookups with Google Search.
-    const CLIENT_BATCH_SIZE = 3;
+    // One bottle per request. Measured on 21 September: one grounded valuation
+    // takes ~20s and three searches, so a request for three wines needed nine or
+    // more searches and often ran past Gemini's limit, failing all three
+    // together. One bottle per request keeps each call short, lets a failure
+    // cost one bottle rather than three, and needs no matching by position.
+    const CLIENT_BATCH_SIZE = 1;
 
     try {
         const bottleInfos = toValueate.map(b => ({
@@ -184,15 +185,15 @@ export async function valuateAllBottles(forceAll = false) {
         const allResults = [];
         let batchesFailed = 0;
         const totalBatches = Math.ceil(bottleInfos.length / CLIENT_BATCH_SIZE);
-        // Run batches with bounded concurrency instead of strictly sequentially.
-        // Kept low (2) because each batch does grounded web-search valuations that
-        // are slow and heavy on the wine-ai edge function / Gemini rate limits.
-        const VAL_CONCURRENCY = 2;
+        // A pool, not waves: a new request starts as soon as any one finishes, so
+        // one slow bottle no longer holds up the next group. Three at a time
+        // keeps within Gemini's per-minute limits for grounded requests.
+        const VAL_CONCURRENCY = 3;
         let completedBatches = 0;
-        for (let i = 0; i < totalBatches; i += VAL_CONCURRENCY) {
-            const wave = [];
-            for (let j = i; j < Math.min(i + VAL_CONCURRENCY, totalBatches); j++) wave.push(j);
-            await Promise.all(wave.map(async (batchIdx) => {
+        let nextBatch = 0;
+        const worker = async () => {
+            while (nextBatch < totalBatches) {
+                const batchIdx   = nextBatch++;
                 const batchStart = batchIdx * CLIENT_BATCH_SIZE;
                 const batchSlice = bottleInfos.slice(batchStart, batchStart + CLIENT_BATCH_SIZE);
                 const batchNum   = batchIdx + 1;
@@ -211,10 +212,11 @@ export async function valuateAllBottles(forceAll = false) {
                     reportHandled(err, { action: 'wine-batch-valuation', chunks: totalBatches });
                 } finally {
                     completedBatches++;
-                    if (btn) btn.textContent = `\uD83D\uDC8E Valuing\u2026 ${completedBatches}/${totalBatches} batches`;
+                    if (btn) btn.textContent = `\uD83D\uDC8E Valuing\u2026 ${completedBatches}/${totalBatches}`;
                 }
-            }));
-        }
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(VAL_CONCURRENCY, totalBatches) }, worker));
         if (allResults.length === 0) {
             throw new Error('All valuation batches failed. Check your connection and try again.');
         }
