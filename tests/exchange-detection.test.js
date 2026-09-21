@@ -391,7 +391,6 @@ describe('buildAssetRecord', () => {
       stock_exchange: 'US',
       currency: 'USD',
       asset_type: 'Stock',
-      untracked: false,
     });
     expect(typeof rec.name).toBe('string');
     expect(typeof rec.sector).toBe('string');
@@ -423,35 +422,18 @@ describe('buildAssetRecord', () => {
     expect(rec.currency).toBe('EUR');
   });
 
-  // ── untracked field (added PR #211) ────────────────────────────────────────
+  // ── untracked is NOT a catalogue fact (migration 20260921) ───────────────
+  //
+  // "Keep at cost" is one person's choice. It used to ride along on this record
+  // into the SHARED assets table, where it disabled pricing for every account
+  // holding that ticker. It now lives in user_asset_prefs, so this record must
+  // not carry it at all — the catalogue ignores it, and sending it would say
+  // otherwise.
 
-  it('untracked defaults to false when field is absent', () => {
-    const rec = buildAssetRecord({ symbol: 'AAPL' });
-    expect(rec.untracked).toBe(false);
-  });
-
-  it('untracked: false → false', () => {
-    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: false });
-    expect(rec.untracked).toBe(false);
-  });
-
-  it('untracked: true → true', () => {
-    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: true });
-    expect(rec.untracked).toBe(true);
-  });
-
-  it('untracked: null coerced to false via !!', () => {
-    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: null });
-    expect(rec.untracked).toBe(false);
-  });
-
-  it('untracked: 1 coerced to true via !!', () => {
-    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: 1 });
-    expect(rec.untracked).toBe(true);
-  });
-
-  it('untracked: 0 coerced to false via !!', () => {
-    const rec = buildAssetRecord({ symbol: 'AAPL', untracked: 0 });
-    expect(rec.untracked).toBe(false);
+  it('never carries the personal keep-at-cost flag, whatever the position says', () => {
+    for (const untracked of [undefined, false, true, null, 1, 0]) {
+      const rec = buildAssetRecord({ symbol: 'AAPL', untracked });
+      expect(rec, String(untracked)).not.toHaveProperty('untracked');
+    }
   });
 });

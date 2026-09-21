@@ -907,7 +907,10 @@ async function persistISINMapping(isin, resolved, source = 'api') {
             isin,
             stock_exchange: resolved.exchange || '',
             sector: 'Other',
-            currency: 'USD',
+            // No currency: a mapping does not know it. This used to send a
+            // hard-coded 'USD' at 'profile' rank, overwriting a correct suffix
+            // guess for every holder — and the catalogue now freezes a
+            // confirmed currency, so that wrong value would have been permanent.
             source
         }]);
     } catch (err) {
@@ -2250,8 +2253,11 @@ export async function importTrades() {
                         state.assetDatabase[sym] = {
                             ...(state.assetDatabase[sym] || {}),
                             name: u.name || sym, ticker: sym, isin: u.identifier.toUpperCase(),
-                            assetType: 'Other', untracked: true, source: 'user',
+                            assetType: 'Other', source: 'user',
                         };
+                        // A personal choice: saved per person, or it is lost on the
+                        // next reload (it used to ride along to the shared catalogue).
+                        await setUntracked(sym, true);
                     }
                 }
             }

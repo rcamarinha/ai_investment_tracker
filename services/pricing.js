@@ -11,7 +11,7 @@ import { buildAssetRecord, getAssetCurrency, detectCurrency, detectStockExchange
 import { renderPortfolio, renderMoversSection } from './portfolio.js';
 import { savePortfolioSnapshot } from './portfolio.js';
 import {
-    saveAssetsToDB, loadAssetsFromDB,
+    saveAssetsToDB, loadAssetsFromDB, saveAssetPref,
     savePriceHistoryToDB, enrichUnknownAssets
 } from './storage.js';
 import { analyzeMovers } from './analysis.js';
@@ -132,17 +132,10 @@ async function persistPricingTicker(symbol, pricingTicker) {
     if (!symbol || !pricingTicker || pricingTicker === symbol) return;
     const existing = state.assetDatabase[symbol] || {};
     state.assetDatabase[symbol] = { ...existing, ticker: symbol, pricingTicker };
+    // A personal choice: which symbol prices THIS holding. On the shared
+    // catalogue it changed pricing for everyone holding the ticker.
     try {
-        await saveAssetsToDB([{
-            ticker: symbol,
-            name: existing.name || symbol,
-            stock_exchange: existing.stockExchange || '',
-            sector: existing.sector || 'Other',
-            currency: existing.currency || '',
-            asset_type: existing.assetType || 'Stock',
-            isin: existing.isin || null,
-            pricing_ticker: pricingTicker,
-        }]);
+        await saveAssetPref(symbol, { pricingTicker });
     } catch (err) { console.warn('persistPricingTicker failed:', err.message); }
 }
 
@@ -157,17 +150,9 @@ export async function setUntracked(symbol, flag) {
     state.assetDatabase[symbol] = { ...existing, ticker: symbol, untracked: !!flag };
     const pos = state.portfolio.find(p => p.symbol === symbol);
     if (pos) pos.untracked = !!flag;
+    // Personal: keeping YOUR holding at cost must not stop anyone else's prices.
     try {
-        await saveAssetsToDB([{
-            ticker: symbol,
-            name: existing.name || symbol,
-            stock_exchange: existing.stockExchange || '',
-            sector: existing.sector || 'Other',
-            currency: existing.currency || '',
-            asset_type: existing.assetType || 'Stock',
-            isin: existing.isin || null,
-            untracked: !!flag,
-        }]);
+        await saveAssetPref(symbol, { untracked: !!flag });
     } catch (err) { console.warn('setUntracked failed:', err.message); }
 }
 

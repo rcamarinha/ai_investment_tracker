@@ -248,10 +248,9 @@ export async function saveAssetsToDB(assets) {
             if (asset.isin) upsertData.isin = asset.isin;
             // Provenance of the ISIN→ticker mapping ('user' = manually entered)
             if (asset.source) upsertData.source = asset.source;
-            // Learned ticker that actually returns a price (e.g. EU suffix remap)
-            if (asset.pricing_ticker) upsertData.pricing_ticker = asset.pricing_ticker;
-            // "Kept at cost" flag — always written (incl. false) so re-enabling sticks
-            if (typeof asset.untracked === 'boolean') upsertData.untracked = asset.untracked;
+            // pricing_ticker and untracked are NOT sent: they are personal choices
+            // and live in user_asset_prefs (saveAssetPref). The catalogue's trigger
+            // ignores them from a browser anyway.
 
             // currency_source arrives with migration 20260811. If that migration
             // hasn't been applied yet, drop the column and retry rather than
@@ -313,14 +312,77 @@ export async function loadAssetsFromDB() {
                     assetType: normalizeAssetType(a.asset_type),
                     isin: a.isin || null,
                     source: a.source || null,
-                    pricingTicker: a.pricing_ticker || null,
-                    untracked: a.untracked || false
+                    // Personal choices deliberately NOT read from the shared
+                    // catalogue: they now come from user_asset_prefs below.
+                    // Reading a.pricing_ticker / a.untracked here is what let one
+                    // person's choice change every other holder's prices.
+                    pricingTicker: null,
+                    untracked: false
                 };
             });
             console.log('\u2713 Loaded', data.length, 'assets from DB into assetDatabase');
         }
+        await loadAssetPrefs();
     } catch (err) {
         console.error('Failed to load assets from DB:', err);
+    }
+}
+
+/**
+ * This person's own "keep at cost" and learned-pricing-ticker choices, merged
+ * over the shared catalogue. Both used to live on `assets`, where any account
+ * could change them for everyone (migration 20260921 moved them).
+ *
+ * Silent on failure by design: without the migration the table is missing, and
+ * pricing should carry on with the catalogue's facts rather than break.
+ */
+export async function loadAssetPrefs() {
+    if (!state.supabaseClient || !state.currentUser) return;
+    const { data, error } = await state.supabaseClient
+        .from('user_asset_prefs')
+        .select('ticker, untracked, pricing_ticker')
+        .eq('user_id', state.currentUser.id);
+    if (error) {
+        // Nothing to tell the user: pricing carries on with the catalogue's
+        // facts. Reported so a missing migration does not go unnoticed.
+        reportHandled(error, { action: 'load-asset-prefs' });
+        return;
+    }
+    (data || []).forEach(p => {
+        if (!p.ticker) return;
+        const key = p.ticker.toUpperCase();
+        const existing = state.assetDatabase[key] || { ticker: key };
+        state.assetDatabase[key] = {
+            ...existing,
+            pricingTicker: p.pricing_ticker || null,
+            untracked: !!p.untracked,
+        };
+    });
+    if (data && data.length) console.log('\u2713 Loaded', data.length, 'personal asset preferences');
+}
+
+/**
+ * Save one of this person's choices. Upsert on (user_id, ticker) so setting one
+ * never disturbs the other.
+ */
+export async function saveAssetPref(ticker, patch) {
+    if (!state.supabaseClient || !state.currentUser || !ticker) return;
+    const key = String(ticker).toUpperCase();
+    const existing = state.assetDatabase[key] || {};
+    const row = {
+        user_id: state.currentUser.id,
+        ticker: key,
+        untracked: 'untracked' in patch ? !!patch.untracked : !!existing.untracked,
+        pricing_ticker: 'pricingTicker' in patch ? (patch.pricingTicker || null) : (existing.pricingTicker || null),
+        updated_at: new Date().toISOString(),
+    };
+    const { error } = await state.supabaseClient
+        .from('user_asset_prefs')
+        .upsert(row, { onConflict: 'user_id,ticker' });
+    if (error) {
+        // The person just made this choice and will see it revert on reload.
+        showToast(`Could not save your setting for ${key}. It will not survive a reload.`, 'error', 8000);
+        reportHandled(error, { action: 'save-asset-pref' });
     }
 }
 
