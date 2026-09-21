@@ -282,6 +282,12 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.55.1
+Wine valuations finish again, and stop costing money when they fail.
+- **A valuation no longer times out when Gemini is slow.** Gemini gave up after 20 seconds, the Claude fallback then ran up to sixteen web searches, and the page stopped waiting at 55 seconds — while the server finished and paid for a result nobody saw. The fallback is now capped at five searches (eight for a batch of three), each stage has a time budget, and the page waits up to 115 seconds. Needs `wine-ai` redeployed.
+- **A call that times out is now recorded as a failed call**, so the admin page shows Gemini failing rather than Claude seeming to be chosen first.
+- **A personal pricing choice no longer changes everyone's prices.** "Keep at cost" and the learned pricing ticker live per person; the shared catalogue refuses a repointed ISIN, an overwritten currency and malformed tickers. Migration `20260921_per_user_asset_prefs.sql`.
+
 ### v3.55.0
 Invitations, the admin dashboard, and a record of what the AI costs.
 - **Admins invite people by email** from a new admin page, linked from the hub and the portfolio page for admins only. It lists who was invited and who joined, and revokes an invitation nobody has accepted. Needs the `admin-invite` edge function.

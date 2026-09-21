@@ -6,7 +6,7 @@
  * Users must be logged in to use AI features.
  */
 
-import state from './state.js?v=3.55.0';
+import state from './state.js?v=3.55.1';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -110,11 +110,13 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
     const payload     = JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottles });
 
     // Build a fetch attempt with specific auth headers.
-    // Use an AbortController to enforce a client-side timeout slightly under the
-    // Supabase edge-function limit (60s free / 150s paid).  Without this, a
-    // timed-out function closes the connection without CORS headers, which the
-    // browser reports as the opaque "Failed to fetch" instead of a useful message.
-    const FETCH_TIMEOUT_MS = 55_000;
+    // Use an AbortController to enforce a client-side timeout under Supabase's
+    // 150s limit. Without this, a timed-out function closes the connection
+    // without CORS headers, which the browser reports as the opaque "Failed to
+    // fetch". It was 55s: when Gemini timed out (20s) the Claude fallback often
+    // finished after the browser had given up — paid for, and discarded. The
+    // server's own budget (Gemini 20s + Claude 85s) fits inside this.
+    const FETCH_TIMEOUT_MS = 115_000;
     const _doFetch = (authHeaders) => {
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
@@ -173,7 +175,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
         if (isTimeout) {
             throw new Error(
                 `The Wine AI server took longer than ${FETCH_TIMEOUT_MS / 1000}s to respond.\n\n` +
-                'This usually means the edge function timed out (Gemini + Claude fallback on the same batch exceeded the server limit).\n\n' +
+                'Both valuation services were slow to answer. Nothing was changed.\n\n' +
                 'The batch size has been kept small to minimise this — if it keeps happening, ' +
                 'try valuating a smaller selection of bottles at a time.'
             );
