@@ -12,11 +12,11 @@
  * (not in the DB schema) and applied to in-memory bottle state on load.
  */
 
-import state from './state.js?v=3.55.2';
-import { callWineAI } from './api.js?v=3.55.2';
-import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.55.2';
-import { renderCellar, updateBottleCard } from './cellar.js?v=3.55.2';
-import { showToast, repairTruncatedJSON } from './utils.js?v=3.55.2';
+import state from './state.js?v=3.55.3';
+import { callWineAI } from './api.js?v=3.55.3';
+import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.55.3';
+import { renderCellar, updateBottleCard } from './cellar.js?v=3.55.3';
+import { showToast, repairTruncatedJSON } from './utils.js?v=3.55.3';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 import { triageBatchValuation } from '../src/wine.js';
 
@@ -420,10 +420,12 @@ Return a valid JSON object with exactly these fields:
   "drinkWindow": "2025-2035",
   "confidence": "high",
   "sources": "Wine-Searcher avg €105 for 2019 vintage; Garrafeira Nacional listing €115",
-  "valuationNote": "1-2 sentence explanation referencing specific data points found"
+  "valuationNote": "1-2 sentence explanation referencing specific data points found",
+  "priceDate": "${new Date().toISOString().slice(0, 7)}"
 }
 
 Guidelines:
+- priceDate: "YYYY-MM" — this month if the price comes from a search made now; if you did not search, the month your knowledge of this price dates from
 - estimatedValue: best estimate per ${bottleSize} bottle in EUR (match the bottle format above)
 - estimatedValueUSD: same estimate converted to USD at current exchange rate
 - valueLow / valueHigh: realistic market range in EUR

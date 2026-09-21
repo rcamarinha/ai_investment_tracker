@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText, padResults, geminiSearchCount, SEARCH_REMINDER, VALUATION_SYSTEM_INSTRUCTION } from '../supabase/functions/_shared/wine-batch-core.js';
+import { sanitiseJson, parseBatchText, buildBatchPrompt, isValidGeminiText, padResults, geminiSearchCount, claudeSearchCount, markUnsearched, VALUATION_SYSTEM_INSTRUCTION } from '../supabase/functions/_shared/wine-batch-core.js';
 
 // ── sanitiseJson ─────────────────────────────────────────────────────────────
 
@@ -367,41 +367,71 @@ describe('padResults — one entry per bottle, in order', () => {
   });
 });
 
-// ── Whether Gemini really searched ────────────────────────────────────────────
+// ── Whether a valuation was searched, and saying so ──────────────────────────
 //
 // Offering Google Search does not make Gemini use it: in the first 3.5 batch,
-// 23 of 24 answers ran no search and priced wines from memory. wine-ai accepts
-// a valuation only when this count is above zero.
+// 23 of 24 answers ran no search. Refusing those sent most bottles to Claude,
+// so an unsearched answer is now accepted but marked, with the age of its price.
 
-describe('geminiSearchCount', () => {
-  const withQueries = q => ({ candidates: [{ groundingMetadata: { webSearchQueries: q } }] });
-
-  it('counts the searches Gemini reports', () => {
-    expect(geminiSearchCount(withQueries(['barca velha 2011 preço', 'barca velha garrafeira nacional']))).toBe(2);
-  });
-
-  it('is zero when Gemini answered from memory (no grounding metadata at all)', () => {
-    expect(geminiSearchCount({ candidates: [{ content: { parts: [{ text: '[]' }] } }] })).toBe(0);
-  });
-
-  it('is zero for an empty query list, a missing candidate or no body', () => {
+describe('search counts, read from the provider rather than the model', () => {
+  it('Gemini: the queries it reports', () => {
+    const withQueries = q => ({ candidates: [{ groundingMetadata: { webSearchQueries: q } }] });
+    expect(geminiSearchCount(withQueries(['barca velha 2011 preço', 'barca velha garrafeira']))).toBe(2);
     expect(geminiSearchCount(withQueries([]))).toBe(0);
-    expect(geminiSearchCount({ candidates: [] })).toBe(0);
+    expect(geminiSearchCount({ candidates: [{ content: { parts: [{ text: '[]' }] } }] })).toBe(0);
     expect(geminiSearchCount(null)).toBe(0);
+  });
+
+  it('Claude: web_search_requests in its usage', () => {
+    expect(claudeSearchCount({ usage: { server_tool_use: { web_search_requests: 4 } } })).toBe(4);
+    expect(claudeSearchCount({ usage: {} })).toBe(0);
+    expect(claudeSearchCount(undefined)).toBe(0);
   });
 });
 
-describe('what Gemini is told about searching', () => {
-  it('the system instruction requires a search whatever the model believes it knows', () => {
-    expect(VALUATION_SYSTEM_INSTRUCTION).toMatch(/must perform Google Searches before answering/);
-    expect(VALUATION_SYSTEM_INSTRUCTION).toMatch(/regardless of how confident/);
+describe('markUnsearched', () => {
+  const answer = { id: 'b1', estimatedValue: 40, confidence: 'high', valuationNote: 'Seen at Garrafeira Nacional.', priceDate: '2025-03' };
+
+  it('leaves a searched valuation as it is, recording that it searched', () => {
+    expect(markUnsearched(answer, true)).toEqual({ ...answer, searched: true });
   });
 
-  it('the retry says why the first answer was refused', () => {
-    expect(SEARCH_REMINDER).toMatch(/rejected because it ran no Google Search/);
+  it('keeps the figure of an unsearched one, but says where it came from and how old it is', () => {
+    const r = markUnsearched(answer, false);
+    expect(r.estimatedValue).toBe(40);
+    expect(r.searched).toBe(false);
+    expect(r.confidence).toBe('low');
+    expect(r.valuationNote).toBe("No search: price from the model's own knowledge, as of 2025-03. Seen at Garrafeira Nacional.");
   });
 
-  it('the batch prompt asks for Google Search, as the single-bottle prompt does', () => {
-    expect(buildBatchPrompt([{ id: 'b1', name: 'X' }])).toContain('Use Google Search');
+  it('says the date is unknown rather than trust a malformed one', () => {
+    for (const priceDate of [undefined, '', 'recent', '2025-13', '2025/03', 202503]) {
+      const r = markUnsearched({ ...answer, priceDate }, false);
+      expect(r.priceDate, String(priceDate)).toBeNull();
+      expect(r.valuationNote).toMatch(/^No search: price from the model's own knowledge, date unknown\./);
+    }
+  });
+
+  it('writes a note when the model gave none', () => {
+    expect(markUnsearched({ id: 'b1', estimatedValue: 5 }, false).valuationNote)
+      .toBe("No search: price from the model's own knowledge, date unknown.");
+  });
+
+  it('leaves an error result alone', () => {
+    const err = { id: 'b1', error: 'AI did not return a valuation for this bottle (Gemini)' };
+    expect(markUnsearched(err, false)).toBe(err);
+  });
+});
+
+describe('what the model is asked for', () => {
+  it('is asked to search, and to date a price it did not search for', () => {
+    expect(VALUATION_SYSTEM_INSTRUCTION).toMatch(/Use Google Search/);
+    expect(VALUATION_SYSTEM_INSTRUCTION).toMatch(/without searching, set priceDate/);
+  });
+
+  it('the batch prompt asks for Google Search and a priceDate for every wine', () => {
+    const prompt = buildBatchPrompt([{ id: 'b1', name: 'X' }]);
+    expect(prompt).toContain('Use Google Search');
+    expect(prompt).toContain('"priceDate": <"YYYY-MM"');
   });
 });
