@@ -50,6 +50,11 @@ const CLAUDE_MODEL = "claude-opus-4-6";
 // timed out at exactly 20s; the timing log shows what it really needs.
 const GEMINI_TIMEOUT_MS = 45_000;
 const CLAUDE_TIMEOUT_MS = 60_000;
+// Gemini's thinking counts against its output limit: one measured single-bottle
+// valuation spent 2896 of 4096 on thinking and 192 on the answer, so a batch of
+// three was one long think away from being cut off — which fails to parse and
+// falls back to Claude. Billed on what is generated, so headroom is free.
+const GEMINI_VALUATION_TOKENS = 8192;
 // Web searches the Claude fallback may run: one bottle, or one chunk of three.
 const SEARCHES_SINGLE = 5;
 const SEARCHES_BATCH = 8;
@@ -307,7 +312,7 @@ async function handleValuation(prompt: string, corsHeaders: Record<string, strin
 
   // 1. Try Gemini (with Google Search grounding)
   try {
-    const { text, groundingChunks } = await callGemini(prompt, 4096, meter);
+    const { text, groundingChunks } = await callGemini(prompt, GEMINI_VALUATION_TOKENS, meter);
     if (text.trim()) {
       console.log("[wine-ai] Valuation via Gemini");
       return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null }, 200, corsHeaders);
@@ -485,7 +490,7 @@ function padResults(results: ValuationResult[], chunk: BottleInfo[], chunkIdx: n
 
 async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter): Promise<ValuationResult[]> {
   const prompt = buildBatchPrompt(chunk);
-  const maxTokens = 4096; // 3 bottles × ~500 tokens each — well within limit
+  const maxTokens = GEMINI_VALUATION_TOKENS; // thinking + 3 bottles × ~500 tokens
 
   // 1. Try Gemini
   try {
