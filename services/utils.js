@@ -164,8 +164,10 @@ export function buildAssetRecord(position) {
         sector,
         currency: looksLikeISIN(ticker) ? null : detectCurrency(stockExchange),
         currency_source: looksLikeISIN(ticker) ? null : 'suffix',
-        asset_type: normalizeAssetType(position.type),
-        untracked: !!position.untracked
+        asset_type: normalizeAssetType(position.type)
+        // No `untracked` here: keeping a holding at cost is a personal choice
+        // and lives in user_asset_prefs. Sent to `assets` it changed pricing for
+        // every other holder; the catalogue now ignores it anyway.
     };
 }
 
