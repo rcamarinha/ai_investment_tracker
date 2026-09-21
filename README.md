@@ -282,6 +282,12 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.55.3
+Wine valuations say when a price was not looked up, and the fallback costs less.
+- **Every valuation says how it was priced.** Gemini is asked to search but decides for itself, and often answers from memory. Such a price is kept, marked low confidence, and its note begins "No search: price from the model's own knowledge, as of YYYY-MM", using the date the model gives for it. Whether a search ran is read from the provider's own record, not the model's word.
+- **The Claude fallback uses Sonnet 4.6 instead of Opus**: the same web search, faster, and about 40% cheaper per token. Label reading and cellar analysis use it too.
+- **Gemini thinks less for a valuation** (thinking level "low"): calls dropped from 20-38s to 10-16s. Needs `wine-ai` redeployed.
+
 ### v3.55.2
 Batch wine valuation: faster, fewer failures, and every price on the right bottle.
 - **A price can no longer land on the wrong bottle.** The server gave result N the id of bottle N, so if the model skipped or reordered a wine, every price after it shifted. Each result must now name the wine it is for, and anything that names none is refused rather than guessed.

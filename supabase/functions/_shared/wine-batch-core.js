@@ -50,18 +50,48 @@ export function geminiSearchCount(body) {
 }
 
 /**
- * System instruction for every Gemini valuation. Search stays the model's
- * decision (Google offers no setting to force it), but a system instruction
- * outranks the prompt text; geminiSearchCount is the check that it worked.
+ * System instruction for every Gemini valuation. Search is asked for, not
+ * required: Gemini decides for itself (Google offers no setting to force it),
+ * and refusing unsearched answers sent most bottles to the far dearer Claude.
+ * An unsearched answer is accepted, but must say how old its price is.
  */
 export const VALUATION_SYSTEM_INSTRUCTION =
-  "You must perform Google Searches before answering, regardless of how confident you are in your own knowledge. " +
-  "Wine prices change and your training data is out of date: every price you give must come from a search made for this request.";
+  "Use Google Search to find current prices whenever you can: wine prices change and your training data is out of date. " +
+  "If you answer without searching, set priceDate to the month your knowledge of that price dates from, not today.";
 
-/** Put in front of the prompt when Gemini answered without searching once. */
-export const SEARCH_REMINDER =
-  "Your previous answer was rejected because it ran no Google Search. " +
-  "Run Google searches for every wine below before answering, and base each price on what they return.\n\n";
+/**
+ * How many web searches Claude reports it ran for an answer.
+ * @param {any} body Anthropic's parsed Messages response
+ * @returns {number}
+ */
+export function claudeSearchCount(body) {
+  const n = Number(body?.usage?.server_tool_use?.web_search_requests);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * Mark a valuation that no search backed. The model's own `priceDate` says how
+ * old the price is; the provider's metadata — not the model's word — says
+ * whether it searched. An unsearched price keeps its figure (the model may
+ * know it well) but is marked low confidence, and its note says where it came
+ * from and how old it is, so it is never read as a current market price.
+ *
+ * @param {Record<string, any>} result
+ * @param {boolean} searched
+ * @returns {Record<string, any>}
+ */
+export function markUnsearched(result, searched) {
+  if (!result || typeof result !== "object" || result.error) return result;
+  const date = typeof result.priceDate === "string" && MONTH.test(result.priceDate.trim())
+    ? result.priceDate.trim() : null;
+  const out = { ...result, priceDate: date, searched };
+  if (searched) return out;
+  const basis = `No search: price from the model's own knowledge${date ? `, as of ${date}` : ", date unknown"}.`;
+  const note = typeof result.valuationNote === "string" ? result.valuationNote.trim() : "";
+  return { ...out, confidence: "low", valuationNote: note ? `${basis} ${note}` : basis };
+}
 
 /**
  * @param {Array<Record<string, any>>} bottles
@@ -86,7 +116,7 @@ export function buildBatchPrompt(bottles, today = new Date().toISOString().slice
     return `${i + 1}. ${fields || "(unknown wine)"}`;
   }).join("\n");
 
-  return `You are a wine investment expert. Use Google Search to find current retail and auction market prices for each wine below, then return valuations. Search before answering: a price not found in a search made now is not a valuation.
+  return `You are a wine investment expert. Use Google Search to find current retail and auction market prices for each wine below, then return valuations.
 
 Today's date: ${today}
 
@@ -103,7 +133,8 @@ Return a JSON array with exactly ${bottles.length} objects, one per wine. Each o
   "drinkWindow": <"YYYY-YYYY" or null>,
   "confidence": <"high"|"medium"|"low">,
   "sources": <brief citation string>,
-  "valuationNote": <1-2 sentence explanation>
+  "valuationNote": <1-2 sentence explanation>,
+  "priceDate": <"YYYY-MM": this month if the price comes from a search made now, otherwise the month your knowledge of it dates from>
 }
 
 Pricing rules (follow strictly, in priority order):

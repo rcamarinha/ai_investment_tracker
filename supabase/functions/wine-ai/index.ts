@@ -31,7 +31,10 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recordUsage } from "../_shared/usage.ts";
-import { buildBatchPrompt, parseBatchText, padResults, geminiSearchCount, SEARCH_REMINDER, VALUATION_SYSTEM_INSTRUCTION } from "../_shared/wine-batch-core.js";
+import {
+  buildBatchPrompt, parseBatchText, padResults, geminiSearchCount, claudeSearchCount,
+  markUnsearched, VALUATION_SYSTEM_INSTRUCTION,
+} from "../_shared/wine-batch-core.js";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY_Wine");
 const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
@@ -43,7 +46,10 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.
 // retirement path. 3.5 costs about five times as much per token.
 const GEMINI_MODEL = "gemini-3.5-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const CLAUDE_MODEL = "claude-opus-4-6";
+// Sonnet, not Opus: a price looked up from a few shop listings does not need
+// the largest model, and the fallback now carries most valuations. Opus read
+// ~115K tokens per bottle at $5/M input; Sonnet 4.6 is $3/M and faster.
+const CLAUDE_MODEL = "claude-sonnet-4-6";
 
 // Time budget for one request, inside the browser's 115s wait (wine/api.js)
 // and Supabase's 150s limit: Gemini first, then the Claude fallback. Gemini
@@ -51,12 +57,6 @@ const CLAUDE_MODEL = "claude-opus-4-6";
 // timed out at exactly 20s; the timing log shows what it really needs.
 const GEMINI_TIMEOUT_MS = 45_000;
 const CLAUDE_TIMEOUT_MS = 60_000;
-// All of Gemini's attempts on one valuation share this budget, so Gemini (50s)
-// plus the Claude fallback (60s) always fits the page's 115s wait. A retry for
-// an unsearched answer runs only if at least GEMINI_MIN_RETRY_MS is left: a
-// searched answer takes 20-40s, so less than that would only time out.
-const GEMINI_BUDGET_MS = 50_000;
-const GEMINI_MIN_RETRY_MS = 20_000;
 // Thinking, not searching, is where a valuation's time goes: a measured call
 // thought for 4986 tokens to write a 243-token answer, taking 38s. "low" asks
 // for less. Google's docs do not say which levels 3.5 Flash accepts, so a
@@ -205,28 +205,17 @@ async function _callGeminiOnce(
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /**
- * Gemini for a valuation: grounded only, and only an answer that actually ran a
- * search. Gemini decides for itself whether to use the search tool, and in the
- * first 3.5 batch it priced 23 of 24 wines from memory. An unsearched answer is
- * asked again once with a firm reminder; a second one throws, so the caller
- * falls back to Claude, which searches.
+ * Gemini for a valuation: grounded, search-first system instruction, low
+ * thinking. Whether it searched is reported, not required — Gemini decides for
+ * itself, and the caller marks an unsearched answer (markUnsearched) instead of
+ * sending the bottle to Claude. One attempt, so Gemini (45s) plus the Claude
+ * fallback (60s) fits the page's 115s wait.
  */
-async function callGeminiSearched(prompt: string, maxTokens: number, meter: Meter): Promise<GeminiResult> {
-  const deadline = Date.now() + GEMINI_BUDGET_MS;
-  const opts = { systemInstruction: VALUATION_SYSTEM_INSTRUCTION, thinkingLevel: VALUATION_THINKING_LEVEL };
-
-  const first = await callGemini(prompt, maxTokens, meter, false,
-    { ...opts, timeoutMs: Math.min(GEMINI_TIMEOUT_MS, GEMINI_BUDGET_MS) });
-  if (first.searches > 0) return first;
-
-  const left = deadline - Date.now();
-  if (left < GEMINI_MIN_RETRY_MS) {
-    throw new Error(`Gemini answered without searching, and ${Math.round(left / 1000)}s is too little to ask again`);
-  }
-  console.warn(`[wine-ai] Gemini answered without searching — asking again with a reminder (${Math.round(left / 1000)}s left)`);
-  const second = await callGemini(SEARCH_REMINDER + prompt, maxTokens, meter, false, { ...opts, timeoutMs: left });
-  if (second.searches > 0) return second;
-  throw new Error("Gemini answered twice without running a search");
+function callGeminiValuation(prompt: string, maxTokens: number, meter: Meter): Promise<GeminiResult> {
+  return callGemini(prompt, maxTokens, meter, false, {
+    systemInstruction: VALUATION_SYSTEM_INSTRUCTION,
+    thinkingLevel: VALUATION_THINKING_LEVEL,
+  });
 }
 
 /**
@@ -337,7 +326,7 @@ async function callClaude(
   useWebSearch: boolean,
   meter: Meter,
   maxSearches = SEARCHES_SINGLE,
-): Promise<{ text: string }> {
+): Promise<{ text: string; searches: number }> {
   if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY_Wine secret not set on the server.");
 
   const headers: Record<string, string> = {
@@ -386,20 +375,36 @@ async function callClaude(
     .map(b => b.text ?? "")
     .join("");
 
-  return { text };
+  return { text, searches: claudeSearchCount(data) };
 }
 
 // ── Single-bottle valuation: Gemini → Claude fallback ─────────────────────────
+
+/**
+ * Mark an unsearched single valuation inside its JSON text, which the page
+ * parses. Text that cannot be read is passed through untouched: the page
+ * reports it, as before.
+ */
+function markSingle(text: string, searched: boolean): string {
+  const parsed = parseBatchText(text, [{ id: "single" }]);
+  const r = parsed?.results[0];
+  if (!r) return text;
+  const { id: _id, ...result } = markUnsearched(r, searched);
+  return JSON.stringify(result);
+}
 
 async function handleValuation(prompt: string, corsHeaders: Record<string, string>, meter: Meter): Promise<Response> {
   let geminiError = "";
 
   // 1. Try Gemini (with Google Search grounding)
   try {
-    const { text, groundingChunks } = await callGeminiSearched(prompt, GEMINI_VALUATION_TOKENS, meter);
+    const { text, groundingChunks, searches } = await callGeminiValuation(prompt, GEMINI_VALUATION_TOKENS, meter);
     if (text.trim()) {
-      console.log("[wine-ai] Valuation via Gemini");
-      return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null }, 200, corsHeaders);
+      console.log(`[wine-ai] Valuation via Gemini (${searches ? `${searches} searches` : "no search"})`);
+      return jsonResponse(
+        { text: markSingle(text, searches > 0), _geminiGrounding: groundingChunks ?? null, _searched: searches > 0 },
+        200, corsHeaders,
+      );
     }
     // Gemini returned empty content (can happen when grounding search stalls or
     // candidates[0].content.parts is empty) — treat as failure and use Claude.
@@ -414,9 +419,12 @@ async function handleValuation(prompt: string, corsHeaders: Record<string, strin
 
   // 2. Fallback: Claude with web search
   try {
-    const { text } = await callClaude(prompt, 4096, true, meter);
-    console.log("[wine-ai] Valuation via Claude (fallback)");
-    return jsonResponse({ text, _geminiGrounding: null, _fallback: "claude", _geminiError: geminiError }, 200, corsHeaders);
+    const { text, searches } = await callClaude(prompt, 4096, true, meter);
+    console.log(`[wine-ai] Valuation via Claude (fallback, ${searches ? `${searches} searches` : "no search"})`);
+    return jsonResponse(
+      { text: markSingle(text, searches > 0), _geminiGrounding: null, _fallback: "claude", _geminiError: geminiError, _searched: searches > 0 },
+      200, corsHeaders,
+    );
   } catch (err) {
     const claudeMsg = err instanceof Error ? err.message : String(err);
     console.error("[wine-ai] Claude fallback also failed:", claudeMsg);
@@ -467,7 +475,7 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter)
   // Each provider's answer is matched to bottles by the ref it names, never by
   // position (see _shared/wine-batch-core.js); a bottle nothing names gets an
   // explicit error rather than a neighbour's price.
-  const accept = (text: string, source: string): ValuationResult[] | null => {
+  const accept = (text: string, source: string, searched: boolean): ValuationResult[] | null => {
     const parsed = parseBatchText(text, chunk);
     if (!parsed) {
       console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): no readable JSON. Snippet:`, text.slice(0, 200));
@@ -476,14 +484,14 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter)
     if (parsed.unmatched) {
       console.warn(`[wine-ai] Chunk ${chunkIdx} (${source}): ${parsed.unmatched} result(s) named no bottle in this chunk and were dropped`);
     }
-    console.log(`[wine-ai] Chunk ${chunkIdx}: ${source} OK (${parsed.results.length}/${chunk.length} matched)`);
-    return padResults(parsed.results, chunk, source) as ValuationResult[];
+    console.log(`[wine-ai] Chunk ${chunkIdx}: ${source} OK (${parsed.results.length}/${chunk.length} matched, ${searched ? "searched" : "no search"})`);
+    return padResults(parsed.results.map(r => markUnsearched(r, searched)), chunk, source) as ValuationResult[];
   };
 
-  // 1. Gemini, with search only: a valuation never falls back to an unsearched guess.
+  // 1. Gemini. It is asked to search; if it did not, the results say so.
   try {
-    const { text } = await callGeminiSearched(prompt, maxTokens, meter);
-    const results = accept(text, "Gemini");
+    const { text, searches } = await callGeminiValuation(prompt, maxTokens, meter);
+    const results = accept(text, "Gemini", searches > 0);
     if (results) return results;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -493,8 +501,8 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter)
   // 2. Fallback: Claude
   console.log(`[wine-ai] Chunk ${chunkIdx}: falling back to Claude`);
   const searches = chunk.length === 1 ? SEARCHES_SINGLE : SEARCHES_BATCH;
-  const { text } = await callClaude(prompt, maxTokens, true, meter, searches);
-  const results = accept(text, "Claude");
+  const claude = await callClaude(prompt, maxTokens, true, meter, searches);
+  const results = accept(claude.text, "Claude", claude.searches > 0);
   if (results) return results;
 
   // Both failed — return error stubs so other chunks still succeed
