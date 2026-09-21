@@ -3,7 +3,7 @@
  */
 
 import state from './state.js';
-import { escapeHTML, formatCurrency, normalizeAssetType, getAssetCurrency, toBaseCurrency, bindActions } from './utils.js';
+import { escapeHTML, formatCurrency, normalizeAssetType, getAssetCurrency, toBaseCurrency, bindActions, showToast } from './utils.js';
 import { getSector } from '../data/sectors.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
 import { renderPortfolio } from './portfolio.js';
@@ -184,7 +184,7 @@ export function renderAllocationCharts() {
 
 export function showApiKeyDialog() {
     if (!isAdmin()) {
-        alert('Only administrators can manage API keys.');
+        showToast('Only administrators can manage API keys.', 'warning');
         return;
     }
     const dialog = document.getElementById('apiKeyDialog');
@@ -206,6 +206,10 @@ export function showApiKeyDialog() {
         if (el) el.value = value || '';
     }
     dialog.style.display = 'block';
+    // This dialog is a section inside a long page, not an overlay. On a real
+    // portfolio it opens hundreds of pixels below the fold, so the button looked
+    // dead — nothing visible happened. Scroll to what was just opened.
+    dialog.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 export function closeApiKeyDialog() {
