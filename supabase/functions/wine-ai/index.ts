@@ -37,14 +37,24 @@ const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+// 3.5 rather than 2.5: from 21 September every grounded 2.5 valuation hit the
+// 20s limit, while nothing in the request had changed, and 2.5 is on Google's
+// retirement path. 3.5 costs about five times as much per token.
+const GEMINI_MODEL = "gemini-3.5-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const CLAUDE_MODEL = "claude-opus-4-6";
 
 // Time budget for one request, inside the browser's 115s wait (wine/api.js)
-// and Supabase's 150s limit: Gemini first, then the Claude fallback.
-const GEMINI_TIMEOUT_MS = 20_000;
-const CLAUDE_TIMEOUT_MS = 85_000;
+// and Supabase's 150s limit: Gemini first, then the Claude fallback. Gemini
+// had 20s until 21 September, when every grounded call — 2.5 and 3.5 alike —
+// timed out at exactly 20s; the timing log shows what it really needs.
+const GEMINI_TIMEOUT_MS = 45_000;
+const CLAUDE_TIMEOUT_MS = 60_000;
+// Gemini's thinking counts against its output limit: one measured single-bottle
+// valuation spent 2896 of 4096 on thinking and 192 on the answer, so a batch of
+// three was one long think away from being cut off — which fails to parse and
+// falls back to Claude. Billed on what is generated, so headroom is free.
+const GEMINI_VALUATION_TOKENS = 8192;
 // Web searches the Claude fallback may run: one bottle, or one chunk of three.
 const SEARCHES_SINGLE = 5;
 const SEARCHES_BATCH = 8;
@@ -95,9 +105,14 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
     body.tools = [{ google_search: {} }];
   }
 
-  // 20s hard limit per Gemini call so Claude fallback can still run within the
-  // 55s client timeout. Grounded searches occasionally stall; without this the
+  // Hard limit per Gemini call (GEMINI_TIMEOUT_MS) so the Claude fallback can
+  // still run within the browser's wait. Grounded searches stall; without this the
   // whole edge-function invocation hangs until the client aborts the request.
+  // Timing is logged for every attempt, so a slow or stalled Gemini shows in the
+  // function logs as a number rather than a guess: how long, grounded or not,
+  // how it finished, and how much of the output budget went on thinking.
+  const started = Date.now();
+  const mode = useGrounding ? "grounded" : "ungrounded";
   let res: Response;
   try {
     res = await fetch(GEMINI_URL, {
@@ -112,17 +127,27 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
     // A timeout used to leave no usage row at all, so every fallback to Claude
     // looked, in usage_events, like Claude had been chosen first.
     meter("gemini", GEMINI_MODEL, false);
+    const name = err instanceof Error ? err.name : "Error";
+    console.warn(`[wine-ai] Gemini ${GEMINI_MODEL} ${mode}: ${name} after ${Date.now() - started}ms`);
     throw err;
   }
 
   if (!res.ok) {
     meter("gemini", GEMINI_MODEL, false);
+    console.warn(`[wine-ai] Gemini ${GEMINI_MODEL} ${mode}: HTTP ${res.status} after ${Date.now() - started}ms`);
     const errText = await res.text().catch(() => "");
     throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
   }
 
   const data = await res.json();
   meter("gemini", GEMINI_MODEL, true, data);
+  const u = data.usageMetadata ?? {};
+  console.log(
+    `[wine-ai] Gemini ${GEMINI_MODEL} ${mode}: ${Date.now() - started}ms,` +
+    ` finish=${data.candidates?.[0]?.finishReason ?? "none"},` +
+    ` searches=${data.candidates?.[0]?.groundingMetadata?.webSearchQueries?.length ?? 0},` +
+    ` in=${u.promptTokenCount ?? "?"} out=${u.candidatesTokenCount ?? "?"} thinking=${u.thoughtsTokenCount ?? 0}/${maxTokens}`,
+  );
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const text: string = parts.map((p: { text?: string }) => p.text ?? "").join("");
   const groundingChunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? undefined;
@@ -287,7 +312,7 @@ async function handleValuation(prompt: string, corsHeaders: Record<string, strin
 
   // 1. Try Gemini (with Google Search grounding)
   try {
-    const { text, groundingChunks } = await callGemini(prompt, 4096, meter);
+    const { text, groundingChunks } = await callGemini(prompt, GEMINI_VALUATION_TOKENS, meter);
     if (text.trim()) {
       console.log("[wine-ai] Valuation via Gemini");
       return jsonResponse({ text, _geminiGrounding: groundingChunks ?? null }, 200, corsHeaders);
@@ -465,7 +490,7 @@ function padResults(results: ValuationResult[], chunk: BottleInfo[], chunkIdx: n
 
 async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter): Promise<ValuationResult[]> {
   const prompt = buildBatchPrompt(chunk);
-  const maxTokens = 4096; // 3 bottles × ~500 tokens each — well within limit
+  const maxTokens = GEMINI_VALUATION_TOKENS; // thinking + 3 bottles × ~500 tokens
 
   // 1. Try Gemini
   try {
