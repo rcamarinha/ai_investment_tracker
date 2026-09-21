@@ -51,6 +51,18 @@ const CLAUDE_MODEL = "claude-opus-4-6";
 // timed out at exactly 20s; the timing log shows what it really needs.
 const GEMINI_TIMEOUT_MS = 45_000;
 const CLAUDE_TIMEOUT_MS = 60_000;
+// All of Gemini's attempts on one valuation share this budget, so Gemini (50s)
+// plus the Claude fallback (60s) always fits the page's 115s wait. A retry for
+// an unsearched answer runs only if at least GEMINI_MIN_RETRY_MS is left: a
+// searched answer takes 20-40s, so less than that would only time out.
+const GEMINI_BUDGET_MS = 50_000;
+const GEMINI_MIN_RETRY_MS = 20_000;
+// Thinking, not searching, is where a valuation's time goes: a measured call
+// thought for 4986 tokens to write a 243-token answer, taking 38s. "low" asks
+// for less. Google's docs do not say which levels 3.5 Flash accepts, so a
+// request it rejects is repeated once without the setting, and the setting is
+// then dropped for the life of this instance (see thinkingLevelRefused).
+const VALUATION_THINKING_LEVEL = "low";
 // Gemini's thinking counts against its output limit: one measured single-bottle
 // valuation spent 2896 of 4096 on thinking and 192 on the answer, so a batch of
 // three was one long think away from being cut off — which fails to parse and
@@ -98,19 +110,36 @@ interface GeminiResult {
   searches: number;
 }
 
+interface GeminiOpts {
+  systemInstruction?: string;
+  /** This attempt's time limit; defaults to GEMINI_TIMEOUT_MS. */
+  timeoutMs?: number;
+  /** generationConfig.thinkingConfig.thinkingLevel, e.g. "low". */
+  thinkingLevel?: string;
+}
+
+// Set once Gemini rejects the thinking level, so later requests on this
+// instance stop paying for a refused call. Not per-user state: it records what
+// the model accepts, which is the same for everyone.
+let thinkingLevelRefused = false;
+
 async function _callGeminiOnce(
   prompt: string,
   maxTokens: number,
   useGrounding: boolean,
   meter: Meter,
-  systemInstruction?: string,
+  opts: GeminiOpts = {},
 ): Promise<GeminiResult & { usedGrounding: boolean }> {
+  const timeoutMs = opts.timeoutMs ?? GEMINI_TIMEOUT_MS;
+  const thinkingLevel = thinkingLevelRefused ? undefined : opts.thinkingLevel;
+  const generationConfig: Record<string, unknown> = { maxOutputTokens: maxTokens };
+  if (thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel };
   const body: Record<string, unknown> = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: maxTokens },
+    generationConfig,
   };
-  if (systemInstruction) {
-    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  if (opts.systemInstruction) {
+    body.systemInstruction = { parts: [{ text: opts.systemInstruction }] };
   }
   if (useGrounding) {
     body.tools = [{ google_search: {} }];
@@ -123,7 +152,7 @@ async function _callGeminiOnce(
   // function logs as a number rather than a guess: how long, grounded or not,
   // how it finished, and how much of the output budget went on thinking.
   const started = Date.now();
-  const mode = useGrounding ? "grounded" : "ungrounded";
+  const mode = (useGrounding ? "grounded" : "ungrounded") + (thinkingLevel ? ` thinking=${thinkingLevel}` : "");
   let res: Response;
   try {
     res = await fetch(GEMINI_URL, {
@@ -132,7 +161,7 @@ async function _callGeminiOnce(
       // messages, and those are logged, so a ?key= URL leaks the key into logs.
       headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY ?? "" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     // A timeout used to leave no usage row at all, so every fallback to Claude
@@ -147,6 +176,14 @@ async function _callGeminiOnce(
     meter("gemini", GEMINI_MODEL, false);
     console.warn(`[wine-ai] Gemini ${GEMINI_MODEL} ${mode}: HTTP ${res.status} after ${Date.now() - started}ms`);
     const errText = await res.text().catch(() => "");
+    // The thinking level is a guess about what 3.5 Flash accepts. If Google
+    // rejects it, repeat once without it rather than hand the bottle to Claude.
+    const left = timeoutMs - (Date.now() - started);
+    if (thinkingLevel && res.status === 400 && /thinking/i.test(errText) && left > 5_000) {
+      thinkingLevelRefused = true;
+      console.warn(`[wine-ai] Gemini refused thinkingLevel=${thinkingLevel}; repeating without it:`, errText.slice(0, 200));
+      return _callGeminiOnce(prompt, maxTokens, useGrounding, meter, { ...opts, thinkingLevel: undefined, timeoutMs: left });
+    }
     throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
   }
 
@@ -175,10 +212,19 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
  * falls back to Claude, which searches.
  */
 async function callGeminiSearched(prompt: string, maxTokens: number, meter: Meter): Promise<GeminiResult> {
-  const first = await callGemini(prompt, maxTokens, meter, false, VALUATION_SYSTEM_INSTRUCTION);
+  const deadline = Date.now() + GEMINI_BUDGET_MS;
+  const opts = { systemInstruction: VALUATION_SYSTEM_INSTRUCTION, thinkingLevel: VALUATION_THINKING_LEVEL };
+
+  const first = await callGemini(prompt, maxTokens, meter, false,
+    { ...opts, timeoutMs: Math.min(GEMINI_TIMEOUT_MS, GEMINI_BUDGET_MS) });
   if (first.searches > 0) return first;
-  console.warn("[wine-ai] Gemini answered without searching — asking again with a reminder");
-  const second = await callGemini(SEARCH_REMINDER + prompt, maxTokens, meter, false, VALUATION_SYSTEM_INSTRUCTION);
+
+  const left = deadline - Date.now();
+  if (left < GEMINI_MIN_RETRY_MS) {
+    throw new Error(`Gemini answered without searching, and ${Math.round(left / 1000)}s is too little to ask again`);
+  }
+  console.warn(`[wine-ai] Gemini answered without searching — asking again with a reminder (${Math.round(left / 1000)}s left)`);
+  const second = await callGemini(SEARCH_REMINDER + prompt, maxTokens, meter, false, { ...opts, timeoutMs: left });
   if (second.searches > 0) return second;
   throw new Error("Gemini answered twice without running a search");
 }
@@ -195,14 +241,14 @@ async function callGemini(
   maxTokens: number,
   meter: Meter,
   allowUngrounded = true,
-  systemInstruction?: string,
+  opts: GeminiOpts = {},
 ): Promise<GeminiResult> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
 
   // Attempt 1: with Google Search grounding (default)
   try {
     console.log("[wine-ai] Gemini grounded request (with Google Search)");
-    const result = await _callGeminiOnce(prompt, maxTokens, true, meter, systemInstruction);
+    const result = await _callGeminiOnce(prompt, maxTokens, true, meter, opts);
     console.log("[wine-ai] Gemini: grounded response OK");
     return result;
   } catch (err) {
