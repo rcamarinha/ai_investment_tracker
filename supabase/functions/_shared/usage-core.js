@@ -14,6 +14,7 @@ export const USAGE_FUNCTIONS = [
     'categorize-transactions',
     'extract-statement',
     'extract-trades',
+    'market-data',
     'quote-proxy',
     'resolve-tickers',
     'wine-ai',

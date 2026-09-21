@@ -132,7 +132,7 @@ and the rest.
 - `positions` - Portfolio positions grid container
 - `importDialog` / `importText` - Import dialog and textarea
 - `apiKeyDialog` - API key configuration dialog
-- `finnhubKeyInput`, `fmpKeyInput`, `alphaVantageKeyInput`, `anthropicKeyInput` - Key inputs
+- `anthropicKeyInput` - the admin's own Anthropic key (browser-only); `keyedProvidersStatus` - which price keys the server holds
 - `supabaseUrlInput`, `supabaseAnonKeyInput` - Supabase config inputs
 - `refreshBtn` - Update prices button
 - `analyzeBtn` / `tradeIdeasBtn` - AI analysis buttons
@@ -152,9 +152,7 @@ const state = {
     marketPrices: {},        // {symbol: price}
     priceMetadata: {},       // {symbol: {timestamp, source, success, error?}}
     pricesLoading: false,    // Lock for price fetching
-    alphaVantageKey: '',     // API keys (stored in localStorage)
-    finnhubKey: '',
-    fmpKey: '',
+    keyedProviders: { finnhub, fmp, alphavantage },  // booleans: which price keys the SERVER holds
     anthropicKey: '',
     portfolioHistory: [],    // Array of snapshot objects
     supabaseUrl: '',         // Supabase project URL
@@ -299,9 +297,34 @@ enforced**: nothing reads the table to refuse a request. Rules a new function or
 
 `admin_ai_usage_report()` returns tokens, never money. Cost is estimated on the admin page from
 `MODEL_PRICES` in `services/admin-report-core.js` — the one place a price lives — and a model with
-no entry is named on the page rather than counted as free. The browser's own keyed price calls
-(Finnhub/FMP/Alpha Vantage) never reach the server, so they cannot be counted until P3 part 2 moves
-them behind a function.
+no entry is named on the page rather than counted as free. Keyed price calls go through
+`market-data` and are recorded there, with `units` = symbols; `QUOTE_PROVIDERS` in
+admin-report-core.js prices them at nothing (free plans refuse, never bill) and counts their units
+as symbols, never as web searches.
+
+### Keyed price APIs (`market-data`, since migration 20260920)
+
+**The Finnhub, FMP and Alpha Vantage keys never reach a browser.** They used to sit in `app_config`
+under a policy every signed-in account could read, and the page cached them in localStorage. They
+now live only as secrets of the `market-data` edge function (`supabase secrets set FINNHUB_API_KEY=…
+FMP_API_KEY=… ALPHAVANTAGE_API_KEY=…`), which calls the provider for the browser.
+
+- **It is a pass-through on purpose.** `keyedFetch(provider, op, params)` (services/pricing.js)
+  returns a real `Response` carrying the provider's own status and body, so every call site reads it
+  exactly as it read a direct fetch — all the rules about FMP's HTTP-200 premium notice, Alpha
+  Vantage's `Note`, Finnhub's `c > 0` stay in pricing-core.js, tested. Do not move them server-side.
+- **The endpoint list is fixed** (`ENDPOINTS` in `_shared/market-data-core.js`): no free-form path,
+  validated symbols/ISINs/queries, own-property lookup only, `redirect: "error"` so a redirect cannot
+  carry the key elsewhere, and the key redacted from any reply. Never log or return an upstream URL
+  or a fetch error's message: FMP and Alpha Vantage only accept the key in the query string.
+- **`state.keyedProviders` holds booleans**, filled by `loadKeyedProviders()` (`op: 'status'`) inside
+  `loadFromDatabase`. Every former `if (state.fmpKey)` is `if (state.keyedProviders.fmp)`, so every
+  "no key" branch survives. If the function is missing, all three are false: the keyless path — proxy
+  plus AI resolver — which `price-refresh-order.test.js` pins.
+- **A new call must use an op the function allows.** `tests/price-keys.test.js` reads every
+  `keyedFetch('<provider>', '<op>')` in the browser code and fails on one `ENDPOINTS` lacks — a typo
+  would otherwise surface only as a tier that quietly never works. The same test fails if a provider
+  hostname or a `state.<key>` ever reappears in browser code.
 
 ## Data Modules
 
@@ -332,7 +355,7 @@ Sizes: `.btn` (default) or `.btn-sm` (compact).
 
 ## Data Persistence
 
-- **localStorage** — API keys, sector cache, portfolio history
+- **localStorage** — the admin's own Anthropic key, sector cache, portfolio history. Never a price key: the page deletes any old copy on load
 - **Supabase** — Positions, snapshots, assets, transactions, price history, shared config (RLS per-user)
 - **Claude cloud storage** — Portfolio state + snapshots (when running in claude.ai)
 
@@ -340,9 +363,9 @@ Sizes: `.btn` (default) or `.btn-sm` (compact).
 
 | API | Endpoint | Rate Limit |
 |-----|----------|------------|
-| Finnhub | `finnhub.io/api/v1/quote` | 60/min |
-| FMP | `financialmodelingprep.com/stable/quote-short` | 250/day |
-| Alpha Vantage | `alphavantage.co/query?function=GLOBAL_QUOTE` | 5/min, 25/day |
+| Finnhub | `finnhub.io/api/v1/quote` — via `market-data` only | 60/min, shared by every account |
+| FMP | `financialmodelingprep.com/stable/quote-short` — via `market-data` only | 250/day, shared |
+| Alpha Vantage | `alphavantage.co/query?function=GLOBAL_QUOTE` — via `market-data` only | 5/min, 25/day, shared |
 | Gemini | `generativelanguage.googleapis.com/v1beta/models` | Per-key limits |
 | Claude API | `api.anthropic.com/v1/messages` | Per-key limits |
 | Supabase | Project-specific URL | Per-plan limits |
@@ -421,7 +444,7 @@ Extensive `console.log` output with `=== SECTION MARKERS ===`. Open DevTools (F1
 - **ES modules require HTTP** — `file://` won't work; use a local server
 - **Circular imports** — Services cross-reference each other; this works because functions are called at runtime, not at module load time
 - **`window.*` globals** — static `onclick` attributes, such as the navbar's, call functions each page assigns to `window` in its init block. Anything rendered with a value goes through a delegated listener (`bindActions`) instead, never an inline handler — see the entry on interpolating into `onclick` below.
-- **API keys are never committed** — They live only in the user's browser localStorage
+- **API keys are never committed** — price and AI keys are edge-function secrets; only an admin's own Anthropic key lives in their browser
 - **Rate limiting** — Finnhub 1000ms, FMP 500ms, Alpha Vantage 12000ms between calls
 - **FMP endpoint** — Uses `/stable/quote-short` (not `/api/v3/quote`) due to CORS/auth issues
 - **`window.storage`** — Claude-specific API, not standard Web Storage

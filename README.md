@@ -276,6 +276,12 @@ Tests import each pure module directly — the `services/*-core.js` family, the 
 
 ## Changelog
 
+### Unreleased — price keys off the browser
+No version bump: only `services/` and `portfolio.html` changed.
+- **The shared Finnhub, FMP and Alpha Vantage keys no longer reach any browser.** Every signed-in account used to be able to read them, and the portfolio page kept a copy in local storage. They now live only on the server, in the new `market-data` function, which calls the providers for everyone; old browser copies are deleted on the next visit. Prices, fallbacks and currency handling are unchanged.
+- **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
+- Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
+
 ### v3.55.0
 Invitations, the admin dashboard, and a record of what the AI costs.
 - **Admins invite people by email** from a new admin page, linked from the hub and the portfolio page for admins only. It lists who was invited and who joined, and revokes an invitation nobody has accepted. Needs the `admin-invite` edge function.

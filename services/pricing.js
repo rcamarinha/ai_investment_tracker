@@ -53,14 +53,13 @@ function fmpQuotaExhausted() { return fmpCallsUsed() >= FMP_DAILY_LIMIT - FMP_QU
  * caller falls back to per-symbol.
  */
 export async function batchFetchFMP(symbols) {
-    if (!state.fmpKey || state.fmpBatchUnsupported || fmpQuotaExhausted() || !symbols || !symbols.length) return {};
+    if (!state.keyedProviders.fmp || state.fmpBatchUnsupported || fmpQuotaExhausted() || !symbols || !symbols.length) return {};
     const result = {};
     const { normToRaw, baseToRaw, normSyms } = buildRawMaps(symbols);
     for (let i = 0; i < normSyms.length; i += 50) {
         const chunk = normSyms.slice(i, i + 50);
         try {
-            const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${encodeURIComponent(chunk.join(','))}&apikey=${state.fmpKey}`;
-            const resp = await fetch(url);
+            const resp = await keyedFetch('fmp', 'quote', { symbols: chunk });
             if (!resp.ok) {
                 console.warn(`FMP batch HTTP ${resp.status}`);
                 if (resp.status === 401 || resp.status === 402 || resp.status === 403) state.fmpBatchUnsupported = true;
@@ -99,10 +98,9 @@ export function setMissingTickerResolver(fn) { _missingTickerResolver = fn; }
 export async function searchTickerByName(query) {
     const out = [];
     if (!query || !query.trim()) return out;
-    if (state.fmpKey) {
+    if (state.keyedProviders.fmp) {
         try {
-            const url = `https://financialmodelingprep.com/stable/search-symbol?query=${encodeURIComponent(query)}&apikey=${state.fmpKey}`;
-            const r = await fetch(url);
+            const r = await keyedFetch('fmp', 'search-symbol', { query });
             if (r.ok) {
                 const data = await r.json();
                 if (Array.isArray(data)) data.slice(0, 8).forEach(x => {
@@ -111,10 +109,9 @@ export async function searchTickerByName(query) {
             }
         } catch (err) { console.warn('FMP name search failed:', err.message); }
     }
-    if (!out.length && state.finnhubKey) {
+    if (!out.length && state.keyedProviders.finnhub) {
         try {
-            const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${state.finnhubKey}`;
-            const r = await fetch(url);
+            const r = await keyedFetch('finnhub', 'search', { query });
             if (r.ok) {
                 const data = await r.json();
                 (data.result || []).slice(0, 8).forEach(x => {
@@ -212,6 +209,96 @@ const PROXY_CONCURRENCY = 2;
  * nothing" from "could not try". A failed request is not fatal: its symbols
  * fall through to the keyed tiers, exactly as they did before this phase.
  */
+// ── Keyed price APIs, through the market-data function ──────────────────────
+//
+// Finnhub, FMP and Alpha Vantage used to be called straight from here with keys
+// read from app_config, which every signed-in account could read. The keys now
+// live only in the market-data edge function; the browser asks it to make the
+// call. It hands back the provider's own status and body, so every call site
+// below reads the answer exactly as it read a direct fetch — all the rules
+// about FMP's premium notices and Alpha Vantage's notes stay here, tested.
+
+async function callMarketData(payload) {
+    if (!state.supabaseUrl || !state.supabaseClient) throw new Error('market-data: not signed in');
+    const { data: { session } } = await state.supabaseClient.auth.getSession();
+    if (!session?.access_token) throw new Error('market-data: not signed in');
+    return fetch(`${state.supabaseUrl}/functions/v1/market-data`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'apikey': state.supabaseAnonKey,
+            'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+    });
+}
+
+let _keyedFailureReported = false;
+
+/**
+ * One keyed call. Returns a real Response with the PROVIDER'S status and body.
+ * Throws when the function itself fails — not deployed, signed out, provider
+ * unreachable — and each call site's catch already turns that into "request
+ * failed" and falls through to the next tier. Reported once per page load.
+ */
+export async function keyedFetch(provider, op, params = {}) {
+    const res = await callMarketData({ provider, op, ...params });
+    if (!res.ok) {
+        const err = new Error(`market-data HTTP ${res.status}`);
+        if (!_keyedFailureReported) {
+            _keyedFailureReported = true;
+            reportHandled(err, { action: 'market-data' });
+        }
+        throw err;
+    }
+    const envelope = await res.json();
+    const status = Number(envelope?.status);
+    const safe = status >= 200 && status <= 599 ? status : 502;
+    const bodiless = safe === 204 || safe === 205 || safe === 304;
+    return new Response(bodiless ? null : String(envelope?.body ?? ''), { status: safe });
+}
+
+/**
+ * Ask the server which keyed providers it can use. Replaces reading the keys
+ * out of app_config. On any failure — the function not deployed yet included —
+ * all three are false, which is the keyless path: the quote proxy and the AI
+ * resolver still price, and nothing breaks.
+ */
+let _keyedLoad = null;   // the in-flight or settled answer, shared by every caller
+
+export function loadKeyedProviders() {
+    _keyedLoad = fetchKeyedProviders();
+    return _keyedLoad;
+}
+
+/**
+ * Resolves once it is known which keyed providers exist. A refresh awaits this
+ * first: the page auto-refreshes a second after load, and the answer comes from
+ * a network call started inside loadFromDatabase. Without the wait, the first
+ * refresh of every visit skipped every keyed tier — the keys used to be read
+ * synchronously from localStorage, so this race is new with the move.
+ */
+export function keyedProvidersKnown() {
+    if (_keyedLoad) return _keyedLoad;
+    return state.currentUser ? loadKeyedProviders() : Promise.resolve(state.keyedProviders);
+}
+
+async function fetchKeyedProviders() {
+    state.keyedProviders = { finnhub: false, fmp: false, alphavantage: false };
+    if (!state.currentUser) return state.keyedProviders;
+    try {
+        const res = await callMarketData({ op: 'status' });
+        if (!res.ok) throw new Error(`market-data status HTTP ${res.status}`);
+        const s = await res.json();
+        state.keyedProviders = { finnhub: s?.finnhub === true, fmp: s?.fmp === true, alphavantage: s?.alphavantage === true };
+        console.log('\u2713 Keyed price APIs on the server:', state.keyedProviders);
+    } catch (err) {
+        console.warn('Keyed price APIs unavailable — pricing through the keyless proxy only:', err.message);
+        reportHandled(err, { action: 'market-data-status' });
+    }
+    return state.keyedProviders;
+}
+
 async function batchFetchViaProxy(querySymbols) {
     if (!state.supabaseUrl || !state.supabaseClient || !querySymbols.length) return null;
     const { data: { session } } = await state.supabaseClient.auth.getSession();
@@ -386,10 +473,9 @@ export async function fetchStockPrice(symbol) {
     }
 
     // TIER 1: Finnhub
-    if (state.finnhubKey) {
+    if (state.keyedProviders.finnhub) {
         try {
-            const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${state.finnhubKey}`;
-            const response = await fetch(url);
+            const response = await keyedFetch('finnhub', 'quote', { symbol });
             if (response.ok) {
                 const data = await response.json();
                 if (data.c && data.c > 0) {
@@ -411,12 +497,11 @@ export async function fetchStockPrice(symbol) {
     // FMP / Alpha Vantage use FMP-style suffixes — remap Finnhub-style ones (.FRK→.DE)
 
     // TIER 2: FMP (skipped when the daily quota is near the cap)
-    if (state.fmpKey && !fmpQuotaExhausted()) {
+    if (state.keyedProviders.fmp && !fmpQuotaExhausted()) {
         try {
-            const url = `https://financialmodelingprep.com/stable/quote-short?symbol=${pricingSymbol}&apikey=${state.fmpKey}`;
             console.log(`Trying FMP for ${symbol}...`);
             addFmpCalls(1);
-            const response = await fetch(url);
+            const response = await keyedFetch('fmp', 'quote', { symbols: [pricingSymbol] });
 
             if (response.ok) {
                 // Text-first: free plans return a plain-text "Premium…" notice with
@@ -452,15 +537,14 @@ export async function fetchStockPrice(symbol) {
             reasons.push('FMP: request failed');
         }
     } else {
-        reasons.push(state.fmpKey ? 'FMP: daily quota reached' : 'FMP: no key');
+        reasons.push(state.keyedProviders.fmp ? 'FMP: daily quota reached' : 'FMP: no key');
     }
 
     // TIER 3: Alpha Vantage
-    if (state.alphaVantageKey) {
+    if (state.keyedProviders.alphavantage) {
         try {
-            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${pricingSymbol}&apikey=${state.alphaVantageKey}`;
             console.log(`Trying Alpha Vantage for ${symbol}...`);
-            const response = await fetch(url);
+            const response = await keyedFetch('alphavantage', 'quote', { symbol: pricingSymbol });
 
             if (response.ok) {
                 const data = await response.json();
@@ -503,7 +587,7 @@ export async function fetchStockPrice(symbol) {
     }
 
     // All tiers failed — return the per-tier story, not a generic shrug.
-    const hasKeys = !!(state.finnhubKey || state.fmpKey || state.alphaVantageKey);
+    const hasKeys = !!(state.keyedProviders.finnhub || state.keyedProviders.fmp || state.keyedProviders.alphavantage);
     return {
         price: null,
         source: hasKeys ? 'All APIs failed' : 'No API keys',
@@ -519,10 +603,9 @@ export async function fetchAssetProfile(symbol) {
     console.log(`Fetching profile for ${symbol}...`);
 
     // Tier 1: Finnhub
-    if (state.finnhubKey) {
+    if (state.keyedProviders.finnhub) {
         try {
-            const url = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${state.finnhubKey}`;
-            const response = await fetch(url);
+            const response = await keyedFetch('finnhub', 'profile', { symbol });
             if (response.ok) {
                 const data = await response.json();
                 if (data && data.finnhubIndustry) {
@@ -542,10 +625,9 @@ export async function fetchAssetProfile(symbol) {
     }
 
     // Tier 2: FMP
-    if (state.fmpKey) {
+    if (state.keyedProviders.fmp) {
         try {
-            const url = `https://financialmodelingprep.com/stable/profile?symbol=${encodeURIComponent(symbol)}&apikey=${state.fmpKey}`;
-            const response = await fetch(url);
+            const response = await keyedFetch('fmp', 'profile', { symbol });
             if (response.ok) {
                 const data = await response.json();
                 if (data && Array.isArray(data) && data.length > 0 && data[0].sector) {
@@ -565,10 +647,9 @@ export async function fetchAssetProfile(symbol) {
     }
 
     // Tier 3: Alpha Vantage
-    if (state.alphaVantageKey) {
+    if (state.keyedProviders.alphavantage) {
         try {
-            const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${state.alphaVantageKey}`;
-            const response = await fetch(url);
+            const response = await keyedFetch('alphavantage', 'overview', { symbol });
             if (response.ok) {
                 const data = await response.json();
                 if (data && data.Sector && data.Sector !== 'None') {
@@ -606,12 +687,15 @@ export async function fetchMarketPrices(opts = {}) {
         return;
     }
 
+    // Know which keyed providers exist before planning the tiers. Never throws.
+    await keyedProvidersKnown();
+
     // Refuse only when nothing can answer. The keyless quote proxy needs just a
     // signed-in session, so a user with no API keys is no longer turned away —
     // which matters because the keys are exactly what should stop reaching the
     // browser once other people have accounts.
     const canUseProxy = !!(state.supabaseUrl && state.supabaseClient && state.currentUser);
-    const hasKeys = !!(state.alphaVantageKey || state.finnhubKey || state.fmpKey);
+    const hasKeys = !!(state.keyedProviders.alphavantage || state.keyedProviders.finnhub || state.keyedProviders.fmp);
     if (!canUseProxy && !hasKeys) {
         alert(
             '🔑 Sign in to fetch live prices\n\n' +
@@ -642,16 +726,16 @@ export async function fetchMarketPrices(opts = {}) {
     let delayBetweenCalls = 1000;
     let apiInfo = '';
 
-    if (state.finnhubKey) {
+    if (state.keyedProviders.finnhub) {
         delayBetweenCalls = 1000;
         apiInfo = 'Using Finnhub (primary)';
-        if (state.fmpKey) apiInfo += ' + FMP (fallback #1)';
-        if (state.alphaVantageKey) apiInfo += ' + Alpha Vantage (fallback #2)';
-    } else if (state.fmpKey) {
+        if (state.keyedProviders.fmp) apiInfo += ' + FMP (fallback #1)';
+        if (state.keyedProviders.alphavantage) apiInfo += ' + Alpha Vantage (fallback #2)';
+    } else if (state.keyedProviders.fmp) {
         delayBetweenCalls = 500;
         apiInfo = 'Using FMP (primary - 250/day)';
-        if (state.alphaVantageKey) apiInfo += ' + Alpha Vantage (fallback)';
-    } else if (state.alphaVantageKey) {
+        if (state.keyedProviders.alphavantage) apiInfo += ' + Alpha Vantage (fallback)';
+    } else if (state.keyedProviders.alphavantage) {
         delayBetweenCalls = 12000;
         apiInfo = 'Using Alpha Vantage only (5 calls/min - slower)';
     }
@@ -765,7 +849,7 @@ export async function fetchMarketPrices(opts = {}) {
         }
 
         // Phase A: one FMP batch pass over everything.
-        if (state.fmpKey && toFetch.length) {
+        if (state.keyedProviders.fmp && toFetch.length) {
             refreshBtn.textContent = 'Batch...';
             const priced = await batchFetchFMP([...new Set(toFetch.map(queryOf))]);
             for (const sym of toFetch) {
@@ -782,7 +866,7 @@ export async function fetchMarketPrices(opts = {}) {
 
         // Phase B: per-symbol fallback (Finnhub/AV + alternatives) for misses, pooled.
         if (toFetch.length) {
-            const concurrency = state.finnhubKey ? 2 : (state.fmpKey ? 5 : 1);
+            const concurrency = state.keyedProviders.finnhub ? 2 : (state.keyedProviders.fmp ? 5 : 1);
             let done = 0;
             await pooled(toFetch, async (symbol) => {
                 try {
@@ -835,7 +919,7 @@ export async function fetchMarketPrices(opts = {}) {
                 // A grounded AI price arrives with no currency field at all
                 // (see resolve-tickers/index.ts), so it cannot be converted safely.
                 if (Number(s.price) > 0) recordSuccess(sym, Number(s.price), 'Web search (AI)', { currencyUnknown: true });
-            }, state.finnhubKey ? 3 : 2, 300);
+            }, state.keyedProviders.finnhub ? 3 : 2, 300);
             renderPortfolio();
         }
 
@@ -948,7 +1032,7 @@ export async function fetchMarketPrices(opts = {}) {
         msg += `\u2713 Priced: ${successCount} of ${symbols.length} holdings\n`;
         // Tell the user when the FMP tier was paused for the day, so unpriced
         // holdings aren't a mystery (the quota guard is otherwise console-only).
-        if (fmpQuotaExhausted() && state.fmpKey) {
+        if (fmpQuotaExhausted() && state.keyedProviders.fmp) {
             msg += `\n\u23f8 FMP daily limit reached (${fmpCallsUsed()}/${FMP_DAILY_LIMIT}) \u2014 used Finnhub/Alpha Vantage/AI for the rest. Resets tomorrow.\n`;
         }
         if (failCount > 0) {

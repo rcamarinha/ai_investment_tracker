@@ -107,7 +107,7 @@ describe('buildUsageRow', () => {
     it('knows every function that calls it', () => {
         expect(USAGE_FUNCTIONS).toEqual(expect.arrayContaining([
             'analyze-portfolio', 'categorize-transactions', 'extract-statement', 'extract-trades',
-            'quote-proxy', 'resolve-tickers', 'wine-ai',
+            'market-data', 'quote-proxy', 'resolve-tickers', 'wine-ai',
         ]));
     });
 });

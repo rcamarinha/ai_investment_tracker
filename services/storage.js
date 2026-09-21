@@ -6,7 +6,7 @@ import state from './state.js';
 import { buildAssetRecord, normalizeAssetType, showToast } from './utils.js';
 import { updateAuthBar, checkUserRole, cancelPasswordRecovery } from './auth.js';
 import { renderPortfolio, updateHistoryDisplay, saveTransactionsToStorage } from './portfolio.js';
-import { fetchAssetProfile, backfillFxRates } from './pricing.js';
+import { fetchAssetProfile, backfillFxRates, loadKeyedProviders } from './pricing.js';
 import { coerceTxDate } from './import-brokers.js';
 import { normalizeCurrencyCode, shouldOverwriteCurrency } from './money-core.js';
 import { reportHandled, reportDiagnostic } from './telemetry.js';
@@ -204,39 +204,9 @@ export async function deleteSnapshotFromDB(timestamp) {
     }
 }
 
-// ── App Config ──────────────────────────────────────────────────────────────
-
-export async function loadAppConfig() {
-    if (!state.supabaseClient || !state.currentUser) return;
-
-    try {
-        const { data, error } = await state.supabaseClient
-            .from('app_config')
-            .select('key, value');
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-            // The DB is the source of truth for shared pricing keys. Overwrite both
-            // state AND the localStorage copy so a stale local key can't shadow it
-            // on the next load (and offline still has the good value).
-            data.forEach(row => {
-                const k = { finnhubKey: 'finnhubKey', fmpKey: 'fmpKey', alphaVantageKey: 'alphaVantageKey' }[row.key];
-                if (k && row.value) {
-                    state[k] = row.value.trim();
-                    try { localStorage.setItem(k, state[k]); } catch { /* ignore quota */ }
-                }
-            });
-            console.log('\u2713 API keys loaded from DB:', {
-                finnhub: !!state.finnhubKey,
-                fmp: !!state.fmpKey,
-                alphaVantage: !!state.alphaVantageKey
-            });
-        }
-    } catch (err) {
-        console.warn('Failed to load app config from DB:', err);
-    }
-}
+// ── Keyed price APIs ────────────────────────────────────────────────────────
+// The shared price keys no longer come from app_config: they live only in the
+// market-data function. loadKeyedProviders (pricing.js) asks which ones exist.
 
 // ── Asset DB Operations ─────────────────────────────────────────────────────
 
@@ -755,10 +725,10 @@ export async function loadFromDatabase() {
         state.priceMetadata = {};
         state.transactions = {};
 
-        // Load shared API keys FIRST — these are critical for price fetching and
-        // must override any stale key that init read from localStorage. Kept ahead
-        // of the heavy queries below so an error in one of those can't skip it.
-        await loadAppConfig();
+        // Which keyed price APIs the server offers — FIRST, ahead of the heavy
+        // queries below, so an error in one of those cannot skip it. Never
+        // throws; on failure pricing runs keyless (proxy + AI resolver).
+        await loadKeyedProviders();
 
         // Load positions
         const { data: dbPositions, error: posError } = await state.supabaseClient
