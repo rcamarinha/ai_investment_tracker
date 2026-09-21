@@ -41,6 +41,14 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const CLAUDE_MODEL = "claude-opus-4-6";
 
+// Time budget for one request, inside the browser's 115s wait (wine/api.js)
+// and Supabase's 150s limit: Gemini first, then the Claude fallback.
+const GEMINI_TIMEOUT_MS = 20_000;
+const CLAUDE_TIMEOUT_MS = 85_000;
+// Web searches the Claude fallback may run: one bottle, or one chunk of three.
+const SEARCHES_SINGLE = 5;
+const SEARCHES_BATCH = 8;
+
 
 // ── CORS: restrict to known origins ──────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -90,14 +98,22 @@ async function _callGeminiOnce(prompt: string, maxTokens: number, useGrounding: 
   // 20s hard limit per Gemini call so Claude fallback can still run within the
   // 55s client timeout. Grounded searches occasionally stall; without this the
   // whole edge-function invocation hangs until the client aborts the request.
-  const res = await fetch(GEMINI_URL, {
-    method: "POST",
-    // Key in a header, not the URL: Deno puts the full URL in network error
-    // messages, and those are logged, so a ?key= URL leaks the key into logs.
-    headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY ?? "" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(GEMINI_URL, {
+      method: "POST",
+      // Key in a header, not the URL: Deno puts the full URL in network error
+      // messages, and those are logged, so a ?key= URL leaks the key into logs.
+      headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY ?? "" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // A timeout used to leave no usage row at all, so every fallback to Claude
+    // looked, in usage_events, like Claude had been chosen first.
+    meter("gemini", GEMINI_MODEL, false);
+    throw err;
+  }
 
   if (!res.ok) {
     meter("gemini", GEMINI_MODEL, false);
@@ -206,7 +222,13 @@ async function callGeminiVision(
 
 // ── Claude text helper ────────────────────────────────────────────────────────
 
-async function callClaude(prompt: string, maxTokens: number, useWebSearch: boolean, meter: Meter): Promise<{ text: string }> {
+async function callClaude(
+  prompt: string,
+  maxTokens: number,
+  useWebSearch: boolean,
+  meter: Meter,
+  maxSearches = SEARCHES_SINGLE,
+): Promise<{ text: string }> {
   if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY_Wine secret not set on the server.");
 
   const headers: Record<string, string> = {
@@ -223,14 +245,24 @@ async function callClaude(prompt: string, maxTokens: number, useWebSearch: boole
 
   if (useWebSearch) {
     headers["anthropic-beta"] = "web-search-2025-03-05";
-    reqBody.tools = [{ type: "web_search_20250305", name: "web_search" }];
+    // Capped: uncapped, a single valuation ran 7-16 searches and read up to
+    // 440K input tokens, which took it past the browser's limit — paid for,
+    // then discarded. The pricing rules ask for three sources; this leaves room.
+    reqBody.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }];
   }
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(reqBody),
-  });
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(reqBody),
+      signal: AbortSignal.timeout(CLAUDE_TIMEOUT_MS),
+    });
+  } catch (err) {
+    meter("anthropic", CLAUDE_MODEL, false);
+    throw err;
+  }
 
   if (!res.ok) {
     meter("anthropic", CLAUDE_MODEL, false);
@@ -450,7 +482,7 @@ async function valuateChunk(chunk: BottleInfo[], chunkIdx: number, meter: Meter)
 
   // 2. Fallback: Claude
   console.log(`[wine-ai] Chunk ${chunkIdx}: falling back to Claude`);
-  const { text } = await callClaude(prompt, maxTokens, true, meter);
+  const { text } = await callClaude(prompt, maxTokens, true, meter, SEARCHES_BATCH);
   const parsed = parseBatchText(text, chunk, chunkIdx, "Claude");
   if (parsed) {
     console.log(`[wine-ai] Chunk ${chunkIdx}: Claude fallback OK (${parsed.length} results)`);
