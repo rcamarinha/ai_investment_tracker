@@ -11,6 +11,9 @@ const state = {
     // and a persisted history would be a list of decisions nobody wants to make
     // later.
     lastImport: null,
+    // How many cross-account pairs the last import made possible. Offered, never
+    // applied: pairing rewrites rows, so it waits for the user's confirmation.
+    transferCandidates: 0,
 
     // ── data ────────────────────────────────────────────────────────────────
     accounts: [],           // spend_accounts rows (camelCase)

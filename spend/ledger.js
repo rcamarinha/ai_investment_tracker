@@ -5,15 +5,15 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.55.5';
+import state from './state.js?v=3.55.6';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour, firstGraphemes
-} from './utils.js?v=3.55.5';
+} from './utils.js?v=3.55.6';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule,
     incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
-} from './storage.js?v=3.55.5';
+} from './storage.js?v=3.55.6';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario
@@ -817,6 +817,7 @@ export function bindDelegation(root = document) {
             case 'confirm-layout': window.spendConfirmLayout?.(); break;
             case 'forget-layout': window.spendForgetLayout?.(d.id); break;
             case 'undo-import':   window.spendUndoLastImport?.(); break;
+            case 'find-transfers': window.spendFindTransfers?.(); break;
             case 'cancel-import': window.spendCancelImport?.(); break;
             default: break;
         }
@@ -1092,6 +1093,7 @@ export async function findTransfers() {
     try {
         await saveTransactions(touched);
         showToast(`${pairs.length} transfer${pairs.length === 1 ? '' : 's'} marked.`);
+        state.transferCandidates = 0;
         renderAll();
     } catch (err) {
         showToast('Could not mark transfers: ' + err.message, 'error');

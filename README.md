@@ -282,6 +282,9 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.55.6
+- **After an import, card payments are offered as transfers.** Once a card's purchases and the payment that settles them are both in the ledger, the payment is money moving between your own accounts — counted as spending, the same money counts twice. Pairing the two legs has always existed behind a *Find transfers* button, but nothing pointed to it, so card payments were being reclassified by hand one row at a time. The import now says how many movements look like transfers and offers to review them. It still asks before marking anything, because pairing rewrites rows.
+
 ### v3.55.5
 Statement import and categorisation run on the shared AI layer.
 - **A statement section that Gemini cannot read now reaches Claude's answer.** The page waited 55 seconds while the server could take 90 (Gemini, then Claude), so every Claude fallback was paid for and thrown away. The page now waits 115 seconds; Gemini has 45, Claude 60.

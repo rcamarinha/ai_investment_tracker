@@ -14,20 +14,21 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state, { clearViewFilters } from './state.js?v=3.55.5';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.55.5';
+import state, { clearViewFilters } from './state.js?v=3.55.6';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.55.6';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.55.5';
-import { renderAll } from './ledger.js?v=3.55.5';
+} from './storage.js?v=3.55.6';
+import { renderAll } from './ledger.js?v=3.55.6';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS, isRoutableCardRow
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.55.5';
+import { importPdfStatement } from './pdf.js?v=3.55.6';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
+import { detectInternalTransfers } from '../services/spend-core.js';
 
 const el = id => document.getElementById(id);
 
@@ -73,6 +74,14 @@ export function renderImportSection() {
                 CSV and TSV work too: ${known ? `${known} format${known === 1 ? '' : 's'} already learned, and those import without asking anything.` : 'the first file from a bank asks you to confirm its columns once, then never again.'}
             </span>
         </div>
+        ${state.transferCandidates ? `
+        <div class="review-banner" style="margin-top:12px"><span>↔</span><span>
+            ${state.transferCandidates} movement${state.transferCandidates === 1 ? '' : 's'} look${state.transferCandidates === 1 ? 's' : ''}
+            like money moving between your own accounts — typically a card payment whose purchases are already
+            here. Counted as spending, it would be counted twice.
+            <button class="btn btn-sm btn-ghost-spend" style="margin-left:6px;padding:1px 8px"
+                    data-act="find-transfers">Review and mark</button>
+        </span></div>` : ''}
         ${state.lastImport ? `
         <div class="review-banner" style="margin-top:12px"><span>↩</span><span>
             Last import added ${state.lastImport.rows} transaction${state.lastImport.rows === 1 ? '' : 's'}.
@@ -820,6 +829,16 @@ export async function commitImport() {
         // and can hide every new row, so a successful import reads as one that
         // did nothing.
         clearViewFilters(state);
+
+        // Once both legs are in — the card's purchases and the payment that
+        // settles them — the payment is a transfer between the user's own
+        // accounts, and leaving it as spending counts the same money twice.
+        // Pairing is deliberately not automatic (it rewrites rows), but it has
+        // to be OFFERED at the moment both legs arrive: a button nobody knows
+        // about is why these were being reclassified by hand, one row at a time.
+        const candidates = state.transactions.filter(t => !t.transferPairId && t.category !== 'transfer');
+        state.transferCandidates = detectInternalTransfers(candidates).pairs.length;
+
         renderAll();
         renderImportSection();
     } catch (err) {
