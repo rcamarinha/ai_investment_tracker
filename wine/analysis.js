@@ -2,10 +2,9 @@
  * Analysis service — AI-powered cellar analysis via Gemini (primary) / Claude (fallback).
  */
 
-import state from './state.js?v=3.55.3';
-import { callWineAI } from './api.js?v=3.55.3';
-import { computeTotals } from './cellar.js?v=3.55.3';
-import { showToast, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.55.3';
+import state from './state.js?v=3.55.4';
+import { callWineAI, bottleForAI } from './api.js?v=3.55.4';
+import { showToast, escapeHTML, repairTruncatedJSON } from './utils.js?v=3.55.4';
 import { t } from '../data/i18n.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -44,9 +43,9 @@ export async function analyzeCellar() {
         </div>`;
 
     try {
-        const prompt = buildAnalysisPrompt();
-
-        const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 8192 });
+        // The server builds the prompt and the totals from the bottles
+        // (_shared/wine-prompts.js), with the page's language.
+        const data = await callWineAI({ requestType: 'analysis', bottles: state.cellar.map(bottleForAI) });
 
         // Debug: surface Gemini fallback so it's visible in the UI until Gemini is stable.
         if (data._source === 'claude' && data._geminiError) {
@@ -158,76 +157,3 @@ function renderAnalysis(analysis) {
 
 // ── Prompt Builder ───────────────────────────────────────────────────────────
 
-function buildAnalysisPrompt() {
-    const totals = computeTotals();
-
-    // Compact format: one line per bottle, no bullet points, minimal whitespace
-    const cellarLines = state.cellar.map(b => {
-        const parts = [
-            `${b.qty}x ${b.name || '?'}`,
-            b.vintage  && `(${b.vintage})`,
-            b.winery   && b.winery,
-            b.region   && b.region,
-            b.varietal && b.varietal,
-            `€${(b.purchasePrice || 0).toFixed(0)}`,
-            b.estimatedValue && `est€${b.estimatedValue.toFixed(0)}`,
-            b.drinkWindow && `drk:${b.drinkWindow}`,
-        ].filter(Boolean).join('|');
-        return parts;
-    });
-
-    // If the cellar summary exceeds ~10K chars, truncate and note it
-    const MAX_CELLAR_CHARS = 10000;
-    let cellarSummary = cellarLines.join('\n');
-    let truncatedNote = '';
-    if (cellarSummary.length > MAX_CELLAR_CHARS) {
-        const included = [];
-        let len = 0;
-        for (const line of cellarLines) {
-            if (len + line.length + 1 > MAX_CELLAR_CHARS) break;
-            included.push(line);
-            len += line.length + 1;
-        }
-        cellarSummary = included.join('\n');
-        truncatedNote = `\n(Showing ${included.length} of ${cellarLines.length} bottles — largest positions listed)`;
-    }
-
-    return `You are a master sommelier and fine wine investment advisor. Analyze the following wine cellar and provide comprehensive insights.
-
-Cellar summary:
-- Total bottles: ${totals.totalBottles}
-- Total invested: €${totals.totalInvested.toFixed(2)}
-- Estimated total value: €${totals.totalEstimated.toFixed(2)}
-- Gain/Loss: €${(totals.totalEstimated - totals.totalInvested).toFixed(2)}
-
-Individual bottles:
-${cellarSummary}${truncatedNote}
-
-Today's date: ${new Date().toISOString().slice(0, 10)}
-
-Analyze this cellar and provide:
-1. An overview of the collection quality and investment potential
-2. Diversification assessment (regions, varietals, vintages)
-3. Top highlights / most valuable bottles
-4. Which bottles to drink now or soon (before they peak)
-5. Which bottles to hold for maximum appreciation
-6. Actionable recommendations for improving the collection
-
-Return ONLY a valid JSON object:
-{
-  "overview": "3-4 sentence overview of the cellar",
-  "diversification": "2-3 sentence diversification assessment",
-  "highlights": ["bottle highlight 1", "bottle highlight 2", "bottle highlight 3"],
-  "drinkNow": [
-    {"wine": "Wine name + vintage", "reason": "why drink now"},
-    {"wine": "Wine name + vintage", "reason": "why drink now"}
-  ],
-  "holdBottles": [
-    {"wine": "Wine name + vintage", "reason": "why hold and until when"},
-    {"wine": "Wine name + vintage", "reason": "why hold and until when"}
-  ],
-  "recommendations": ["recommendation 1", "recommendation 2", "recommendation 3"]
-}
-
-Return ONLY the JSON. No markdown, no preamble.${t('ai.lang_instruction')}`;
-}

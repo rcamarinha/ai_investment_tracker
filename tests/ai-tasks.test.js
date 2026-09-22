@@ -98,7 +98,7 @@ const functionSources = readdirSync(FUNCTIONS_DIR, { withFileTypes: true })
 const NOT_YET_ON_AI_TS = [
     'categorize-transactions', 'extract-statement', 'extract-trades', 'resolve-tickers', 'wine-ai',
 ];
-const STILL_ACCEPTS_A_PROMPT = ['wine-ai'];
+const STILL_ACCEPTS_A_PROMPT = [];
 
 const callsProviderDirectly = src => /api\.anthropic\.com|generativelanguage\.googleapis\.com/.test(src);
 const readsPromptFromBody = src =>

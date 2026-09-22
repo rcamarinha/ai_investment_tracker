@@ -320,6 +320,11 @@ bodies, reading replies), tested in `tests/ai-core.test.js`.
   own-key path in `services/analysis.js` imports too (from the browser, the same file), so the two
   paths cannot drift. Before this, analyze-portfolio ran any prompt it was sent, with no time limit,
   and returned Claude's raw reply: a free Claude for any account holder.
+  wine-ai's prompts (valuation, batch, cellar analysis, classify, label) are built from bottle data
+  in `_shared/wine-prompts.js`; there is no own-key path for wine, so only the server holds them.
+  Bottle text is the owner's free text with no length limit, so it is **tidied, never refused**
+  (cut, one line, fence-breaking `<<<`/`>>>` removed, odd numbers dropped); the first symbol check
+  in analysis-prompts refused a real portfolio outright, and a bottle must not fail that way.
 - **`tests/ai-tasks.test.js` holds the rules**: every model priced in `MODEL_PRICES`, every call
   timed, worst case (primary + fallback) inside the page's wait and 150s, extract tier unsearched.
   It also reads every function's source: only `_shared/ai.ts` may name a provider URL, and no

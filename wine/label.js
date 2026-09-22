@@ -10,7 +10,7 @@
  *   → Caller pre-fills the Add Bottle dialog
  */
 
-import { callWineAI } from './api.js?v=3.55.3';
+import { callWineAI } from './api.js?v=3.55.4';
 
 // ── JSON parsing helpers ────────────────────────────────────────────────────
 
@@ -61,30 +61,11 @@ function _parseWineJson(text) {
  * @returns {Promise<Object>}  - Parsed wine data object
  */
 export async function recognizeLabel(imageBase64, mediaType = 'image/jpeg') {
-    const prompt = `Analyze this wine label image carefully and extract all visible information.
-Return ONLY a valid JSON object with exactly these fields (use null for any field not visible or determinable):
-
-{
-  "name": "full wine name as it appears on the label",
-  "winery": "producer or winery name",
-  "vintage": 2020,
-  "region": "wine region (e.g. Bordeaux, Napa Valley, Tuscany, Rioja)",
-  "appellation": "specific appellation or sub-region if visible",
-  "varietal": "grape variety or blend description",
-  "type": "one of: Red Wine, White Wine, Rosé, Sparkling, Port, Dessert Wine, Fortified Wine, Cognac, Whiskey, Aguardente, Gin, or null if unclear",
-  "country": "country of origin",
-  "alcohol": "alcohol percentage as string e.g. 13.5%",
-  "bottleSize": "bottle format as one of: 0.375L, 0.75L, 1.5L, 3.0L, 4.5L, 6.0L, 9.0L, 12.0L, 15.0L — look for text like 75cl, 750ml, 1.5L, Magnum, Double Magnum, Jeroboam, Imperial, Methuselah on the label; return null if not visible",
-  "notes": "any other notable text from the label (awards, special designations, classification, producer description)"
-}
-
-Return ONLY the JSON object. No markdown fences, no explanation, no preamble.`;
+    // The label prompt lives on the server (_shared/wine-prompts.js); the page sends the image.
 
     const data = await callWineAI({
         requestType: 'label',
-        prompt,
         image: { base64: imageBase64, mediaType },
-        maxTokens: 2048,
     });
 
     const text = data.content?.find(c => c.type === 'text')?.text || '';

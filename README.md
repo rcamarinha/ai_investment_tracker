@@ -282,6 +282,12 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.55.4
+The AI features stop running prompts written by the browser.
+- **Portfolio analysis, trade ideas and the movers note** send data (which perspective, the holdings or the price moves); the server builds the prompt, checks every field, times the call and returns the answer's text only. Before, the server ran any prompt it was sent, with no time limit.
+- **Wine valuation, label reading, cellar analysis and reclassify** send bottles or an image; the server builds each prompt from checked fields. Bottle text is tidied, never refused.
+- **One way to call AI on the server** (`_shared/ai.ts` and a task table): every call timed and recorded, cut-off answers treated as failures. Needs `analyze-portfolio` and `wine-ai` redeployed.
+
 ### v3.55.3
 Wine valuations say when a price was not looked up, and the fallback costs less.
 - **Every valuation says how it was priced.** Gemini is asked to search but decides for itself, and often answers from memory. Such a price is kept, marked low confidence, and its note begins "No search: price from the model's own knowledge, as of YYYY-MM", using the date the model gives for it. Whether a search ran is read from the provider's own record, not the model's word.

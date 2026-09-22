@@ -6,7 +6,8 @@
  * Users must be logged in to use AI features.
  */
 
-import state from './state.js?v=3.55.3';
+import state from './state.js?v=3.55.4';
+import { getLang } from '../data/i18n.js';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -14,15 +15,16 @@ import state from './state.js?v=3.55.3';
  * Route an AI request through the Supabase edge function.
  *
  * @param {object} opts
- * @param {'label'|'valuation'|'batch-valuation'|'analysis'} opts.requestType
- * @param {string}  [opts.prompt]         - Text prompt (required except batch-valuation)
- * @param {{base64: string, mediaType: string}} [opts.image] - Vision image (label only)
- * @param {number}  [opts.maxTokens]      - Defaults to 1024
- * @param {boolean} [opts.enableWebSearch] - Enable Anthropic web search tool (label/analysis)
- * @param {Array}   [opts.bottles]        - Array of bottle objects (batch-valuation only)
- * @returns {Promise<object>}             - { text } for single, { results } for batch
+ * Data only: the server builds every prompt (supabase/functions/_shared/
+ * wine-prompts.js) and no longer accepts one from the page (plan P9).
+ *
+ * @param {'label'|'valuation'|'batch-valuation'|'analysis'|'classify'} opts.requestType
+ * @param {object} [opts.bottle]   - one bottle (valuation)
+ * @param {Array}  [opts.bottles]  - bottles (batch-valuation, analysis, classify)
+ * @param {{base64: string, mediaType: string}} [opts.image] - label only
+ * @returns {Promise<object>}      - { text } for valuation, { results } for batch, { content } otherwise
  */
-export async function callWineAI({ requestType, prompt, image, maxTokens = 1024, enableWebSearch = false, bottles = null }) {
+export async function callWineAI({ requestType, bottle = null, bottles = null, image = null }) {
     if (!state.supabaseClient) {
         throw new Error('Supabase client not initialized. Please refresh the page.');
     }
@@ -33,7 +35,17 @@ export async function callWineAI({ requestType, prompt, image, maxTokens = 1024,
         );
     }
 
-    return _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottles });
+    return _callEdgeFunction({ requestType, bottle, bottles, image });
+}
+
+/** The bottle fields the server uses; nothing else leaves the page. */
+export function bottleForAI(b) {
+    return {
+        id: b.id, name: b.name, winery: b.winery, type: b.type, vintage: b.vintage,
+        region: b.region, appellation: b.appellation, varietal: b.varietal, country: b.country,
+        bottleSize: b.bottleSize || '0.75L', purchasePrice: b.purchasePrice, purchaseDate: b.purchaseDate,
+        notes: b.notes, qty: b.qty, estimatedValue: b.estimatedValue, drinkWindow: b.drinkWindow,
+    };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -52,7 +64,7 @@ function _decodeJwtClaims(token) {
 
 // ── Supabase Edge Function call ───────────────────────────────────────────────
 
-async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enableWebSearch, bottles }) {
+async function _callEdgeFunction({ requestType, bottle, bottles, image }) {
     console.log('[WineAI] Using Supabase edge function: wine-ai');
 
     // Force a full token refresh so the access_token is freshly signed with the
@@ -107,7 +119,7 @@ async function _callEdgeFunction({ requestType, prompt, image, maxTokens, enable
 
     const bearerToken = session.access_token;
     const anonIsJwt   = state.supabaseAnonKey.startsWith('eyJ');
-    const payload     = JSON.stringify({ requestType, prompt, image, maxTokens, enableWebSearch, bottles });
+    const payload     = JSON.stringify({ requestType, bottle, bottles, image, lang: getLang() === 'pt' ? 'pt' : 'en' });
 
     // Build a fetch attempt with specific auth headers.
     // Use an AbortController to enforce a client-side timeout under Supabase's
