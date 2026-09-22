@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-    PERSPECTIVES, LANG_INSTRUCTION, MAX_HOLDINGS, MAX_MOVERS, buildAnalysisRequest, checkHoldings, checkMovers,
+    PERSPECTIVES, LANG_INSTRUCTION, MAX_HOLDINGS, MAX_MOVERS,
+    buildAnalysisRequest, checkHoldings, checkMovers,
+    marketsPrompt, tradeIdeasPrompt, todayLabel,
 } from '../supabase/functions/_shared/analysis-prompts.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
 import { TRANSLATIONS } from '../data/i18n.js';
@@ -106,5 +108,110 @@ describe('one source for each fact', () => {
     it('the language instructions match the page\'s translations', () => {
         expect(LANG_INSTRUCTION.pt).toBe(TRANSLATIONS.pt['ai.lang_instruction']);
         expect(LANG_INSTRUCTION.en).toBe(TRANSLATIONS.en['ai.lang_instruction']);
+    });
+});
+
+// ── todayLabel ────────────────────────────────────────────────────────────────
+//
+// Used as the literal date in tradeIdeas and movers prompts. A wrong label
+// would give the AI a false "today", silently mis-dating every trade idea.
+
+describe('todayLabel', () => {
+    it('formats a Monday correctly', () => {
+        expect(todayLabel(new Date('2026-09-21T12:00:00Z'))).toBe('Monday, September 21, 2026');
+    });
+
+    it('formats a different weekday and month', () => {
+        expect(todayLabel(new Date('2026-01-01T00:00:00Z'))).toBe('Thursday, January 1, 2026');
+    });
+});
+
+// ── input validation — numeric bounds ─────────────────────────────────────────
+//
+// checkMovers and checkHoldings are the only gates before user-controlled
+// numbers reach the prompt. A zero or negative price, or a wildly large
+// percentage, could distort the analysis or hint at injection. These enforce
+// the boundaries the code defines.
+
+describe('checkMovers — price and changePct bounds', () => {
+    const mover = (over = {}) => ({ symbol: 'NVDA', changePct: 5, prevPrice: 100, newPrice: 105, ...over });
+
+    it('refuses a zero prevPrice', () => {
+        expect(checkMovers([mover({ prevPrice: 0 })])).toMatch(/prices must be positive/);
+    });
+
+    it('refuses a negative prevPrice', () => {
+        expect(checkMovers([mover({ prevPrice: -1 })])).toMatch(/prices must be positive/);
+    });
+
+    it('refuses a zero newPrice', () => {
+        expect(checkMovers([mover({ newPrice: 0 })])).toMatch(/prices must be positive/);
+    });
+
+    it('refuses a negative newPrice', () => {
+        expect(checkMovers([mover({ newPrice: -50 })])).toMatch(/prices must be positive/);
+    });
+
+    it('refuses changePct above 10 000 (prevents enormous strings in the prompt)', () => {
+        expect(checkMovers([mover({ changePct: 10_001 })])).toMatch(/changePct/);
+    });
+
+    it('refuses Infinity as changePct', () => {
+        expect(checkMovers([mover({ changePct: Infinity })])).toMatch(/changePct/);
+    });
+
+    it('accepts a valid negative move (price fall)', () => {
+        expect(Array.isArray(checkMovers([mover({ changePct: -50, newPrice: 50 })]))).toBe(true);
+    });
+});
+
+describe('checkHoldings — avgPrice bounds', () => {
+    it('refuses a negative avgPrice', () => {
+        expect(checkHoldings([{ symbol: 'AAPL', shares: 10, avgPrice: -1, currentPrice: null, type: 'Stock' }]))
+            .toMatch(/must be numbers/);
+    });
+
+    it('refuses Infinity as avgPrice', () => {
+        expect(checkHoldings([{ symbol: 'AAPL', shares: 10, avgPrice: Infinity, currentPrice: null, type: 'Stock' }]))
+            .toMatch(/must be numbers/);
+    });
+
+    it('accepts avgPrice of 0 (a zero-cost grant)', () => {
+        expect(Array.isArray(checkHoldings([{ symbol: 'AAPL', shares: 10, avgPrice: 0, currentPrice: null, type: 'Stock' }]))).toBe(true);
+    });
+});
+
+// ── prompt content when currentPrice is absent ───────────────────────────────
+//
+// The page sends currentPrice: null when prices have not been fetched yet.
+// The prompts must not print "current: $null" or "(+NaN%)" into the text the
+// model receives — that would look like a data error, not a missing value.
+
+describe('marketsPrompt — absent currentPrice', () => {
+    const perspective = PERSPECTIVES.value;
+    const h = { symbol: 'AAPL', shares: 10, avgPrice: 150, currentPrice: null, type: 'Stock' };
+
+    it('omits the "(current: $...)" marker when currentPrice is null', () => {
+        const prompt = marketsPrompt({ perspective, holdings: [h], lang: 'en' });
+        expect(prompt).toContain('10 shares of AAPL at avg price $150');
+        expect(prompt).not.toContain('(current:');
+    });
+});
+
+describe('tradeIdeasPrompt — absent currentPrice', () => {
+    const perspective = PERSPECTIVES.garp;
+    const h = { symbol: 'MSFT', shares: 5, avgPrice: 300, currentPrice: null, type: 'Stock' };
+
+    it('omits gain/loss when currentPrice is null', () => {
+        const prompt = tradeIdeasPrompt({ perspective, holdings: [h], lang: 'en', today: 'Monday, September 21, 2026' });
+        expect(prompt).toContain('MSFT: 5 shares @ $300 avg');
+        expect(prompt).not.toContain('NaN');
+        expect(prompt).not.toContain('null');
+    });
+
+    it('shows gain/loss when currentPrice is present', () => {
+        const hWithPrice = { ...h, currentPrice: 330 };
+        const prompt = tradeIdeasPrompt({ perspective, holdings: [hWithPrice], lang: 'en', today: 'Monday, September 21, 2026' });
+        expect(prompt).toContain('current $330 (+10.0%)');
     });
 });
