@@ -103,7 +103,7 @@ export function readGemini(data) {
  */
 export class AiError extends Error {
   /**
-   * @param {"config"|"timeout"|"network"|"http"|"truncated"|"empty"} kind
+   * @param {"config"|"timeout"|"network"|"http"|"truncated"|"empty"|"unusable"} kind
    * @param {string} message
    * @param {number} [status]
    */
