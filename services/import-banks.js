@@ -985,9 +985,20 @@ export function planCardRouting(groups = [], accounts = [], importAccountId = nu
         if (linked.length === 1) return { group, action: 'use', accountId: linked[0].id };
         if (linked.length > 1) return { group, action: 'ambiguous', candidates: linked.map(a => a.id) };
 
+        // The card belongs to the bank of the account it is linked to, in that
+        // account's currency. spend_accounts.bank_name is NOT NULL: a proposal
+        // without it was refused by the database, and the whole import with it
+        // (first seen on a Bankinter statement, 22 September).
+        const home = accounts.find(a => a.id === importAccountId);
         return {
             group, action: 'create',
-            proposal: { type: 'card', label: `Card ${group}`.slice(0, 60), linkedAccountId: importAccountId }
+            proposal: {
+                type: 'card',
+                bankName: String(home?.bankName || '').trim() || 'Card',
+                label: `Card ${group}`.slice(0, 60),
+                currency: home?.currency || 'EUR',
+                linkedAccountId: importAccountId,
+            }
         };
     });
 }

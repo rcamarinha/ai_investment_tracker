@@ -961,6 +961,22 @@ describe('planCardRouting', () => {
         expect(p.proposal).toMatchObject({ type: 'card', linkedAccountId: 'chk' });
     });
 
+    it('the proposed account carries every field the database requires', () => {
+        // spend_accounts: bank_name and account_label are NOT NULL. A proposal
+        // without a bank name was refused, and the whole Bankinter import with it.
+        const home = { ...checking, bankName: 'Bankinter', currency: 'EUR' };
+        const [p] = planCardRouting(['042061'], [home], 'chk');
+        expect(p.proposal).toMatchObject({ bankName: 'Bankinter', currency: 'EUR', label: 'Card 042061' });
+        for (const field of ['bankName', 'label', 'type']) {
+            expect(String(p.proposal[field] ?? '').trim(), field).not.toBe('');
+        }
+    });
+
+    it('still names a bank when the home account has none on record', () => {
+        const [p] = planCardRouting(['042061'], [{ id: 'chk', type: 'checking', label: 'x' }], 'chk');
+        expect(p.proposal.bankName).toBe('Card');
+    });
+
     it('refuses rather than guessing between two linked cards', () => {
         const c2 = { id: 'c2', type: 'card', label: 'Second card', linkedAccountId: 'chk' };
         const [p] = planCardRouting(['bkcf'], [checking, { ...card, label: 'First card' }, c2], 'chk');
