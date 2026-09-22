@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getSector, SECTOR_MAPPING } from '../data/sectors.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
+// The prompt text moved to the module the server builds prompts from.
+import { PERSPECTIVES } from '../supabase/functions/_shared/analysis-prompts.js';
 import state from '../services/state.js';
 
 // ── getSector ────────────────────────────────────────────────────────────────
@@ -279,7 +281,7 @@ describe('INVESTMENT_PERSPECTIVES', () => {
   });
 
   it('each perspective has a substantive Claude prompt (>100 chars)', () => {
-    for (const [key, p] of Object.entries(INVESTMENT_PERSPECTIVES)) {
+    for (const [key, p] of Object.entries(PERSPECTIVES)) {
       expect(typeof p.prompt, `${key}.prompt`).toBe('string');
       expect(p.prompt.length, `${key}.prompt should have at least 100 chars`).toBeGreaterThan(100);
     }
@@ -322,17 +324,17 @@ describe('INVESTMENT_PERSPECTIVES', () => {
   });
 
   it('all prompts are distinct', () => {
-    const prompts = Object.values(INVESTMENT_PERSPECTIVES).map(p => p.prompt);
+    const prompts = Object.values(PERSPECTIVES).map(p => p.prompt);
     const unique = new Set(prompts);
     expect(unique.size).toBe(prompts.length);
   });
 
   it('all prompts mention the perspective philosophy', () => {
-    expect(INVESTMENT_PERSPECTIVES.value.prompt).toMatch(/intrinsic value|margin of safety/i);
-    expect(INVESTMENT_PERSPECTIVES.garp.prompt).toMatch(/PEG|growth/i);
-    expect(INVESTMENT_PERSPECTIVES.quant.prompt).toMatch(/factor|quantitative|systematic/i);
-    expect(INVESTMENT_PERSPECTIVES.macro.prompt).toMatch(/macro|economic|geopolit/i);
-    expect(INVESTMENT_PERSPECTIVES.passive.prompt).toMatch(/index|passive|market/i);
-    expect(INVESTMENT_PERSPECTIVES.technical.prompt).toMatch(/trend|momentum|price action/i);
+    expect(PERSPECTIVES.value.prompt).toMatch(/intrinsic value|margin of safety/i);
+    expect(PERSPECTIVES.garp.prompt).toMatch(/PEG|growth/i);
+    expect(PERSPECTIVES.quant.prompt).toMatch(/factor|quantitative|systematic/i);
+    expect(PERSPECTIVES.macro.prompt).toMatch(/macro|economic|geopolit/i);
+    expect(PERSPECTIVES.passive.prompt).toMatch(/index|passive|market/i);
+    expect(PERSPECTIVES.technical.prompt).toMatch(/trend|momentum|price action/i);
   });
 });

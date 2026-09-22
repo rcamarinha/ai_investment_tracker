@@ -1,10 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { recordUsage } from "../_shared/usage.ts";
+import { runTask, AiError } from "../_shared/ai.ts";
+import { buildAnalysisRequest } from "../_shared/analysis-prompts.js";
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-// Named once: the request and the usage record must agree, and the admin
-// page prices by this exact string (MODEL_PRICES in services/admin-report-core.js).
-const CLAUDE_MODEL = "claude-sonnet-4-6";
+// The model, output cap and time limit for each analysis live in
+// _shared/ai-tasks.js ("analysis.markets", "analysis.tradeIdeas",
+// "analysis.movers"); the prompts in _shared/analysis-prompts.js.
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
 
@@ -67,117 +67,33 @@ Deno.serve(async (req) => {
     userId = data.user.id;
   }
 
-  if (!ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "Anthropic API key not configured on server" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-  }
-
   try {
-    const body = await req.json();
-    const { portfolio, prompt: customPrompt, perspective, requestType } = body;
-
-    // When a fully-formed prompt is provided (e.g. movers analysis, trade ideas),
-    // use it directly instead of building one from the portfolio.
-    let promptContent: string;
-    if (customPrompt) {
-      promptContent = customPrompt;
-    } else {
-      if (!portfolio || !Array.isArray(portfolio) || portfolio.length === 0) {
-        return new Response(
-          JSON.stringify({ error: "Portfolio data or prompt is required" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      // Use the perspective-provided prompt if available, otherwise fall back to default
-      if (perspective?.prompt) {
-        const portfolioSummary = portfolio
-          .map(
-            (p: { shares: number; symbol: string; avgPrice: number; currentPrice?: number; type?: string }) =>
-              `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}${p.currentPrice ? ` (current: $${p.currentPrice})` : ''}`
-          )
-          .join(", ");
-
-        promptContent = `${perspective.prompt}\n\nThe portfolio contains: ${portfolioSummary}.\n\nPlease provide your analysis in JSON format with these fields:\n- marketNews: an OBJECTIVE, perspective-neutral overview of current market conditions and recent notable events affecting equities, bonds, or macro (3-5 sentences). This section should be purely factual — no opinion from any investment philosophy.\n- marketOverview: your OPINIONATED assessment of these market conditions strictly through the lens of ${perspective.name}. Explain what a ${perspective.name} practitioner would focus on and how they would interpret current conditions (3-4 sentences). Make it clear this is a ${perspective.name} perspective.\n- portfolioImpact: evaluate the specific holdings in this portfolio through the ${perspective.name} lens — which positions align well with this philosophy, which don't, and why (3-4 sentences). Be specific about individual holdings.\n\nRespond ONLY with valid JSON, no markdown, no preamble.`;
-      } else {
-        const portfolioSummary = portfolio
-          .map(
-            (p: { shares: number; symbol: string; avgPrice: number }) =>
-              `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}`
-          )
-          .join(", ");
-
-        promptContent = `You are a financial advisor AI. Analyze current market conditions and provide insights for a portfolio containing: ${portfolioSummary}.
-
-Please provide your analysis in JSON format with these fields:
-- marketOverview: brief overview of current market sentiment (2-3 sentences)
-- portfolioImpact: how current conditions affect this specific portfolio (2-3 sentences)
-- ideas: array of 3 actionable ideas, each with "title" and "description"
-
-Respond ONLY with valid JSON, no markdown, no preamble.`;
-      }
+    const body = await req.json().catch(() => null);
+    // The browser sends data only; the prompt is built here. A body that still
+    // carries a "prompt" (an old page) is refused with the rest.
+    const built = buildAnalysisRequest(body);
+    if ("error" in built) {
+      return new Response(JSON.stringify({ error: built.error }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Cap prompt length to prevent abuse
-    if (promptContent.length > 15_000) {
-      return new Response(
-        JSON.stringify({ error: "Prompt too long (max 15000 chars)" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // For movers analysis, plain text response; otherwise JSON
-    const maxTokens = Math.min(requestType === 'movers' ? 350 : 4000, 8192);
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: maxTokens,
-        messages: [{ role: "user", content: promptContent }],
-      }),
-    });
-
-    if (!response.ok) {
-      recordUsage({ userId, fn: "analyze-portfolio", provider: "anthropic", model: CLAUDE_MODEL, ok: false });
-      const errBody = await response.text().catch(() => "");
-      console.error(`[analyze-portfolio] Anthropic API error ${response.status}:`, errBody.slice(0, 300));
-      return new Response(
-        JSON.stringify({ error: "Analysis service temporarily unavailable. Please try again later." }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const data = await response.json();
-    recordUsage({ userId, fn: "analyze-portfolio", provider: "anthropic", model: CLAUDE_MODEL, response: data });
-
-    return new Response(JSON.stringify(data), {
+    const result = await runTask(built.task, { userId, prompt: built.prompt });
+    // The answer's text only — never Claude's raw reply.
+    return new Response(JSON.stringify({ text: result.text, model: result.model }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("[analyze-portfolio] Unexpected error:", (err as Error)?.message || err);
+    const timedOut = err instanceof AiError && err.kind === "timeout";
+    console.error("[analyze-portfolio] failed:", err instanceof AiError ? `${err.kind}: ${err.message}` : (err as Error)?.name);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      JSON.stringify({
+        error: timedOut
+          ? "The analysis took too long. Please try again."
+          : "Analysis service temporarily unavailable. Please try again later.",
+      }),
+      { status: timedOut ? 504 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });

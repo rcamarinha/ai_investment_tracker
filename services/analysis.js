@@ -5,7 +5,52 @@
 import state from './state.js';
 import { escapeHTML } from './utils.js';
 import { INVESTMENT_PERSPECTIVES } from '../data/perspectives.js';
-import { t } from '../data/i18n.js';
+import { t, getLang } from '../data/i18n.js';
+// The prompts are built by the same module the analyze-portfolio function uses,
+// so the admin's own-key path and the server path cannot drift. The server
+// builds its own from the data sent; it no longer accepts a prompt (plan P9).
+import {
+    PERSPECTIVES, marketsPrompt, tradeIdeasPrompt, moversPrompt, todayLabel,
+} from '../supabase/functions/_shared/analysis-prompts.js';
+
+/** The page's language, as the prompt module names it. */
+const aiLang = () => (getLang() === 'pt' ? 'pt' : 'en');
+
+/** Holdings as analyze-portfolio accepts them: data only, never prompt text. */
+function holdingsForAnalysis() {
+    return state.portfolio.map(p => ({
+        symbol: p.symbol,
+        shares: Number(p.shares),
+        avgPrice: Number(p.avgPrice),
+        currentPrice: Number.isFinite(state.marketPrices[p.symbol]) ? state.marketPrices[p.symbol] : null,
+        type: p.type || 'Stock',
+    }));
+}
+
+/**
+ * Call analyze-portfolio with data and return a reply shaped like Anthropic's,
+ * so the three callers read both paths the same way. The function returns the
+ * answer's text only.
+ */
+async function callAnalysisFunction(payload) {
+    const { data: { session } } = await state.supabaseClient.auth.getSession();
+    const response = await fetch(`${state.supabaseUrl}/functions/v1/analyze-portfolio`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'apikey': state.supabaseAnonKey,
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ ...payload, lang: aiLang() }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const err = new Error(body.error || `Analysis service error (${response.status})`);
+        err.status = response.status;
+        throw err;
+    }
+    return { content: [{ type: 'text', text: typeof body.text === 'string' ? body.text : '' }] };
+}
 
 // ── AI Analysis ─────────────────────────────────────────────────────────────
 
@@ -77,16 +122,11 @@ export async function analyzeMarkets() {
                     max_tokens: 2500,
                     messages: [{
                         role: 'user',
-                        content: `${perspective.prompt}
-
-The portfolio contains: ${state.portfolio.map(p => `${p.shares} shares of ${p.symbol} at avg price $${p.avgPrice}${state.marketPrices[p.symbol] ? ` (current: $${state.marketPrices[p.symbol]})` : ''}`).join(', ')}.
-
-Please provide your analysis in JSON format with these fields:
-- marketNews: an OBJECTIVE, perspective-neutral overview of current market conditions and recent notable events affecting equities, bonds, or macro (3-5 sentences). This section should be purely factual — no opinion from any investment philosophy.
-- marketOverview: your OPINIONATED assessment of these market conditions strictly through the lens of ${perspective.name}. Explain what a ${perspective.name} practitioner would focus on and how they would interpret current conditions (3-4 sentences). Make it clear this is a ${perspective.name} perspective.
-- portfolioImpact: evaluate the specific holdings in this portfolio through the ${perspective.name} lens — which positions align well with this philosophy, which don't, and why (3-4 sentences). Be specific about individual holdings.
-
-Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction')}`
+                        content: marketsPrompt({
+                            perspective: PERSPECTIVES[state.selectedPerspective] || PERSPECTIVES.value,
+                            holdings: holdingsForAnalysis(),
+                            lang: aiLang(),
+                        })
                     }]
                 })
             });
@@ -100,35 +140,11 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
             data = await response.json();
         } else {
             console.log('Using Supabase Edge Function...');
-            const { data: { session } } = await state.supabaseClient.auth.getSession();
-            const response = await fetch(`${state.supabaseUrl}/functions/v1/analyze-portfolio`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'apikey': state.supabaseAnonKey,
-                    // Only include Authorization when we have a real session JWT.
-                    // The sb_publishable_* anon key is not a JWT and must not be
-                    // used as a Bearer token (edge function has verify_jwt = false).
-                    ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
-                },
-                body: JSON.stringify({
-                    portfolio: state.portfolio.map(p => ({
-                        shares: p.shares,
-                        symbol: p.symbol,
-                        avgPrice: p.avgPrice,
-                        currentPrice: state.marketPrices[p.symbol] || null
-                    })),
-                    perspective: {
-                        key: state.selectedPerspective,
-                        name: perspective.name,
-                        prompt: perspective.prompt
-                    }
-                })
+            data = await callAnalysisFunction({
+                task: 'markets',
+                perspective: state.selectedPerspective in PERSPECTIVES ? state.selectedPerspective : 'value',
+                holdings: holdingsForAnalysis(),
             });
-
-            const responseBody = await response.text();
-            if (!response.ok) throw new Error(`Edge Function error (${response.status}): ${responseBody}`);
-            data = JSON.parse(responseBody);
         }
 
         if (!data || !Array.isArray(data.content)) {
@@ -227,57 +243,13 @@ export async function getTradeIdeas() {
 
     try {
         let data;
-        const portfolioSummary = state.portfolio.map(p => {
-            const currentPrice = state.marketPrices[p.symbol];
-            const invested = p.shares * p.avgPrice;
-            const marketValue = currentPrice ? p.shares * currentPrice : invested;
-            const gainLoss = marketValue - invested;
-            const gainLossPct = invested > 0 ? ((gainLoss / invested) * 100).toFixed(1) : 0;
-            return `${p.symbol}: ${p.shares} shares @ $${p.avgPrice} avg${currentPrice ? `, current $${currentPrice} (${gainLoss >= 0 ? '+' : ''}${gainLossPct}%)` : ''}, type: ${p.type || 'Stock'}`;
-        }).join('\n');
-
-        const tradeIdeasPrompt = `You are a ${perspective.name} investment advisor (inspired by ${perspective.figures}). Today is ${today}.
-
-${perspective.prompt}
-
-The user's current portfolio:
-${portfolioSummary}
-
-Based on current market conditions and this portfolio, provide 3-4 CONCRETE, ACTIONABLE trade ideas for TODAY that align with the ${perspective.name} philosophy.
-
-For each trade idea, provide:
-1. A clear action type (REBALANCE, BUY, SELL, TRIM, ADD, or WATCH)
-2. Specific ticker symbol(s) involved
-3. Current market context (recent price action, news, technical signals relevant to this perspective)
-4. The specific action to take (exact percentages, price levels, limit orders)
-5. Rationale explaining why this trade fits the ${perspective.name} philosophy
-
-Also provide a brief "Today's Execution Plan" with timing suggestions (Morning, Mid-Day, Afternoon, End of Day).
-
-Respond in JSON format:
-{
-  "date": "${today}",
-  "perspective": "${perspective.name}",
-  "marketSummary": "Brief 2-3 sentence overview of today's market conditions",
-  "trades": [
-    {
-      "action": "BUY|SELL|TRIM|ADD|REBALANCE|WATCH",
-      "title": "Short descriptive title",
-      "subtitle": "One-line trade summary with tickers",
-      "tickers": ["TICKER1", "TICKER2"],
-      "context": ["bullet point 1 about current conditions", "bullet point 2", "bullet point 3"],
-      "specificAction": "Detailed description of exactly what to do",
-      "rationale": "Why this fits the ${perspective.name} philosophy"
-    }
-  ],
-  "executionPlan": [
-    {"time": "Morning", "action": "What to do in the morning"},
-    {"time": "Mid-Day", "action": "What to do mid-day"},
-    {"time": "Afternoon", "action": "What to do in the afternoon"}
-  ]
-}
-
-Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction')}`;
+        const perspectiveKey = state.selectedPerspective in PERSPECTIVES ? state.selectedPerspective : 'value';
+        const tradeIdeasText = tradeIdeasPrompt({
+            perspective: PERSPECTIVES[perspectiveKey],
+            holdings: holdingsForAnalysis(),
+            lang: aiLang(),
+            today: todayLabel(),
+        });
 
         if (useDirectAPI) {
             const headers = { 'Content-Type': 'application/json' };
@@ -293,7 +265,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
                 body: JSON.stringify({
                     model: 'claude-sonnet-4-6',
                     max_tokens: 4000,
-                    messages: [{ role: 'user', content: tradeIdeasPrompt }]
+                    messages: [{ role: 'user', content: tradeIdeasText }]
                 })
             });
 
@@ -305,34 +277,11 @@ Respond ONLY with valid JSON, no markdown, no preamble.${t('ai.lang_instruction'
 
             data = await response.json();
         } else {
-            const { data: { session } } = await state.supabaseClient.auth.getSession();
-            const response = await fetch(`${state.supabaseUrl}/functions/v1/analyze-portfolio`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'apikey': state.supabaseAnonKey,
-                    ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
-                },
-                body: JSON.stringify({
-                    // Send the fully-built prompt at top level so the edge function
-                    // uses it verbatim (as `customPrompt`). Nesting it under
-                    // `perspective.prompt` made the edge function ignore it and
-                    // rebuild the wrong (markets-analysis) prompt instead.
-                    prompt: tradeIdeasPrompt,
-                    portfolio: state.portfolio.map(p => ({
-                        shares: p.shares, symbol: p.symbol, avgPrice: p.avgPrice,
-                        currentPrice: state.marketPrices[p.symbol] || null, type: p.type || 'Stock'
-                    })),
-                    perspective: { key: state.selectedPerspective, name: perspective.name },
-                    requestType: 'tradeIdeas'
-                })
+            data = await callAnalysisFunction({
+                task: 'tradeIdeas',
+                perspective: perspectiveKey,
+                holdings: holdingsForAnalysis(),
             });
-
-            if (!response.ok) {
-                const errBody = await response.text().catch(() => '');
-                throw new Error(`Edge function returned ${response.status}: ${errBody}`);
-            }
-            data = await response.json();
         }
 
         if (!data || !Array.isArray(data.content)) {
@@ -436,10 +385,6 @@ export async function analyzeMovers(movers) {
         return;
     }
 
-    const today = new Date().toLocaleDateString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-    });
-
     // Build a concise summary of significant movers (up to 6)
     const significant = movers
         .filter(m => Math.abs(m.changePct) >= 0.1)
@@ -451,16 +396,10 @@ export async function analyzeMovers(movers) {
         return;
     }
 
-    const moversList = significant.map(m => {
-        const dir = m.changePct >= 0 ? 'up' : 'down';
-        return `${m.symbol} ${dir} ${Math.abs(m.changePct).toFixed(2)}% (${m.prevPrice.toFixed(2)} → ${m.newPrice.toFixed(2)})`;
-    }).join('; ');
-
-    const prompt = `Today is ${today}. A portfolio tracker just updated prices and detected these notable moves compared to the previous price snapshot: ${moversList}.
-
-In 2-3 concise sentences, explain what general market factors, sector news, or company events could plausibly explain these kinds of price moves. Be specific about each ticker if you can, drawing on your knowledge of each company and its sector. Acknowledge if your training data may not cover the latest events, and suggest the investor checks financial news for the latest catalyst.
-
-Reply with plain text only — no markdown, no bullet points, no JSON.${t('ai.lang_instruction')}`;
+    const moverData = significant.map(m => ({
+        symbol: m.symbol, changePct: m.changePct, prevPrice: m.prevPrice, newPrice: m.newPrice,
+    }));
+    const prompt = moversPrompt({ movers: moverData, lang: aiLang(), today: todayLabel() });
 
     try {
         let data;
@@ -490,51 +429,21 @@ Reply with plain text only — no markdown, no bullet points, no JSON.${t('ai.la
             data = await response.json();
         } else {
             // Use Supabase Edge Function (server-side Anthropic key)
-            const { data: { session } } = await state.supabaseClient.auth.getSession();
-
-            // Include portfolio for compatibility with older deployed edge function
-            // versions that require it; newer versions prefer the pre-built prompt.
-            const portfolioWithPrices = (state.portfolio || []).map(p => ({
-                ...p,
-                currentPrice: state.marketPrices[p.symbol],
-            }));
-
-            let response;
             try {
-                response = await fetch(`${state.supabaseUrl}/functions/v1/analyze-portfolio`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'apikey': state.supabaseAnonKey,
-                        ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
-                    },
-                    body: JSON.stringify({
-                        prompt,
-                        portfolio: portfolioWithPrices,
-                        requestType: 'movers',
-                    })
-                });
+                data = await callAnalysisFunction({ task: 'movers', movers: moverData });
             } catch (err) {
-                console.error('[analyzeMovers] Edge function fetch threw:', err);
-                throw new Error(`Network error reaching analysis server: ${err.message}`);
-            }
-
-            if (!response.ok) {
-                const errBody = await response.text().catch(() => '');
-                if (response.status === 529) {
-                    // Anthropic overloaded — not an error, just transient
-                    console.warn('[analyzeMovers] Anthropic API overloaded (529), skipping AI insight.');
+                if (err.status === 502 || err.status === 504) {
+                    // Transient on the provider's side — not worth an error.
+                    console.warn('[analyzeMovers] analysis service busy, skipping AI insight.');
                     const el = document.getElementById('moversAiText');
                     if (el) {
-                        el.textContent = 'AI insight unavailable — Anthropic API is busy. It will retry on the next price update.';
+                        el.textContent = 'AI insight unavailable right now. It will retry on the next price update.';
                         el.classList.remove('movers-ai-loading');
                     }
                     return;
                 }
-                console.warn(`[analyzeMovers] Edge function HTTP ${response.status}:`, errBody.slice(0, 300));
-                throw new Error(`Edge function ${response.status}: ${errBody}`);
+                throw err;
             }
-            data = await response.json();
         }
 
         const text = (data && Array.isArray(data.content))
