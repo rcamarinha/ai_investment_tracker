@@ -282,6 +282,12 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.55.5
+Statement import and categorisation run on the shared AI layer.
+- **A statement section that Gemini cannot read now reaches Claude's answer.** The page waited 55 seconds while the server could take 90 (Gemini, then Claude), so every Claude fallback was paid for and thrown away. The page now waits 115 seconds; Gemini has 45, Claude 60.
+- **An unreadable or stopped answer goes to the fallback**, including a safety or refusal stop, not only a cut-off one.
+- **Nothing from a statement reaches a log or an error message**; the layout note, the one field with no limit, is capped. Same models as before (Gemini 2.5 Flash, Claude Haiku), temperature 0. Needs `extract-statement` and `categorize-transactions` redeployed.
+
 ### v3.55.4
 The AI features stop running prompts written by the browser.
 - **Portfolio analysis, trade ideas and the movers note** send data (which perspective, the holdings or the price moves); the server builds the prompt, checks every field, times the call and returns the answer's text only. Before, the server ran any prompt it was sent, with no time limit.

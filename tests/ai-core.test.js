@@ -75,7 +75,7 @@ describe('readGemini', () => {
             }],
             usageMetadata: { thoughtsTokenCount: 845 },
         });
-        expect(r).toEqual({ text: '{"v":1}', stop: 'STOP', truncated: false, searches: 2, thinking: 845 });
+        expect(r).toEqual({ text: '{"v":1}', stop: 'STOP', truncated: false, stopped: false, searches: 2, thinking: 845 });
     });
 
     it('counts no search when Gemini answered from memory', () => {
@@ -87,8 +87,26 @@ describe('readGemini', () => {
     });
 });
 
+describe('temperature and abnormal stops', () => {
+    it('sends temperature 0 to both providers when the task sets it', () => {
+        expect(anthropicBody({ ...claude, temperature: 0 }, 'x').temperature).toBe(0);
+        expect(geminiBody({ ...gemini, temperature: 0 }, 'x').generationConfig.temperature).toBe(0);
+        expect(anthropicBody(claude, 'x')).not.toHaveProperty('temperature');
+    });
+
+    it('treats a refusal, an unfinished search turn, or a Gemini safety stop as not an answer', () => {
+        expect(readAnthropic({ stop_reason: 'refusal', content: [{ type: 'text', text: 'x' }] }).stopped).toBe(true);
+        expect(readAnthropic({ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'x' }] }).stopped).toBe(true);
+        expect(readAnthropic({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'x' }] }).stopped).toBe(false);
+        for (const finishReason of ['SAFETY', 'RECITATION', 'BLOCKLIST', 'OTHER']) {
+            expect(readGemini({ candidates: [{ finishReason, content: { parts: [{ text: 'x' }] } }] }).stopped, finishReason).toBe(true);
+        }
+        expect(readGemini({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'x' }] } }] }).stopped).toBe(false);
+    });
+});
+
 describe('replyFailure', () => {
-    const ok = { text: 'fine', stop: 'end_turn', truncated: false, searches: 0, thinking: 0 };
+    const ok = { text: 'fine', stop: 'end_turn', truncated: false, stopped: false, searches: 0, thinking: 0 };
 
     it('passes a usable answer', () => {
         expect(replyFailure(ok)).toBeNull();
@@ -98,5 +116,6 @@ describe('replyFailure', () => {
         expect(replyFailure({ ...ok, truncated: true, stop: 'max_tokens' })).toMatchObject({ kind: 'truncated' });
         expect(replyFailure({ ...ok, text: '  \n' })).toMatchObject({ kind: 'empty' });
         expect(replyFailure({ ...ok, text: '' })).toBeInstanceOf(AiError);
+        expect(replyFailure({ ...ok, stopped: true, stop: 'SAFETY' })).toMatchObject({ kind: 'stopped' });
     });
 });

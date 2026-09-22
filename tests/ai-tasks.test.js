@@ -96,7 +96,7 @@ const functionSources = readdirSync(FUNCTIONS_DIR, { withFileTypes: true })
     .map(d => [d.name, readFileSync(join(FUNCTIONS_DIR, d.name, 'index.ts'), 'utf8')]);
 
 const NOT_YET_ON_AI_TS = [
-    'categorize-transactions', 'extract-statement', 'extract-trades', 'wine-ai',
+    'extract-trades', 'wine-ai',
 ];
 const STILL_ACCEPTS_A_PROMPT = [];
 

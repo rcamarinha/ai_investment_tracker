@@ -25,6 +25,7 @@ export function anthropicBody(call, prompt, system) {
     messages: [{ role: "user", content: prompt }],
   };
   if (system) body.system = system;
+  if (typeof call.temperature === "number") body.temperature = call.temperature;
   if (call.searches && call.searches > 0) {
     body.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: call.searches }];
   }
@@ -39,6 +40,7 @@ export function anthropicBody(call, prompt, system) {
 export function geminiBody(call, prompt, system) {
   /** @type {Record<string, unknown>} */
   const generationConfig = { maxOutputTokens: call.maxTokens };
+  if (typeof call.temperature === "number") generationConfig.temperature = call.temperature;
   // Thinking counts against maxOutputTokens and is most of a call's time, so it
   // is always set explicitly. "off" is the 2.5 budget form; "low" is the 3.x
   // level form (measured on wine-ai: 38s -> 10-16s).
@@ -60,6 +62,8 @@ export function geminiBody(call, prompt, system) {
  * @property {string} text
  * @property {string} stop        the provider's own stop / finish reason
  * @property {boolean} truncated  cut off by the output cap
+ * @property {boolean} stopped    ended for another abnormal reason (refusal,
+ *                                safety, recitation, an unfinished search turn)
  * @property {number} searches    web searches the provider reports it ran
  * @property {number} thinking    thinking tokens (Gemini), else 0
  */
@@ -74,6 +78,8 @@ export function readAnthropic(data) {
     text,
     stop,
     truncated: stop === "max_tokens",
+    // pause_turn: a server-tool turn (web search) that did not finish.
+    stopped: stop === "refusal" || stop === "pause_turn",
     searches: Number.isFinite(n) && n > 0 ? n : 0,
     thinking: 0,
   };
@@ -92,6 +98,9 @@ export function readGemini(data) {
     text,
     stop,
     truncated: stop === "MAX_TOKENS",
+    // Anything but a normal STOP (SAFETY, RECITATION, BLOCKLIST, OTHER…) is an
+    // answer Gemini did not finish; "none" (no candidate) fails as empty.
+    stopped: stop !== "STOP" && stop !== "MAX_TOKENS" && stop !== "none",
     searches: Array.isArray(queries) ? queries.length : 0,
     thinking: Number.isFinite(thinking) ? thinking : 0,
   };
@@ -103,7 +112,7 @@ export function readGemini(data) {
  */
 export class AiError extends Error {
   /**
-   * @param {"config"|"timeout"|"network"|"http"|"truncated"|"empty"|"unusable"} kind
+   * @param {"config"|"timeout"|"network"|"http"|"truncated"|"stopped"|"empty"|"unusable"} kind
    * @param {string} message
    * @param {number} [status]
    */
@@ -112,6 +121,8 @@ export class AiError extends Error {
     this.name = "AiError";
     this.kind = kind;
     this.status = status;
+    /** @type {AiError|undefined} the primary model's failure, when this is the fallback's */
+    this.primary = undefined;
   }
 }
 
@@ -122,6 +133,7 @@ export class AiError extends Error {
  */
 export function replyFailure(reply) {
   if (reply.truncated) return new AiError("truncated", `answer cut off by the output cap (${reply.stop})`);
+  if (reply.stopped) return new AiError("stopped", `answer ended early (${reply.stop})`);
   if (!reply.text.trim()) return new AiError("empty", `no text in the answer (${reply.stop})`);
   return null;
 }

@@ -18,8 +18,8 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.55.4';
-import { escapeHTML } from './utils.js?v=3.55.4';
+import state from './state.js?v=3.55.5';
+import { escapeHTML } from './utils.js?v=3.55.5';
 import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection, reconcileStatementTotal }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
@@ -29,8 +29,13 @@ import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../ser
 const CHUNK_CHARS = 12000;
 // One line in is roughly one row out, so this bounds the response.
 const CHUNK_LINES = 60;
-/** Under the 60s edge-function ceiling, so a stall surfaces as a real error. */
-const REQUEST_TIMEOUT_MS = 55000;
+/**
+ * Longer than the server's own budget for a section — Gemini 45s, then Claude
+ * 60s ("statements.extract" in supabase/functions/_shared/ai-tasks.js) — and
+ * under Supabase's 150s. At 55s the page gave up on every Claude fallback
+ * before its answer arrived, while the server still ran and paid for it.
+ */
+const REQUEST_TIMEOUT_MS = 115000;
 
 // ── file → lines ────────────────────────────────────────────────────────────
 

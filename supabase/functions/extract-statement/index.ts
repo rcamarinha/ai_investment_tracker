@@ -23,18 +23,14 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { recordUsage } from "../_shared/usage.ts";
+import { runTask, AiError } from "../_shared/ai.ts";
+import { buildStatementRequest, readRows } from "../_shared/spend-prompts.js";
 
-const GEMINI_API_KEY    = Deno.env.get("GEMINI_WINE");
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
 
-const GEMINI_MODEL = "gemini-2.5-flash";
-const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
-
-const MAX_TEXT_LENGTH = 15000;   // the client chunks to 12K; this is the hard stop
+// Models, caps and time limits: "statements.extract" in _shared/ai-tasks.js. The prompt
+// and the checks on what the page sends: _shared/spend-prompts.js.
 
 const ALLOWED_ORIGINS = [
   "https://cacoventures.com",
@@ -77,167 +73,17 @@ function jsonResponse(data: unknown, status: number, corsHeaders: Record<string,
   });
 }
 
-function buildPrompt(statementText: string, hint?: string): string {
-  return `You are a precise bank-statement parser. Extract every completed MONEY MOVEMENT from the statement lines below.
-
-Rules:
-- Output ONLY a JSON array. No markdown, no commentary, no preamble.
-- Each element: {"date":"YYYY-MM-DD","description":"<what it was>","amount":<signed number>,"currency":"<ISO code>","balance":<running balance or null>,"role":"statement"|"detail"|"skip","group":"<section id, detail rows only>"}
-- "amount" is SIGNED: negative when money left the account, positive when it arrived. Never output the absolute value.
-- "balance" is the running balance printed on that row, if the statement shows one. Use null when it does not. Do NOT invent it, and never put the balance in "amount".
-- Amounts may use European formatting (1.234,56). Convert to a plain number: 1234.56.
-- Some statements print only day and month. Use the statement period or header to resolve the year. If the year genuinely cannot be determined, omit that row rather than guessing.
-- A statement may cover SEVERAL PRODUCTS, not just the current account: a card, a
-  mortgage or other loan, a savings account. Only the current account's movements
-  are cash leaving or arriving. Everything printed under another product is either
-  an itemisation of a movement already listed, or a balance — never a movement of
-  its own.
-- "role" says what the line IS. This matters more than any other field:
-  - "statement" = a movement that changed the ACCOUNT balance. This is the default.
-  - "detail"    = a line that ITEMISES another movement instead of being one itself:
-                  individual purchases under a credit-card section, MB WAY or wallet
-                  breakdowns, and the capital/interest split of a loan instalment.
-                  The account did not move separately for these. Their total IS one
-                  of the "statement" rows, so counting them as movements would count
-                  the same money twice.
-  - "skip"      = not a movement at all: an opening or closing balance, an amount
-                  outstanding ("saldo devedor", "amount owed"), a credit limit, a
-                  product summary, a subtotal, an interest rate, a contracted amount.
-                  These are positions, not money moving.
-- Decide "role" from STRUCTURE, not wording. A line printed under a card, loan or
-  other product heading is "detail" or "skip", never "statement". So is a dated line
-  with no running balance while the movements around it each have one.
-- A row the statement printed with NO DATE is never "statement". Loan instalment
-  breakdowns are printed without one because they share the date of the instalment
-  already listed on the account. Do not invent a date for such a row: give it
-  "detail" (if it itemises something) or "skip" (if it is a balance), and leave
-  "date" null. A movement you had to guess a date for is not a movement you observed.
-- Sign "detail" rows from the CARDHOLDER's point of view, not from the way the section
-  prints them:
-  - a card PURCHASE is money leaving, so NEGATIVE — even where the section prints it
-    without a minus because the whole section is understood to be charges;
-  - a PAYMENT to the card, a refund or a reversal is money coming back, so POSITIVE —
-    even where the section prints it with a minus, which many statements do because a
-    minus there means "reduces what you owe".
-  A card section often states its own convention in a footnote such as "(-) significa
-  pagamentos". Read that as a statement about the printing, and still output the
-  cardholder sign. Getting this backwards makes a repayment look like a purchase.
-- "group" applies to "detail" rows only, and is null everywhere else. Use whatever
-  identifies the section the line was printed under — the card number, the last four
-  digits, or the card name as printed. Every line under the same heading MUST get the
-  same "group" string, because those lines are summed and reconciled against the
-  settlement row they itemise. A statement can carry two cards; mixing their lines
-  together would reconcile against the wrong payment.
-- Extract every section, but label it. Do not drop the detail lines and do not promote
-  them to movements.
-- IGNORE: opening/closing balance summaries, subtotals, interest-rate tables, legal or marketing text, page headers and footers, and anything that is not a single dated movement.
-- If there are no movements, output [].
-${hint ? "\nLayout note for this bank: " + hint + "\n" : ""}
-Statement lines:
-"""
-${statementText}
-"""`;
-}
-
-// Records one upstream call. Every attempt is recorded, so a Gemini failure
-// that falls back to Claude shows as two calls — and a truncated Gemini answer
-// is recorded as failed WITH its tokens, because they were spent regardless.
-type Meter = (provider: string, model: string, ok: boolean, response?: unknown) => void;
-
-async function callGemini(prompt: string, meter: Meter): Promise<string> {
-  if (!GEMINI_API_KEY) throw new Error("GEMINI_WINE secret not set on the server.");
-  const res = await fetch(GEMINI_URL, {
-    method: "POST",
-    // Key in a header, not the URL: Deno puts the full URL in network error
-    // messages, and those are logged, so a ?key= URL leaks the key into logs.
-    headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY ?? "" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      // Deterministic: the same statement must extract identically every time,
-      // or a re-import silently produces different rows.
-      //
-      // Thinking is disabled and the output budget raised because this is a
-      // 2.5-series model: thinking tokens are charged against maxOutputTokens,
-      // so a long section could exhaust the budget mid-JSON and come back
-      // truncated. Transcription needs no reasoning, and paying for it here
-      // bought a silent failure mode.
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 16384,
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    }),
-    signal: AbortSignal.timeout(45000),
-  });
-  if (!res.ok) {
-    meter("gemini", GEMINI_MODEL, false);
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 300)}`);
-  }
-  const data = await res.json();
-  const candidate = data.candidates?.[0];
-  meter("gemini", GEMINI_MODEL, !(candidate?.finishReason && candidate.finishReason !== "STOP"), data);
-  // A truncated answer must fail loudly so the Claude fallback runs, rather
-  // than yielding half a JSON array that parses to nothing.
-  if (candidate?.finishReason && candidate.finishReason !== "STOP") {
-    throw new Error(`Gemini stopped early (${candidate.finishReason})`);
-  }
-  const parts = candidate?.content?.parts ?? [];
-  return parts.map((p: { text?: string }) => p.text ?? "").join("");
-}
-
-async function callClaude(prompt: string, meter: Meter): Promise<string> {
-  if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY secret not set on the server.");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 8000,
-      temperature: 0,
-      messages: [{ role: "user", content: prompt }],
-    }),
-    signal: AbortSignal.timeout(45000),
-  });
-  if (!res.ok) {
-    meter("anthropic", CLAUDE_MODEL, false);
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Anthropic API error ${res.status}: ${errText.slice(0, 300)}`);
-  }
-  const data = await res.json();
-  meter("anthropic", CLAUDE_MODEL, true, data);
-  return (data.content ?? []).find((c: { type: string }) => c.type === "text")?.text ?? "";
-}
-
 /**
- * Models occasionally wrap JSON in fences or add a stray trailing comma.
- *
- * Throws rather than returning [] when the text cannot be parsed. "The model
- * said there are no transactions" and "the response was truncated mid-JSON" are
- * completely different facts, and collapsing them into an empty array made a
- * lost section of ~40 transactions look like a successful import of none.
+ * Why a provider failed, in words the user can act on and nothing more: no
+ * key, no prompt, no statement text. A missing key and a spent quota are the
+ * usual reasons BOTH fail at once, so they are named.
  */
-function parseRows(text: string): unknown[] {
-  let s = (text || "").trim();
-  if (!s) throw new Error("empty response from model");
-  s = s.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  const start = s.indexOf("[");
-  const end = s.lastIndexOf("]");
-  if (start === -1) throw new Error(`no JSON array in response: ${s.slice(0, 200)}`);
-  if (end === -1 || end < start) throw new Error(`response truncated before the array closed: ${s.slice(0, 200)}`);
-  s = s.slice(start, end + 1).replace(/,\s*([\]}])/g, "$1");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(s);
-  } catch (err) {
-    throw new Error(`unparseable JSON: ${(err as Error).message}`);
-  }
-  if (!Array.isArray(parsed)) throw new Error("model returned a non-array");
-  return parsed;
+function why(err: AiError | undefined): string {
+  if (!err) return "failed";
+  if (err.kind === "config") return "not configured";
+  if (err.kind === "timeout") return "timed out";
+  if (err.kind === "http") return `HTTP ${err.status}`;
+  return err.kind;
 }
 
 Deno.serve(async (req) => {
@@ -259,76 +105,34 @@ Deno.serve(async (req) => {
   }
   // The verified caller, for recording usage — never taken from the request body.
   const userId = userData.user.id;
-  const meter: Meter = (provider, model, ok, response) =>
-    recordUsage({ userId, fn: "extract-statement", provider, model, ok, response });
-
-  let body: { statementText?: string; hint?: string };
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return jsonResponse({ error: "Invalid JSON body" }, 400, corsHeaders);
   }
+  const built = buildStatementRequest(body);
+  if ("error" in built) return jsonResponse({ error: built.error }, built.status ?? 400, corsHeaders);
 
-  const statementText = (body.statementText || "").trim();
-  if (!statementText) return jsonResponse({ error: "statementText is required" }, 400, corsHeaders);
-  if (statementText.length > MAX_TEXT_LENGTH) {
-    return jsonResponse(
-      { error: `statementText exceeds ${MAX_TEXT_LENGTH} characters - chunk it client-side.` },
-      413, corsHeaders,
-    );
-  }
-
-  const prompt = buildPrompt(statementText, body.hint);
-
-  let text = "";
-  let provider = "gemini";
+  let result;
   try {
-    text = await callGemini(prompt, meter);
-  } catch (geminiErr) {
-    console.error("[extract-statement] gemini failed:", geminiErr);
-    provider = "claude";
-    try {
-      text = await callClaude(prompt, meter);
-    } catch (claudeErr) {
-      console.error("[extract-statement] claude failed:", claudeErr);
-      // Enough to act on, without leaking anything. "Unavailable right now"
-      // sent the user away to wait for a recovery that was never coming when
-      // the real cause was a missing secret or an exhausted quota — the two
-      // most likely reasons BOTH providers fail at once, since a genuine
-      // simultaneous outage of two vendors is rare.
-      //
-      // Provider names and HTTP status only: no keys, no prompt, no statement
-      // text. A status distinguishes 401 (not configured) from 429 (out of
-      // quota) from 5xx (genuinely their end).
-      const summarise = (e: unknown) => {
-        const m = String((e as Error)?.message ?? e);
-        const status = m.match(/\b(4\d{2}|5\d{2})\b/)?.[1];
-        if (/secret not set|not configured/i.test(m)) return "not configured";
-        if (/abort|timeout/i.test(m)) return "timed out";
-        return status ? `HTTP ${status}` : "failed";
-      };
-      return jsonResponse({
-        error: `Both extraction providers failed — Gemini: ${summarise(geminiErr)}; ` +
-               `Claude: ${summarise(claudeErr)}. A 401 or "not configured" means the server ` +
-               `is missing that provider\u2019s key; a 429 means its quota is used up.`,
-      }, 502, corsHeaders);
-    }
+    // An answer with no readable array is a failed call: the fallback runs.
+    result = await runTask("statements.extract", { userId, prompt: built.prompt, usable: (t) => readRows(t) !== null });
+  } catch (err) {
+    const last = err instanceof AiError ? err : undefined;
+    const gemini = last?.primary ?? last, claude = last?.primary ? last : undefined;
+    console.error(`[extract-statement] both providers failed — gemini: ${why(gemini)}; claude: ${why(claude)}`);
+    // 502, not 200-with-nothing: the page must tell a section that held no
+    // transactions from one that was lost.
+    return jsonResponse({
+      error: `Both extraction providers failed — Gemini: ${why(gemini)}; Claude: ${why(claude)}. ` +
+             `"not configured" means the server is missing that provider\u2019s key; HTTP 429 means its quota is used up.`,
+    }, 502, corsHeaders);
   }
 
-  let rows: unknown[];
-  try {
-    rows = parseRows(text);
-  } catch (parseErr) {
-    console.error("[extract-statement] unparseable model output:", parseErr);
-    // 502, not 200-with-nothing: the client must be able to tell a section that
-    // genuinely held no transactions from one that was lost.
-    return jsonResponse(
-      { error: `The extraction service returned something unreadable (${(parseErr as Error).message.slice(0, 120)}).` },
-      502, corsHeaders,
-    );
-  }
+  const rows = readRows(result.text) ?? [];
   return jsonResponse(
-    { rows, provider, model: provider === "gemini" ? GEMINI_MODEL : CLAUDE_MODEL, promptChars: statementText.length },
+    { rows, provider: result.provider === "gemini" ? "gemini" : "claude", model: result.model, promptChars: built.chars },
     200, corsHeaders,
   );
 });
