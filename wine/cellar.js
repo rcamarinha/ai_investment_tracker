@@ -3,14 +3,14 @@
  */
 
 import { t } from '../data/i18n.js';
-import state from './state.js?v=3.55.3';
+import state from './state.js?v=3.55.4';
 import { saveBottleToDB, deleteBottleFromDB, saveSnapshotToDB,
          deleteSnapshotFromDB, clearSnapshotsFromDB,
-         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js?v=3.55.3';
-import { renderAllocationCharts } from './ui.js?v=3.55.3';
-import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON, bindActions } from './utils.js?v=3.55.3';
+         findExistingUserWineHoldings, findAndMergeDuplicates } from './storage.js?v=3.55.4';
+import { renderAllocationCharts } from './ui.js?v=3.55.4';
+import { showToast, showUndoToast, showConfirm, showMergeDialog, openModal, closeModal, escapeHTML, repairTruncatedJSON, bindActions } from './utils.js?v=3.55.4';
 import { getDrinkStatus, filterBottles, sortBottles } from '../src/wine.js';
-import { callWineAI } from './api.js?v=3.55.3';
+import { callWineAI, bottleForAI } from './api.js?v=3.55.4';
 
 // ── Auth Guard ────────────────────────────────────────────────────────────────
 
@@ -1160,29 +1160,8 @@ export async function reclassifyAllBottles() {
 const CLASSIFY_BATCH_SIZE = 15; // ~15 bottles per batch keeps prompt + response within token limits
 
 async function classifyBatch(bottles) {
-    const wineList = bottles.map((b) => {
-        const parts = [
-            b.name,
-            b.winery && `by ${b.winery}`,
-            b.vintage && `(${b.vintage})`,
-            b.varietal && `[${b.varietal}]`,
-            b.region && `from ${b.region}`,
-            b.country && `(${b.country})`,
-        ].filter(Boolean).join(' ');
-        return `${b.id}: ${parts}`;
-    }).join('\n');
-
-    const prompt = `Classify each wine/spirit below into exactly one type.
-
-Valid types: ${VALID_TYPES.join(', ')}
-
-Wines to classify (each line starts with its id):
-${wineList}
-
-Return ONLY a compact JSON array on a single line: [{"id":"<id>","type":"Red Wine"},{"id":"<id>","type":"White Wine"},...]
-One entry per wine. Echo back each wine's exact id from the list above. No whitespace, no markdown fences, no explanation.`;
-
-    const data = await callWineAI({ requestType: 'analysis', prompt, maxTokens: 4096 });
+    // The server builds the prompt and holds the list of types (_shared/wine-prompts.js).
+    const data = await callWineAI({ requestType: 'classify', bottles: bottles.map(bottleForAI) });
 
     let text = '';
     if (data.content && Array.isArray(data.content)) {

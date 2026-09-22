@@ -4,6 +4,7 @@
  * Routes AI requests for the Wine Cellar Tracker:
  *
  *   label           → Gemini Vision (primary) → Claude Vision fallback
+ *   classify        → like analysis: wine types for up to 30 bottles
  *   valuation       → Gemini (Google Search grounding) → Claude fallback
  *   batch-valuation → one Gemini call per chunk (the page sends one bottle) → Claude fallback
  *   analysis        → Gemini (Google Search grounding) → Claude fallback
@@ -12,15 +13,13 @@
  *   ANTHROPIC_API_KEY_Wine  — used for label fallback, analysis fallback, and valuation fallback
  *   GEMINI_WINE             — used for label (primary) and valuation (primary); skipped if unset
  *
- * Request body:
- *   {
- *     requestType: "label" | "valuation" | "batch-valuation" | "analysis",
- *     prompt?: string,           // required for label / valuation / analysis
- *     image?: { base64, mediaType }, // label only
- *     maxTokens?: number,
- *     enableWebSearch?: boolean, // Claude web search (analysis only)
- *     bottles?: BottleInfo[],    // batch-valuation only
- *   }
+ * Request body (data only — every prompt is built on the server, in
+ * _shared/wine-prompts.js; a "prompt" field is ignored):
+ *   { requestType: "valuation",       bottle }
+ *   { requestType: "batch-valuation", bottles }      // up to 3, each with an id
+ *   { requestType: "analysis",        bottles, lang? } // the cellar
+ *   { requestType: "classify",        bottles }      // up to 30, each with an id
+ *   { requestType: "label",           image: { base64, mediaType } }
  *
  * Response shape:
  *   label    → { content: [{type:"text", text:...}], _source: "gemini"|"claude" }
@@ -31,6 +30,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recordUsage } from "../_shared/usage.ts";
+import { buildWineRequest } from "../_shared/wine-prompts.js";
 import {
   buildBatchPrompt, parseBatchText, padResults, geminiSearchCount, claudeSearchCount,
   markUnsearched, VALUATION_SYSTEM_INSTRUCTION,
@@ -699,14 +699,8 @@ Deno.serve(async (req) => {
   const meter: Meter = (provider, model, ok, response) =>
     recordUsage({ userId, fn: "wine-ai", provider, model, ok, response });
 
-  let body: {
-    requestType: string;
-    prompt?: string;
-    image?: { base64: string; mediaType: string };
-    maxTokens?: number;
-    enableWebSearch?: boolean;
-    bottles?: BottleInfo[];
-  };
+  // Checked field by field in buildWineRequest; nothing is trusted by type.
+  let body: unknown;
 
   try {
     body = await req.json();
@@ -714,56 +708,23 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Invalid JSON body" }, 400, corsHeaders);
   }
 
-  const { requestType, prompt, image, enableWebSearch = false, bottles } = body;
-  // Cap maxTokens server-side to prevent abuse
-  const maxTokens = Math.min(body.maxTokens || 1024, 8192);
-
-  if (!requestType) {
-    return jsonResponse({ error: "requestType is required" }, 400, corsHeaders);
+  // The page sends bottle data or an image; every prompt is built here
+  // (_shared/wine-prompts.js). A body that still carries "prompt" gets no say.
+  const built = buildWineRequest(body);
+  if ("error" in built) {
+    return jsonResponse({ error: built.error }, 400, corsHeaders);
   }
 
-  // ── Input validation ───────────────────────────────────────────────────────
-  const MAX_PROMPT_LENGTH  = 15_000;
-  // One chunk per request: chunks run one after another, and each can take a
-  // Gemini try plus a Claude fallback, so more than one cannot finish inside
-  // Supabase's 150s. It also caps what one request can spend.
-  const MAX_BATCH_SIZE     = CHUNK_SIZE;
-  const MAX_IMAGE_BASE64   = 2 * 1024 * 1024; // 2 MB
-
-  if (prompt && prompt.length > MAX_PROMPT_LENGTH) {
-    return jsonResponse({ error: `Prompt too long (max ${MAX_PROMPT_LENGTH} chars)` }, 400, corsHeaders);
+  switch (built.route) {
+    case "valuation":
+      return handleValuation(built.prompt, corsHeaders, meter);
+    case "batch-valuation":
+      return handleBatchValuation(built.bottles as BottleInfo[], corsHeaders, meter);
+    case "label":
+      return handleLabel(built.prompt, built.image, 2048, corsHeaders, meter);
+    case "analysis":
+      return handleAnalysis(built.prompt, 8192, corsHeaders, meter);
+    case "classify":
+      return handleAnalysis(built.prompt, 4096, corsHeaders, meter);
   }
-  if (image?.base64 && image.base64.length > MAX_IMAGE_BASE64) {
-    return jsonResponse({ error: "Image too large (max 2 MB)" }, 400, corsHeaders);
-  }
-
-  // ── Valuation routes (Gemini primary, Claude fallback) ───────────────────
-  if (requestType === "valuation") {
-    if (!prompt) return jsonResponse({ error: "prompt is required for valuation" }, 400, corsHeaders);
-    return handleValuation(prompt, corsHeaders, meter);
-  }
-
-  if (requestType === "batch-valuation") {
-    if (!Array.isArray(bottles) || bottles.length === 0) {
-      return jsonResponse({ error: "bottles array is required for batch-valuation" }, 400, corsHeaders);
-    }
-    if (bottles.length > MAX_BATCH_SIZE) {
-      return jsonResponse({ error: `Too many bottles (max ${MAX_BATCH_SIZE} per request)` }, 400, corsHeaders);
-    }
-    return handleBatchValuation(bottles, corsHeaders, meter);
-  }
-
-  // ── Label route (Gemini Vision primary, Claude Vision fallback) ───────────
-  if (requestType === "label") {
-    if (!prompt) return jsonResponse({ error: "prompt is required for label" }, 400, corsHeaders);
-    return handleLabel(prompt, image, maxTokens, corsHeaders, meter);
-  }
-
-  // ── Analysis route (Gemini primary, Claude fallback) ─────────────────────
-  if (requestType === "analysis") {
-    if (!prompt) return jsonResponse({ error: "prompt is required for analysis" }, 400, corsHeaders);
-    return handleAnalysis(prompt, maxTokens, corsHeaders, meter);
-  }
-
-  return jsonResponse({ error: `Unknown requestType: ${requestType}` }, 400, corsHeaders);
 });

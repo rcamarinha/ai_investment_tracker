@@ -12,11 +12,11 @@
  * (not in the DB schema) and applied to in-memory bottle state on load.
  */
 
-import state from './state.js?v=3.55.3';
-import { callWineAI } from './api.js?v=3.55.3';
-import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.55.3';
-import { renderCellar, updateBottleCard } from './cellar.js?v=3.55.3';
-import { showToast, repairTruncatedJSON } from './utils.js?v=3.55.3';
+import state from './state.js?v=3.55.4';
+import { callWineAI, bottleForAI } from './api.js?v=3.55.4';
+import { saveBottleToDB, saveWinePriceHistory, logAssetMovement } from './storage.js?v=3.55.4';
+import { renderCellar, updateBottleCard } from './cellar.js?v=3.55.4';
+import { showToast, repairTruncatedJSON } from './utils.js?v=3.55.4';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 import { triageBatchValuation } from '../src/wine.js';
 
@@ -314,14 +314,9 @@ function applyValuationResult(bottle, result, aiSource = 'gemini_ai') {
 // ── Single-bottle Gemini→Claude API call ──────────────────────────────────────
 
 async function fetchValuation(bottle) {
-    const prompt = buildValuationPrompt(bottle);
-
-    // The edge function returns { text, _geminiGrounding } for valuation requests.
-    const data = await callWineAI({
-        requestType: 'valuation',
-        prompt,
-        maxTokens: 4096,
-    });
+    // The server builds the prompt from the bottle (_shared/wine-prompts.js)
+    // and returns { text, _geminiGrounding } for valuation requests.
+    const data = await callWineAI({ requestType: 'valuation', bottle: bottleForAI(bottle) });
 
     // Debug: surface Gemini fallback so it's visible in the UI until Gemini is stable.
     if (data._fallback === 'claude' && data._geminiError) {
@@ -365,75 +360,3 @@ async function fetchValuation(bottle) {
     }
 }
 
-function buildValuationPrompt(bottle) {
-    const criticMatch = bottle.notes
-        ? bottle.notes.match(/(\d{2,3})\s*(?:\/\s*100|points?)/i)
-        : null;
-    const criticLine = criticMatch ? `Critic score: ${criticMatch[1]}/100` : '';
-
-    const bottleSize = bottle.bottleSize || '0.75L';
-    const isStandardSize = bottleSize === '0.75L';
-
-    const details = [
-        bottle.name        && `Wine name: ${bottle.name}`,
-        bottle.winery      && `Winery/Producer: ${bottle.winery}`,
-        bottle.type        && `Type: ${bottle.type}`,
-        bottle.vintage     && `Vintage: ${bottle.vintage}`,
-        bottle.region      && `Region: ${bottle.region}`,
-        bottle.appellation && `Appellation: ${bottle.appellation}`,
-        bottle.varietal    && `Grape variety: ${bottle.varietal}`,
-        bottle.country     && `Country: ${bottle.country}`,
-        `Bottle format: ${bottleSize}${isStandardSize ? ' (standard)' : ''}`,
-        criticLine,
-        bottle.purchasePrice && `Purchase price: €${bottle.purchasePrice}/bottle`,
-        bottle.purchaseDate  && `Purchase date: ${bottle.purchaseDate}`,
-        bottle.notes       && `Label notes: ${bottle.notes}`,
-    ].filter(Boolean).join('\n');
-
-    const vintageInstruction = bottle.vintage
-        ? `IMPORTANT: Price specifically for the ${bottle.vintage} vintage — do NOT average across years or use a generic producer price.`
-        : '';
-
-    return `You are a wine investment expert with deep knowledge of fine wine valuations.
-Use Google Search to find current retail and auction market prices for this specific wine bottle.
-
-Wine details:
-${details}
-
-Today's date: ${new Date().toISOString().slice(0, 10)}
-${vintageInstruction}
-
-Pricing rules (follow strictly, in priority order):
-1. NATIONAL PRIORITY: Search Portuguese retail sites first — Garrafeira Nacional, Garrafeira Soares, Wine.pt, Niepoort shop, JMF shop, Adega Mayor. Only use international sources (Wine-Searcher, Vivino, auction houses like Sotheby's, Christie's, Acker, Zachys, Hart Davis Hart) if no Portuguese retailer lists this wine.
-2. VAT FILTER: If sourcing from an international ex-tax aggregator (e.g. Wine-Searcher merchant average, which is often ex-tax), multiply by 1.23 to add Portuguese IVA (23%) so the estimate reflects real replacement cost in Portugal.
-3. BOTTLE SIZE: Search for the EXACT bottle format (${bottleSize}). Do not extrapolate from 750ml pricing. If no exact-format listing exists, state this in the valuationNote.
-4. CURRENT PRICES ONLY: Use in-stock retail or recent auction hammer prices. Skip out-of-stock listings (prices are likely outdated). Never use historical launch/release prices as current value.
-5. CROSS-REFERENCE MULTIPLE SOURCES: Always check at least 3 sources. Use the MEDIAN price across found sources as the estimatedValue — do NOT anchor to the single cheapest listing. If one source is 30%+ below all others, it is likely ex-tax, an error, or a different format — exclude it or apply the VAT adjustment.
-6. RARE & COLLECTIBLE WINES: For Port, Burgundy, Bordeaux First Growths, and other collectible/investment-grade wines, weight specialist merchants (Garrafeira Nacional, The Wine Advocate, Berry Bros, Farr Vintners) and major auction houses more heavily than generic aggregators.
-
-Return a valid JSON object with exactly these fields:
-{
-  "estimatedValue": 105.00,
-  "estimatedValueUSD": 113.00,
-  "valueLow": 90.00,
-  "valueHigh": 125.00,
-  "drinkWindow": "2025-2035",
-  "confidence": "high",
-  "sources": "Wine-Searcher avg €105 for 2019 vintage; Garrafeira Nacional listing €115",
-  "valuationNote": "1-2 sentence explanation referencing specific data points found",
-  "priceDate": "${new Date().toISOString().slice(0, 7)}"
-}
-
-Guidelines:
-- priceDate: "YYYY-MM" — this month if the price comes from a search made now; if you did not search, the month your knowledge of this price dates from
-- estimatedValue: best estimate per ${bottleSize} bottle in EUR (match the bottle format above)
-- estimatedValueUSD: same estimate converted to USD at current exchange rate
-- valueLow / valueHigh: realistic market range in EUR
-- confidence: "high" if you found direct price data, "medium" if using comparables, "low" if largely estimated
-- sources: brief citation of specific sources, retailers, or auction results used (max 1-2 lines)
-- valuationNote: 1-2 sentences explaining the estimate with reference to what was found
-- drinkWindow: optimal drinking window as "YYYY-YYYY" string, or null if unknown
-- Be vintage-specific and conservative — cite real data points where possible
-
-Return ONLY the JSON object. No markdown fences, no preamble.`;
-}
