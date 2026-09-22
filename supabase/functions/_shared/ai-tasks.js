@@ -50,6 +50,7 @@ export const FUNCTION_WALL_MS = 150_000;
  * @property {number} timeoutMs    this call's time limit
  * @property {number} [searches]   web searches allowed; 0 or absent = none
  * @property {"off"|"low"} [thinking]  Gemini only
+ * @property {number} [temperature]    0 for extraction: the same input must give the same rows
  *
  * @typedef {object} AiTask
  * @property {string} fn           the edge function that runs it (a USAGE_FUNCTIONS name)
@@ -72,6 +73,21 @@ export const AI_TASKS = Object.freeze({
     fn: "analyze-portfolio", tier: "research", pageWaitMs: FUNCTION_WALL_MS,
     primary: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeSonnet, maxTokens: 4000, timeoutMs: 120_000 },
     fallback: null,
+  },
+  // extract-statement — statement lines to ledger rows. Extract tier: the same
+  // statement must give the same rows (temperature 0, no thinking), and the page
+  // re-checks every row against the statement's running balance. Still on
+  // gemini-2.5 until 3.5 is compared on a real statement (plan P9 step 5b).
+  "statements.extract": {
+    fn: "extract-statement", tier: "extract", pageWaitMs: 115_000,
+    primary: { provider: "gemini", keyEnv: KEY_ENV.gemini, model: APPROVED_MODELS.geminiFlashLegacy, maxTokens: 16384, timeoutMs: 45_000, thinking: "off", temperature: 0 },
+    fallback: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeHaiku, maxTokens: 8000, timeoutMs: 60_000, temperature: 0 },
+  },
+  // categorize-transactions — a category from the user's own list per row.
+  "transactions.categorize": {
+    fn: "categorize-transactions", tier: "extract", pageWaitMs: 55_000,
+    primary: { provider: "gemini", keyEnv: KEY_ENV.gemini, model: APPROVED_MODELS.geminiFlashLegacy, maxTokens: 16384, timeoutMs: 25_000, thinking: "off", temperature: 0 },
+    fallback: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeHaiku, maxTokens: 8000, timeoutMs: 25_000, temperature: 0 },
   },
   // resolve-tickers — a priceable ticker for holdings every price API refused.
   // Gemini decides whether to search; a price in an unsearched answer is

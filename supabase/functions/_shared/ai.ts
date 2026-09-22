@@ -63,7 +63,14 @@ export async function runTask(taskName: string, input: RunInput): Promise<AiResu
     if (!task.fallback) throw err;
     const why = err instanceof AiError ? err.kind : "error";
     console.warn(`[ai] ${taskName}: ${task.primary.provider} failed (${why}), trying ${task.fallback.provider}`);
-    return await callModel(task, taskName, task.fallback, input, true);
+    try {
+      return await callModel(task, taskName, task.fallback, input, true);
+    } catch (fallbackErr) {
+      // Both failed: keep the primary's reason too, so a caller can say which
+      // provider failed how (a missing key and a spent quota read differently).
+      if (fallbackErr instanceof AiError && err instanceof AiError) fallbackErr.primary = err;
+      throw fallbackErr;
+    }
   }
 }
 
