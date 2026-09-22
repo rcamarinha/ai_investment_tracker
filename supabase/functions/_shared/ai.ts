@@ -41,6 +41,12 @@ export interface RunInput {
   userId: string;
   prompt: string;
   system?: string;
+  /**
+   * Whether the answer's text is something the caller can use (e.g. it holds
+   * the JSON array asked for). An answer that fails counts as a failed call:
+   * recorded as not ok, and the task's fallback runs.
+   */
+  usable?: (text: string) => boolean;
 }
 
 /**
@@ -113,7 +119,8 @@ async function callModel(
 
   const data = await res.json();
   const reply = isClaude ? readAnthropic(data) : readGemini(data);
-  const failure = replyFailure(reply);
+  const failure = replyFailure(reply) ??
+    (input.usable && !input.usable(reply.text) ? new AiError("unusable", "the answer was not in the form asked for") : null);
   // Tokens were spent either way, so the row carries them; ok says whether the
   // answer could be used.
   meter(!failure, data);

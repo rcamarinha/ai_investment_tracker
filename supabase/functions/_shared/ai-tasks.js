@@ -73,6 +73,15 @@ export const AI_TASKS = Object.freeze({
     primary: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeSonnet, maxTokens: 4000, timeoutMs: 120_000 },
     fallback: null,
   },
+  // resolve-tickers — a priceable ticker for holdings every price API refused.
+  // Gemini decides whether to search; a price in an unsearched answer is
+  // dropped (_shared/ticker-prompts.js), and the page validates every ticker.
+  "tickers.resolve": {
+    fn: "resolve-tickers", tier: "research", pageWaitMs: FUNCTION_WALL_MS,
+    primary: { provider: "gemini", keyEnv: KEY_ENV.gemini, model: APPROVED_MODELS.geminiFlash, maxTokens: 8192, timeoutMs: 45_000, searches: 1, thinking: "low" },
+    // Uncapped until P9: one wine call like this read 440K tokens.
+    fallback: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeSonnet, maxTokens: 4000, timeoutMs: 60_000, searches: 8 },
+  },
   "analysis.movers": {
     fn: "analyze-portfolio", tier: "research", pageWaitMs: FUNCTION_WALL_MS,
     primary: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeSonnet, maxTokens: 350, timeoutMs: 30_000 },
