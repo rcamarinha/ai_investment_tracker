@@ -74,6 +74,27 @@ export async function runTask(taskName: string, input: RunInput): Promise<AiResu
   }
 }
 
+export type CandidateOutcome =
+  | { ok: true; text: string; model: string; ms: number }
+  | { ok: false; kind: string; model: string };
+
+/**
+ * Run a task's candidate model (a trial) on the same input. Never throws and
+ * never falls back: a failed candidate is a result of the trial, not an error
+ * of the request. The caller decides whether the trial is on (shadow.ts) and
+ * must never return the candidate's text as the answer.
+ */
+export async function runCandidate(taskName: string, input: RunInput): Promise<CandidateOutcome | null> {
+  const task = getTask(taskName);
+  if (!task?.candidate) return null;
+  try {
+    const r = await callModel(task, `${taskName}.candidate`, task.candidate, input, false);
+    return { ok: true, text: r.text, model: r.model, ms: r.ms };
+  } catch (err) {
+    return { ok: false, kind: err instanceof AiError ? err.kind : "error", model: task.candidate.model };
+  }
+}
+
 async function callModel(
   task: AiTask,
   taskName: string,

@@ -13,14 +13,15 @@
  * Nothing here files a category the user cannot see and undo.
  */
 
-import state from './state.js?v=3.55.6';
-import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.55.6';
-import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.55.6';
+import state from './state.js?v=3.55.7';
+import { escapeHTML, showToast, fmtMoney } from './utils.js?v=3.55.7';
+import { saveTransactions, saveRule, incomeCategoryNames, requireAuth } from './storage.js?v=3.55.7';
 import { applyRules, ruleFromCorrection } from '../services/import-banks.js';
 import { partitionForAi, batchTransactions, toPrompt, applyAiResults, summarizeRun, applyPrecedents,
     needingCategorisation, mergeReviewQueue }
     from '../services/categorize-core.js';
-import { reportHandled } from '../services/telemetry.js';
+import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
+import { compareCategories } from '../services/model-trial.js';
 
 const BATCH_SIZE = 40;
 const REQUEST_TIMEOUT_MS = 55000;
@@ -118,6 +119,9 @@ export async function categoriseAll({ onProgress } = {}) {
     const batches = batchTransactions(toSend, BATCH_SIZE);
     const allApplied = [], allReview = [], allUnanswered = [];
     let failures = 0;
+    // A model trial's answers, when the server ran one (admins only, plan P9 5b):
+    // compared with the real answers and dropped — never applied.
+    const trial = { compared: 0, agree: 0, missing: 0, outOfList: 0, failed: 0, batches: 0, model: null, ms: 0, primaryMs: 0 };
 
     for (let i = 0; i < batches.length; i++) {
         onProgress?.(i, batches.length);
@@ -130,6 +134,18 @@ export async function categoriseAll({ onProgress } = {}) {
             allApplied.push(...applied);
             allReview.push(...review);
             allUnanswered.push(...unanswered);
+            const sh = payload.shadow;
+            if (sh) {
+                trial.model = sh.model || trial.model;
+                if (sh.failed) trial.failed++;
+                else {
+                    trial.batches++;
+                    const c = compareCategories(payload.results || [], sh.results || [], categories);
+                    for (const k of ['compared', 'agree', 'missing', 'outOfList']) trial[k] += c[k];
+                    trial.ms += Number(sh.ms) || 0;
+                    trial.primaryMs += Number(sh.primaryMs) || 0;
+                }
+            }
         } catch (err) {
             failures++;
             reportHandled(err, { action: 'categorise', status: i + 1 });
@@ -137,6 +153,16 @@ export async function categoriseAll({ onProgress } = {}) {
         }
     }
     onProgress?.(batches.length, batches.length);
+
+    if (trial.batches || trial.failed) {
+        const context = {
+            action: 'transactions.categorize', provider: trial.model, chunks: batches.length,
+            candidateFailed: trial.failed, compared: trial.compared, agree: trial.agree,
+            missing: trial.missing, outOfList: trial.outOfList, msPrimary: trial.primaryMs, msCandidate: trial.ms,
+        };
+        console.info('[model trial] transactions.categorize', context);
+        reportDiagnostic('ai-trial', context);
+    }
 
     // Persist what rules and the model settled. Review rows are NOT written —
     // an unconfirmed suggestion must not enter the ledger, or the savings rate

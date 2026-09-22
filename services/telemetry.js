@@ -26,7 +26,14 @@ const ALLOWED_CONTEXT_KEYS = [
     'chainChecked', 'chainPairs', 'chainValid',
     'totalOk', 'totalReason',
     'detailTotal', 'detailItemised', 'detailPromoted', 'settlementsLinked',
-    'cardAccountsCreated', 'signature'
+    'cardAccountsCreated', 'signature',
+    // A model trial (plan P9 step 5b, services/model-trial.js): counts and
+    // yes/no verdicts comparing a candidate model with the one in use.
+    'candidateFailed', 'msPrimary', 'msCandidate',
+    'rowsPrimary', 'rowsCandidate', 'rowsDiffer', 'roleChanges',
+    'chainValidPrimary', 'chainValidCandidate', 'chainCheckedPrimary', 'chainCheckedCandidate',
+    'totalOkPrimary', 'totalOkCandidate',
+    'compared', 'agree', 'missing', 'outOfList'
 ];
 
 let installed = false;

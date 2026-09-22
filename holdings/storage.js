@@ -6,8 +6,8 @@
  * wine/storage.js and spend/storage.js exactly.
  */
 
-import state from './state.js?v=3.55.6';
-import { showToast } from './utils.js?v=3.55.6';
+import state from './state.js?v=3.55.7';
+import { showToast } from './utils.js?v=3.55.7';
 
 export function initSupabase(onLoad) {
     if (!state.supabaseUrl || !state.supabaseAnonKey) { updateAuthBar(); return false; }

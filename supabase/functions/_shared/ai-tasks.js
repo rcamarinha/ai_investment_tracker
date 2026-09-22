@@ -49,7 +49,7 @@ export const FUNCTION_WALL_MS = 150_000;
  * @property {number} maxTokens    output cap, thinking included for Gemini
  * @property {number} timeoutMs    this call's time limit
  * @property {number} [searches]   web searches allowed; 0 or absent = none
- * @property {"off"|"low"} [thinking]  Gemini only
+ * @property {"off"|"minimal"|"low"} [thinking]  Gemini only: "off" is the 2.5 form; "minimal"/"low" are 3.x levels
  * @property {number} [temperature]    0 for extraction: the same input must give the same rows
  *
  * @typedef {object} AiTask
@@ -58,6 +58,9 @@ export const FUNCTION_WALL_MS = 150_000;
  * @property {number} pageWaitMs   how long the page waits for the answer
  * @property {ModelCall} primary
  * @property {ModelCall|null} fallback
+ * @property {ModelCall} [candidate]  a model on trial: run beside the primary
+ *   only when the trial is switched on (_shared/shadow.ts), its answer compared
+ *   and discarded — never returned as the result, never falling back
  */
 
 /** @type {Readonly<Record<string, AiTask>>} */
@@ -82,12 +85,17 @@ export const AI_TASKS = Object.freeze({
     fn: "extract-statement", tier: "extract", pageWaitMs: 115_000,
     primary: { provider: "gemini", keyEnv: KEY_ENV.gemini, model: APPROVED_MODELS.geminiFlashLegacy, maxTokens: 16384, timeoutMs: 45_000, thinking: "off", temperature: 0 },
     fallback: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeHaiku, maxTokens: 8000, timeoutMs: 60_000, temperature: 0 },
+    // Trial, plan P9 step 5b (from 22 September, about two weeks): Google's
+    // recommended 3.x settings — "minimal" thinking and the default temperature,
+    // which Google advises keeping for Gemini 3. Remove once decided.
+    candidate: { provider: "gemini", keyEnv: KEY_ENV.gemini, model: APPROVED_MODELS.geminiFlash, maxTokens: 16384, timeoutMs: 45_000, thinking: "minimal" },
   },
   // categorize-transactions — a category from the user's own list per row.
   "transactions.categorize": {
     fn: "categorize-transactions", tier: "extract", pageWaitMs: 55_000,
     primary: { provider: "gemini", keyEnv: KEY_ENV.gemini, model: APPROVED_MODELS.geminiFlashLegacy, maxTokens: 16384, timeoutMs: 25_000, thinking: "off", temperature: 0 },
     fallback: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeHaiku, maxTokens: 8000, timeoutMs: 25_000, temperature: 0 },
+    candidate: { provider: "gemini", keyEnv: KEY_ENV.gemini, model: APPROVED_MODELS.geminiFlash, maxTokens: 16384, timeoutMs: 25_000, thinking: "minimal" },
   },
   // resolve-tickers — a priceable ticker for holdings every price API refused.
   // Gemini decides whether to search; a price in an unsearched answer is

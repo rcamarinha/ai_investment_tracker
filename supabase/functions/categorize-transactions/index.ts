@@ -22,7 +22,8 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { runTask, AiError } from "../_shared/ai.ts";
+import { runTask, runCandidate, AiError, type CandidateOutcome } from "../_shared/ai.ts";
+import { shadowEnabled } from "../_shared/shadow.ts";
 import { buildCategoriseRequest, readRows } from "../_shared/spend-prompts.js";
 
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
@@ -102,9 +103,18 @@ Deno.serve(async (req) => {
   const built = buildCategoriseRequest(body);
   if ("error" in built) return jsonResponse({ error: built.error }, built.status ?? 400, corsHeaders);
 
+  // Model trial (plan P9 step 5b): for an admin, while AI_SHADOW lists this
+  // task, the candidate model reads the same input AT THE SAME TIME, so the
+  // page's wait does not grow past the slower of the two. Its rows are returned
+  // beside the real ones, under "shadow", for the page to check and discard.
+  const input = { userId, prompt: built.prompt, usable: (t: string) => readRows(t) !== null };
+  const trial: Promise<CandidateOutcome | null> = (await shadowEnabled("transactions.categorize", userId))
+    ? runCandidate("transactions.categorize", input)
+    : Promise.resolve(null);
+
   let result;
   try {
-    result = await runTask("transactions.categorize", { userId, prompt: built.prompt, usable: (t) => readRows(t) !== null });
+    result = await runTask("transactions.categorize", input);
   } catch (err) {
     console.error("[categorize-transactions] failed:", err instanceof AiError ? `${err.kind}${err.primary ? ` after ${err.primary.kind}` : ""}` : (err as Error)?.name);
     // Generic to the caller; the kind of failure stays in the logs.
@@ -112,8 +122,12 @@ Deno.serve(async (req) => {
   }
 
   const results = readRows(result.text) ?? [];
+  const cand = await trial;
+  const shadow = !cand ? undefined
+    : cand.ok ? { results: readRows(cand.text) ?? [], model: cand.model, ms: cand.ms, primaryMs: result.ms }
+    : { failed: cand.kind, model: cand.model };
   return jsonResponse(
-    { results, provider: result.provider === "gemini" ? "gemini" : "claude", model: result.model, asked: built.asked },
+    { results, provider: result.provider === "gemini" ? "gemini" : "claude", model: result.model, asked: built.asked, shadow },
     200, corsHeaders,
   );
 });

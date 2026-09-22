@@ -282,6 +282,12 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.55.7
+A trial of Gemini 3.5 for statement import and categorisation, for the admin only.
+- **While the trial is on**, the server runs Gemini 3.5 (thinking "minimal", Google's default temperature) beside the current model on the same statement section or batch. The page puts 3.5's rows through the same balance and statement-total checks, records only counts and yes/no results (an `ai-trial` diagnostic), and discards them. Nothing from the trial is shown, saved or used.
+- **On only when both hold, checked on the server:** the secret `AI_SHADOW` lists the task, and the person importing is an admin. Remove the secret to end it.
+- Needs `extract-statement` and `categorize-transactions` redeployed.
+
 ### v3.55.6
 - **After an import, card payments are offered as transfers.** Once a card's purchases and the payment that settles them are both in the ledger, the payment is money moving between your own accounts — counted as spending, the same money counts twice. Pairing the two legs has always existed behind a *Find transfers* button, but nothing pointed to it, so card payments were being reclassified by hand one row at a time. The import now says how many movements look like transfers and offers to review them. It still asks before marking anything, because pairing rewrites rows.
 
