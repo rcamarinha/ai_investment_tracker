@@ -62,7 +62,16 @@ export const LANG_INSTRUCTION = Object.freeze({
 
 export const MAX_HOLDINGS = 300;
 export const MAX_MOVERS = 6;
-const SYMBOL = /^[A-Z0-9][A-Z0-9.=^:_-]{0,19}$/i;
+// What real symbols use: exchange suffixes (VWRL.L), share classes written with
+// a dot, a space or a slash (BRK.B, BRK B, BRK/B), pairs (BTC-EUR, BTC/EUR),
+// indices (^GSPC), ISINs, and & or + in some names. Still no line breaks,
+// quotes, brackets or other punctuation that could carry an instruction. The
+// first version refused a real portfolio outright (21 September).
+// One space at most, before a short part (BRK B): symbols need no more, and
+// spaces would let a list of "symbols" spell out sentences.
+const SYMBOL = /^[A-Za-z0-9^][A-Za-z0-9.=^:_&+/-]{0,23}(?: [A-Za-z0-9.=^:_&+/-]{1,8})?$/;
+/** A symbol quoted in a refusal, trimmed and with anything unprintable dropped. */
+const shown = v => JSON.stringify(String(v ?? "").replace(/[^\x20-\x7E]/g, "?").slice(0, 40));
 const TYPE = /^[A-Za-z][A-Za-z &/-]{0,29}$/;
 
 const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
@@ -80,7 +89,7 @@ export function checkHoldings(raw) {
   for (const h of raw) {
     if (!h || typeof h !== "object") return "each holding must be an object";
     const symbol = typeof h.symbol === "string" ? h.symbol.trim() : "";
-    if (!SYMBOL.test(symbol)) return "a holding has an invalid symbol";
+    if (!SYMBOL.test(symbol)) return `a holding has a symbol the analysis cannot use: ${shown(h.symbol)}`;
     if (!finite(h.shares) || !finite(h.avgPrice) || h.avgPrice < 0) return `holding ${symbol}: shares and avgPrice must be numbers`;
     const current = h.currentPrice === null || h.currentPrice === undefined ? null : h.currentPrice;
     if (current !== null && (!finite(current) || current < 0)) return `holding ${symbol}: currentPrice must be a number`;
@@ -101,7 +110,7 @@ export function checkMovers(raw) {
   for (const m of raw) {
     if (!m || typeof m !== "object") return "each mover must be an object";
     const symbol = typeof m.symbol === "string" ? m.symbol.trim() : "";
-    if (!SYMBOL.test(symbol)) return "a mover has an invalid symbol";
+    if (!SYMBOL.test(symbol)) return `a mover has a symbol the analysis cannot use: ${shown(m.symbol)}`;
     if (!finite(m.changePct) || Math.abs(m.changePct) > 10_000) return `mover ${symbol}: changePct must be a number`;
     if (!finite(m.prevPrice) || !finite(m.newPrice) || m.prevPrice <= 0 || m.newPrice <= 0) return `mover ${symbol}: prices must be positive numbers`;
     out.push({ symbol, changePct: m.changePct, prevPrice: m.prevPrice, newPrice: m.newPrice });
