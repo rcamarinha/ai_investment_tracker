@@ -18,12 +18,14 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.55.6';
-import { escapeHTML } from './utils.js?v=3.55.6';
+import state from './state.js?v=3.55.7';
+import { escapeHTML } from './utils.js?v=3.55.7';
 import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection, reconcileStatementTotal }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
 import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../services/import-banks.js';
+import { compareExtraction } from '../services/model-trial.js';
+import { reportDiagnostic } from '../services/telemetry.js';
 
 /** Characters per request. The server rejects above 15K. */
 const CHUNK_CHARS = 12000;
@@ -297,56 +299,38 @@ export function rowsInStatementTotal(rows = []) {
     return rows.filter(r => r.enrichedFrom !== 'card' || !!r.expandedFrom);
 }
 
-export async function importPdfStatement(file, { accountId, accountCurrency, hint, onProgress } = {}) {
-    const { lines, pageCount } = await extractPdfLines(file);
-    if (!lines.length) {
-        return { rows: [], errors: [{ reason: 'No text found — this looks like a scanned image rather than a text PDF.' }], parsed: 0, skipped: 1, format: 'pdf' };
+/**
+ * Everything that happens to extracted rows before they are shown for review:
+ * normalise, put in document order, check the running balance, handle card
+ * detail, and check the whole statement adds up. One function so a model on
+ * trial (plan P9 step 5b) goes through exactly the checks the real rows do.
+ */
+/**
+ * Report how a model on trial did against the real extraction — counts and
+ * verdicts only (services/model-trial.js). The candidate's rows are checked and
+ * dropped here; nothing of them is returned, shown or saved.
+ */
+function trialReport(real, trial, opts) {
+    if (!trial.sections && !trial.failed) return;
+    const context = {
+        action: 'statements.extract', provider: trial.model,
+        chunks: trial.chunks, candidateFailed: trial.failed,
+        msPrimary: trial.primaryMs, msCandidate: trial.ms,
+    };
+    if (trial.sections) {
+        const cand = checkExtractedRows(trial.collected, opts);
+        Object.assign(context, compareExtraction(
+            { rows: real.verified, chain: real.chain, total: real.total },
+            { rows: cand.verified, chain: cand.chain, total: cand.total }));
     }
+    console.info('[model trial] statements.extract', context);
+    reportDiagnostic('ai-trial', context);
+}
 
-    const { header, body, headings, broadened, year, period } = prefilterLines(lines);
-    if (!body.length) {
-        return {
-            rows: [],
-            errors: [{ reason: 'Nothing in this document looks like a transaction: no line carries both a date and an amount. If it is a statement, it may be a scan of one, or a summary page rather than the movements.' }],
-            parsed: 0, skipped: 1, format: 'pdf'
-        };
-    }
-
-    const chunks = chunkLines(body);
-    // The PERIOD, not a year. A statement running 15/12 to 15/01 spans two, and
-    // telling the model a single year makes it stamp December with January's.
-    const periodHint = period && period.start && period.startYear !== period.endYear
-        ? `The statement period runs from ${period.start} to ${period.end}. It spans two calendar years: a row printed as day/month takes whichever year places it inside that period, so December belongs to ${period.startYear} and January to ${period.endYear}.`
-        : period && period.start ? `The statement period runs from ${period.start} to ${period.end}.`
-        : year ? `The statement period is in ${year}.` : null;
-    const contextHint = [hint, periodHint,
-        `Document header:\n${header.join('\n')}`].filter(Boolean).join('\n');
-
-    const collected = [], errors = [];
-    let provider = null, chunksFailed = 0;
-    for (let i = 0; i < chunks.length; i++) {
-        onProgress?.(i, chunks.length);
-        try {
-            const payload = await callExtractor(chunks[i], contextHint);
-            provider = payload.provider || provider;
-            const got = payload.rows || [];
-            // A section full of dated lines that yields nothing is a failure,
-            // not an empty section. Left unreported it loses ~40 transactions
-            // per chunk while the import still says "success".
-            if (!got.length && /\d{1,2}[/.-]\d{1,2}/.test(chunks[i])) {
-                chunksFailed++;
-                errors.push({ reason: `Section ${i + 1} of ${chunks.length} returned no transactions despite containing dated lines — it was probably truncated.` });
-            }
-            collected.push(...got);
-        } catch (err) {
-            chunksFailed++;
-            errors.push({ reason: `Section ${i + 1} of ${chunks.length}: ${err.message}` });
-        }
-    }
-    onProgress?.(chunks.length, chunks.length);
-
+export function checkExtractedRows(collected, { accountId, accountCurrency, sourceName, lines }) {
+    const errors = [];
     const { rows: normalized, rejected, skipped } = normalizeAiRows(collected,
-        { accountId, currency: accountCurrency || null, source: file.name || 'pdf' });
+        { accountId, currency: accountCurrency || null, source: sourceName });
     for (const r of rejected) errors.push({ reason: r.reason });
 
     // Document order is the only intra-day ordering that exists — there is no
@@ -438,6 +422,80 @@ export async function importPdfStatement(file, { accountId, accountCurrency, hin
     // is not in the chain at all, so a section that should never have been
     // imported passes every per-row test and still shows up in the money.
     const total = reconcileStatementTotal(rowsInStatementTotal(rows), lines);
+
+    return {
+        rows, errors, total, chain, flagged, order, skipped, verified,
+        detailRows, itemised, promoted, settlementsLinked, enrichedCount, unmatchedDetail,
+    };
+}
+
+export async function importPdfStatement(file, { accountId, accountCurrency, hint, onProgress } = {}) {
+    const { lines, pageCount } = await extractPdfLines(file);
+    if (!lines.length) {
+        return { rows: [], errors: [{ reason: 'No text found — this looks like a scanned image rather than a text PDF.' }], parsed: 0, skipped: 1, format: 'pdf' };
+    }
+
+    const { header, body, headings, broadened, year, period } = prefilterLines(lines);
+    if (!body.length) {
+        return {
+            rows: [],
+            errors: [{ reason: 'Nothing in this document looks like a transaction: no line carries both a date and an amount. If it is a statement, it may be a scan of one, or a summary page rather than the movements.' }],
+            parsed: 0, skipped: 1, format: 'pdf'
+        };
+    }
+
+    const chunks = chunkLines(body);
+    // The PERIOD, not a year. A statement running 15/12 to 15/01 spans two, and
+    // telling the model a single year makes it stamp December with January's.
+    const periodHint = period && period.start && period.startYear !== period.endYear
+        ? `The statement period runs from ${period.start} to ${period.end}. It spans two calendar years: a row printed as day/month takes whichever year places it inside that period, so December belongs to ${period.startYear} and January to ${period.endYear}.`
+        : period && period.start ? `The statement period runs from ${period.start} to ${period.end}.`
+        : year ? `The statement period is in ${year}.` : null;
+    const contextHint = [hint, periodHint,
+        `Document header:\n${header.join('\n')}`].filter(Boolean).join('\n');
+
+    const collected = [], errors = [];
+    let provider = null, chunksFailed = 0;
+    // A model trial's answers, when the server ran one (admins only, plan P9 5b).
+    const trial = { collected: [], sections: 0, failed: 0, model: null, ms: 0, primaryMs: 0, chunks: chunks.length };
+    for (let i = 0; i < chunks.length; i++) {
+        onProgress?.(i, chunks.length);
+        try {
+            const payload = await callExtractor(chunks[i], contextHint);
+            provider = payload.provider || provider;
+            const got = payload.rows || [];
+            // A section full of dated lines that yields nothing is a failure,
+            // not an empty section. Left unreported it loses ~40 transactions
+            // per chunk while the import still says "success".
+            if (!got.length && /\d{1,2}[/.-]\d{1,2}/.test(chunks[i])) {
+                chunksFailed++;
+                errors.push({ reason: `Section ${i + 1} of ${chunks.length} returned no transactions despite containing dated lines — it was probably truncated.` });
+            }
+            collected.push(...got);
+            const sh = payload.shadow;
+            if (sh) {
+                trial.model = sh.model || trial.model;
+                if (sh.failed) trial.failed++;
+                else {
+                    trial.sections++;
+                    trial.collected.push(...(Array.isArray(sh.rows) ? sh.rows : []));
+                    trial.ms += Number(sh.ms) || 0;
+                    trial.primaryMs += Number(sh.primaryMs) || 0;
+                }
+            }
+        } catch (err) {
+            chunksFailed++;
+            errors.push({ reason: `Section ${i + 1} of ${chunks.length}: ${err.message}` });
+        }
+    }
+    onProgress?.(chunks.length, chunks.length);
+
+    const checked = checkExtractedRows(collected,
+        { accountId, accountCurrency, sourceName: file.name || 'pdf', lines });
+    errors.push(...checked.errors);
+    const { rows, total, chain, flagged, order, skipped, detailRows, itemised, promoted,
+            settlementsLinked, enrichedCount, unmatchedDetail } = checked;
+    trialReport(checked, trial, { accountId, accountCurrency, sourceName: file.name || 'pdf', lines });
 
     return {
         rows, errors, parsed: rows.length, total,

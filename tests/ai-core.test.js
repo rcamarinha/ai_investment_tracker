@@ -36,6 +36,8 @@ describe('geminiBody', () => {
             .toEqual({ maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } });
         expect(geminiBody({ ...gemini, thinking: 'low' }, 'x').generationConfig)
             .toEqual({ maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: 'low' } });
+        expect(geminiBody({ ...gemini, thinking: 'minimal' }, 'x').generationConfig)
+            .toEqual({ maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: 'minimal' } });
     });
 
     it('offers search only when allowed, and puts a system prompt where Gemini reads it', () => {

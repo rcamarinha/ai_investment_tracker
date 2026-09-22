@@ -46,6 +46,8 @@ export function geminiBody(call, prompt, system) {
   // level form (measured on wine-ai: 38s -> 10-16s).
   if (call.thinking === "off") generationConfig.thinkingConfig = { thinkingBudget: 0 };
   if (call.thinking === "low") generationConfig.thinkingConfig = { thinkingLevel: "low" };
+  // 3.x's closest to "off" (Google: "does not guarantee that thinking is off").
+  if (call.thinking === "minimal") generationConfig.thinkingConfig = { thinkingLevel: "minimal" };
   /** @type {Record<string, unknown>} */
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],

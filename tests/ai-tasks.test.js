@@ -14,7 +14,11 @@ import { USAGE_FUNCTIONS } from '../supabase/functions/_shared/usage-core.js';
  */
 
 const tasks = Object.entries(AI_TASKS);
-const calls = tasks.flatMap(([name, t]) => [[name, 'primary', t.primary], ...(t.fallback ? [[name, 'fallback', t.fallback]] : [])]);
+const calls = tasks.flatMap(([name, t]) => [
+    [name, 'primary', t.primary],
+    ...(t.fallback ? [[name, 'fallback', t.fallback]] : []),
+    ...(t.candidate ? [[name, 'candidate', t.candidate]] : []),
+]);
 const approved = new Set(Object.values(APPROVED_MODELS));
 
 describe('every task', () => {
@@ -57,7 +61,7 @@ describe('every model call', () => {
     it.each(calls)('%s %s: thinking is only set for Gemini', (_n, _w, c) => {
         if (c.thinking !== undefined) {
             expect(c.provider).toBe('gemini');
-            expect(['off', 'low']).toContain(c.thinking);
+            expect(['off', 'minimal', 'low']).toContain(c.thinking);
         }
     });
 });
@@ -67,7 +71,30 @@ describe('the extract tier stays cheap and repeatable', () => {
     it.each(extract.length ? extract : [['(none yet)', '', null]])('%s %s: no search, no thinking', (_n, _w, c) => {
         if (!c) return;
         expect(c.searches ?? 0).toBe(0);
-        if (c.provider === 'gemini') expect(c.thinking).toBe('off');
+        // 2.5 switches thinking off; 3.x's closest is "minimal" (trial candidates).
+        if (c.provider === 'gemini') expect(['off', 'minimal']).toContain(c.thinking);
+    });
+});
+
+describe('a model on trial', () => {
+    const withCandidate = tasks.filter(([, t]) => t.candidate);
+
+    it.each(withCandidate.length ? withCandidate : [['(none)', null]])('%s: runs beside the primary, inside the page\'s wait', (_n, t) => {
+        if (!t) return;
+        // Started together with the primary, so the page waits for the slower of
+        // the two — the candidate alone must fit.
+        expect(t.candidate.timeoutMs).toBeLessThanOrEqual(t.pageWaitMs);
+        expect(t.candidate.model).not.toBe(t.primary.model);
+    });
+
+    it('can only be switched on by the server: a secret AND an admin, never the request', () => {
+        const shadow = readFileSync(join(__dirname, '..', 'supabase', 'functions', '_shared', 'shadow.ts'), 'utf8');
+        expect(shadow).toMatch(/Deno\.env\.get\("AI_SHADOW"\)/);
+        expect(shadow).toMatch(/from\("admin_users"\)/);
+        for (const [name, src] of functionSources) {
+            expect(/\bbody\s*(?:\.\s*shadow\b|\[\s*["']shadow["']\s*\])|\{[^}]*\bshadow\b[^}]*\}\s*=\s*body/.test(src), `${name} reads "shadow" from the request`).toBe(false);
+            if (/runCandidate\(/.test(src)) expect(src, `${name} runs a candidate without asking shadowEnabled`).toMatch(/shadowEnabled\(/);
+        }
     });
 });
 
