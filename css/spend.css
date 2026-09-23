@@ -177,6 +177,20 @@
 .tx-date { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
 .tx-merchant { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tx-merchant-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* On a phone the description column is narrow and a bank writes long lines
+   ("TRF A CREDITO SEPA+ - ASSOCIACAO ONDA DO NORTE - GASPAR CAMA"), so one
+   ellipsed line hid most of it. Three lines fit the longest ones a Portuguese
+   bank prints; the edit view always has the whole text. */
+@media (max-width: 640px) {
+    .tx-merchant-text {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        line-clamp: 3;
+        -webkit-box-orient: vertical;
+    }
+    .tx-table td { height: auto; padding-top: 8px; padding-bottom: 8px; }
+}
 .tx-open {
     background: none; border: none; padding: 0; margin: 0;
     font: inherit; color: inherit; text-align: left; cursor: pointer;
@@ -193,6 +207,7 @@
     font-size: 13px;
 }
 .tx-merchant-sub { display: block; font-size: 10px; color: var(--text-secondary); }
+.tx-account-name { opacity: 0.8; }
 .tx-account-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
 .tx-amount { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; }
 .tx-amount.out { color: var(--text-primary); }

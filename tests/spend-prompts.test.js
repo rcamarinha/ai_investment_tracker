@@ -29,6 +29,15 @@ describe('buildStatementRequest', () => {
         expect(r.prompt).not.toContain('dd/mm' + C(10));
     });
 
+    it('tells the model a wrapped line continues the description above it', () => {
+        // Bankinter wraps a long description onto its own line; extraction used to
+        // keep only the first part, so the ledger showed a half description.
+        const p = buildStatementRequest({ statementText: 'x' }).prompt;
+        expect(p).toMatch(/A long description WRAPS onto the next printed line/);
+        expect(p).toMatch(/join it to the description with a\n  single space/);
+        expect(p).toMatch(/Keep each description\n  COMPLETE and as printed/);
+    });
+
     it('leaves the note out when there is none', () => {
         expect(buildStatementRequest({ statementText: 'x' }).prompt).not.toContain('Layout note');
     });

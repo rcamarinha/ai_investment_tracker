@@ -27,6 +27,12 @@ Rules:
 - "amount" is SIGNED: negative when money left the account, positive when it arrived. Never output the absolute value.
 - "balance" is the running balance printed on that row, if the statement shows one. Use null when it does not. Do NOT invent it, and never put the balance in "amount".
 - Amounts may use European formatting (1.234,56). Convert to a plain number: 1234.56.
+- A long description WRAPS onto the next printed line. A line with no date and no
+  amount, printed between a movement and the next one, is the REST OF THAT
+  MOVEMENT'S DESCRIPTION, not a row of its own: join it to the description with a
+  single space and do not output a separate element for it. Keep each description
+  COMPLETE and as printed — every name, reference and code — rather than a summary
+  or a shortened form. It is what the ledger shows and what categorisation reads.
 - Some statements print only day and month. Use the statement period or header to resolve the year. If the year genuinely cannot be determined, omit that row rather than guessing.
 - A statement may cover SEVERAL PRODUCTS, not just the current account: a card, a
   mortgage or other loan, a savings account. Only the current account's movements
