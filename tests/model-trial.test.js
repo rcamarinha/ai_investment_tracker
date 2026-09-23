@@ -64,3 +64,70 @@ describe('everything the trial reports survives the telemetry allow-list', () =>
         for (const k of keys) expect(allowed.has(k), k).toBe(true);
     });
 });
+
+describe('compareExtraction edge cases', () => {
+    const row = (date, amount, sourceRole = 'statement') => ({ date, amount, sourceRole });
+    const checked = (rows, chainValid = true, totalOk = true, chainChecked) =>
+        ({ rows, chain: { valid: chainValid, checked: chainChecked ?? rows.length - 1 }, total: { ok: totalOk } });
+
+    it('a row that changes role AND amount is counted as a diff, not as a role change', () => {
+        // Role change + amount change = two different keys in both dimensions;
+        // the role-change formula (rowsDiffer - moneyDiff) cancels out.
+        // This matters because roleChanges specifically catches "detail read as
+        // a movement" — a row whose AMOUNT also changed is a plain mismatch.
+        const a = [row('2026-09-01', -100, 'statement')];
+        const b = [row('2026-09-01', -200, 'detail')];
+        const r = compareExtraction(checked(a), checked(b));
+        expect(r.rowsDiffer).toBe(2);  // each side has one unique key
+        expect(r.roleChanges).toBe(0); // amount differs too — not a clean role change
+    });
+
+    it('two rows that swap roles without changing amounts report two role changes', () => {
+        const a = [row('2026-09-01', -50, 'statement'), row('2026-09-02', -80, 'detail')];
+        const b = [row('2026-09-01', -50, 'detail'), row('2026-09-02', -80, 'statement')];
+        const r = compareExtraction(checked(a), checked(b));
+        expect(r.rowsDiffer).toBe(4); // two pairs, each with mismatched roles
+        expect(r.roleChanges).toBe(2);
+    });
+
+    it('reports chainChecked from both sides', () => {
+        const rows = [row('2026-09-01', -100), row('2026-09-02', -50)];
+        const r = compareExtraction(
+            checked(rows, true, true, 2),
+            checked(rows, true, true, 1),
+        );
+        expect(r.chainCheckedPrimary).toBe(2);
+        expect(r.chainCheckedCandidate).toBe(1);
+    });
+
+    it('chainChecked defaults to 0 when absent, so a missing chain never looks verified', () => {
+        // A candidate whose chain object has no "checked" field should NOT
+        // inherit a nonzero count from somewhere else.
+        const rows = [row('2026-09-01', -100)];
+        const r = compareExtraction(
+            { rows, chain: {}, total: { ok: true } },
+            { rows, chain: undefined, total: { ok: true } },
+        );
+        expect(r.chainCheckedPrimary).toBe(0);
+        expect(r.chainCheckedCandidate).toBe(0);
+    });
+});
+
+describe('compareCategories edge cases', () => {
+    it('empty primary returns all-zeros except outOfList for any out-of-list candidate', () => {
+        const r = compareCategories([], [{ id: 'a', category: 'Unknown' }], ['Food']);
+        expect(r).toEqual({ compared: 0, agree: 0, missing: 0, outOfList: 1 });
+    });
+
+    it('a candidate entirely in-list and an empty primary gives outOfList 0', () => {
+        const r = compareCategories([], [{ id: 'a', category: 'Food' }], ['Food']);
+        expect(r).toEqual({ compared: 0, agree: 0, missing: 0, outOfList: 0 });
+    });
+
+    it('candidate shorter than primary counts the missing rows', () => {
+        const primary = [{ id: 'a', category: 'Food' }, { id: 'b', category: 'Salary' }, { id: 'c', category: 'Fuel' }];
+        const cand = [{ id: 'a', category: 'Food' }];
+        const r = compareCategories(primary, cand, ['Food', 'Salary', 'Fuel']);
+        expect(r).toMatchObject({ compared: 1, agree: 1, missing: 2, outOfList: 0 });
+    });
+});

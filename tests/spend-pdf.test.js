@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { prefilterLines, chunkLines, normalizeAiRows, verifyRows, rowsInStatementTotal } from '../spend/pdf.js';
+import { prefilterLines, chunkLines, normalizeAiRows, verifyRows, rowsInStatementTotal, checkExtractedRows } from '../spend/pdf.js';
 import { expandCardDetail, sectionSignature } from '../services/import-banks.js';
 import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain, reconcileStatementTotal } from '../services/import-pdf.js';
 import { parseStyledNumber } from '../services/import-banks.js';
@@ -549,5 +549,134 @@ describe('which rows count toward the whole-statement total', () => {
 
     it('keeps every ordinary account movement', () => {
         expect(rowsInStatementTotal([ordinary])).toEqual([ordinary]);
+    });
+});
+
+// ── checkExtractedRows — the pipeline that connects normalisation to review ──
+//
+// This function was extracted in PR #325 so the model-trial comparison path
+// (plan P9 step 5b) can run the same checks on a candidate model's rows. The
+// key behaviours to prove:
+//
+//  - Normal statement rows pass through normalisation, chain ordering and
+//    balance verification and come out in rows[].
+//  - A row whose amount doesn't match the running balance is flagged, not
+//    dropped — the movement happened, the number is doubtful.
+//  - Card detail rows are separated. When their total can be proven against a
+//    settlement row they REPLACE it; when they can't, they are promoted as
+//    movements with needsReview:true so the user can decide whether they are a
+//    revolving-credit-card month (spending in a different period than the
+//    settlement) or genuine imports.
+//  - A proven card settlement is classified as a transfer, so the repayment is
+//    not counted as spending on top of the purchases that replaced it.
+
+const aiRow = (date, amount, opts = {}) => ({
+    date, amount, description: opts.description || 'ROW',
+    role: opts.role || 'statement',
+    balance: opts.balance !== undefined ? opts.balance : null,
+    group: opts.group || null,
+});
+
+const opts = (overrides = {}) => ({
+    accountId: 'acct1', accountCurrency: 'EUR', sourceName: 'bank.pdf', lines: [],
+    ...overrides,
+});
+
+describe('checkExtractedRows', () => {
+    it('returns empty rows for empty input', () => {
+        const r = checkExtractedRows([], opts());
+        expect(r.rows).toEqual([]);
+        expect(r.errors).toEqual([]);
+        expect(r.detailRows).toEqual([]);
+    });
+
+    it('passes normal statement rows through normalisation and chain checking', () => {
+        const collected = [
+            aiRow('2026-09-01', 2000, { balance: 2000, description: 'SALARIO' }),
+            aiRow('2026-09-05', -12.5, { balance: 1987.5, description: 'PINGO DOCE' }),
+        ];
+        const r = checkExtractedRows(collected, opts());
+        expect(r.rows).toHaveLength(2);
+        expect(r.rows[0].description).toBe('SALARIO');
+        expect(r.rows[1].description).toBe('PINGO DOCE');
+        expect(r.chain.valid).toBe(true);
+        expect(r.detailRows).toHaveLength(0);
+    });
+
+    it('flags a row whose amount contradicts the balance, without dropping it', () => {
+        const collected = [
+            aiRow('2026-09-01', 1000, { balance: 1000 }),
+            // hallucinated amount: 1000 - 100 should be 900, not 800
+            aiRow('2026-09-02', -100, { balance: 800 }),
+            aiRow('2026-09-03', -50, { balance: 750 }),
+        ];
+        const r = checkExtractedRows(collected, opts());
+        // The flagged row is still in the output — the movement happened
+        expect(r.rows).toHaveLength(3);
+        // verifyRows marks rows that don't reconcile with needsReview + note
+        const flagged = r.rows.filter(row => row.needsReview && row.note?.includes('reconcile'));
+        expect(flagged.length).toBeGreaterThan(0);
+        expect(r.chain.valid).toBe(false);
+    });
+
+    it('separates detail rows from statement rows', () => {
+        const collected = [
+            aiRow('2026-09-01', 2000, { balance: 2000 }),
+            // Card detail: not a statement movement
+            aiRow('2026-09-10', -50, { role: 'detail', group: 'bkcf' }),
+            aiRow('2026-09-15', -80, { role: 'detail', group: 'bkcf' }),
+            aiRow('2026-09-30', -130, { balance: 1870, description: 'PAGO CARTAO' }),
+        ];
+        const r = checkExtractedRows(collected, opts());
+        expect(r.detailRows).toHaveLength(2);
+        // The settlement (-130) is expanded into the two purchases
+        expect(r.rows).toHaveLength(3); // salario + 2 expanded purchases (settlement replaced)
+        expect(r.itemised).toBe(2);
+    });
+
+    it('promotes unmatched card detail as movements with needsReview — revolving-credit case', () => {
+        // A revolving card: purchases -60 and -90 total -150, but the settlement
+        // in this statement is for the PREVIOUS month (-200 ≠ -150) so proof
+        // cannot be found. The purchases are still the spending of this period.
+        const collected = [
+            aiRow('2026-09-01', 2000, { balance: 2000 }),
+            aiRow('2026-09-30', -200, { balance: 1800, description: 'PAGO CARTAO BKC' }),
+            aiRow('2026-09-10', -60, { role: 'detail', group: 'bkc1', description: 'ZARA' }),
+            aiRow('2026-09-20', -90, { role: 'detail', group: 'bkc1', description: 'AMAZON' }),
+        ];
+        const r = checkExtractedRows(collected, opts());
+        // Settlement stays; purchases are added back as flagged movements
+        const needsReview = r.rows.filter(row => row.needsReview);
+        expect(needsReview).toHaveLength(2);
+        expect(needsReview.every(row => row.sourceRole === 'statement')).toBe(true);
+        // They are NOT included in the whole-statement total: they are the
+        // card's money and their settlement is already in the running balance.
+        const forTotal = rowsInStatementTotal(r.rows);
+        const amounts = forTotal.map(row => Number(row.amount));
+        expect(amounts).not.toContain(-60);
+        expect(amounts).not.toContain(-90);
+    });
+
+    it('marks the settlement as a transfer when a card repayment matches a payment inside the detail', () => {
+        // A card section where the payment (reducing what is owed, positive
+        // from the card's perspective) matches the account-side debit.
+        // The settlement row on the account is marked 'transfer' so it is not
+        // counted as spending again.
+        const collected = [
+            aiRow('2026-09-01', 2000, { balance: 2000 }),
+            // Account side: debit that repays the card
+            aiRow('2026-09-30', -300, { balance: 1700, description: 'PAGAMENTO CARTAO' }),
+            // Card side detail: purchases (negative) and a refund (positive)
+            aiRow('2026-09-10', -120, { role: 'detail', group: 'visa1', description: 'SUPERMERCADO' }),
+            aiRow('2026-09-20', -180, { role: 'detail', group: 'visa1', description: 'GASOLINEIRA' }),
+            // A payment inside the card section: positive 300, meaning the card was repaid.
+            // This is what markCardSettlements looks for to link the account-side row.
+            aiRow('2026-09-30', 300, { role: 'detail', group: 'visa1', description: 'PAGAMENTO RECEBIDO' }),
+        ];
+        const r = checkExtractedRows(collected, opts());
+        // The account-side debit (-300) should be marked as a transfer
+        const transfer = r.rows.find(row => row.category === 'transfer');
+        expect(transfer).toBeDefined();
+        expect(Number(transfer.amount)).toBe(-300);
     });
 });

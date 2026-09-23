@@ -96,3 +96,74 @@ describe('the tasks they run', () => {
         expect(getTask('transactions.categorize').pageWaitMs).toBe(wait(cat));
     });
 });
+
+describe('buildCategoriseRequest direction inference', () => {
+    // The prompt includes a "direction" field that tells the model whether
+    // money left or arrived. The rules: if the input already carries
+    // direction="in"/"out" it is kept; otherwise it is derived from the sign
+    // of amount (negative → out, everything else → in). Getting this wrong
+    // sends a spending row to the model labelled as income, which the prompt
+    // explicitly says never to categorise as a spending category.
+
+    it('passes through an explicit direction — in and out', () => {
+        const r = buildCategoriseRequest({
+            transactions: [
+                { id: 't1', description: 'SALARIO', amount: 2000, direction: 'in' },
+                { id: 't2', description: 'RENDA', amount: -500, direction: 'out' },
+            ],
+            categories: ['Income', 'Housing'],
+        });
+        expect(r.prompt).toContain('"direction":"in"');
+        expect(r.prompt).toContain('"direction":"out"');
+    });
+
+    it('derives direction from the sign of amount when not supplied', () => {
+        const r = buildCategoriseRequest({
+            transactions: [
+                { id: 'a', description: 'COMPRA', amount: -12.5 },
+                { id: 'b', description: 'DEPOSITO', amount: 500 },
+                { id: 'c', description: 'FEE', amount: 0 },
+            ],
+            categories: ['Groceries', 'Income', 'Fees'],
+        });
+        const match = r.prompt.match(/Transactions:\n(\[[\s\S]*?\])$/);
+        const parsed = JSON.parse(match?.[1] || '[]');
+        expect(parsed.find(t => t.id === 'a')?.direction).toBe('out');
+        expect(parsed.find(t => t.id === 'b')?.direction).toBe('in');
+        expect(parsed.find(t => t.id === 'c')?.direction).toBe('in');
+    });
+
+    it('a non-finite amount becomes null, and a null amount gives direction "in"', () => {
+        // Number(null) === 0 and Number(undefined) === NaN (isFinite fails)
+        // The CLAUDE.md pitfall: "Absent" and "zero" are different facts.
+        // An absent amount is treated as arriving (not going out) — this is
+        // conservative: better to ask the user than to call income a spend.
+        const r = buildCategoriseRequest({
+            transactions: [
+                { id: 'x', description: 'MISSING', amount: undefined },
+                { id: 'y', description: 'INFINITY', amount: Infinity },
+            ],
+            categories: ['Other'],
+        });
+        const match = r.prompt.match(/Transactions:\n(\[[\s\S]*?\])$/);
+        const parsed = JSON.parse(match?.[1] || '[]');
+        expect(parsed.find(t => t.id === 'x')?.direction).toBe('in');
+        expect(parsed.find(t => t.id === 'y')?.direction).toBe('in');
+    });
+
+    it('deduplicates and trims categories, ignoring empty strings', () => {
+        // The model assigns ONE category per row; a list with a duplicate
+        // causes no harm but a blank entry would give the model an empty
+        // option it might choose, making the result impossible to act on.
+        const r = buildCategoriseRequest({
+            transactions: [{ id: 't', description: 'X', amount: -1 }],
+            categories: ['Food', '  Food  ', '', 'Salary', 'food'],
+        });
+        const listSection = r.prompt.split('Transactions:')[0];
+        const bullets = listSection.match(/^- .+/gm) || [];
+        // 'Food' and '  Food  ' normalise to the same token
+        expect(bullets.filter(b => b.includes('Food'))).toHaveLength(1);
+        // The empty entry disappears
+        expect(bullets).not.toContain('- ');
+    });
+});
