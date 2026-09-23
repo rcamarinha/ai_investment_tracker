@@ -7,6 +7,8 @@
  * Pure, so tests/spend-prompts.test.js checks it.
  */
 
+import { readJsonArray } from "./ai-core.js";
+
 export const MAX_STATEMENT_CHARS = 15_000;   // the page chunks to 12K; this is the hard stop
 export const MAX_HINT_CHARS = 500;
 export const MAX_BATCH = 60;                 // the page batches at 40
@@ -148,25 +150,5 @@ export function buildCategoriseRequest(body) {
   return { prompt: categorisePrompt(transactions, categories), asked: transactions.length };
 }
 
-/**
- * The JSON array in a model's answer, or null. Never throws and never returns
- * the text: "no transactions" ([]) and "unreadable" (null) are different facts,
- * and the text is bank data that must not reach a log or an error message.
- *
- * @param {string} text
- * @returns {unknown[] | null}
- */
-export function readRows(text) {
-  let s = (text || "").trim();
-  if (!s) return null;
-  s = s.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  const start = s.indexOf("[");
-  const end = s.lastIndexOf("]");
-  if (start === -1 || end < start) return null;
-  try {
-    const parsed = JSON.parse(s.slice(start, end + 1).replace(/,\s*([\]}])/g, "$1"));
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
+/** The JSON array in a model's answer, or null — see ai-core.readJsonArray. */
+export const readRows = readJsonArray;

@@ -1,10 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { recordUsage } from "../_shared/usage.ts";
+import { runTask, AiError } from "../_shared/ai.ts";
+import { buildTradeRequest, readTrades } from "../_shared/trade-prompts.js";
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-// Named once: the request and the usage record must agree, and the admin
-// page prices by this exact string (MODEL_PRICES in services/admin-report-core.js).
-const CLAUDE_MODEL = "claude-sonnet-4-6";
+// Model, output cap and time limit: "trades.extract" in _shared/ai-tasks.js;
+// the prompt and the input check in _shared/trade-prompts.js.
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
 
@@ -67,85 +66,37 @@ Deno.serve(async (req) => {
     userId = data.user.id;
   }
 
-  if (!ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "Anthropic API key not configured on server" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
-
   try {
-    const body = await req.json();
-    const statementText = String(body?.text || "");
-
-    if (!statementText.trim()) {
-      return new Response(
-        JSON.stringify({ error: "Statement text is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const body = await req.json().catch(() => null);
+    const built = buildTradeRequest(body);
+    if ("error" in built) {
+      return new Response(JSON.stringify({ error: built.error }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Cap input length (the client chunks long statements before sending).
-    if (statementText.length > 15_000) {
-      return new Response(
-        JSON.stringify({ error: "Text too long (max 15000 chars). Split it into smaller parts." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const promptContent =
-`You are a precise financial statement parser. Extract every EXECUTED buy or sell securities trade from the statement text below.
-
-Rules:
-- Output ONLY a JSON array. No markdown, no commentary, no preamble.
-- Each element: {"date":"YYYY-MM-DD","identifier":"<ticker or ISIN>","side":"buy"|"sell","shares":<number>,"price":<number per share>,"fees":<number>,"currency":"<ISO code>"}.
-- "identifier" is the ticker symbol if present, otherwise the ISIN.
-- "price" is the price PER SHARE in the trade's native currency (compute from total/quantity if only a total is shown).
-- "shares" is always a positive number; use "side" to indicate direction.
-- IGNORE dividends, interest, deposits, withdrawals, top-ups, currency exchanges, fee-only rows, and stock splits.
-- If no trades are present, output [].
-
-Statement text:
-"""
-${statementText}
-"""`;
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: 4000,
-        messages: [{ role: "user", content: promptContent }],
-      }),
+    const result = await runTask("trades.extract", {
+      userId,
+      prompt: built.prompt,
+      // No balance can catch a half-read chunk here, so an answer without a
+      // readable list is a failed call, not an empty one.
+      usable: (text) => readTrades(text) !== null,
     });
 
-    if (!response.ok) {
-      recordUsage({ userId, fn: "extract-trades", provider: "anthropic", model: CLAUDE_MODEL, ok: false });
-      const errBody = await response.text().catch(() => "");
-      console.error(`[extract-trades] Anthropic API error ${response.status}:`, errBody.slice(0, 300));
-      return new Response(
-        JSON.stringify({ error: "Extraction service temporarily unavailable. Please try again later." }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const data = await response.json();
-    recordUsage({ userId, fn: "extract-trades", provider: "anthropic", model: CLAUDE_MODEL, response: data });
-    // Return the raw Anthropic response; the client parses content[].text → JSON array
-    // (same contract as analyze-portfolio).
-    return new Response(JSON.stringify(data), {
+    // The shape the page has always read: one text block holding a JSON array.
+    return new Response(JSON.stringify({ content: [{ type: "text", text: result.text }], model: result.model }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("[extract-trades] Unexpected error:", (err as Error)?.message || err);
+    const kind = err instanceof AiError ? err.kind : (err as Error)?.name;
+    console.error("[extract-trades] failed:", kind);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({
+        error: kind === "timeout"
+          ? "The extractor took too long on this part. Try a smaller file."
+          : "Extraction service temporarily unavailable. Please try again later.",
+      }),
+      { status: kind === "timeout" ? 504 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
