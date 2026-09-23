@@ -5,15 +5,15 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.55.7';
+import state from './state.js?v=3.55.8';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour, firstGraphemes
-} from './utils.js?v=3.55.7';
+} from './utils.js?v=3.55.8';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule,
     incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
-} from './storage.js?v=3.55.7';
+} from './storage.js?v=3.55.8';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario
@@ -686,6 +686,9 @@ export function renderTransactions() {
 
     const acctIndex = new Map(state.accounts.map((a, i) => [a.id, a.colour || accountColour(a.id, i)]));
     const acctName = new Map(state.accounts.map(a => [a.id, `${a.bankName} · ${a.label}`]));
+    // The bank in words, not only a coloured dot: on a phone a dot's tooltip
+    // cannot be read at all, and a ledger mixing several banks has to say which.
+    const acctBank = new Map(state.accounts.map(a => [a.id, a.bankName || a.label || '']));
 
     host.innerHTML = page.map(t => {
         const isTransfer = t.category === 'transfer' || !!t.transferPairId;
@@ -700,11 +703,8 @@ export function renderTransactions() {
                     <button type="button" class="tx-open"
                             aria-label="${escapeHTML(`Edit ${t.merchant || t.description}, ${fmtMoney(t.amount, t.currency)}, ${fmtDate(t.date)}`)}"
                             data-act="tx" data-id="${escapeHTML(t.id)}">
-                        <span class="tx-merchant-text">
-                            ${escapeHTML(t.merchant || t.description)}
-                            ${t.enrichedFrom ? '<span class="tx-enriched-badge" title="Description improved from MB WAY">◆</span>' : ''}
-                            <span class="tx-merchant-sub">${escapeHTML((t.merchant ? t.description : '') || '')}</span>
-                        </span>
+                        <span class="tx-merchant-text">${escapeHTML(t.merchant || t.description)}${t.enrichedFrom ? '<span class="tx-enriched-badge" title="Description improved from MB WAY">◆</span>' : ''}</span>
+                        <span class="tx-merchant-sub"><span class="tx-account-name">${escapeHTML(acctBank.get(t.accountId) || 'Unknown account')}</span>${t.merchant && t.description ? ` · ${escapeHTML(t.description)}` : ''}</span>
                     </button>
                 </span>
             </td>

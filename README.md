@@ -282,6 +282,12 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.55.8
+Full descriptions from statements, and the bank on every transaction.
+- **A description that wraps onto a second printed line is no longer cut short.** Banks print long lines ("… - associacao onda do norte - gaspar cama") over two lines; the extractor kept only the first and was never told the rest belonged to it. It is now told to join the continuation and to keep each description complete rather than summarise it. Needs `extract-statement` redeployed.
+- **Each transaction names its bank**, under the description, instead of only a coloured dot whose tooltip a phone cannot show.
+- **A long description now wraps over up to three lines on a phone**, instead of one line cut with "…".
+
 ### v3.55.7
 A trial of Gemini 3.5 for statement import and categorisation, for the admin only.
 - **While the trial is on**, the server runs Gemini 3.5 (thinking "minimal", Google's default temperature) beside the current model on the same statement section or batch. The page puts 3.5's rows through the same balance and statement-total checks, records only counts and yes/no results (an `ai-trial` diagnostic), and discards them. Nothing from the trial is shown, saved or used.
