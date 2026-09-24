@@ -173,7 +173,7 @@ describe('estimateCost', () => {
     });
 
     it('has a price for every model the functions call today', () => {
-        for (const m of ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'gemini-2.5-flash']) {
+        for (const m of ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'gemini-2.5-flash', 'gemini-3.5-flash']) {
             expect(MODEL_PRICES[m], m).toBeTruthy();
         }
     });
@@ -231,6 +231,22 @@ describe('summarizeAiUsage', () => {
             const s = summarizeAiUsage(r);
             expect(s.totals.calls).toBe(0);
             expect(s.byFunction).toEqual([]);
+        }
+    });
+});
+
+// ── completeness invariants ───────────────────────────────────────────────────
+
+import { USAGE_FUNCTIONS } from '../supabase/functions/_shared/usage-core.js';
+
+describe('admin-page completeness invariants', () => {
+    it('every function that records usage has a readable label on the admin page', () => {
+        // A function added to USAGE_FUNCTIONS without a FUNCTION_LABELS entry
+        // would show up with "undefined" as its name in the usage breakdown,
+        // silently making the feature unrecognisable to an admin.
+        for (const fn of USAGE_FUNCTIONS) {
+            expect(typeof FUNCTION_LABELS[fn], fn).toBe('string');
+            expect(FUNCTION_LABELS[fn].trim(), fn).not.toBe('');
         }
     });
 });

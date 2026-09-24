@@ -37,6 +37,15 @@ describe('every task', () => {
     });
 });
 
+describe('every approved model is priced on the admin page', () => {
+    // APPROVED_MODELS is the allow-list: a new model added there without a price
+    // entry would appear as $0 on the admin's cost breakdown, making every call
+    // it handles look free even if it costs more than the model it replaced.
+    it.each(Object.entries(APPROVED_MODELS))('%s (%s)', (_key, model) => {
+        expect(MODEL_PRICES).toHaveProperty([model]);
+    });
+});
+
 describe('every model call', () => {
     it.each(calls)('%s %s uses an approved model that the admin page can price', (_n, _w, c) => {
         expect(approved.has(c.model)).toBe(true);
