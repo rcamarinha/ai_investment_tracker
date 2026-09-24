@@ -46,6 +46,12 @@ describe('buildStatementRequest', () => {
         expect(buildStatementRequest({})).toHaveProperty('error');
         expect(buildStatementRequest({ statementText: 'x'.repeat(MAX_STATEMENT_CHARS + 1) })).toMatchObject({ status: 413 });
     });
+
+    it('refuses whitespace-only text after trim', () => {
+        // A statement that is spaces only is effectively empty — trim reveals nothing.
+        expect(buildStatementRequest({ statementText: '   ' })).toHaveProperty('error');
+        expect(buildStatementRequest({ statementText: '\t\n ' })).toHaveProperty('error');
+    });
 });
 
 describe('buildCategoriseRequest', () => {
@@ -84,6 +90,24 @@ describe('readRows', () => {
         expect(readRows('')).toBeNull();
         expect(readRows('Sorry, I cannot read this statement.')).toBeNull();
         expect(readRows('[{"date":"2026-09-01","amount":')).toBeNull();
+    });
+
+    it('extracts the array even when the model wraps it in an object', () => {
+        // Some models reply {"rows": [...]} instead of [...] at the top level.
+        // The indexOf/lastIndexOf extraction pulls the inner array out correctly.
+        const wrapped = '{"rows": [{"date":"2026-09-01","amount":-12.5}]}';
+        expect(readRows(wrapped)).toEqual([{ date: '2026-09-01', amount: -12.5 }]);
+    });
+
+    it('returns null for whitespace-only text', () => {
+        // Trim leaves nothing to parse.
+        expect(readRows('   ')).toBeNull();
+        expect(readRows('\n\t')).toBeNull();
+    });
+
+    it('returns null when the model returns an object with no array inside', () => {
+        // {"date":"..."} has no "[" so indexOf returns -1 → null.
+        expect(readRows('{"date":"2026-09-01","amount":-12.5}')).toBeNull();
     });
 });
 
