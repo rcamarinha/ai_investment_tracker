@@ -40,6 +40,15 @@ describe('geminiBody', () => {
             .toEqual({ maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: 'minimal' } });
     });
 
+    it('sends no thinkingConfig when thinking is not set, leaving the model free to decide', () => {
+        // Research-tier Gemini calls (e.g. tickers.resolve) do not set thinking, so
+        // the model uses its own judgement. An accidental thinkingConfig here would
+        // constrain or disable thinking for tasks that never asked for it.
+        const config = geminiBody(gemini, 'x').generationConfig;
+        expect(config).not.toHaveProperty('thinkingConfig');
+        expect(config.maxOutputTokens).toBe(8192);
+    });
+
     it('offers search only when allowed, and puts a system prompt where Gemini reads it', () => {
         const b = geminiBody({ ...gemini, searches: 1 }, 'x', 'search first');
         expect(b.tools).toEqual([{ google_search: {} }]);
