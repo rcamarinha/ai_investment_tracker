@@ -79,6 +79,23 @@ describe('normalizeRow', () => {
     it('falls back to a placeholder description rather than an empty string', () => {
         expect(normalizeRow({ ...good, description: '   ' }).description).toBe('(no description)');
     });
+
+    it('records where the currency came from — the three possible sources', () => {
+        // 'row': the file itself printed a currency for this movement. Anything
+        // that claims 'row' for a currency it inferred is mis-attributing provenance
+        // and makes it impossible to later correct with a better-sourced observation.
+        expect(normalizeRow(good).currencySource).toBe('row');
+
+        // 'account': the row had none, but the import caller supplied a default
+        // (e.g. the account's own currency). Not something the file stated.
+        expect(
+            normalizeRow({ ...good, currency: undefined }, { accountId: 'a1', currency: 'GBP' }).currencySource
+        ).toBe('account');
+
+        // 'assumed': neither the row nor the account context supplied one. The
+        // contract fell back to EUR — a guess, not a fact.
+        expect(normalizeRow({ ...good, currency: undefined }).currencySource).toBe('assumed');
+    });
 });
 
 describe('validateRow', () => {

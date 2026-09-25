@@ -412,6 +412,31 @@ describe('detectRecurring', () => {
         const yearly = [tx('2024-03-01', -89), tx('2025-03-02', -89), tx('2026-03-01', -89)]
             .map(t => ({ ...t, merchant: 'Domain' }));
         expect(detectRecurring(yearly)[0].cadenceLabel).toBe('yearly');
+
+        const quarterly = [
+            tx('2026-01-01', -29.99, { id: 'q1', merchant: 'Cloud Storage' }),
+            tx('2026-04-01', -29.99, { id: 'q2', merchant: 'Cloud Storage' }),
+            tx('2026-07-01', -29.99, { id: 'q3', merchant: 'Cloud Storage' }),
+        ];
+        expect(detectRecurring(quarterly)[0].cadenceLabel).toBe('quarterly');
+    });
+
+    it('fills out all result fields, and active subscriptions are never likelyEnded', () => {
+        // Three quarterly payments, today just 31 days after the last: overdue threshold
+        // is cadence * 1.8 = 163 days — well beyond 31, so likelyEnded must be false.
+        const rows = [
+            tx('2026-01-01', -29.99, { id: 'q1', merchant: 'Cloud Storage' }),
+            tx('2026-04-01', -29.99, { id: 'q2', merchant: 'Cloud Storage' }),
+            tx('2026-07-01', -29.99, { id: 'q3', merchant: 'Cloud Storage' }),
+        ];
+        const found = detectRecurring(rows, { today: '2026-08-01' });
+        expect(found).toHaveLength(1);
+        const sub = found[0];
+        expect(sub.transactionIds).toEqual(['q1', 'q2', 'q3']);
+        expect(sub.nextExpected).toBe('2026-09-30');   // Jul 1 + 91 days
+        expect(sub.firstSeen).toBe('2026-01-01');
+        expect(sub.lastSeen).toBe('2026-07-01');
+        expect(sub.likelyEnded).toBe(false);
     });
 });
 
