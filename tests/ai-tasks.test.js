@@ -122,9 +122,7 @@ const functionSources = readdirSync(FUNCTIONS_DIR, { withFileTypes: true })
     .filter(d => d.isDirectory() && !d.name.startsWith('_'))
     .map(d => [d.name, readFileSync(join(FUNCTIONS_DIR, d.name, 'index.ts'), 'utf8')]);
 
-const NOT_YET_ON_AI_TS = [
-    'extract-trades', 'wine-ai',
-];
+const NOT_YET_ON_AI_TS = ['wine-ai'];
 const STILL_ACCEPTS_A_PROMPT = [];
 
 const callsProviderDirectly = src => /api\.anthropic\.com|generativelanguage\.googleapis\.com/.test(src);

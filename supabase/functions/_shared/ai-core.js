@@ -109,6 +109,30 @@ export function readGemini(data) {
 }
 
 /**
+ * The JSON array in a model's answer, or null. Never throws and never returns
+ * the text: "nothing found" ([]) and "unreadable" (null) are different facts,
+ * and the text is the user's own statement or trades — it must not reach a log
+ * or an error message.
+ *
+ * @param {string} text
+ * @returns {unknown[] | null}
+ */
+export function readJsonArray(text) {
+  let s = (text || "").trim();
+  if (!s) return null;
+  s = s.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const start = s.indexOf("[");
+  const end = s.lastIndexOf("]");
+  if (start === -1 || end < start) return null;
+  try {
+    const parsed = JSON.parse(s.slice(start, end + 1).replace(/,\s*([\]}])/g, "$1"));
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Why a call failed, in words safe to log and to show: never the provider's
  * error body, which can echo the prompt (statement data) or carry a key.
  */

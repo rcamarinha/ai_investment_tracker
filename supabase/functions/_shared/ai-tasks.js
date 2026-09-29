@@ -97,6 +97,15 @@ export const AI_TASKS = Object.freeze({
     fallback: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeHaiku, maxTokens: 8000, timeoutMs: 25_000, temperature: 0 },
     candidate: { provider: "gemini", keyEnv: KEY_ENV.gemini, model: APPROVED_MODELS.geminiFlash, maxTokens: 16384, timeoutMs: 25_000, thinking: "minimal" },
   },
+  // extract-trades — a broker statement's text to ledger trades. Extract tier,
+  // and Claude alone: a broker import has no balance to check a partial answer
+  // against, so the page refuses the import when a chunk is unreadable. Trying
+  // a cheaper model here is a decision to take with evidence, not in passing.
+  "trades.extract": {
+    fn: "extract-trades", tier: "extract", pageWaitMs: FUNCTION_WALL_MS,
+    primary: { provider: "anthropic", keyEnv: KEY_ENV.anthropic, model: APPROVED_MODELS.claudeSonnet, maxTokens: 4000, timeoutMs: 90_000, temperature: 0 },
+    fallback: null,
+  },
   // resolve-tickers — a priceable ticker for holdings every price API refused.
   // Gemini decides whether to search; a price in an unsearched answer is
   // dropped (_shared/ticker-prompts.js), and the page validates every ticker.
