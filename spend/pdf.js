@@ -18,8 +18,8 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.55.8';
-import { escapeHTML } from './utils.js?v=3.55.8';
+import state from './state.js?v=3.56.0';
+import { escapeHTML } from './utils.js?v=3.56.0';
 import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection, reconcileStatementTotal }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
@@ -429,8 +429,11 @@ export function checkExtractedRows(collected, { accountId, accountCurrency, sour
     };
 }
 
-export async function importPdfStatement(file, { accountId, accountCurrency, hint, onProgress } = {}) {
-    const { lines, pageCount } = await extractPdfLines(file);
+export async function importPdfStatement(file, { accountId, accountCurrency, hint, onProgress, pages } = {}) {
+    // `pages` lets the caller pass lines it has already read — the account is
+    // recognised from the statement's own header before the import starts, and
+    // reading a PDF twice for that would be a waste.
+    const { lines, pageCount } = pages || await extractPdfLines(file);
     if (!lines.length) {
         return { rows: [], errors: [{ reason: 'No text found — this looks like a scanned image rather than a text PDF.' }], parsed: 0, skipped: 1, format: 'pdf' };
     }

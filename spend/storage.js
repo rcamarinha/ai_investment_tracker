@@ -7,8 +7,8 @@
  * matching wine/storage.js.
  */
 
-import state from './state.js?v=3.55.8';
-import { showToast } from './utils.js?v=3.55.8';
+import state from './state.js?v=3.56.0';
+import { showToast } from './utils.js?v=3.56.0';
 
 // ── Supabase init ───────────────────────────────────────────────────────────
 
@@ -236,7 +236,11 @@ const txToRow = (t, userId) => ({
 const accountFromRow = r => ({
     id: r.id, bankName: r.bank_name, label: r.account_label, type: r.account_type,
     currency: r.currency || 'EUR', linkedAccountId: r.linked_account_id,
-    colour: r.colour, lastImportedAt: r.last_imported_at, archived: !!r.archived
+    colour: r.colour, lastImportedAt: r.last_imported_at, archived: !!r.archived,
+    // What this account's statements print (IBAN, NIB, account number), so a
+    // file finds its own account. Absent on an older database: an empty list
+    // simply means the next statement asks once.
+    statementRefs: Array.isArray(r.statement_refs) ? r.statement_refs : []
 });
 
 const profileFromRow = r => ({
@@ -431,7 +435,8 @@ export async function saveAccount(account) {
         currency: account.currency || 'EUR',
         linked_account_id: account.linkedAccountId || null,
         colour: account.colour || null,
-        archived: !!account.archived
+        archived: !!account.archived,
+        ...(account.statementRefs ? { statement_refs: account.statementRefs } : {})
     };
     const { data, error } = await state.supabaseClient
         .from('spend_accounts').upsert(row).select().single();

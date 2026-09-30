@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS spend_accounts (
     -- is what lets the importer know a wallet row should enrich, not duplicate.
     linked_account_id UUID REFERENCES spend_accounts(id) ON DELETE SET NULL,
 
+    -- References this account's statements print (IBAN, NIB, account number),
+    -- normalised to A-Z0-9 and matched EXACTLY, so a statement finds its own
+    -- account instead of the person choosing one before choosing the file.
+    -- Migration 20260930_account_statement_refs.sql.
+    statement_refs    TEXT[] NOT NULL DEFAULT '{}'::text[],
+
     colour            TEXT,               -- dot colour in the ledger, per-account provenance
     last_imported_at  TIMESTAMPTZ,
     archived          BOOLEAN NOT NULL DEFAULT FALSE,
