@@ -282,6 +282,12 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.56.0
+Import a folder of statements at once, and let each file find its own account.
+- **Several files in one go.** The file picker takes many; each is read in turn. A file whose checks all pass — every row reconciles, the statement adds up, nothing flagged, no account change — is saved without asking. The first file with anything to look at stops the queue and waits, and the rest continue once you deal with it. A summary says how many imported, how many needed a look, and how many could not be read.
+- **A statement files itself.** The IBAN, NIB or account number printed on it identifies the account. The first statement from a new account asks once — use an existing account, or create one there and then — and every later statement from it goes straight to the right place. Matching is exact, so a card statement never lands in the current account. Needs the `20260930_account_statement_refs.sql` migration.
+- The account dropdown is now only for files that name no account at all, which is common in CSV exports.
+
 ### v3.55.8
 Full descriptions from statements, and the bank on every transaction.
 - **A description that wraps onto a second printed line is no longer cut short.** Banks print long lines ("… - associacao onda do norte - gaspar cama") over two lines; the extractor kept only the first and was never told the rest belonged to it. It is now told to join the continuation and to keep each description complete rather than summarise it. Needs `extract-statement` redeployed.

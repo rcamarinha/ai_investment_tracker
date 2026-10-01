@@ -50,6 +50,15 @@ const state = {
     importAccountId: null,
     importDraft: null,
     importResult: null,
+    // Several statements imported in one go: the files still to read, and how
+    // the batch is going. A file whose checks all pass saves itself; the first
+    // one with anything to look at stops the queue (spend/importer.js).
+    importQueue: [],
+    importBatch: null,
+    // The account references this file printed (IBAN, NIB, account number) and
+    // the one that matched, so the account can remember them once it commits.
+    importRefs: [],
+    importMatchedRef: null,
     importSampleRows: [],
 
     // ── flags ───────────────────────────────────────────────────────────────

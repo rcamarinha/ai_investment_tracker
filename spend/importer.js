@@ -14,19 +14,20 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state, { clearViewFilters } from './state.js?v=3.55.8';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.55.8';
+import state, { clearViewFilters } from './state.js?v=3.56.0';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.0';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.55.8';
-import { renderAll } from './ledger.js?v=3.55.8';
+} from './storage.js?v=3.56.0';
+import { renderAll } from './ledger.js?v=3.56.0';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS, isRoutableCardRow
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement } from './pdf.js?v=3.55.8';
+import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.0';
+import { accountRefs, matchAccount, rememberRefs } from '../services/import-identity.js';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 import { detectInternalTransfers } from '../services/spend-core.js';
 
@@ -60,16 +61,22 @@ export function renderImportSection() {
     const known = state.profiles.length;
     host.innerHTML = `
         <div class="form-group">
-            <label class="form-label" for="importAccount">Which account is this statement for?</label>
+            <label class="form-label" for="importAccount">Account, for a file that does not name one</label>
             <select class="form-select" id="importAccount">
                 ${state.accounts.map(a => `<option value="${a.id}">${escapeHTML(`${a.bankName} · ${a.label}`)}${a.type === 'wallet' ? ' (wallet)' : ''}</option>`).join('')}
             </select>
         </div>
         <div class="form-group">
             <label class="form-label" for="importFile">Statement file</label>
-            <input class="form-input" type="file" id="importFile" accept=".csv,.tsv,.txt,.ofx,.qfx,.qbo,.xml,.pdf"
+            <input class="form-input" type="file" id="importFile" multiple
+                   accept=".csv,.tsv,.txt,.ofx,.qfx,.qbo,.xml,.pdf"
                    onchange="spendHandleFile(this)">
             <span class="form-helper">
+                <strong>Several files at once is fine.</strong> Each one is read in turn; a statement whose checks
+                all pass is saved without asking, and the first one with anything to look at stops and waits.<br>
+                A statement that prints its IBAN or account number files itself against the right account —
+                the first one from a new account asks once, then never again. This choice is used only for files
+                that name no account at all.<br>
                 <strong>OFX or QFX imports with no setup at all</strong> — it's a standard format, so nothing needs mapping.
                 CSV and TSV work too: ${known ? `${known} format${known === 1 ? '' : 's'} already learned, and those import without asking anything.` : 'the first file from a bank asks you to confirm its columns once, then never again.'}
             </span>
@@ -161,27 +168,247 @@ function status(html) {
 // ── file → text ─────────────────────────────────────────────────────────────
 
 export async function handleFile(input) {
-    const file = input?.files?.[0];
-    if (!file) return;
+    const files = [...(input?.files || [])];
+    if (!files.length) return;
     if (!requireAuth('import a statement')) return;
+    input.value = '';
 
-    state.importAccountId = el('importAccount')?.value || state.accounts[0]?.id;
-
-    if (/\.pdf$/i.test(file.name)) {
-        input.value = '';
-        await runPdfImport(file);
-        return;
-    }
-
+    state.importQueue = files;
+    state.importBatch = { total: files.length, done: 0, review: 0, failed: 0, notes: [], current: null };
     try {
-        const text = await file.text();
-        state.importText = text;
-        state.importFileName = file.name;
-        analyze();
+        await processQueue();
     } catch (err) {
         status(`<div class="review-banner"><span>⚠</span><span>Could not read that file: ${escapeHTML(err.message)}</span></div>`);
+        reportHandled(err, { action: 'import-batch' });
     }
-    input.value = '';
+}
+
+// ── Importing several statements in one go ──────────────────────────────────
+//
+// One file at a time was the real cost of a month's paperwork: a dozen
+// statements meant a dozen rounds of choose-account, choose-file, wait, commit.
+// Files are now read one after another. A file whose checks all pass saves
+// itself; the first one with anything to look at stops the queue and waits,
+// because the whole point of the checks is that a human sees what they caught.
+
+/** What must be true for a file to save itself, with nobody looking. */
+export function importIsClean(r) {
+    if (!r || r.isDetail) return false;                 // a detail file enriches rows; never silent
+    if (!r.fresh?.length) return false;                 // nothing to save is not "clean", it is odd
+    if (r.errors?.length || r.chunksFailed) return false;
+    if (r.flagged) return false;                        // a row the balance chain could not reconcile
+    if (r.fresh.some(row => row.needsReview)) return false;
+    if ((r.cardPlan || []).some(p => p.action !== 'use')) return false;  // changes the account setup
+    if (!r.chain?.valid) return false;                  // the per-row check must have passed
+    if (!r.total?.ok) return false;                     // and the statement must add up as a whole
+    if (!r.knownLayout && r.format === 'pdf') return false;  // a layout nobody has confirmed
+    return true;
+}
+
+function queueStatus() {
+    const q = state.importQueue || [];
+    if (!q.length) return '';
+    return `<p class="form-helper">${q.length} more file${q.length === 1 ? '' : 's'} waiting — finish this one to continue.</p>`;
+}
+
+/** Read the next queued file, saving it outright when every check passes. */
+async function processQueue() {
+    const batch = state.importBatch;
+    while ((state.importQueue || []).length) {
+        const file = state.importQueue.shift();
+        batch.current = file.name;
+        status(`<p class="form-helper">Reading ${escapeHTML(file.name)} (${batch.done + batch.review + batch.failed + 1} of ${batch.total})…</p>`);
+        try {
+            await readOneFile(file);
+        } catch (err) {
+            batch.failed++;
+            batch.notes.push(`${file.name}: ${err.message}`);
+            reportHandled(err, { action: 'import-batch-file' });
+            continue;
+        }
+        if (!state.importResult) { batch.failed++; continue; }   // refused, or cancelled at the account question
+
+        if (importIsClean(state.importResult)) {
+            await commitImport({ silent: true });
+            batch.done++;
+            continue;
+        }
+        batch.review++;
+        showReport();
+        const s = el('importStatus');
+        if (s) s.insertAdjacentHTML('beforeend', queueStatus());
+        return;                      // wait for the person; commit or cancel resumes
+    }
+    finishBatch();
+}
+
+function finishBatch() {
+    const b = state.importBatch;
+    if (!b || b.total <= 1) { state.importBatch = null; return; }
+    const parts = [`${b.done} file${b.done === 1 ? '' : 's'} imported`];
+    if (b.review) parts.push(`${b.review} needed a look`);
+    if (b.failed) parts.push(`${b.failed} could not be read`);
+    status(`<div class="review-banner"><span>${b.failed ? '⚠' : '✓'}</span><span>
+        ${escapeHTML(parts.join(', '))}.
+        ${b.notes.length ? escapeHTML(b.notes.slice(0, 4).join(' · ')) : ''}</span></div>`);
+    showToast(parts.join(', ') + '.', b.failed ? 'warning' : 'success', 6000);
+    state.importBatch = null;
+    renderAll();
+}
+
+/** Read one file: recognise its account, then hand it to the right reader. */
+async function readOneFile(file) {
+    state.importResult = null;
+    if (/\.pdf$/i.test(file.name)) {
+        const pages = await extractPdfLines(file);
+        if (!await resolveAccountForFile(accountRefs(pages.lines), file.name)) return;
+        await runPdfImport(file, pages);
+        return;
+    }
+    const text = await file.text();
+    if (!await resolveAccountForFile(accountRefs(text), file.name)) return;
+    state.importText = text;
+    state.importFileName = file.name;
+    analyze();
+}
+
+
+
+/**
+ * Remember the references this statement printed against the account it went
+ * to, so the next one files itself. Failure is reported, not shown: the import
+ * itself succeeded, and the only cost is being asked again next month.
+ */
+async function rememberAccountRefs() {
+    const refs = state.importRefs || [];
+    const account = state.accounts.find(a => a.id === state.importAccountId);
+    if (!refs.length || !account) return;
+    const next = rememberRefs(account.statementRefs || [], refs);
+    const same = next.length === (account.statementRefs || []).length
+        && next.every((ref, i) => ref === account.statementRefs[i]);
+    if (same) return;
+    try {
+        await saveAccount({ ...account, statementRefs: next });
+    } catch (err) {
+        reportHandled(err, { action: 'remember-account-refs' });
+    }
+}
+
+/**
+ * Ask which account a statement belongs to, when it names one nobody has seen.
+ *
+ * Two answers, both of which end the question for good: file it against an
+ * account that already exists, or make a new one. The reference is shown,
+ * because "which account is 0269 0301 …?" is a question the person can only
+ * answer if they can see it.
+ *
+ * A new account is created HERE rather than at commit, unlike the card accounts
+ * an import proposes: this is the person answering a direct question, not a
+ * side effect of reading a file.
+ *
+ * @returns {Promise<string|null>} the account id, or null if they cancelled
+ */
+function askWhichAccount({ refs, fileName, ambiguous }) {
+    const shown = refs[0] || '';
+    const accounts = state.accounts.filter(a => !a.archived);
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-overlay';
+        overlay.style.cssText = 'display:flex;z-index:10001;';
+        overlay.innerHTML = `
+            <div class="confirm-dialog" style="max-width:520px;text-align:left;">
+                <h3 style="margin:0 0 8px;font-size:16px;">Which account is this statement for?</h3>
+                <p class="form-helper" style="margin-bottom:14px;">
+                    ${escapeHTML(fileName || 'This file')} is for account
+                    <strong>${escapeHTML(shown)}</strong>${ambiguous
+                        ? ', and more than one of your accounts claims that reference — pick the right one.'
+                        : ", which I have not seen before. Tell me once and every later statement from it files itself."}
+                </p>
+                ${accounts.length ? `
+                <div class="form-group">
+                    <label class="form-label" for="_akExisting">An account you already have</label>
+                    <select class="form-select" id="_akExisting">
+                        ${accounts.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(`${a.bankName} · ${a.label}`)}</option>`).join('')}
+                    </select>
+                    <button id="_akUse" class="btn btn-sm btn-success" style="margin-top:8px;">Use this account</button>
+                </div>
+                <div class="form-helper" style="margin:12px 0 10px;opacity:.7;">or</div>` : ''}
+                <div class="form-group">
+                    <label class="form-label">A new account</label>
+                    <input class="form-input" id="_akBank" placeholder="Bank (e.g. Bankinter)" style="margin-bottom:6px;">
+                    <input class="form-input" id="_akLabel" placeholder="Label (e.g. Conta à ordem)" style="margin-bottom:6px;">
+                    <input class="form-input" id="_akCurrency" value="EUR" style="max-width:110px;">
+                    <div><button id="_akCreate" class="btn btn-sm btn-primary" style="margin-top:8px;">Create and use</button></div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+                    <button id="_akCancel" class="btn btn-secondary">Cancel this file</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const cleanup = value => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(value); };
+        const onKey = e => { if (e.key === 'Escape') cleanup(null); };
+        document.addEventListener('keydown', onKey);
+        overlay.querySelector('#_akCancel').addEventListener('click', () => cleanup(null));
+        overlay.querySelector('#_akUse')?.addEventListener('click', () => cleanup(overlay.querySelector('#_akExisting').value));
+        overlay.querySelector('#_akCreate').addEventListener('click', async () => {
+            const bankName = overlay.querySelector('#_akBank').value.trim();
+            const label = overlay.querySelector('#_akLabel').value.trim();
+            const currency = overlay.querySelector('#_akCurrency').value.trim().toUpperCase() || 'EUR';
+            if (!bankName || !label) { showToast('Bank and label are both required.', 'warning'); return; }
+            try {
+                const made = await saveAccount({ bankName, label, currency, type: 'checking' });
+                if (!made?.id) throw new Error('the account could not be created');
+                cleanup(made.id);
+            } catch (err) {
+                reportHandled(err, { action: 'import-new-account' });
+                showToast('Could not create that account: ' + err.message, 'error', 7000);
+            }
+        });
+    });
+}
+
+/**
+ * Which account this file is for, read from the file.
+ *
+ * A statement prints its own IBAN, NIB or account number
+ * (services/import-identity.js). One this account has been seen to print before
+ * files the statement without asking. Anything else asks — once — and the
+ * answer is remembered when the import is committed, never before: an import
+ * that is cancelled must leave no trace.
+ *
+ * @returns {Promise<boolean>} false when the person cancelled
+ */
+async function resolveAccountForFile(refs, fileName) {
+    state.importRefs = refs;
+    // A file that names no account at all — many CSV exports print none — keeps
+    // today's behaviour: the account chosen above. Asking about those would be
+    // a question with no better answer than the one already given.
+    if (!refs.length) {
+        state.importAccountId = el('importAccount')?.value || state.accounts[0]?.id;
+        state.importMatchedRef = null;
+        return true;
+    }
+    const match = matchAccount(refs, state.accounts);
+    if (match.accountId) {
+        state.importAccountId = match.accountId;
+        state.importMatchedRef = match.ref;
+        const account = state.accounts.find(a => a.id === match.accountId);
+        if (account) {
+            status(`<p class="form-helper">${escapeHTML(fileName || 'This file')} is for
+                <strong>${escapeHTML(`${account.bankName} · ${account.label}`)}</strong>
+                — recognised from ${escapeHTML(match.ref)}.</p>`);
+        }
+        return true;
+    }
+    state.importMatchedRef = null;
+    // Two accounts claiming the same reference is a mistake to show, not to
+    // resolve: filing into the wrong one is silent and compounds every month.
+    const ambiguous = match.candidates?.length > 1;
+    const chosen = await askWhichAccount({ refs, fileName, ambiguous });
+    if (!chosen) return false;
+    state.importAccountId = chosen;
+    return true;
 }
 
 /**
@@ -197,7 +424,7 @@ export async function handleFile(input) {
  * every other adapter, then a balance-continuity check against the statement's
  * own running balance.
  */
-async function runPdfImport(file) {
+async function runPdfImport(file, pages = null) {
     const accountId = state.importAccountId;
     const account = state.accounts.find(a => a.id === accountId);
     const profile = state.profiles.find(p => p.accountId === accountId && p.formatKind === 'pdf');
@@ -206,6 +433,7 @@ async function runPdfImport(file) {
     try {
         const result = await importPdfStatement(file, {
             accountId,
+            pages,
             // The account's own currency, so a GBP or USD statement stops
             // importing as euros. Nothing downstream could catch that: currency
             // is not part of the balance arithmetic the chain verifies.
@@ -712,6 +940,9 @@ export function cancelImport() {
     state.importResult = null;
     state.importText = null;
     status('<p class="form-helper">Import cancelled — nothing was saved.</p>');
+    // Cancelling one file of a batch skips that file, not the rest of them.
+    if ((state.importQueue || []).length) processQueue();
+    else finishBatch();
 }
 
 /**
@@ -743,11 +974,16 @@ export async function confirmLayout() {
     }
 }
 
-export async function commitImport() {
+/**
+ * @param {{silent?: boolean}} [opts] silent: this file passed every check and is
+ *   being saved as part of a batch, so it announces itself in the batch summary
+ *   rather than with its own toast and re-render.
+ */
+export async function commitImport({ silent = false } = {}) {
     const r = state.importResult;
     if (!r) return;
     const btnRow = el('importStatus')?.querySelector('.action-buttons-row');
-    if (btnRow) btnRow.innerHTML = '<span class="form-helper">Saving…</span>';
+    if (btnRow && !silent) btnRow.innerHTML = '<span class="form-helper">Saving…</span>';
 
     try {
         // Card accounts are created here, not while analysing: until the user
@@ -775,6 +1011,9 @@ export async function commitImport() {
         for (const row of r.fresh) row.importId = importId;
 
         if (r.fresh.length) await saveTransactions(r.fresh);
+        // Now, not when the file was read: an import that was cancelled must
+        // leave nothing behind, including a learned account reference.
+        await rememberAccountRefs();
         state.lastImport = r.fresh.length
             ? { id: importId, rows: r.fresh.length, at: Date.now() }
             : state.lastImport;
@@ -821,7 +1060,7 @@ export async function commitImport() {
         });
 
         const n = r.isDetail ? r.enriched.length : r.fresh.length;
-        showToast(`${n} transaction${n === 1 ? '' : 's'} ${r.isDetail ? 'improved' : 'added'}.`);
+        if (!silent) showToast(`${n} transaction${n === 1 ? '' : 's'} ${r.isDetail ? 'improved' : 'added'}.`);
         state.importResult = null;
         state.importText = null;
         // Show what was just imported. A filter left over from before — the type
@@ -839,8 +1078,14 @@ export async function commitImport() {
         const candidates = state.transactions.filter(t => !t.transferPairId && t.category !== 'transfer');
         state.transferCandidates = detectInternalTransfers(candidates).pairs.length;
 
-        renderAll();
-        renderImportSection();
+        if (!silent) {
+            renderAll();
+            renderImportSection();
+            // Back to the queue, if this commit was the person clearing the file
+            // that had stopped it.
+            if ((state.importQueue || []).length) await processQueue();
+            else finishBatch();
+        }
     } catch (err) {
         // Re-importing is safe — the fingerprint upsert skips anything already
         // written — but only if the message says so. "Could not save" alone
