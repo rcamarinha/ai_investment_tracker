@@ -282,6 +282,16 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.56.2
+Fixes from the first run of the agent review gates over the batch import.
+- **A statement can no longer file itself against the wrong account.** Only the IBAN and NIB are learned. Reading every long number off a real statement had also collected the bank's company number, three branch telephones and the account numbers of the card, the term deposit and the pension fund — so the current account would have claimed the card's number, and a card statement would have filed itself into the current account.
+- **A file that fails to save is no longer counted as imported**, and it stops the batch instead of the next file erasing its report.
+- **A single statement that saves itself now says so**: the ledger, the "Undo" banner and a summary all appear, where before the screen simply sat on "Reading…".
+- **A statement already imported in full no longer stops the queue** — it is counted as "already in the ledger" and the batch continues.
+- **A new bank's column-mapping dialog stops the batch** until it is answered, and its Cancel skips just that file. Before, the next file overwrote the draft, and confirming could save one bank's columns under another bank's layout.
+- **Picking files while an import is in progress is refused** rather than starting a second run over the same state.
+- The confirm dialog's styles moved to the shared stylesheet: the "which account is this statement for?" question, and the Undo and Forget confirmations, had no styling at all on the Spend page.
+
 ### v3.56.1
 When a statement does not add up, the import says which rows are the reason.
 - The warning used to say only that the rows did not match the statement's own balance. It now checks whether leaving out the rows that carry **no running balance** makes it add up — and if so, names them with their total. Those are usually a card, loan or wallet section: money belonging to another account, or an itemisation of a movement already listed.

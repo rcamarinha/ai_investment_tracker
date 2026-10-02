@@ -1,5 +1,7 @@
 import { clearViewFilters } from '../spend/state.js';
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
     sniffCsv, autoMapColumns, headerSignature, buildProfileDraft, parseWithProfile,
     locateHeaderBySignature,
@@ -1150,5 +1152,41 @@ describe('parseWithProfile currency provenance', () => {
     it('treats a profile currency as a default, not as something the file said', () => {
         const { rows } = parseWithProfile(MILLENNIUM, profileWithoutCurrencyColumn({ currency: 'USD' }), { accountId: 'mil' });
         expect(rows[0]).toMatchObject({ currency: 'USD', currencySource: 'account' });
+    });
+});
+
+// ── What saveAccount sends ──────────────────────────────────────────────────
+//
+// An upsert only updates the columns it sends. The account form and the
+// import's own card-account creation know nothing about learned statement
+// references, and must therefore not send that column: a payload carrying
+// `statement_refs: []` would erase what an account has learned, silently, with
+// no error. The omission is load-bearing, so it is pinned here.
+
+describe('the account save payload', () => {
+    // The shape spend/storage.js builds, kept in step with it by reading it.
+    const buildRow = (account) => ({
+        ...(account.id ? { id: account.id } : {}),
+        bank_name: account.bankName,
+        account_label: account.label,
+        account_type: account.type || 'checking',
+        currency: account.currency || 'EUR',
+        ...(account.statementRefs ? { statement_refs: account.statementRefs } : {}),
+    });
+
+    it('omits statement_refs entirely when the caller has none', () => {
+        expect(buildRow({ id: 'a1', bankName: 'Bankinter', label: 'Conta' })).not.toHaveProperty('statement_refs');
+    });
+
+    it('sends them when they are known, and an empty list is how they are cleared', () => {
+        expect(buildRow({ id: 'a1', bankName: 'B', label: 'C', statementRefs: ['PT50…'] }).statement_refs).toEqual(['PT50…']);
+        // [] is truthy, so it IS sent: that is the only way to unlearn a wrong
+        // reference. Requiring .length here would make clearing impossible.
+        expect(buildRow({ id: 'a1', bankName: 'B', label: 'C', statementRefs: [] }).statement_refs).toEqual([]);
+    });
+
+    it('the real saveAccount keeps that guard', () => {
+        const src = readFileSync(join(__dirname, '..', 'spend', 'storage.js'), 'utf8');
+        expect(src).toMatch(/\.\.\.\(account\.statementRefs \? \{ statement_refs: account\.statementRefs \} : \{\}\)/);
     });
 });

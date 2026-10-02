@@ -426,6 +426,17 @@ Each concern lives in its own file:
 3. **Data** → `data/sectors.js`, `data/perspectives.js`
 4. **Logic** → `services/*.js` (one file per concern)
 
+### Review workflow
+
+**A non-trivial change is reviewed by the agent gates before it is pushed.**
+`.claude/REVIEW-WORKFLOW.md` holds the table — which agent is triggered by what a
+change touches (migrations → `migration-guard`, an edge function or user text in a
+prompt → `security-auditor`, money arithmetic or parsing → `test-writer`, a screen
+→ `ux-auditor`, any diff → `code-reviewer`, a release → `release-checker`) — and the
+procedure is the `review-change` skill. The gates exist for what nobody thought to
+test: every expensive defect in this codebase so far was silent, passed its tests
+and reached real data. A finding is fixed, or refused in writing with the reason.
+
 ### Testing
 
 ```bash

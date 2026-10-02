@@ -3505,3 +3505,59 @@ body > #appNavbar + * {
    lighter red that clears it, without changing --down for other consumers. */
 .st-delta.down { color: var(--down-soft); background: rgba(214,86,86,0.12); }
 .st-delta.flat { color: var(--text-secondary); background: rgba(255,255,255,0.05); }
+
+/* ── Confirm modal, for every page ───────────────────────────────────────────
+   These lived in css/wine.css, which only wine.html loads, while spend/ and
+   holdings/ call showConfirm() — and the import's "which account is this
+   statement for?" dialog — with none of these rules, rendering an unpositioned
+   block at the foot of the document. The toasts made the same mistake before
+   they moved here. */
+
+.confirm-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5000;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.confirm-dialog {
+    background: var(--ink-3);
+    border: 1px solid var(--border-hover);
+    border-radius: var(--r-lg);
+    padding: 28px 28px 24px;
+    max-width: 400px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+
+.confirm-dialog p {
+    color: var(--text-primary);
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0 0 22px;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+/* Phone portrait (≤480px): bottom-sheet the confirm modal, matching the
+   stock-tracker modal standard (css/styles.css) for cross-app consistency. */
+@media (max-width: 480px) {
+    .confirm-overlay { align-items: flex-end; }
+    .confirm-dialog {
+        max-width: 100%;
+        max-height: calc(100vh - 96px);
+        overflow-y: auto;
+        border-radius: var(--r-xl) var(--r-xl) 0 0;
+    }
+}
