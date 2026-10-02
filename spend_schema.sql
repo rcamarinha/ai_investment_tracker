@@ -54,9 +54,10 @@ CREATE TABLE IF NOT EXISTS spend_accounts (
     -- is what lets the importer know a wallet row should enrich, not duplicate.
     linked_account_id UUID REFERENCES spend_accounts(id) ON DELETE SET NULL,
 
-    -- References this account's statements print (IBAN, NIB, account number),
-    -- normalised to A-Z0-9 and matched EXACTLY, so a statement finds its own
-    -- account instead of the person choosing one before choosing the file.
+    -- The IBAN and NIB this account's statements print, normalised to A-Z0-9 and
+    -- matched EXACTLY, so a statement finds its own account instead of the person
+    -- choosing one before choosing the file. Only those two: other numbers on a
+    -- statement name other products (the card, a deposit) or the bank itself.
     -- Migration 20260930_account_statement_refs.sql.
     statement_refs    TEXT[] NOT NULL DEFAULT '{}'::text[],
 

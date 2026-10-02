@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state, { clearViewFilters } from './state.js?v=3.56.0';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.0';
+import state, { clearViewFilters } from './state.js?v=3.56.2';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.2';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.56.0';
-import { renderAll } from './ledger.js?v=3.56.0';
+} from './storage.js?v=3.56.2';
+import { renderAll } from './ledger.js?v=3.56.2';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS, isRoutableCardRow
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.0';
+import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.2';
 import { accountRefs, matchAccount, rememberRefs } from '../services/import-identity.js';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 import { detectInternalTransfers } from '../services/spend-core.js';
@@ -173,8 +173,16 @@ export async function handleFile(input) {
     if (!requireAuth('import a statement')) return;
     input.value = '';
 
+    // One batch at a time. Two loops share state.importResult, importAccountId
+    // and importText, so the second would commit the first one's rows, learn the
+    // wrong account's references, and drop whatever was waiting for a decision.
+    if (state.importBatch || state.importResult || state.importDraft) {
+        showToast('Finish the import in progress first — then add the next files.', 'warning', 6000);
+        return;
+    }
+
     state.importQueue = files;
-    state.importBatch = { total: files.length, done: 0, review: 0, failed: 0, notes: [], current: null };
+    state.importBatch = { total: files.length, done: 0, rows: 0, already: 0, review: 0, skipped: 0, failed: 0, notes: [], current: null };
     try {
         await processQueue();
     } catch (err) {
@@ -190,6 +198,15 @@ export async function handleFile(input) {
 // Files are now read one after another. A file whose checks all pass saves
 // itself; the first one with anything to look at stops the queue and waits,
 // because the whole point of the checks is that a human sees what they caught.
+
+/**
+ * A file that adds nothing: every row of it is already in the ledger. Stopping
+ * a batch for this would mean a stop per statement imported last month, and
+ * there is nothing to decide — re-importing is safe by fingerprint.
+ */
+export function importAddsNothing(r) {
+    return !!r && !r.isDetail && !r.fresh?.length && !r.errors?.length && !r.flagged && !r.chunksFailed;
+}
 
 /** What must be true for a file to save itself, with nobody looking. */
 export function importIsClean(r) {
@@ -217,7 +234,8 @@ async function processQueue() {
     while ((state.importQueue || []).length) {
         const file = state.importQueue.shift();
         batch.current = file.name;
-        status(`<p class="form-helper">Reading ${escapeHTML(file.name)} (${batch.done + batch.review + batch.failed + 1} of ${batch.total})…</p>`);
+        const index = batch.total - (state.importQueue.length);
+        status(`<p class="form-helper">Reading ${escapeHTML(file.name)} (${index} of ${batch.total})…</p>`);
         try {
             await readOneFile(file);
         } catch (err) {
@@ -226,11 +244,39 @@ async function processQueue() {
             reportHandled(err, { action: 'import-batch-file' });
             continue;
         }
-        if (!state.importResult) { batch.failed++; continue; }   // refused, or cancelled at the account question
+        // Refused by its reader, or the person cancelled the account question.
+        // The column-mapping dialog is open: this file is waiting for a person.
+        // Letting the next file run would overwrite state.importDraft and
+        // state.importText, and confirming then saves THIS file's columns under
+        // the NEXT file's layout signature — a wrong layout replayed silently on
+        // every future statement from that bank.
+        if (!state.importResult && state.importDraft) {
+            batch.review++;
+            const s = el('importStatus');
+            if (s) s.insertAdjacentHTML('beforeend', queueStatus());
+            return;
+        }
+        if (!state.importResult) { batch.skipped++; continue; }
+
+        if (importAddsNothing(state.importResult)) {
+            batch.already++;
+            state.importResult = null;
+            continue;
+        }
 
         if (importIsClean(state.importResult)) {
-            await commitImport({ silent: true });
+            const rows = state.importResult.fresh.length;
+            const saved = await commitImport({ silent: true });
+            if (!saved) {
+                // A save that failed must never be counted as imported: the
+                // summary is the only thing the person has to trust a batch by.
+                batch.failed++;
+                batch.notes.push(`${file.name}: could not be saved`);
+                showReport();
+                return;
+            }
             batch.done++;
+            batch.rows += rows;
             continue;
         }
         batch.review++;
@@ -242,18 +288,33 @@ async function processQueue() {
     finishBatch();
 }
 
+export function summarizeBatch(b) {
+    const parts = [];
+    if (b.done) parts.push(`${b.done} statement${b.done === 1 ? '' : 's'} imported (${b.rows} transaction${b.rows === 1 ? '' : 's'})`);
+    if (b.already) parts.push(`${b.already} already in the ledger`);
+    if (b.review) parts.push(`${b.review} needed a look`);
+    if (b.skipped) parts.push(`${b.skipped} skipped`);
+    if (b.failed) parts.push(`${b.failed} could not be saved or read`);
+    return parts.length ? parts.join(', ') + '.' : 'Nothing was imported.';
+}
+
 function finishBatch() {
     const b = state.importBatch;
-    if (!b || b.total <= 1) { state.importBatch = null; return; }
-    const parts = [`${b.done} file${b.done === 1 ? '' : 's'} imported`];
-    if (b.review) parts.push(`${b.review} needed a look`);
-    if (b.failed) parts.push(`${b.failed} could not be read`);
-    status(`<div class="review-banner"><span>${b.failed ? '⚠' : '✓'}</span><span>
-        ${escapeHTML(parts.join(', '))}.
-        ${b.notes.length ? escapeHTML(b.notes.slice(0, 4).join(' · ')) : ''}</span></div>`);
-    showToast(parts.join(', ') + '.', b.failed ? 'warning' : 'success', 6000);
+    if (!b) return;
     state.importBatch = null;
+    const summary = summarizeBatch(b);
+    const bad = b.failed || b.skipped;
+    // Re-render FIRST: renderImportSection rewrites the whole panel, so a
+    // summary written before it would be erased by it, leaving only the toast —
+    // which carries counts but not which file failed and why.
     renderAll();
+    renderImportSection();
+    status(`<div class="review-banner"><span>${bad ? '⚠' : '✓'}</span><span>
+        ${escapeHTML(summary)}
+        ${b.notes.length ? `<br><span class="form-helper">${escapeHTML(b.notes.slice(0, 4).join(' · '))}</span>` : ''}</span></div>`);
+    // A file that saved itself showed nothing while it did: the ledger, the undo
+    // banner and the toast are how the person learns it happened at all.
+    if (b.done) showToast(summary, bad ? 'warning' : 'success', 6000);
 }
 
 /** Read one file: recognise its account, then hand it to the right reader. */
@@ -599,6 +660,24 @@ function bindMappingPreview() {
     });
 }
 
+/**
+ * Close the column-mapping dialog without learning the format.
+ *
+ * Plain `closeModal` left `state.importDraft` set, which — once a waiting dialog
+ * stops a batch — left the queue stopped with nothing to resume it, and blocked
+ * the next pick. Cancelling a file skips that file; the rest continue.
+ */
+export function cancelMapping() {
+    closeModal('mappingDialog');
+    state.importDraft = null;
+    state.importText = null;
+    state.importSampleRows = [];
+    status('<p class="form-helper">That file was skipped — its format was not learned, and nothing was saved.</p>');
+    if (state.importBatch) state.importBatch.skipped++;
+    if ((state.importQueue || []).length) processQueue();
+    else finishBatch();
+}
+
 export async function confirmMapping() {
     const draft = state.importDraft;
     const num = id => { const v = el(id).value; return v === '' ? null : Number(v); };
@@ -788,6 +867,7 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         skipped: parsed.skipped || 0,
         skippedRows: parsed.skippedRows || [],
         total: parsed.total || null,
+        totalWhy: parsed.totalWhy || null,
         detail: parsed.detail || null,
         cardPlan,
         // What this document turned out to contain, and whether we have seen a
@@ -894,8 +974,21 @@ function showReport() {
             account for every row taken from it, exactly. Nothing is missing and nothing extra was added.</p>` : ''}
         ${r.total && r.total.checked && !r.total.ok ? `<div class="review-banner"><span>⚠</span><span>
             These rows do not add up to the change in the statement's own balance
-            ${escapeHTML(r.total.reason || '')}. Either a movement is missing, or something was imported that
-            is not a movement of this account — a loan or card section, say. Worth checking before adding.</span></div>` : ''}
+            ${escapeHTML(r.total.reason || '')}.
+            ${r.totalWhy?.fixedByDropping ? `
+                <strong>They do add up without the ${r.totalWhy.unbalanced} row${r.totalWhy.unbalanced === 1 ? '' : 's'}
+                that carry no running balance</strong> (${escapeHTML(fmtMoney(r.totalWhy.unbalancedSum))} in total):
+                those are usually a card, loan or wallet section — money that belongs to another account, or that
+                itemises a movement already listed here. Check them below before adding.
+                ${r.totalWhy.sample?.length ? `<br><span class="form-helper">${
+                    r.totalWhy.sample.map(x => escapeHTML(`${x.description} ${fmtMoney(x.amount)}`)).join(' · ')}</span>` : ''}`
+            : r.totalWhy?.unbalanced ? `
+                ${r.totalWhy.unbalanced} row${r.totalWhy.unbalanced === 1 ? '' : 's'} carry no running balance
+                (${escapeHTML(fmtMoney(r.totalWhy.unbalancedSum))}), but leaving them out does not make it add up either —
+                so a movement may also be missing.`
+            : `Either a movement is missing, or something was imported that is not a movement of this account —
+                a loan or card section, say.`}
+            Worth checking before adding.</span></div>` : ''}
         ${r.format === 'pdf' && r.chain && !r.chain.pairs ? `<div class="review-banner"><span>⚠</span><span>
             Nothing in this document could be cross-checked. It prints no running balance, so the usual test —
             that each amount matches the balance either side of it — has nothing to work with. The rows may be
@@ -1086,6 +1179,7 @@ export async function commitImport({ silent = false } = {}) {
             if ((state.importQueue || []).length) await processQueue();
             else finishBatch();
         }
+        return true;
     } catch (err) {
         // Re-importing is safe — the fingerprint upsert skips anything already
         // written — but only if the message says so. "Could not save" alone
@@ -1096,5 +1190,6 @@ export async function commitImport({ silent = false } = {}) {
             : 'Could not save: ' + err.message, 'error', 9000);
         reportHandled(err, { action: 'commit-import', rows: saved });
         showReport();
+        return false;
     }
 }

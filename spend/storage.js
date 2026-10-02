@@ -7,8 +7,8 @@
  * matching wine/storage.js.
  */
 
-import state from './state.js?v=3.56.0';
-import { showToast } from './utils.js?v=3.56.0';
+import state from './state.js?v=3.56.2';
+import { showToast } from './utils.js?v=3.56.2';
 
 // ── Supabase init ───────────────────────────────────────────────────────────
 
@@ -436,6 +436,11 @@ export async function saveAccount(account) {
         linked_account_id: account.linkedAccountId || null,
         colour: account.colour || null,
         archived: !!account.archived,
+        // Omitted on purpose when the caller has none: an upsert only updates
+        // the columns it sends, so the account form and the import's own
+        // account creation — neither of which knows about references — cannot
+        // erase what was learned. Do NOT make this unconditional, and do not
+        // "fix" it to require .length: an empty array is how refs are cleared.
         ...(account.statementRefs ? { statement_refs: account.statementRefs } : {})
     };
     const { data, error } = await state.supabaseClient

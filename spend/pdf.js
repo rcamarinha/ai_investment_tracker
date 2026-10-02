@@ -18,9 +18,9 @@
  * reconcile are flagged for review rather than written to the ledger.
  */
 
-import state from './state.js?v=3.56.0';
-import { escapeHTML } from './utils.js?v=3.56.0';
-import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection, reconcileStatementTotal }
+import state from './state.js?v=3.56.2';
+import { escapeHTML } from './utils.js?v=3.56.2';
+import { groupIntoLines, findCandidateLines, findLooseCandidates, findSectionHeadings, detectStatementYear, detectStatementPeriod, checkBalanceChain, scoreChainDirection, reconcileStatementTotal, diagnoseStatementTotal }
     from '../services/import-pdf.js';
 import { normalizeRow, validateRow } from '../services/import-contract.js';
 import { mergeDetailSource, expandCardDetail, markCardSettlements } from '../services/import-banks.js';
@@ -421,10 +421,14 @@ export function checkExtractedRows(collected, { accountId, accountCurrency, sour
     // This is the check the per-row chain cannot make. A row carrying no balance
     // is not in the chain at all, so a section that should never have been
     // imported passes every per-row test and still shows up in the money.
-    const total = reconcileStatementTotal(rowsInStatementTotal(rows), lines);
+    const inTotal = rowsInStatementTotal(rows);
+    const total = reconcileStatementTotal(inTotal, lines);
+    // When it does not add up, say which rows are the likely reason rather than
+    // only that something is wrong.
+    const totalWhy = total.checked && !total.ok ? diagnoseStatementTotal(inTotal, lines) : null;
 
     return {
-        rows, errors, total, chain, flagged, order, skipped, verified,
+        rows, errors, total, totalWhy, chain, flagged, order, skipped, verified,
         detailRows, itemised, promoted, settlementsLinked, enrichedCount, unmatchedDetail,
     };
 }
@@ -501,7 +505,7 @@ export async function importPdfStatement(file, { accountId, accountCurrency, hin
     trialReport(checked, trial, { accountId, accountCurrency, sourceName: file.name || 'pdf', lines });
 
     return {
-        rows, errors, parsed: rows.length, total,
+        rows, errors, parsed: rows.length, total, totalWhy: checked.totalWhy,
         format: 'pdf', provider, pageCount, chunks: chunks.length, chunksFailed,
         chain, flagged, statementYear: year, headings, broadened, rowOrder: order.direction,
         skipped: skipped.length,

@@ -19,16 +19,35 @@ const BANKINTER = [
 ];
 
 describe('accountRefs', () => {
-    it('reads the IBAN, the NIB and the account number from a statement header', () => {
-        const refs = accountRefs(BANKINTER);
-        expect(refs).toContain('PT50026903010020007386460');
-        expect(refs).toContain('301200073864');
-        expect(refs[0].startsWith('PT')).toBe(true);   // strongest first
+    it('reads the IBAN and the NIB, and nothing else', () => {
+        // Measured on the real June statement: reading every long digit run
+        // collected twelve "references" — the bank's company number, three
+        // branch telephone numbers, and the account numbers of the card, the
+        // term deposit and the pension fund, each printed in its own section.
+        expect(accountRefs(BANKINTER)).toEqual(['PT50026903010020007386460', '026903010020007386460']);
     });
 
-    it('reads a card account number that mixes digits and letters', () => {
-        expect(accountRefs(['Conta-Cartão: BANKINTER CLASSIC BK Nº 3014A0073864 Moeda: EUR']))
-            .toContain('3014A0073864');
+    it('refuses the account numbers of the OTHER products in the same statement', () => {
+        // The current account claiming the card's number is how a card
+        // statement would file itself into the current account.
+        const refs = accountRefs([
+            'Conta-Cartão: BANKINTER CLASSIC BK Nº 3014A0073864 Moeda: EUR',
+            'DEPOSITO TOP Nº 301600086370',
+            'BK 25 PPR OICVM/A Nº 301150067434',
+            'CONTA BANKINTER Nº 301200073864 Moeda: Euro',
+        ]);
+        expect(refs).toEqual([]);
+    });
+
+    it('refuses a telephone, a tax number or the bank\'s own company number', () => {
+        // These are printed on every statement that bank sends, so learning one
+        // would make the first account claim every later statement from it.
+        expect(accountRefs([
+            'Telefone: 226059720 Fax: 226059701',
+            'Linha de Apoio: Telefone: 210548000',
+            'Bankinter, S.A. – Sucursal em Portugal: … NIPC 980547490, C.R.C. Lisboa',
+            'NIF do titular: 123456789',
+        ])).toEqual([]);
     });
 
     it('does not mistake a balance, an amount or a date for an account', () => {
@@ -41,13 +60,19 @@ describe('accountRefs', () => {
     });
 
     it('works on a CSV preamble as well as PDF lines', () => {
-        expect(accountRefs('Conta;PT50 0033 0000 4551 1122 3334 4\nData;Descritivo;Valor'))
+        expect(accountRefs('IBAN;PT50 0033 0000 4551 1122 3334 4\nData;Descritivo;Valor'))
             .toContain('PT50003300004551112233344');
     });
 
+    it('ignores a movement row, even one quoting an IBAN', () => {
+        // A transfer's description carries the OTHER party's IBAN.
+        expect(accountRefs(['16/06 TRF SEPA+ PARA IBAN PT50 0010 0000 1234 5678 9012 3 -342,00 18.127,60']))
+            .toEqual([]);
+    });
+
     it('caps how many it keeps', () => {
-        const many = Array.from({ length: 30 }, (_, i) => `Conta Nº 30120007${String(i).padStart(4, '0')}`);
-        expect(accountRefs(many).length).toBeLessThanOrEqual(12);
+        const many = Array.from({ length: 30 }, (_, i) => `IBAN: PT50 0269 0301 0020 0073 86${String(i).padStart(2, '0')} 0`);
+        expect(accountRefs(many).length).toBeLessThanOrEqual(6);
     });
 });
 
@@ -56,7 +81,8 @@ describe('matchAccount', () => {
     const card = { id: 'card', statementRefs: ['3014A0073864'] };
 
     it('files a statement against the account that printed the same reference', () => {
-        expect(matchAccount(accountRefs(BANKINTER), [current, card])).toEqual({ accountId: 'chk', ref: '301200073864' });
+        expect(matchAccount(accountRefs(BANKINTER), [current, card]))
+            .toEqual({ accountId: 'chk', ref: 'PT50026903010020007386460' });
     });
 
     it('never matches on a near miss — a card shares most of its digits', () => {

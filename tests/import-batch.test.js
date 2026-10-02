@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { importIsClean } from '../spend/importer.js';
+import { importIsClean, importAddsNothing, summarizeBatch } from '../spend/importer.js';
 
 /**
  * Importing a folder of statements only helps if nothing slips through while
@@ -69,5 +69,47 @@ describe('a file may save itself only when every check passed', () => {
     it('treats an empty result as something to look at, not as success', () => {
         expect(importIsClean({ ...clean(), fresh: [] })).toBe(false);
         expect(importIsClean(null)).toBe(false);
+    });
+});
+
+// ── What a batch says it did ────────────────────────────────────────────────
+//
+// The summary is the only thing a person has to go on for files that saved
+// themselves, so every outcome has to appear in it — a failed save counted as
+// "imported" would be worse than no summary at all.
+
+describe('summarizeBatch', () => {
+    const batch = (over = {}) => ({ total: 1, done: 0, rows: 0, already: 0, review: 0, skipped: 0, failed: 0, ...over });
+
+    it('counts statements and the transactions they added', () => {
+        expect(summarizeBatch(batch({ done: 9, rows: 412 }))).toBe('9 statements imported (412 transactions).');
+        expect(summarizeBatch(batch({ done: 1, rows: 1 }))).toBe('1 statement imported (1 transaction).');
+    });
+
+    it('names every other outcome separately, never as "imported"', () => {
+        expect(summarizeBatch(batch({ done: 7, rows: 300, already: 2, review: 1, skipped: 1, failed: 1 })))
+            .toBe('7 statements imported (300 transactions), 2 already in the ledger, 1 needed a look, 1 skipped, 1 could not be saved or read.');
+    });
+
+    it('says plainly when nothing was imported', () => {
+        expect(summarizeBatch(batch({ failed: 2 }))).toBe('2 could not be saved or read.');
+        expect(summarizeBatch(batch())).toBe('Nothing was imported.');
+    });
+});
+
+describe('importAddsNothing', () => {
+    const base = { isDetail: false, fresh: [], errors: [], flagged: 0, chunksFailed: 0 };
+
+    it('is true for a statement already imported in full — no reason to stop a batch', () => {
+        expect(importAddsNothing(base)).toBe(true);
+    });
+
+    it('is false when anything happened that a person should see', () => {
+        expect(importAddsNothing({ ...base, fresh: [{ id: 'a' }] })).toBe(false);
+        expect(importAddsNothing({ ...base, errors: [{ reason: 'section 2 failed' }] })).toBe(false);
+        expect(importAddsNothing({ ...base, flagged: 1 })).toBe(false);
+        expect(importAddsNothing({ ...base, chunksFailed: 1 })).toBe(false);
+        expect(importAddsNothing({ ...base, isDetail: true })).toBe(false);
+        expect(importAddsNothing(null)).toBe(false);
     });
 });

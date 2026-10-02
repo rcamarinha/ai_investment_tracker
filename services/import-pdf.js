@@ -495,6 +495,43 @@ export function scoreChainDirection(rows = [], tolerance = 0.011) {
  * Ambiguity is reported rather than resolved. If several pairs satisfy it, the
  * document has not told us anything we can rely on.
  */
+/**
+ * Why a statement did not add up, when it did not.
+ *
+ * A row with no running balance is not in the per-row chain at all, so a card
+ * or wallet line read as a movement of this account passes every per-row check
+ * and breaks only this one. Measured on a real Bankinter statement: with the
+ * card section's lines added, the chain still reconciled 17 of 17 pairs while
+ * the statement total failed. Naming those rows turns "something is wrong"
+ * into "these rows are the reason".
+ *
+ * @param {object[]} rows
+ * @param {object[]} lines
+ * @param {object} [options]
+ * @returns {{unbalanced: number, unbalancedSum: number, fixedByDropping: boolean, sample?: object[]}}
+ */
+export function diagnoseStatementTotal(rows = [], lines = [], options = {}) {
+    const movements = rows.filter(r => r.sourceRole !== 'detail');
+    const unbalanced = movements.filter(r => r.balance === null || r.balance === undefined);
+    if (!unbalanced.length) return { unbalanced: 0, unbalancedSum: 0, fixedByDropping: false };
+
+    const sum = Math.round(unbalanced.reduce((t, r) => t + (Number(r.amount) || 0), 0) * 100) / 100;
+    const without = reconcileStatementTotal(
+        rows.filter(r => r.balance !== null && r.balance !== undefined), lines, options);
+    return {
+        unbalanced: unbalanced.length,
+        unbalancedSum: sum,
+        // The statement adds up without them: they are the rows that do not
+        // belong to this account's chain, which is as close to a diagnosis as
+        // the document allows.
+        fixedByDropping: !!without.ok,
+        sample: unbalanced.slice(0, 6).map(r => ({
+            description: String(r.rawDescription || r.description || '').slice(0, 48),
+            amount: Number(r.amount) || 0,
+        })),
+    };
+}
+
 export function reconcileStatementTotal(rows = [], lines = [], options = {}) {
     const tolerance = options.tolerance ?? 0.011;
     const decimalStyle = options.decimalStyle || 'eu';
