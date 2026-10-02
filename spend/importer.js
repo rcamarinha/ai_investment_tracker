@@ -14,19 +14,20 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state, { clearViewFilters } from './state.js?v=3.56.3';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.3';
+import state, { clearViewFilters } from './state.js?v=3.56.4';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.4';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.56.3';
-import { renderAll } from './ledger.js?v=3.56.3';
+} from './storage.js?v=3.56.4';
+import { renderAll } from './ledger.js?v=3.56.4';
+import { accountFromForm } from './accounts.js?v=3.56.4';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS, isRoutableCardRow
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.3';
+import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.4';
 import { accountRefs, matchAccount, rememberRefs } from '../services/import-identity.js';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 import { detectInternalTransfers } from '../services/spend-core.js';
@@ -376,52 +377,93 @@ function askWhichAccount({ refs, fileName, ambiguous }) {
         const overlay = document.createElement('div');
         overlay.className = 'confirm-overlay';
         overlay.style.cssText = 'display:flex;z-index:10001;';
+        // One question, one primary action. The first version offered "Use this
+        // account" and "Create and use" side by side in different colours, which
+        // asks the person to compare two commitments; the common answer by far is
+        // an account they already have, so that is the default and making a new
+        // one is a choice they opt into.
         overlay.innerHTML = `
             <div class="confirm-dialog" style="max-width:520px;text-align:left;">
                 <h3 style="margin:0 0 8px;font-size:16px;">Which account is this statement for?</h3>
                 <p class="form-helper" style="margin-bottom:14px;">
                     ${escapeHTML(fileName || 'This file')} is for account
                     <strong>${escapeHTML(shown)}</strong>${ambiguous
-                        ? ', and more than one of your accounts claims that reference — pick the right one.'
-                        : ", which I have not seen before. Tell me once and every later statement from it files itself."}
+                        ? ', and more than one of your accounts claims that reference — pick the right one, and remove the reference from the other in Accounts.'
+                        : ", which I have not seen before. Answer once and every later statement from it files itself."}
                 </p>
                 ${accounts.length ? `
                 <div class="form-group">
-                    <label class="form-label" for="_akExisting">An account you already have</label>
+                    <label class="form-label" for="_akExisting">File it against</label>
                     <select class="form-select" id="_akExisting">
                         ${accounts.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(`${a.bankName} · ${a.label}`)}</option>`).join('')}
                     </select>
-                    <button id="_akUse" class="btn btn-sm btn-success" style="margin-top:8px;">Use this account</button>
-                </div>
-                <div class="form-helper" style="margin:12px 0 10px;opacity:.7;">or</div>` : ''}
-                <div class="form-group">
-                    <label class="form-label">A new account</label>
-                    <input class="form-input" id="_akBank" placeholder="Bank (e.g. Bankinter)" style="margin-bottom:6px;">
-                    <input class="form-input" id="_akLabel" placeholder="Label (e.g. Conta à ordem)" style="margin-bottom:6px;">
-                    <input class="form-input" id="_akCurrency" value="EUR" style="max-width:110px;">
-                    <div><button id="_akCreate" class="btn btn-sm btn-primary" style="margin-top:8px;">Create and use</button></div>
-                </div>
-                <div style="display:flex;justify-content:flex-end;margin-top:14px;">
-                    <button id="_akCancel" class="btn btn-secondary">Cancel this file</button>
+                </div>` : ''}
+                ${ambiguous ? '' : `
+                <details id="_akNewWrap" ${accounts.length ? '' : 'open'} style="margin-bottom:12px;">
+                    <summary class="form-helper" style="cursor:pointer;padding:6px 0;">
+                        ${accounts.length ? 'It is a new account' : 'Add the account this statement is for'}
+                    </summary>
+                    <div class="form-group" style="margin-top:8px;">
+                        <label class="form-label" for="_akBank">Bank</label>
+                        <input class="form-input" id="_akBank" placeholder="Bankinter">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="_akLabel">Label</label>
+                        <input class="form-input" id="_akLabel" placeholder="Conta à ordem">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="_akType">Type</label>
+                        <select class="form-select" id="_akType">
+                            ${['checking', 'savings', 'card', 'wallet'].map(t =>
+                                `<option value="${t}">${t === 'wallet' ? 'wallet (MB WAY, PayPal)' : t}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="_akCurrency">Currency</label>
+                        <input class="form-input" id="_akCurrency" value="EUR" style="max-width:120px">
+                    </div>
+                </details>`}
+                <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                    <button id="_akCancel" class="btn btn-secondary">Skip this statement</button>
+                    <button id="_akOk" class="btn btn-success">Use this account</button>
                 </div>
             </div>`;
         document.body.appendChild(overlay);
+        overlay.scrollIntoView({ block: 'center' });
+
+        const existing = overlay.querySelector('#_akExisting');
+        const newWrap = overlay.querySelector('#_akNewWrap');
+        const ok = overlay.querySelector('#_akOk');
+        const makingNew = () => !!newWrap?.open && !!newWrap;
+        const syncButton = () => { ok.textContent = makingNew() && accounts.length ? 'Create and use' : 'Use this account'; };
+        newWrap?.addEventListener('toggle', syncButton);
+        syncButton();
 
         const cleanup = value => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(value); };
         const onKey = e => { if (e.key === 'Escape') cleanup(null); };
         document.addEventListener('keydown', onKey);
         overlay.querySelector('#_akCancel').addEventListener('click', () => cleanup(null));
-        overlay.querySelector('#_akUse')?.addEventListener('click', () => cleanup(overlay.querySelector('#_akExisting').value));
-        overlay.querySelector('#_akCreate').addEventListener('click', async () => {
-            const bankName = overlay.querySelector('#_akBank').value.trim();
-            const label = overlay.querySelector('#_akLabel').value.trim();
-            const currency = overlay.querySelector('#_akCurrency').value.trim().toUpperCase() || 'EUR';
-            if (!bankName || !label) { showToast('Bank and label are both required.', 'warning'); return; }
+
+        ok.addEventListener('click', async () => {
+            if (!makingNew() && existing) { cleanup(existing.value); return; }
+
+            const account = accountFromForm({
+                bankName: overlay.querySelector('#_akBank').value,
+                label: overlay.querySelector('#_akLabel').value,
+                type: overlay.querySelector('#_akType').value,
+                currency: overlay.querySelector('#_akCurrency').value,
+            }, null, state.accounts.length);
+            if (typeof account === 'string') { showToast(account, 'warning'); return; }
+
+            // Disabled while saving: two taps made two accounts, and the second
+            // then claimed nothing, so the next statement asked all over again.
+            ok.disabled = true;
             try {
-                const made = await saveAccount({ bankName, label, currency, type: 'checking' });
+                const made = await saveAccount(account);
                 if (!made?.id) throw new Error('the account could not be created');
                 cleanup(made.id);
             } catch (err) {
+                ok.disabled = false;
                 reportHandled(err, { action: 'import-new-account' });
                 showToast('Could not create that account: ' + err.message, 'error', 7000);
             }
@@ -1193,3 +1235,6 @@ export async function commitImport({ silent = false } = {}) {
         return false;
     }
 }
+
+/** For smoke-testing the dialogs in a browser; not used by the page. */
+export const __testing = { askWhichAccount };

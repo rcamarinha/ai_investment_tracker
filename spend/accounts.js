@@ -6,11 +6,11 @@
  * account funds it before it can enrich rather than duplicate.
  */
 
-import state from './state.js?v=3.56.3';
-import { escapeHTML, showToast, showConfirm, openModal, closeModal, accountColour } from './utils.js?v=3.56.3';
+import state from './state.js?v=3.56.4';
+import { escapeHTML, showToast, showConfirm, openModal, closeModal, accountColour } from './utils.js?v=3.56.4';
 import { normalizeCurrencyCode } from '../services/money-core.js';
-import { saveAccount, deleteAccount } from './storage.js?v=3.56.3';
-import { renderAll } from './ledger.js?v=3.56.3';
+import { saveAccount, deleteAccount } from './storage.js?v=3.56.4';
+import { renderAll } from './ledger.js?v=3.56.4';
 
 const el = id => document.getElementById(id);
 

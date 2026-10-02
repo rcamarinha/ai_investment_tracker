@@ -5,15 +5,15 @@
  * file only turns those numbers into DOM, and turns clicks back into state.
  */
 
-import state from './state.js?v=3.56.3';
+import state from './state.js?v=3.56.4';
 import {
     escapeHTML, fmtMoney, fmtCompact, fmtPct, fmtDate, fmtPeriod,
     deltaClass, showToast, showConfirm, openModal, closeModal, accountColour, firstGraphemes
-} from './utils.js?v=3.56.3';
+} from './utils.js?v=3.56.4';
 import {
     updateTransaction, deleteTransaction, saveTransactions, saveRule,
     incomeCategoryNames, savingsCategoryNames, saveCategory, deleteCategory
-} from './storage.js?v=3.56.3';
+} from './storage.js?v=3.56.4';
 import {
     periodKey, shiftPeriod, comparePeriods, buildTrendSeries, filterPeriod,
     detectRecurring, detectInternalTransfers, projectScenario
@@ -706,6 +706,9 @@ export function renderTransactions() {
                         <span class="tx-merchant-text">${escapeHTML(t.merchant || t.description)}${t.enrichedFrom ? '<span class="tx-enriched-badge" title="Description improved from MB WAY">◆</span>' : ''}</span>
                         <span class="tx-merchant-sub"><span class="tx-account-name">${escapeHTML(acctBank.get(t.accountId) || 'Unknown account')}</span>${t.merchant && t.description ? ` · ${escapeHTML(t.description)}` : ''}</span>
                     </button>
+                    <button type="button" class="tx-expand" data-act="tx-expand" data-id="${escapeHTML(t.id)}"
+                            aria-expanded="false" hidden
+                            aria-label="${escapeHTML(`Show the whole description of ${(t.merchant || t.description).slice(0, 40)}`)}"><span aria-hidden="true">▾</span></button>
                 </span>
             </td>
             <td class="col-hide-mobile">
@@ -720,6 +723,9 @@ export function renderTransactions() {
 
     renderPagination(rows.length, pages);
     renderReviewBulkBar();
+    // After the rows are in the document: whether a description is cut off
+    // depends on the width it was laid out in, which only the browser knows.
+    markTruncatedDescriptions();
 }
 
 /**
@@ -781,10 +787,57 @@ function renderPagination(total, pages) {
  * can never re-enter a JS parsing context.
  */
 let delegationBound = false;
+/** Rows whose whole description the person has opened, across re-renders. */
+const expandedRows = new Set();
+
+/**
+ * Show the whole of one description, in place.
+ *
+ * A Portuguese bank writes long lines ("COMPRAS C.DEB 4552****1234 CONTINENTE
+ * MATOSINHOS 0003791851") and the useful part is often at the end, so three
+ * clamped lines can hide exactly what the person is looking for. Expanding
+ * everything would cost a couple of screens of scrolling over 80 rows to buy a
+ * handful of tails, so only rows that are ACTUALLY cut short offer the control,
+ * and only the row tapped grows.
+ */
+function toggleDescription(button) {
+    const row = button.closest('.tx-row');
+    const text = row?.querySelector('.tx-merchant-text');
+    if (!row || !text) return;
+    const open = row.classList.toggle('tx-expanded');
+    button.setAttribute('aria-expanded', String(open));
+    const label = (text.textContent || '').trim().slice(0, 40);
+    button.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} the whole description of ${label}`);
+    // Kept across re-renders (a category accepted, a filter changed), so a row
+    // the person opened to read does not close under them.
+    if (open) expandedRows.add(button.dataset.id);
+    else expandedRows.delete(button.dataset.id);
+}
+
+/**
+ * Offer the control only where the text is really cut off — measured, not
+ * guessed from a character count, which shows a chevron on short rows and
+ * misses wide uppercase ones. Runs after a render and on a resize, because the
+ * column's width decides the answer.
+ */
+export function markTruncatedDescriptions() {
+    for (const row of document.querySelectorAll('.tx-row')) {
+        const text = row.querySelector('.tx-merchant-text');
+        const button = row.querySelector('.tx-expand');
+        if (!text || !button) continue;
+        if (expandedRows.has(button.dataset.id)) row.classList.add('tx-expanded');
+        const clamped = !row.classList.contains('tx-expanded') && text.scrollHeight > text.clientHeight + 1;
+        button.hidden = !(clamped || row.classList.contains('tx-expanded'));
+    }
+}
 
 export function bindDelegation(root = document) {
     if (delegationBound) return;
     delegationBound = true;
+
+    // The column's width decides what is cut off, so a rotation or a resized
+    // window changes the answer.
+    window.addEventListener('resize', () => markTruncatedDescriptions());
 
     root.addEventListener('click', (event) => {
         const el = event.target.closest('[data-act]');
@@ -802,6 +855,10 @@ export function bindDelegation(root = document) {
                 break;
             case 'account':  showAccountDialogFor(d.id); break;
             case 'tx':       event.stopPropagation(); editTx(d.id); break;
+            // Its own action, and it stops there: the row underneath opens the
+            // editor, and a mis-tap that opened a modal would be worse than one
+            // that expanded a line.
+            case 'tx-expand': event.stopPropagation(); toggleDescription(el); break;
             case 'page':     setPage(Number(d.n)); break;
             case 'filter':   setTxFilter(d.filter); break;
             // Owned by importer.js; routed through window for the same reason

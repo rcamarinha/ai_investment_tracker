@@ -3506,6 +3506,14 @@ body > #appNavbar + * {
 .st-delta.down { color: var(--down-soft); background: rgba(214,86,86,0.12); }
 .st-delta.flat { color: var(--text-secondary); background: rgba(255,255,255,0.05); }
 
+/* A dialog's fields on a phone: 16px stops iOS zooming the page on focus, and
+   its buttons are the whole decision, so they take the full width. */
+@media (max-width: 640px) {
+    .confirm-dialog .form-input,
+    .confirm-dialog .form-select { font-size: 16px; }
+    .confirm-dialog .btn { flex: 1 1 100%; }
+}
+
 /* ── Confirm modal, for every page ───────────────────────────────────────────
    These lived in css/wine.css, which only wine.html loads, while spend/ and
    holdings/ call showConfirm() — and the import's "which account is this

@@ -208,6 +208,24 @@
 }
 .tx-merchant-sub { display: block; font-size: 10px; color: var(--text-secondary); }
 .tx-account-name { opacity: 0.8; }
+/* Shown only on a row whose description is really cut off (ledger.js marks it).
+   A 44px hit area in a 20px-wide slot, so it is thumb-sized without pushing the
+   description aside. */
+.tx-expand {
+    flex: 0 0 auto; align-self: flex-start;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-secondary); font-size: 12px; line-height: 1;
+    padding: 12px 4px; margin: -12px 0;
+}
+.tx-expand[aria-expanded="true"] { transform: rotate(180deg); }
+.tx-expand:focus-visible { outline: 2px solid var(--spend-light); outline-offset: 2px; border-radius: var(--r-xs); }
+.tx-row.tx-expanded .tx-merchant-text {
+    white-space: normal;
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    overflow: visible;
+}
 .tx-account-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
 .tx-amount { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; }
 .tx-amount.out { color: var(--text-primary); }

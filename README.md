@@ -282,6 +282,12 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.56.4
+Read a whole description without leaving the ledger, and a clearer account question.
+- **A row whose description is cut off offers a chevron** that opens that row, and only that row. Rows that fit don't show one, so the list is no taller at rest. An opened row stays open across re-renders, and tapping the row itself still opens the editor.
+- **The import's "which account is this statement for?" question** now has one primary action instead of two competing ones: an existing account is the default, and a new account is a disclosure you open. It asks for the type and currency instead of assuming a euro current account, refuses an unrecognised currency, and cannot create two accounts from a double tap.
+- Dialog fields are 16px on a phone (iOS zooms the page below that) and dialog buttons go full width.
+
 ### v3.56.3
 Editing an account no longer rewrites its currency.
 - **The account form had no currency field and saved `EUR` every time**, so editing a GBP or USD account — including a card account an import created in another currency — silently re-denominated it. Currency drives every conversion downstream, and nothing else would have caught it. There is now a currency field, and an unrecognised code is refused rather than stored.
