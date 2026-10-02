@@ -6,10 +6,11 @@
  * account funds it before it can enrich rather than duplicate.
  */
 
-import state from './state.js?v=3.56.2';
-import { escapeHTML, showToast, showConfirm, openModal, closeModal, accountColour } from './utils.js?v=3.56.2';
-import { saveAccount, deleteAccount } from './storage.js?v=3.56.2';
-import { renderAll } from './ledger.js?v=3.56.2';
+import state from './state.js?v=3.56.3';
+import { escapeHTML, showToast, showConfirm, openModal, closeModal, accountColour } from './utils.js?v=3.56.3';
+import { normalizeCurrencyCode } from '../services/money-core.js';
+import { saveAccount, deleteAccount } from './storage.js?v=3.56.3';
+import { renderAll } from './ledger.js?v=3.56.3';
 
 const el = id => document.getElementById(id);
 
@@ -32,6 +33,12 @@ export function showAccountDialog(accountId = null) {
         <div class="form-group">
             <label class="form-label">Label</label>
             <input class="form-input" id="acctLabel" placeholder="Main current account" value="${escapeHTML(a?.label || '')}">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="acctCurrency">Currency</label>
+            <input class="form-input" id="acctCurrency" style="max-width:120px"
+                   value="${escapeHTML(a?.currency || 'EUR')}" placeholder="EUR">
+            <span class="form-helper" style="display:block">The currency this account is held in. Every conversion downstream uses it.</span>
         </div>
         <div class="form-group">
             <label class="form-label">Type</label>
@@ -60,19 +67,61 @@ export function onAccountTypeChange() {
     if (group) group.style.display = el('acctType').value === 'wallet' ? 'block' : 'none';
 }
 
-export async function submitAccount() {
-    const bankName = el('acctBank').value.trim();
-    const label = el('acctLabel').value.trim();
-    if (!bankName || !label) { showToast('Bank and label are both required.', 'warning'); return; }
+/**
+ * The account to save, from what the form says and what the account already is.
+ *
+ * Pure, and separate from the form, because the save is an UPSERT of the whole
+ * row: anything this object does not carry is written as its default. The first
+ * version hard-coded `currency: 'EUR'` with no field to set it, so editing a
+ * GBP or USD account — including a card account the import created in another
+ * currency — silently re-denominated it, and currency drives every conversion
+ * downstream. It also recoloured the account on every edit and un-archived an
+ * archived one. A field the form does not show is CARRIED OVER, never defaulted.
+ *
+ * @param {{bankName: string, label: string, type: string, currency: string, linkedAccountId: string|null}} form
+ * @param {object|null} existing the account being edited, or null for a new one
+ * @param {number} accountCount for the colour of a new account
+ * @returns {object|string} the account to save, or why it was refused
+ */
+export function accountFromForm(form, existing = null, accountCount = 0) {
+    const bankName = String(form.bankName ?? '').trim();
+    const label = String(form.label ?? '').trim();
+    if (!bankName || !label) return 'Bank and label are both required.';
 
-    const type = el('acctType').value;
-    const account = {
-        ...(state.editingAccountId ? { id: state.editingAccountId } : {}),
-        bankName, label, type,
-        currency: 'EUR',
-        linkedAccountId: type === 'wallet' ? (el('acctLinked')?.value || null) : null,
-        colour: accountColour(bankName + label, state.accounts.length)
+    const typed = String(form.currency ?? '').trim();
+    const norm = typed ? normalizeCurrencyCode(typed) : null;
+    if (typed && !norm) return `"${typed}" is not a currency code — use three letters, like EUR or GBP.`;
+    const type = form.type || existing?.type || 'checking';
+
+    return {
+        ...(existing?.id ? { id: existing.id } : {}),
+        bankName,
+        label,
+        type,
+        currency: norm ? norm.iso : (existing?.currency || 'EUR'),
+        linkedAccountId: type === 'wallet' ? (form.linkedAccountId || null) : null,
+        // Carried over, not recomputed: the dot colour is how the ledger says
+        // which account a row came from, and it should not change on an edit.
+        colour: existing?.colour || accountColour(bankName + label, accountCount),
+        archived: !!existing?.archived,
+        // Learned statement references belong to the account, not to this form.
+        ...(existing?.statementRefs ? { statementRefs: existing.statementRefs } : {}),
     };
+}
+
+export async function submitAccount() {
+    const existing = state.editingAccountId
+        ? state.accounts.find(x => x.id === state.editingAccountId) || { id: state.editingAccountId }
+        : null;
+    const account = accountFromForm({
+        bankName: el('acctBank').value,
+        label: el('acctLabel').value,
+        type: el('acctType').value,
+        currency: el('acctCurrency')?.value,
+        linkedAccountId: el('acctLinked')?.value || null,
+    }, existing, state.accounts.length);
+
+    if (typeof account === 'string') { showToast(account, 'warning'); return; }
 
     try {
         await saveAccount(account);
