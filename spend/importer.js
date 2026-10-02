@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state, { clearViewFilters } from './state.js?v=3.56.0';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.0';
+import state, { clearViewFilters } from './state.js?v=3.56.1';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.1';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.56.0';
-import { renderAll } from './ledger.js?v=3.56.0';
+} from './storage.js?v=3.56.1';
+import { renderAll } from './ledger.js?v=3.56.1';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS, isRoutableCardRow
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.0';
+import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.1';
 import { accountRefs, matchAccount, rememberRefs } from '../services/import-identity.js';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 import { detectInternalTransfers } from '../services/spend-core.js';
@@ -788,6 +788,7 @@ function ingest(parsed, { profile = null, sourceRole = 'statement' } = {}) {
         skipped: parsed.skipped || 0,
         skippedRows: parsed.skippedRows || [],
         total: parsed.total || null,
+        totalWhy: parsed.totalWhy || null,
         detail: parsed.detail || null,
         cardPlan,
         // What this document turned out to contain, and whether we have seen a
@@ -894,8 +895,21 @@ function showReport() {
             account for every row taken from it, exactly. Nothing is missing and nothing extra was added.</p>` : ''}
         ${r.total && r.total.checked && !r.total.ok ? `<div class="review-banner"><span>⚠</span><span>
             These rows do not add up to the change in the statement's own balance
-            ${escapeHTML(r.total.reason || '')}. Either a movement is missing, or something was imported that
-            is not a movement of this account — a loan or card section, say. Worth checking before adding.</span></div>` : ''}
+            ${escapeHTML(r.total.reason || '')}.
+            ${r.totalWhy?.fixedByDropping ? `
+                <strong>They do add up without the ${r.totalWhy.unbalanced} row${r.totalWhy.unbalanced === 1 ? '' : 's'}
+                that carry no running balance</strong> (${escapeHTML(fmtMoney(r.totalWhy.unbalancedSum))} in total):
+                those are usually a card, loan or wallet section — money that belongs to another account, or that
+                itemises a movement already listed here. Check them below before adding.
+                ${r.totalWhy.sample?.length ? `<br><span class="form-helper">${
+                    r.totalWhy.sample.map(x => escapeHTML(`${x.description} ${fmtMoney(x.amount)}`)).join(' · ')}</span>` : ''}`
+            : r.totalWhy?.unbalanced ? `
+                ${r.totalWhy.unbalanced} row${r.totalWhy.unbalanced === 1 ? '' : 's'} carry no running balance
+                (${escapeHTML(fmtMoney(r.totalWhy.unbalancedSum))}), but leaving them out does not make it add up either —
+                so a movement may also be missing.`
+            : `Either a movement is missing, or something was imported that is not a movement of this account —
+                a loan or card section, say.`}
+            Worth checking before adding.</span></div>` : ''}
         ${r.format === 'pdf' && r.chain && !r.chain.pairs ? `<div class="review-banner"><span>⚠</span><span>
             Nothing in this document could be cross-checked. It prints no running balance, so the usual test —
             that each amount matches the balance either side of it — has nothing to work with. The rows may be

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { prefilterLines, chunkLines, normalizeAiRows, verifyRows, rowsInStatementTotal } from '../spend/pdf.js';
 import { expandCardDetail, sectionSignature } from '../services/import-banks.js';
-import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain, reconcileStatementTotal } from '../services/import-pdf.js';
+import { detectStatementPeriod, findSectionHeadings, scoreChainDirection, checkBalanceChain, reconcileStatementTotal, diagnoseStatementTotal } from '../services/import-pdf.js';
 import { parseStyledNumber } from '../services/import-banks.js';
 
 const L = (text, i = 0) => ({ text, y: 700 - i * 12, xs: [60] });
@@ -549,5 +549,45 @@ describe('which rows count toward the whole-statement total', () => {
 
     it('keeps every ordinary account movement', () => {
         expect(rowsInStatementTotal([ordinary])).toEqual([ordinary]);
+    });
+});
+
+// ── Why a statement did not add up ──────────────────────────────────────────
+//
+// Measured on a real Bankinter statement (June 2026): with the card section's
+// lines added as movements, the per-row chain still reconciled 17 of 17 pairs
+// while the whole-statement total failed — a row with no running balance is not
+// in the chain at all. "Something is wrong" was all the import could say; this
+// says which rows are the reason.
+
+describe('diagnoseStatementTotal', () => {
+    const lines = [
+        'Saldo em 2026/06/01                 761,67',
+        'Saldo em 2026/06/30               2.515,85',
+        'DETALHE DAS COMPRAS CARTÃO',
+    ];
+    const movement = (amount, balance) => ({ date: '2026-06-15', description: 'x', amount, balance, sourceRole: 'statement' });
+    // 761,67 -> 2.515,85 is +1.754,18
+    const good = [movement(1000, 1761.67), movement(754.18, 2515.85)];
+
+    it('names the balance-less rows when leaving them out makes it add up', () => {
+        const withCard = [...good, { date: '2026-06-14', description: 'Fish Central', amount: -39.37, balance: null, sourceRole: 'statement' }];
+        const why = diagnoseStatementTotal(withCard, lines);
+        expect(why).toMatchObject({ unbalanced: 1, unbalancedSum: -39.37, fixedByDropping: true });
+        expect(why.sample[0]).toMatchObject({ description: 'Fish Central', amount: -39.37 });
+    });
+
+    it('says so when dropping them does not explain it either — a movement may be missing', () => {
+        const broken = [good[0], { date: '2026-06-14', description: 'card', amount: -39.37, balance: null, sourceRole: 'statement' }];
+        expect(diagnoseStatementTotal(broken, lines)).toMatchObject({ unbalanced: 1, fixedByDropping: false });
+    });
+
+    it('has nothing to say when every row is in the chain', () => {
+        expect(diagnoseStatementTotal(good, lines)).toMatchObject({ unbalanced: 0, fixedByDropping: false });
+    });
+
+    it('ignores detail rows: they are not movements of this account', () => {
+        const withDetail = [...good, { date: '2026-06-14', description: 'card line', amount: -39.37, balance: null, sourceRole: 'detail' }];
+        expect(diagnoseStatementTotal(withDetail, lines).unbalanced).toBe(0);
     });
 });

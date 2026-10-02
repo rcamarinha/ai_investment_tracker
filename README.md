@@ -282,6 +282,11 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.56.1
+When a statement does not add up, the import says which rows are the reason.
+- The warning used to say only that the rows did not match the statement's own balance. It now checks whether leaving out the rows that carry **no running balance** makes it add up — and if so, names them with their total. Those are usually a card, loan or wallet section: money belonging to another account, or an itemisation of a movement already listed.
+- Measured on a real statement: with a card section's lines added as movements, every per-row balance check still passed (a row with no balance is not in that chain) while the whole-statement total failed. That is the case this now explains.
+
 ### v3.56.0
 Import a folder of statements at once, and let each file find its own account.
 - **Several files in one go.** The file picker takes many; each is read in turn. A file whose checks all pass — every row reconciles, the statement adds up, nothing flagged, no account change — is saved without asking. The first file with anything to look at stops the queue and waits, and the rest continue once you deal with it. A summary says how many imported, how many needed a look, and how many could not be read.
