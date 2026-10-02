@@ -14,19 +14,19 @@
  * Nothing is written until the user has seen the review screen.
  */
 
-import state, { clearViewFilters } from './state.js?v=3.56.2';
-import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.2';
+import state, { clearViewFilters } from './state.js?v=3.56.3';
+import { escapeHTML, fmtMoney, fmtDate, showToast, showConfirm, openModal, closeModal } from './utils.js?v=3.56.3';
 import {
     saveTransactions, saveProfile, deleteProfile, savePendingDetails, clearPendingDetails, saveAccount, undoImport, requireAuth
-} from './storage.js?v=3.56.2';
-import { renderAll } from './ledger.js?v=3.56.2';
+} from './storage.js?v=3.56.3';
+import { renderAll } from './ledger.js?v=3.56.3';
 import {
     buildProfileDraft, parseWithProfile, headerSignature, sniffCsv,
     applyRules, dedupeSpendRows, buildExistingFingerprints, mergeDetailSource,
     planCardRouting, summarizeSections, sectionSignature, DATE_FORMATS, isRoutableCardRow
 } from '../services/import-banks.js';
 import { parseStandard } from '../services/import-standards.js';
-import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.2';
+import { importPdfStatement, extractPdfLines } from './pdf.js?v=3.56.3';
 import { accountRefs, matchAccount, rememberRefs } from '../services/import-identity.js';
 import { reportHandled, reportDiagnostic } from '../services/telemetry.js';
 import { detectInternalTransfers } from '../services/spend-core.js';

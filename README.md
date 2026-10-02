@@ -282,6 +282,11 @@ No version bump: only `services/` and `portfolio.html` changed.
 - **Keyed price lookups are now counted per person** on the admin page, alongside AI calls and the keyless proxy.
 - Needs, in this order: new keys created at each provider, set as function secrets, `market-data` deployed, the `20260920_price_keys_off_the_browser.sql` migration run straight away, then the client shipped and the old keys revoked.
 
+### v3.56.3
+Editing an account no longer rewrites its currency.
+- **The account form had no currency field and saved `EUR` every time**, so editing a GBP or USD account — including a card account an import created in another currency — silently re-denominated it. Currency drives every conversion downstream, and nothing else would have caught it. There is now a currency field, and an unrecognised code is refused rather than stored.
+- **Editing also recoloured the account and un-archived an archived one.** A field the form does not show is now carried over, never defaulted — including the learned statement references.
+
 ### v3.56.2
 Fixes from the first run of the agent review gates over the batch import.
 - **A statement can no longer file itself against the wrong account.** Only the IBAN and NIB are learned. Reading every long number off a real statement had also collected the bank's company number, three branch telephones and the account numbers of the card, the term deposit and the pension fund — so the current account would have claimed the card's number, and a card statement would have filed itself into the current account.
